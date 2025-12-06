@@ -156,9 +156,9 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
         while 1:
             self.screenshot()
             text = self.O_ISLAND_NAME.ocr(self.device.image)
-            if '星' in text:
+            if '星之' in text:
                 return MoonSeaType.island105
-            if '战' in text:
+            if '战之' in text:
                 return MoonSeaType.island104
             if '混' in text:
                 return MoonSeaType.island103
