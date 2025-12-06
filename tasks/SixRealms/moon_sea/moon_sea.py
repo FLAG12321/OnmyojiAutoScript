@@ -31,7 +31,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
         )
         cnt = 0
         while 1:
-            self._check_first_priority_task()
+            #self._check_first_priority_task()
             if cnt >= max_cont:
                 logger.info('Run out of count, exit')
                 break

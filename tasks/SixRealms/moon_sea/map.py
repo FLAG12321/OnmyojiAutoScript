@@ -6,17 +6,17 @@ class MoonSeaMap(MoonSeaSkills):
 
     def enter_island(self):
         self.screenshot()
-        if self.appear_then_click_and_wait(self.I_UI_CANCEL, wait_time=1):
+        if self.appear_then_click(self.I_UI_CANCEL, interval=1):
             return True
-        if self.appear_then_click_and_wait(self.I_SHENMI, wait_time=1):
+        if self.appear_then_click(self.I_SHENMI, interval=1):
             return True
-        if self.appear_then_click_and_wait(self.I_HUNDUN, wait_time=1):
+        if self.appear_then_click(self.I_HUNDUN, interval=1):
             return True
-        if self.appear_then_click_and_wait(self.I_ZHAN, wait_time=1):
+        if self.appear_then_click(self.I_ZHAN, interval=1):
             return True
-        if self.appear_then_click_and_wait(self.I_XING, wait_time=1):
+        if self.appear_then_click(self.I_XING, interval=1):
             return True
-        if self.appear_then_click_and_wait(self.I_NINGXI, wait_time=1):
+        if self.appear_then_click(self.I_NINGXI, interval=1):
             return True
         logger.info('Entering island')
         return None
