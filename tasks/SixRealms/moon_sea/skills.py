@@ -108,7 +108,7 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
             self.ui_click_until_disappear(self.I_UI_CONFIRM)
             return True
 
-        if self.appear(self.I_SKILL_REFRESH) and self.appear(self.I_SELECT_3) and not self.appear(self.I_COIN2):
+        if self.appear(self.I_SKILL_REFRESH) and self.appear(self.I_SELECT_3) and not self.appear(self.I_COIN):
             # 战斗结束后选技能
             logger.info('Start select skill')
             select = self._select_skill()
