@@ -47,7 +47,8 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
         logger.info('Exit Moon Sea')
 
     def one(self):
-        self.cnt_skill101 = 1
+        self.cnt_skill101 = 0
+        self.cnt_skillpower = 0
         if not self._start():
             return False
         while 1:

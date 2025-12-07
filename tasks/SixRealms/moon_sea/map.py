@@ -26,7 +26,7 @@ class MoonSeaMap(MoonSeaSkills):
         最后打boss前面激活一次商店买东西
         @return: 有钱够就是True
         """
-        if self.cnt_skill101 >= 5:
+        if self.cnt_skill101 >= 1:
             # 如果柔风满级就不召唤
             return False
         self.screenshot()

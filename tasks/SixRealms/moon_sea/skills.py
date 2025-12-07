@@ -12,6 +12,7 @@ from tasks.SixRealms.assets import SixRealmsAssets
 class MoonSeaSkills(BaseTask, SixRealmsAssets):
 
     cnt_skill101 = 0
+    cnt_skillpower = 0
 
     def in_main(self, screenshot: bool = False):
         if screenshot:
@@ -112,7 +113,8 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
             logger.info('Start select skill')
             select = self._select_skill()
             # 如果没有柔风并且钱够并且还有刷新次数
-            if refresh and select == 3 and check_coin_skill() and check_refresh() and self.cnt_skill101 < 5:
+
+            if refresh and select == 3 and check_coin_skill() and check_refresh() and self.cnt_skill101 < 1 and self.cnt_skillpower>=4:
                 logger.info('Refresh skill')
                 self.appear_then_click(self.I_SKILL_REFRESH)
                 self.wait_until_stable(self.I_UI_CONFIRM, timeout=Timer(2))
@@ -120,6 +122,9 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
                 self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=1)
 
             if self.appear_then_click(self.selects_button[select]):
+                if select==3:
+                    if self.appear_then_click(self.I_PEACOCK_SKILL1,interval=1.5):
+                        self.cnt_skillpower+=1
                 self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=2)
 
             return True
