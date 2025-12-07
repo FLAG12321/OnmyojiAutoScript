@@ -141,6 +141,8 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 continue
             if self.appear_then_click(self.I_MCONINUE, interval=3):
                 continue
+            if self.appear_then_click(self.I_MPEACOCK_SKILL, interval=3):
+                continue
         logger.info("Start Roguelike")
         while 1:
             self.screenshot()
