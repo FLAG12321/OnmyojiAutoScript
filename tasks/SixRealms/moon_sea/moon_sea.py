@@ -1,7 +1,6 @@
 import time
 
 from module.logger import logger
-
 from cached_property import cached_property
 from datetime import datetime, timedelta
 
@@ -159,7 +158,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
         while 1:
             self.screenshot()
             text = self.O_ISLAND_NAME.ocr(self.device.image)
-            if '星之' in text:
+            if '绽放' in text:
                 return MoonSeaType.island105
             if '战之' in text:
                 return MoonSeaType.island104

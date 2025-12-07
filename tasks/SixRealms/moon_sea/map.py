@@ -1,11 +1,33 @@
 from module.logger import logger
 from tasks.SixRealms.moon_sea.skills import MoonSeaSkills
-
+from cached_property import cached_property
 
 class MoonSeaMap(MoonSeaSkills):
-
+    priority_queue=[[0,3,2,1,5,4],[0,1,5,3,2,4]]
+    @cached_property
+    def island_list(self):
+        return [
+            self.I_UI_CANCEL, 
+            self.I_SHENMI,
+            self.I_HUNDUN,
+            self.I_ZHAN,
+            self.I_XING,
+            self.I_NINGXI
+        ]
+    
     def enter_island(self):
         self.screenshot()
+        if self.cnt_skill101 < 1 and self.cnt_skillpower < 4:
+            i =0
+            for i in range(6):
+                if self.appear_then_click(self.island_list[self.priority_queue[0][i]], interval=1):
+                    return True
+        else:
+            i =0
+            for i in range(6):
+                if self.appear_then_click(self.island_list[self.priority_queue[1][i]], interval=1):
+                    return True
+        '''
         if self.appear_then_click(self.I_UI_CANCEL, interval=1):
             return True
         if self.appear_then_click(self.I_SHENMI, interval=1):
@@ -18,6 +40,7 @@ class MoonSeaMap(MoonSeaSkills):
             return True
         if self.appear_then_click(self.I_NINGXI, interval=1):
             return True
+        '''
         logger.info('Entering island')
         return None
 
