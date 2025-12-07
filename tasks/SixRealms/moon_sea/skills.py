@@ -123,7 +123,7 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
 
             if self.appear_then_click(self.selects_button[select]):
                 if select==3:
-                    if self.appear_then_click(self.I_PEACOCK_SKILL1,interval=1.5):
+                    if self.appear_then_click(self.I_PEACOCK_SKILL1,interval=3):
                         self.cnt_skillpower+=1
                 self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=2)
 
