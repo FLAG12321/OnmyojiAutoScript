@@ -12,15 +12,15 @@ class SixRealmsAssets:
 
 	# Image Rule Assets
 	# 宁息 
-	I_NINGXI = RuleImage(roi_front=(646,424,30,31), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/ningxi.png")
-	# 混沌 
-	I_HUNDUN = RuleImage(roi_front=(370,405,33,31), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/hundun.png")
-	# 鏖战 
-	I_ZHAN = RuleImage(roi_front=(644,468,28,29), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/zhan.png")
-	# 神秘 
-	I_SHENMI = RuleImage(roi_front=(901,458,36,28), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/shenmi.png")
-	# 星之屿 
-	I_XING = RuleImage(roi_front=(643,466,30,27), roi_back=(151,88,908,513), threshold=0.7, method="Template matching", file="./tasks/SixRealms/a/xing.png")
+	I_NINGXI = RuleImage(roi_front=(649,345,30,31), roi_back=(150,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/ningxi.png")
+	# 混沌re 
+	I_HUNDUN = RuleImage(roi_front=(650,370,33,31), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/hundun.png")
+	# 鏖战re 
+	I_ZHAN = RuleImage(roi_front=(909,484,28,29), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/zhan.png")
+	# 神秘re 
+	I_SHENMI = RuleImage(roi_front=(376,410,36,28), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/shenmi.png")
+	# 绽放之屿re 
+	I_XING = RuleImage(roi_front=(652,478,30,27), roi_back=(151,88,908,513), threshold=0.7, method="Template matching", file="./tasks/SixRealms/a/xing.png")
 
 
 	# Click Rule Assets
@@ -77,42 +77,44 @@ class SixRealmsAssets:
 
 
 	# Image Rule Assets
-	# description 
-	I_MENTER = RuleImage(roi_front=(346,167,30,100), roi_back=(346,167,30,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_menter.png")
-	# 酒吞 
+	# 孔雀国re 
+	I_MENTER = RuleImage(roi_front=(346,149,35,118), roi_back=(346,149,35,118), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_menter.png")
+	# 小鹿男re 
 	I_MSHUTEN = RuleImage(roi_front=(46,609,70,65), roi_back=(46,609,70,65), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mshuten.png")
-	# 椒图选中 
-	I_MSHOUZU_SELECT = RuleImage(roi_front=(544,179,199,438), roi_back=(544,179,199,438), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mshouzu_select.png")
-	# 椒图 
+	# 觉选中re 
+	I_MSHOUZU_SELECT = RuleImage(roi_front=(777,180,199,438), roi_back=(777,180,199,438), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mshouzu_select.png")
+	# 觉re 
 	I_MSHOUZU = RuleImage(roi_front=(43,608,73,67), roi_back=(43,608,73,67), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mshouzu.png")
-	# 开启 
-	I_MSTART = RuleImage(roi_front=(1136,575,100,100), roi_back=(1043,527,215,167), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart.png")
-	# description 
-	I_MSTART_CONFIRM = RuleImage(roi_front=(1136,575,100,100), roi_back=(1080,548,182,150), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart_confirm.png")
-	# description 
+	# 第一次开启re 
+	I_MSTART = RuleImage(roi_front=(1121,586,100,100), roi_back=(1043,527,215,167), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart.png")
+	# 试炼式神选择re 
+	I_MSTART_CONFIRM = RuleImage(roi_front=(1124,572,100,100), roi_back=(1080,548,182,150), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart_confirm.png")
+	# mstart_uncheckoff 
 	I_MSTART_UNCHECK = RuleImage(roi_front=(543,340,38,40), roi_back=(543,340,38,40), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart_uncheck.png")
-	# description 
+	# mstart_check_off 
 	I_MSTART_CHECK = RuleImage(roi_front=(542,340,39,41), roi_back=(542,340,39,41), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart_check.png")
-	#  
+	# mskip_off 
 	I_MSKIP = RuleImage(roi_front=(1117,28,58,36), roi_back=(1117,28,58,36), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mskip.png")
-	# 左下角备战 
-	I_PREPARE_BATTLE = RuleImage(roi_front=(33,640,48,54), roi_back=(33,640,48,54), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_prepare_battle.png")
-	# 继续执行 
+	# 左下角备战re 
+	I_PREPARE_BATTLE = RuleImage(roi_front=(29,638,55,66), roi_back=(20,630,72,81), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_prepare_battle.png")
+	# 继续执行re 
 	I_MCONINUE = RuleImage(roi_front=(1121,578,100,100), roi_back=(1121,578,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mconinue.png")
-	# 选第一个柔风 
-	I_MFIRST_SKILL = RuleImage(roi_front=(255,577,141,39), roi_back=(206,550,227,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mfirst_skill.png")
-	# 唤息 
+	# 极道轰炸选择re 
+	I_MFIRST_SKILL = RuleImage(roi_front=(259,554,141,39), roi_back=(209,523,227,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mfirst_skill.png")
+	# 唤息re 
 	I_M_STORE = RuleImage(roi_front=(1124,594,61,57), roi_back=(1103,576,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_m_store.png")
-	# 左上角退出 
+	# 左上角退出re 
 	I_BACK_EXIT = RuleImage(roi_front=(11,18,51,47), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_back_exit.png")
-	# 可以购买的幻息 
+	# 可以购买的幻息off 
 	I_M_STORE_ACTIVITY = RuleImage(roi_front=(1121,596,72,57), roi_back=(1107,573,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_m_store_activity.png")
-	# description 
-	I_MSTART_CONFIRM2 = RuleImage(roi_front=(1154,581,74,85), roi_back=(1079,535,196,177), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart_confirm2.png")
-	# 动画完了就有这个东西 
+	# 式神阵容选择re 
+	I_MSTART_CONFIRM2 = RuleImage(roi_front=(1146,570,84,101), roi_back=(1079,535,196,177), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mstart_confirm2.png")
+	# 动画完了就有这个东西off 
 	I_ISLAND_TAG_FLAG = RuleImage(roi_front=(543,601,100,100), roi_back=(543,601,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_island_tag_flag.png")
-	# 暂时离开六道之门 
-	I_EXIT_SIXREALMS = RuleImage(roi_front=(507.5,308,100,100), roi_back=(507.5,308,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_exit_sixrealms.png")
+	# 暂时离开六道之门re 
+	I_EXIT_SIXREALMS = RuleImage(roi_front=(503,306,84,75), roi_back=(494,297,100,90), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_exit_sixrealms.png")
+	# 选择绽放之舞re 
+	I_MPEACOCK_SKILL = RuleImage(roi_front=(219,601,95,43), roi_back=(167,584,192,86), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mpeacock_skill.png")
 
 
 	# Ocr Rule Assets
@@ -153,6 +155,11 @@ class SixRealmsAssets:
 	I_COIN2 = RuleImage(roi_front=(612,345,66,53), roi_back=(405,229,561,270), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_coin.png")
 	# 洞察之力 
 	I_SKILL105 = RuleImage(roi_front=(178,187,80,69), roi_back=(112,149,779,151), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_skill105.png")
+
+
+	# Swipe Rule Assets
+	# 征伐队伍选择界面底部阵容上拉 
+	S_TEAM_SWIPE_UP = RuleSwipe(roi_front=(520,571,93,98), roi_back=(589,180,100,100), mode="default", name="team_swipe_up")
 
 
 	# Image Rule Assets
