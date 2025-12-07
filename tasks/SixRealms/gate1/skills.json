@@ -114,6 +114,15 @@
     "roiBack": "223,478,143,73",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "description"
+    "description": "力量强化"
+  },
+  {
+    "itemName": "peacock_skill2",
+    "imageName": "gate1_peacock_skill2.png",
+    "roiFront": "424,500,93,36",
+    "roiBack": "389,476,163,76",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "技巧强化"
   }
 ]

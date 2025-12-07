@@ -34,9 +34,9 @@ class SixRealmsAssets:
 	# 大boss挑战re 
 	I_BOSS_FIRE = RuleImage(roi_front=(1114,582,100,100), roi_back=(1084,559,156,147), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_fire.png")
 	# lockre 
-	I_BOSS_TEAM_LOCK = RuleImage(roi_front=(1122,527,33,32), roi_back=(1116,520,43,43), threshold=0.95, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_team_lock.png")
+	I_BOSS_TEAM_LOCK = RuleImage(roi_front=(1122,527,33,32), roi_back=(1116,520,43,43), threshold=0.9, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_team_lock.png")
 	# unlockre 
-	I_BOSS_TEAM_UNLOCK = RuleImage(roi_front=(1128,529,25,26), roi_back=(1120,520,40,41), threshold=0.95, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_team_unlock.png")
+	I_BOSS_TEAM_UNLOCK = RuleImage(roi_front=(1128,529,25,26), roi_back=(1120,520,40,41), threshold=0.9, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_team_unlock.png")
 	# description 
 	I_BOSS_SKIP = RuleImage(roi_front=(1131,13,100,42), roi_back=(1113,5,136,62), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_skip.png")
 	# description 
@@ -155,8 +155,10 @@ class SixRealmsAssets:
 	I_COIN2 = RuleImage(roi_front=(567,343,66,53), roi_back=(405,229,561,270), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_coin2.png")
 	# 洞察之力 
 	I_SKILL105 = RuleImage(roi_front=(178,187,80,69), roi_back=(112,149,779,151), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_skill105.png")
-	# description 
+	# 力量强化 
 	I_PEACOCK_SKILL1 = RuleImage(roi_front=(244,501,95,35), roi_back=(223,478,143,73), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_peacock_skill1.png")
+	# 技巧强化 
+	I_PEACOCK_SKILL2 = RuleImage(roi_front=(424,500,93,36), roi_back=(389,476,163,76), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_peacock_skill2.png")
 
 
 	# Image Rule Assets

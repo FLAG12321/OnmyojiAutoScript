@@ -14,7 +14,7 @@
     "roiFront": "1122,527,33,32",
     "roiBack": "1116,520,43,43",
     "method": "Template matching",
-    "threshold": 0.95,
+    "threshold": 0.90,
     "description": "lockre"
   },
   {
@@ -23,7 +23,7 @@
     "roiFront": "1128,529,25,26",
     "roiBack": "1120,520,40,41",
     "method": "Template matching",
-    "threshold": 0.95,
+    "threshold": 0.90,
     "description": "unlockre"
   },
   {

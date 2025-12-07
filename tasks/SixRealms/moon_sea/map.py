@@ -17,13 +17,14 @@ class MoonSeaMap(MoonSeaSkills):
     
     def enter_island(self):
         self.screenshot()
+        logger.info(f'Entering island self.cnt_skill101={self.cnt_skill101}, self.cnt_skillpower={self.cnt_skillpower}')
         if self.cnt_skill101 < 1 and self.cnt_skillpower < 4:
-            i =0
+            i=0
             for i in range(6):
                 if self.appear_then_click(self.island_list[self.priority_queue[0][i]], interval=1):
                     return True
         else:
-            i =0
+            i=0
             for i in range(6):
                 if self.appear_then_click(self.island_list[self.priority_queue[1][i]], interval=1):
                     return True

@@ -57,12 +57,8 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
             #     continue
 
             # 如果是boss
-            if self.appear(self.I_BOSS_FIRE):
-                self.boss_team_lock()
-                if self.boss_battle():
-                    return True
-                else:
-                    continue
+            
+                
 
             if self.select_skill(refresh=True):
                 continue
@@ -77,9 +73,13 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 case MoonSeaType.island102: self.run_l102()
                 case MoonSeaType.island103: self.run_103()
                 case MoonSeaType.island104: self.run_l104()
-                case MoonSeaType.island105:
-                    if not self.run_l105():
-                        logger.warning('run_l105 failed')
+                case MoonSeaType.island105: self.run_l105()
+                case MoonSeaType.island106:
+                    logger.info('Is boss island')
+                    self.boss_team_lock()
+                    if self.boss_battle():
+                        return True
+                    else:
                         continue
             self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=3)
             continue
@@ -168,13 +168,18 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 return MoonSeaType.island102
             if '宁息' in text:
                 return MoonSeaType.island101
+            if '恋色' in text:
+                logger.info('Is island106')
+                return MoonSeaType.island106
             else:
                 return False
 
     def boss_team_lock(self):
         while 1:
             self.screenshot()
+            logger.info('Is boss_team_lock')
             if self.appear(self.I_BOSS_TEAM_LOCK):
+                logger.info('Is logger.info(Is boss_team_lock)')
                 break
             if self.appear_then_click(self.I_BOSS_TEAM_UNLOCK, interval=2):
                 logger.info('Click lock Boss Team')
