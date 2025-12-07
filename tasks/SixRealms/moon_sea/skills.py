@@ -12,7 +12,7 @@ from tasks.SixRealms.assets import SixRealmsAssets
 class MoonSeaSkills(BaseTask, SixRealmsAssets):
 
     cnt_skill101 = 0
-    cnt_skillpower = 0
+    cnt_skillpower = 1
 
     def in_main(self, screenshot: bool = False):
         if screenshot:
@@ -115,7 +115,14 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
             logger.info('Start select skill')
             select = self._select_skill()
             # 如果没有柔风并且钱够并且还有刷新次数
-
+            while   self.cnt_skill101 < 1 and self.cnt_skillpower>=4 and refresh and select == 3 and check_coin_skill() and check_refresh() :
+                logger.info('Refresh skill')
+                self.appear_then_click(self.I_SKILL_REFRESH)
+                #self.wait_until_stable(self.I_UI_CONFIRM, timeout=Timer(2))
+                #self.appear_then_click(self.I_UI_CONFIRM)
+                self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=1)
+                select = self._select_skill()
+            '''
             if self.cnt_skill101 < 1 and self.cnt_skillpower>=4 and refresh and select == 3 and check_coin_skill() and check_refresh() :
                 logger.info('Refresh skill')
                 self.appear_then_click(self.I_SKILL_REFRESH)
@@ -123,11 +130,9 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
                 self.appear_then_click(self.I_UI_CONFIRM)
                 self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=1)
                 return True
-
+            '''
             if self.appear_then_click(self.selects_button[select],interval=1):
-                logger.info(f'select=={select}')
                 if select==3:
-                    logger.info(f'if self.appear_then_click(self.I_PEACOCK_SKILL1,interval=3)')
                     self.wait_until_stable(self.I_PEACOCK_SKILL1, timeout=Timer(3))
                     if self.appear_then_click(self.I_PEACOCK_SKILL1,interval=1):
                         self.cnt_skillpower+=1

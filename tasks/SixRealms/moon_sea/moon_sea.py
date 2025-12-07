@@ -47,7 +47,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
 
     def one(self):
         self.cnt_skill101 = 0
-        self.cnt_skillpower = 0
+        self.cnt_skillpower = 1
         if not self._start():
             return False
         while 1:
@@ -169,7 +169,6 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
             if '宁息' in text:
                 return MoonSeaType.island101
             if '恋色' in text:
-                logger.info('Is island106')
                 return MoonSeaType.island106
             else:
                 return False
@@ -177,9 +176,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
     def boss_team_lock(self):
         while 1:
             self.screenshot()
-            logger.info('Is boss_team_lock')
             if self.appear(self.I_BOSS_TEAM_LOCK):
-                logger.info('Is logger.info(Is boss_team_lock)')
                 break
             if self.appear_then_click(self.I_BOSS_TEAM_UNLOCK, interval=2):
                 logger.info('Click lock Boss Team')

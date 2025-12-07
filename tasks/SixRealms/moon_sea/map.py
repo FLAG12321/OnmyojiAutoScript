@@ -3,7 +3,7 @@ from tasks.SixRealms.moon_sea.skills import MoonSeaSkills
 from cached_property import cached_property
 
 class MoonSeaMap(MoonSeaSkills):
-    priority_queue=[[0,3,2,1,5,4],[0,1,5,3,2,4]]
+    priority_queue=[[0,3,1,5,4,2],[0,1,5,3,4,2]]  # 两种优先级方案
     @cached_property
     def island_list(self):
         return [
