@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import time
+from datetime import time, datetime, timedelta
 import re
 from cached_property import cached_property
 
@@ -12,8 +13,6 @@ from tasks.GameUi.page import page_realm_raid, page_main, page_shikigami_records
 from tasks.RealmRaid.assets import RealmRaidAssets
 from tasks.RealmRaid.config import RealmRaid, RaidMode, AttackNumber, WhenAttackFail
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
-
-
 from module.logger import logger
 from module.exception import TaskEnd
 from module.atom.image_grid import ImageGrid
@@ -227,7 +226,17 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         self.ui_click(self.I_BACK_RED, self.I_CHECK_EXPLORATION)
         self.ui_get_current_page()
         self.ui_goto(page_main)
+        
+        # RealmRaid任务完成后，将Orochi任务加入队列
+        # 设置Orochi任务开始时间为RealmRaid开始执行时的十分钟后
+        orochi_start_time = self.start_time + timedelta(minutes=10)
+        logger.info(f"RealmRaid task completed, scheduling Orochi task for {orochi_start_time}")
+        self.set_next_run(task='Orochi', success=False, finish=False, target=orochi_start_time)
+        
+        # 设置RealmRaid下次运行时间
         self.set_next_run(task='RealmRaid', success=success, finish=True)
+        
+    
         raise TaskEnd
 
 

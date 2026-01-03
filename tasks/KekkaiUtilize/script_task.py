@@ -76,6 +76,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
                 self.push_notify(content=f"没有合适可以蹭的卡, 5分钟后再次执行蹭卡")
                 self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
+                self.config.notifier.push(content=f'没有合适可以蹭的卡, 5分钟后再次执行蹭卡', title='寄养')
                 return
 
             # 无论收不收到菜，都会进入看看至少看一眼时间还剩多少
@@ -93,6 +94,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 # remaining_time = remaining_time - timedelta(seconds=30)
                 next_time = datetime.now() + remaining_time
                 self.set_next_run(task='KekkaiUtilize', target=next_time)
+                self.config.notifier.push(content=f'下次寄养时间: {next_time}', title='寄养')
                 return
             if not self.grown_goto_utilize():
                 logger.info('Utilize failed, exit')

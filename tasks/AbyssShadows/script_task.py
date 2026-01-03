@@ -88,6 +88,88 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
     general_fight_count = 0  # 副将战斗次数
     elite_fight_count = 0  # 精英战斗次数
     
+    def get_enabled_areas(self) -> list:
+        """获取启用的区域列表"""
+        cfg: AbyssShadows = self.config.abyss_shadows
+        enabled_areas = []
+        
+        if cfg.abyss_shadows_area_selection.enable_dragon:
+            enabled_areas.append(AreaType.DRAGON)
+        if cfg.abyss_shadows_area_selection.enable_peacock:
+            enabled_areas.append(AreaType.PEACOCK)
+        if cfg.abyss_shadows_area_selection.enable_fox:
+            enabled_areas.append(AreaType.FOX)
+        if cfg.abyss_shadows_area_selection.enable_leopard:
+            enabled_areas.append(AreaType.LEOPARD)
+            
+        return enabled_areas
+    
+    def get_first_area(self) -> AreaType:
+        """获取第一个选择的区域，按照神龙、孔雀、白藏主、黑豹的优先级选择"""
+        cfg: AbyssShadows = self.config.abyss_shadows
+        
+        # 按照优先级顺序检查启用的区域
+        if cfg.abyss_shadows_area_selection.enable_dragon:
+            return AreaType.DRAGON
+        elif cfg.abyss_shadows_area_selection.enable_peacock:
+            return AreaType.PEACOCK
+        elif cfg.abyss_shadows_area_selection.enable_fox:
+            return AreaType.FOX
+        elif cfg.abyss_shadows_area_selection.enable_leopard:
+            return AreaType.LEOPARD
+        else:
+            # 如果所有区域都被禁用，默认返回神龙暗域
+            logger.warning("All areas are disabled, defaulting to dragon")
+            return AreaType.DRAGON
+    
+    def get_battle_order(self) -> list:
+        """获取战斗顺序"""
+        cfg: AbyssShadows = self.config.abyss_shadows
+        
+        if cfg.abyss_shadows_battle_mode.battle_mode.lower() == "ranking":
+            # 顺位寮：首领 → 副将 → 精英
+            return [EmemyType.BOSS, EmemyType.GENERAL, EmemyType.ELITE]
+        else:
+            # 僵尸寮：精英 → 副将 → 首领
+            return [EmemyType.GENERAL,EmemyType.ELITE, EmemyType.BOSS]
+    
+    def get_smart_damage_battle_order(self) -> list:
+        """获取智能伤害模式下的战斗顺序"""
+        cfg: AbyssShadows = self.config.abyss_shadows
+        
+        if cfg.abyss_shadows_battle_mode.battle_mode.lower() == "ranking":
+            # 顺位寮：首领 → 副将 → 精英
+            return [
+                (EmemyType.BOSS, 2, "boss_fight_count"),
+                (EmemyType.GENERAL, 4, "general_fight_count"), 
+                (EmemyType.ELITE, 6, "elite_fight_count")
+            ]
+        else:
+            # 僵尸寮： 副将 → 精英 → 首领
+            return [
+                (EmemyType.GENERAL, 4, "general_fight_count"),
+                (EmemyType.ELITE, 6, "elite_fight_count"),
+                (EmemyType.BOSS, 2, "boss_fight_count")
+            ]
+    
+    def get_next_enabled_area(self, current_area: AreaType) -> AreaType:
+        """获取下一个启用的区域"""
+        enabled_areas = self.get_enabled_areas()
+        
+        if not enabled_areas:
+            return None
+            
+        try:
+            current_index = enabled_areas.index(current_area)
+            # 如果当前区域是最后一个，返回None表示没有下一个区域
+            if current_index >= len(enabled_areas) - 1:
+                return None
+            return enabled_areas[current_index + 1]
+        except ValueError:
+            # 如果当前区域不在启用列表中，返回第一个启用的区域
+            logger.warning(f"Current area {current_area.name} is not in enabled areas, using first enabled area")
+            return enabled_areas[0]
+    
     def run(self):
         """ 狭间暗域主函数
 
@@ -112,8 +194,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         success = True
         # 进入狭间
         self.goto_abyss_shadows()
-        # 第一次默认选择神龙暗域
-        if not self.select_boss(AreaType.DRAGON):
+        # 获取第一个选择的区域
+        first_area = self.get_first_area()
+        logger.info(f"Selecting first area: {first_area.name}")
+        if not self.select_boss(first_area):
             logger.warning("Failed to enter abyss shadows")
             self.goto_main()
             self.set_next_run(task='AbyssShadows', finish=False, server=True, success=False)
@@ -125,18 +209,18 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.wait_until_disappear(self.I_WAIT_TO_START)
         self.device.stuck_record_clear()
 
-        # 未开启智能伤害准备攻打精英、副将、首领
+        # 未开启智能伤害准备攻打敌人
         if not cfg.abyss_shadows_combat_time.CombatTime_enable:
             while 1:
                 # 点击战报按钮
-                find_list = [EmemyType.BOSS, EmemyType.GENERAL, EmemyType.ELITE]
+                find_list = self.get_battle_order()
                 for enemy_type in find_list:
                     # 寻找敌人并开始战斗,
                     if not self.find_enemy(enemy_type):
                         logger.warning(f"Failed to find {enemy_type.name} enemy, exit")
                         break
                 logger.info(f"Current fight times: boss {self.boss_fight_count} times, general {self.general_fight_count}  times, elite {self.elite_fight_count} times")
-                # 正常应该打完一个区域了，检查攻打次数，如没打够则切换到下一个区域，默认神龙 -> 孔雀 -> 白藏主 -> 黑豹
+                # 正常应该打完一个区域了，检查攻打次数，如没打够则切换到下一个区域
                 if self.boss_fight_count >= 2 and self.general_fight_count >= 4 and self.elite_fight_count >= 6:
                     success = True
                     break
@@ -145,36 +229,23 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                     self.appear_then_click(self.I_ABYSS_MAP_EXIT, interval=1)
                     current_area = self.check_current_area()
                     logger.info(f"Current area is {current_area}, switch to next area")
-                    if current_area == AreaType.DRAGON:
-                        self.change_area(AreaType.PEACOCK)
-                        continue
-                    elif current_area == AreaType.PEACOCK:
-                        self.change_area(AreaType.FOX)
-                        continue
-                    elif current_area == AreaType.FOX:
-                        self.change_area(AreaType.LEOPARD)
+                    next_area = self.get_next_enabled_area(current_area)
+                    if next_area:
+                        self.change_area(next_area)
                         continue
                     else:
-                        logger.warning("All enemy types have been defeated, but not enough emeny to fight, exit")
+                        logger.warning("All enabled areas have been completed, exit")
                         break
 
         # 开启智能伤害
         if cfg.abyss_shadows_combat_time.CombatTime_enable:
             while True:
-                # 1. 先攻打 1 个 BOSS
-                if self.boss_fight_count < 2:
-                    self.boss_fight_count = self.fight_and_switch(EmemyType.BOSS, 2, self.boss_fight_count,
-                                                             lambda: self.switch_area())
-
-                # 2. 攻打 2 个 GENERAL
-                if self.general_fight_count < 4:
-                    self.general_fight_count = self.fight_and_switch(EmemyType.GENERAL, 4, self.general_fight_count,
-                                                                lambda: self.switch_area())
-
-                # 3. 攻打 3 个 ELITE
-                if self.elite_fight_count < 6:
-                    self.elite_fight_count = self.fight_and_switch(EmemyType.ELITE, 6, self.elite_fight_count,
-                                                              lambda: self.switch_area())
+                battle_order = self.get_smart_damage_battle_order()
+                for enemy_type, required_count, count_attr in battle_order:
+                    current_count = getattr(self, count_attr)
+                    if current_count < required_count:
+                        setattr(self, count_attr, self.fight_and_switch(enemy_type, required_count, current_count,
+                                                                       lambda: self.switch_area()))
 
                 # 检查是否已完成所有任务
                 print(f"Current fight times: boss {self.boss_fight_count} times, general {self.general_fight_count} times, elite {self.elite_fight_count} times")
@@ -184,7 +255,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                     break
                 else:
                     #没打满我也没办法就最后一张图，看看有没有剩余的吧没有也不想跑了
-                    find_list = [EmemyType.BOSS, EmemyType.GENERAL, EmemyType.ELITE]
+                    find_list = self.get_battle_order()
                     for enemy_type in find_list:
                         # 寻找敌人并开始战斗,
                         if not self.find_enemy(enemy_type):
@@ -237,7 +308,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
 
             # 完成攻打后切换区域
             current_area = self.check_current_area()
-            if fight_count < required_count and current_area != AreaType.LEOPARD:
+            next_area = self.get_next_enabled_area(current_area)
+            if fight_count < required_count and next_area is not None:
                 next_area_func()
         return fight_count
 
@@ -246,14 +318,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.appear_then_click(self.I_ABYSS_MAP_EXIT, interval=1)
         current_area = self.check_current_area()
         logger.info(f"Current area is {current_area}, switch to next area")
-        if current_area == AreaType.DRAGON:
-            self.change_area(AreaType.PEACOCK)
-        elif current_area == AreaType.PEACOCK:
-            self.change_area(AreaType.FOX)
-        elif current_area == AreaType.FOX:
-            self.change_area(AreaType.LEOPARD)
+        next_area = self.get_next_enabled_area(current_area)
+        if next_area:
+            self.change_area(next_area)
         else:
-            logger.warning("All areas have been completed, exit")
+            logger.warning("All enabled areas have been completed, exit")
             raise StopIteration  # 退出循环
 
 

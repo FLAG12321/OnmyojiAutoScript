@@ -69,6 +69,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.set_next_run('Orochi', finish=True, success=True)
         else:
             self.set_next_run('Orochi', finish=False, success=False)
+        
+        # 根据配置决定是否拉起RealmRaid任务
+        if config.orochi_config.enable_realm_raid_chain:
+            logger.info("Orochi task completed, starting RealmRaid task")
+            self.set_next_run(task='RealmRaid', success=False, finish=False, target=datetime.now() + timedelta(minutes=1))
+        else:
+            logger.info("Orochi task completed, RealmRaid chain disabled")
 
         raise TaskEnd
 

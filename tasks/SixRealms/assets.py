@@ -12,15 +12,15 @@ class SixRealmsAssets:
 
 	# Image Rule Assets
 	# 宁息 
-	I_NINGXI = RuleImage(roi_front=(649,345,30,31), roi_back=(150,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/ningxi.png")
+	I_NINGXI = RuleImage(roi_front=(1011,375,19,29), roi_back=(153,87,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/a_ningxi.png")
 	# 混沌re 
-	I_HUNDUN = RuleImage(roi_front=(650,370,33,31), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/hundun.png")
+	I_HUNDUN = RuleImage(roi_front=(896,447,23,33), roi_back=(162,122,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/a_hundun.png")
 	# 鏖战re 
-	I_ZHAN = RuleImage(roi_front=(909,484,28,29), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/zhan.png")
+	I_ZHAN = RuleImage(roi_front=(207,366,22,26), roi_back=(156,103,908,513), threshold=0.8, method="Template matching", file="./tasks/SixRealms/a/a_zhan.png")
 	# 神秘re 
-	I_SHENMI = RuleImage(roi_front=(376,410,36,28), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/shenmi.png")
+	I_SHENMI = RuleImage(roi_front=(465,459,20,31), roi_back=(151,88,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/a_shenmi.png")
 	# 绽放之屿re 
-	I_XING = RuleImage(roi_front=(652,478,30,27), roi_back=(151,88,908,513), threshold=0.7, method="Template matching", file="./tasks/SixRealms/a/xing.png")
+	I_XING = RuleImage(roi_front=(652,478,30,27), roi_back=(151,88,908,513), threshold=0.7, method="Template matching", file="./tasks/SixRealms/a/a_xing.png")
 
 
 	# Click Rule Assets
@@ -38,7 +38,7 @@ class SixRealmsAssets:
 	# unlockre 
 	I_BOSS_TEAM_UNLOCK = RuleImage(roi_front=(1128,529,25,26), roi_back=(1120,520,40,41), threshold=0.9, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_team_unlock.png")
 	# description 
-	I_BOSS_SKIP = RuleImage(roi_front=(1131,13,100,42), roi_back=(1113,5,136,62), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_skip.png")
+	I_BOSS_SKIP = RuleImage(roi_front=(1140,39,48,27), roi_back=(1110,24,136,58), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_skip.png")
 	# description 
 	I_BOSS_USE_DOUBLE = RuleImage(roi_front=(669,417,126,53), roi_back=(651,407,164,71), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_boss_use_double.png")
 	# 御神获得经验 
@@ -57,9 +57,9 @@ class SixRealmsAssets:
 	# 左边的 
 	C_NPC_FIRE_LEFT = RuleClick(roi_front=(423,203,53,193), roi_back=(423,203,53,193), name="npc_fire_left")
 	# description 
-	C_NPC_FIRE_RIGHT = RuleClick(roi_front=(740,248,181,180), roi_back=(740,248,181,180), name="npc_fire_right")
+	C_NPC_FIRE_RIGHT = RuleClick(roi_front=(811,285,72,111), roi_back=(737,249,183,180), name="npc_fire_right")
 	# 中间的精英 
-	C_NPC_FIRE_CENTER = RuleClick(roi_front=(620,188,174,217), roi_back=(620,188,174,217), name="npc_fire_center")
+	C_NPC_FIRE_CENTER = RuleClick(roi_front=(689,199,83,126), roi_back=(620,188,174,217), name="npc_fire_center")
 	# 默认的 
 	C_ISLAND_ENTER = RuleClick(roi_front=(0,0,100,100), roi_back=(0,0,100,100), name="island_enter")
 	# 右数第一个 
@@ -158,7 +158,7 @@ class SixRealmsAssets:
 	# 力量强化 
 	I_PEACOCK_SKILL1 = RuleImage(roi_front=(244,501,95,35), roi_back=(223,478,143,73), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_peacock_skill1.png")
 	# 技巧强化 
-	I_PEACOCK_SKILL2 = RuleImage(roi_front=(424,500,93,36), roi_back=(389,476,163,76), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_peacock_skill2.png")
+	I_PEACOCK_SKILL2 = RuleImage(roi_front=(779,501,93,36), roi_back=(747,480,163,76), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_peacock_skill2.png")
 
 
 	# Image Rule Assets
@@ -216,5 +216,10 @@ class SixRealmsAssets:
 	# Image Rule Assets
 	# 绽放退出 
 	I_ZHAOFU = RuleImage(roi_front=(1157,628,57,59), roi_back=(1135,603,97,111), threshold=0.8, method="Template matching", file="./tasks/SixRealms/l105/l105_zhaofu.png")
+
+
+	# Image Rule Assets
+	# description 
+	I_1 = RuleImage(roi_front=(0,0,1279,719), roi_back=(0,0,1279,719), threshold=0.8, method="Template matching", file="./tasks/SixRealms/六道/六道_1.png")
 
 

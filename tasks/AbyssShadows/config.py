@@ -5,8 +5,8 @@
 # github    https://github.com/roarhill/oas
 
 from pydantic import BaseModel, Field
-# from pygments.lexer import default
-# from scripts.regsetup import description
+from pygments.lexer import default
+from scripts.regsetup import description
 from sympy.testing.pytest import Failed
 
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -27,9 +27,22 @@ class AbyssShadowsCombatTime(BaseModel):
     general_combat_time: int = Field(default=60, description="以秒为单位设置副将战斗时间，请合理设置")
     elite_combat_time: int = Field(default=60, description="以秒为单位设置精英战斗时间，请合理设置")
 
+class AbyssShadowsAreaSelection(BaseModel):
+    # 区域选择配置
+    enable_dragon: bool = Field(default=True, description="是否启用神龙暗域")
+    enable_peacock: bool = Field(default=True, description="是否启用孔雀暗域")
+    enable_fox: bool = Field(default=True, description="是否启用白藏主暗域")
+    enable_leopard: bool = Field(default=True, description="是否启用黑豹暗域")
+
+class AbyssShadowsBattleMode(BaseModel):
+    # 战斗方式配置
+    battle_mode: str = Field(default="zombie", description="战斗方式: zombie(僵尸寮) 或 ranking(顺位寮)")
+
 class AbyssShadows(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     abyss_shadows_time: AbyssShadowsTime = Field(default_factory=AbyssShadowsTime)
     abyss_shadows_combat_time: AbyssShadowsCombatTime = Field(default_factory=AbyssShadowsCombatTime)
+    abyss_shadows_area_selection: AbyssShadowsAreaSelection = Field(default_factory=AbyssShadowsAreaSelection)
+    abyss_shadows_battle_mode: AbyssShadowsBattleMode = Field(default_factory=AbyssShadowsBattleMode)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)

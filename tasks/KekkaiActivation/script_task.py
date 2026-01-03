@@ -60,7 +60,6 @@ class ScriptTask(KU, KekkaiActivationAssets):
         # self.back_guild()
         self.ui_get_current_page()
         self.ui_goto(page_main)
-
         raise TaskEnd('KekkaiActivation')
 
     @cached_property
@@ -129,6 +128,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
                 logger.info('Card is using')
                 interval = self.ocr_time()
                 self.set_next_run("KekkaiActivation", target=interval+datetime.now())
+                self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
                 return False
             # 如果已经选中这张卡了， 那就激活这张卡
             if card_status and not card_effect:
@@ -143,7 +143,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
                     if self.appear_then_click(self.I_A_ACTIVATE_YELLOW, interval=1):
                         continue
                 interval = self.ocr_time(True)
+
                 self.set_next_run("KekkaiActivation", target=interval + datetime.now())
+                self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
                 return True
             # 如果是什么都没有，那就是可以开始挂卡了
             if not card_status and not card_effect:
