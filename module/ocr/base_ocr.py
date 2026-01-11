@@ -41,18 +41,52 @@ class OcrMode(Enum):
     DURATION = 5  # str: "Duration"
     QUANTITY = 6  # str: "Quantity"
 
-class OcrMethod(Enum):
-    DEFAULT = 1  # str: "Default"
+
+class OcrMethodType(Enum):
+    # 默认，不需要预处理
+    DEFAULT = "DEFAULT"
+    # # 颜色过滤Color Filter
+    # 配置相关CF_RGB(lower, upper)
+    # lower ,upper 格式为6位16进制，例如FFFFFF
+    # 过滤图片中颜色，仅保留符合指定范围（lower到upper）的颜色
+    CF_HSV = "CF_HSV"
+    # 与CF_HSV  相似
+    CF_RGB = "CF_RGB"
+
+
+class OcrMethod:
+    _reg = r"([^()]+)\((.*?)\)?$"
+
+    def __init__(self, val: str = None):
+        self._method_type: OcrMethodType = OcrMethodType.DEFAULT
+        self._val: str = val
+        if val is None:
+            return
+        import re
+        match = re.match(self._reg, val)
+        if not match:
+            return
+        type_str = match.group(1).upper()
+        if type_str not in OcrMethodType.__members__:
+            return
+        self._method_type = OcrMethodType[type_str]
+        self._val = match.group(2)
+
+    def get_method_type(self):
+        return self._method_type
+
+    def get_val(self):
+        return self._val
+
 
 class BaseCor:
 
     lang: str = "ch"
     score: float = 0.6  # 阈值默认为0.5
-    min_score: float = 0.3  # 宽松阈值，用于挽救数字等结果
 
     name: str = "ocr"
     mode: OcrMode = OcrMode.FULL
-    method: OcrMethod = OcrMethod.DEFAULT  # 占位符
+    method: OcrMethod = OcrMethod()
     roi: list = []  # [x, y, width, height]
     area: list = []  # [x, y, width, height]
     keyword: str = ""  # 默认为空
@@ -80,18 +114,12 @@ class BaseCor:
         elif isinstance(mode, OcrMode):
             self.mode = mode
         if isinstance(method, str):
-            self.method = OcrMethod[method.upper()]
+            self.method = OcrMethod(method.upper())
         elif isinstance(method, OcrMethod):
             self.method = method
         self.roi: list = list(roi)
         self.area: list = list(area)
         self.keyword = keyword
-
-    def __str__(self):
-        return f"{self.name}"
-
-    def __repr__(self):
-        return f"{self.name}"
 
     @cached_property
     def model(self) -> TextSystem:
@@ -157,16 +185,7 @@ class BaseCor:
         image = self.pre_process(image)
         # ocr
         result, score = self.model.ocr_single_line(image)
-        contains_digit = any(char.isdigit() for char in result)
-
-        if score >= self.score:
-            pass
-        elif score >= self.min_score and contains_digit and self.mode in [OcrMode.DIGIT, OcrMode.DIGITCOUNTER,
-                                                                          OcrMode.QUANTITY]:
-            logger.warning(
-                f'[{self.name}] Score {score:.2f} is low, but result "{result}" contains a digit. Accepting it.')
-            print(f'能保留')
-        else:
+        if score < self.score:
             result = ""
         # after proces
         result = self.after_process(result)
@@ -175,7 +194,7 @@ class BaseCor:
                     text=f'[{result}]')
         return result
 
-    def detect_and_ocr(self, image, logDisplay: bool = True) -> list[BoxedResult]:
+    def detect_and_ocr(self, image) -> list[BoxedResult]:
         """
         注意：这里使用了预处理和后处理
         :param image:
@@ -197,9 +216,9 @@ class BaseCor:
                 continue
             result.ocr_text = self.after_process(result.ocr_text)
             results.append(result)
-        if logDisplay:
-            logger.attr(name='%s %ss' % (self.name, float2str(time.time() - start_time)),
-                        text=str([result.ocr_text for result in results]))
+
+        logger.attr(name='%s %ss' % (self.name, float2str(time.time() - start_time)),
+                    text=str([result.ocr_text for result in results]))
         return results
 
     def match(self, result: str, included: bool=False) -> bool:
