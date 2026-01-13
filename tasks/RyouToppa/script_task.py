@@ -355,7 +355,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             if click_failure_count >= 5:
                 logger.warning("Click failure, check your click position")
                 return False
-            if not self.appear(self.I_TOPPA_RECORD, threshold=0.85):
+            """ if not self.appear(self.I_TOPPA_RECORD, threshold=0.85):
                 time.sleep(1)
                 self.screenshot()
                 if self.appear(self.I_TOPPA_RECORD, threshold=0.85):
@@ -365,17 +365,30 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
                     logger.info('Exit four enable')
                     self.run_general_battle_back(config=self.config.ryou_toppa.general_battle_config, exit_four=True)
                     exit_count -= 1
-                    click_failure_count -= 2
+                    click_failure_count = 0
                     if exit_count > 0:
                         continue
                     else:
                         return False
                 else:
-                    return self.run_general_battle(config=self.config.ryou_toppa.general_battle_config)
+                    return self.run_general_battle(config=self.config.ryou_toppa.general_battle_config) """
 
             if self.appear_then_click(RealmRaidAssets.I_FIRE, interval=2, threshold=0.8):
                 click_failure_count += 1
-                continue
+                if self.wait_until_appear(self.I_TOPPA_BATTLE_EXIT, wait_time=5):
+                    if exit_count > 0:
+                        logger.info('Exit four enable')
+                        self.run_general_battle_back(config=self.config.ryou_toppa.general_battle_config, exit_four=True)
+                        exit_count -= 1
+                        click_failure_count = 0
+                        if exit_count > 0:
+                            continue
+                        else:
+                            return False
+                    else:
+                        return self.run_general_battle(config=self.config.ryou_toppa.general_battle_config)
+                else:
+                    continue
             if self.click(rcl, interval=5):
                 click_failure_count += 1
                 continue
