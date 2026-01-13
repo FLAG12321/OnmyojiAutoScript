@@ -137,7 +137,7 @@
   {
     "itemName": "battle_start",
     "imageName": "res_battle_start.png",
-    "roiFront": "555,688,39,27.5",
+    "roiFront": "555,688,39,27",
     "roiBack": "221,677,561,41",
     "method": "Template matching",
     "threshold": 0.8,
@@ -214,5 +214,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "创建确认"
+  },
+  {
+    "itemName": "e_unlock",
+    "imageName": "res_e_unlock.png",
+    "roiFront": "891,650,33,33",
+    "roiBack": "891,650,33,33",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "e_lock",
+    "imageName": "res_e_lock.png",
+    "roiFront": "891,652,34,31",
+    "roiBack": "891,652,34,31",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
   }
 ]

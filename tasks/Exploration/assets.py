@@ -102,7 +102,7 @@ class ExplorationAssets:
 	# 妖 
 	I_EXPLORATION_TITLE = RuleImage(roi_front=(1133,124,47,43), roi_back=(1133,124,47,43), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/res_exploration_title.png")
 	# description 
-	I_BATTLE_START = RuleImage(roi_front=(555,688,39,27.5), roi_back=(221,677,561,41), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_battle_start.png")
+	I_BATTLE_START = RuleImage(roi_front=(555,688,39,27), roi_back=(221,677,561,41), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_battle_start.png")
 	# description 
 	I_GET_REWARD = RuleImage(roi_front=(464,231,339,44), roi_back=(464,231,339,44), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_get_reward.png")
 	# description 
@@ -119,6 +119,10 @@ class ExplorationAssets:
 	I_EXP_CREATE_TEAM = RuleImage(roi_front=(590,514,122,52), roi_back=(543,490,192,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_create_team.png")
 	# 创建确认 
 	I_EXP_CREATE_ENSURE = RuleImage(roi_front=(534,486,218,59), roi_back=(516,475,244,85), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_create_ensure.png")
+	# description 
+	I_E_UNLOCK = RuleImage(roi_front=(891,650,33,33), roi_back=(891,650,33,33), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_unlock.png")
+	# description 
+	I_E_LOCK = RuleImage(roi_front=(891,652,34,31), roi_back=(891,652,34,31), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_lock.png")
 
 
 	# Long Click Rule Assets

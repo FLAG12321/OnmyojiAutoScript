@@ -57,9 +57,21 @@ class SoloExploration(BaseExploration):
             #
             elif scene == Scene.MAIN:
                 if not explore_init:
-                    self.ui_click(self.I_E_AUTO_ROTATE_OFF, stop=self.I_E_AUTO_ROTATE_ON)
                     if self._config.exploration_config.auto_rotate == AutoRotate.yes:
-                        self.enter_settings_and_do_operations()
+                        retry_count = 3
+                        while 1:
+                            self.screenshot()
+                            if self.appear(self.I_E_AUTO_ROTATE_ON):
+                                break
+                            if self.appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=1):
+                                retry_count -= 1
+                                if retry_count < 0:
+                                    if self._config.exploration_config.auto_rotate == AutoRotate.yes:
+                                        self.enter_settings_and_do_operations()
+                                        retry_count = 3
+                                continue
+                    else:
+                        self.ui_click(self.I_E_UNLOCK, stop=self.I_E_LOCK, interval=2)
                     explore_init = True
                     continue
                 # 小纸人
