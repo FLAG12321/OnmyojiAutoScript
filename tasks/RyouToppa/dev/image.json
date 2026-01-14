@@ -25,23 +25,5 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
-  },
-  {
-    "itemName": "toppa_battle_exit",
-    "imageName": "dev_toppa_battle_exit.png",
-    "roiFront": "18,15,39,37",
-    "roiBack": "0,1,75,66",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "退出结界"
-  },
-  {
-    "itemName": "toppa_exit_ensure",
-    "imageName": "dev_toppa_exit_ensure.png",
-    "roiFront": "694,404,100,34",
-    "roiBack": "660,378,169,89",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "确认退出"
   }
 ]

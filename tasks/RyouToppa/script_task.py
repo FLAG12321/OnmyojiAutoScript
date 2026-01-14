@@ -282,12 +282,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             logger.info('Swipe %s -> %s, %s ' % (point2str(*p1), point2str(*p2), duration))
             self.device.swipe_adb(p1, p2, duration=duration)
             time.sleep(2)
-    def run_general_battle_back(self, config: any = None, exit_four: bool = False) -> bool:
-        """
-        进入挑战然后直接返回
-        :param config:
-        :return:
-        """
+    """  def run_general_battle_back(self, config: any = None, exit_four: bool = False) -> bool:
         # 如果没有锁定队伍那么在点击准备后才退出的,退四的话就直接退出
         if not config.lock_team_enable and not exit_four:
             # 点击准备按钮
@@ -329,7 +324,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
                 break
         logger.info(f"Click {self.I_FALSE.name}")
 
-        return True
+        return True """
     def attack_area(self, index: int):
         """
         :return: 战斗成功(True) or 战斗失败(False) or 区域不可用（False） or 没有进攻机会（设定下次运行并退出）
@@ -355,27 +350,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             if click_failure_count >= 5:
                 logger.warning("Click failure, check your click position")
                 return False
-            """ if not self.appear(self.I_TOPPA_RECORD, threshold=0.85):
+            if self.appear_then_click(RealmRaidAssets.I_FIRE, interval=2, threshold=0.8):
+                click_failure_count += 1
                 time.sleep(1)
                 self.screenshot()
                 if self.appear(self.I_TOPPA_RECORD, threshold=0.85):
                     continue
-                logger.info("Start attach area [%s]" % str(index + 1))
-                if exit_count > 0:
-                    logger.info('Exit four enable')
-                    self.run_general_battle_back(config=self.config.ryou_toppa.general_battle_config, exit_four=True)
-                    exit_count -= 1
-                    click_failure_count = 0
-                    if exit_count > 0:
-                        continue
-                    else:
-                        return False
-                else:
-                    return self.run_general_battle(config=self.config.ryou_toppa.general_battle_config) """
-
-            if self.appear_then_click(RealmRaidAssets.I_FIRE, interval=2, threshold=0.8):
-                click_failure_count += 1
-                if self.wait_until_appear(self.I_TOPPA_BATTLE_EXIT, wait_time=5):
+                if self.config.ryou_toppa.raid_config.exit_count > 0 and self.wait_until_appear(self.I_EXIT, wait_time=5):
                     if exit_count > 0:
                         logger.info('Exit four enable')
                         self.run_general_battle_back(config=self.config.ryou_toppa.general_battle_config, exit_four=True)
@@ -385,10 +366,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
                             continue
                         else:
                             return False
-                    else:
-                        return self.run_general_battle(config=self.config.ryou_toppa.general_battle_config)
                 else:
-                    continue
+                    return self.run_general_battle(config=self.config.ryou_toppa.general_battle_config)
             if self.click(rcl, interval=5):
                 click_failure_count += 1
                 continue
