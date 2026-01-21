@@ -106,5 +106,14 @@
     "method": "Default",
     "keyword": "",
     "description": "text"
-    }
+  },
+  {
+    "itemName": "fire_count",
+    "roiFront": "213,599,29,32",
+    "roiBack": "0,0,100,100",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": "Ocr-description"
+  }
 ]

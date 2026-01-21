@@ -98,11 +98,26 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
                     raise TaskEnd
         
         # 到达指定进度时进行通知提示
-        if con.notification_95 and not self.appear(self.I_MS_COMPLETE_95):
-            logger.info('Memory Scrolls progress reached 95%, sending notification')
-            self.config.notifier.push(title='追忆绘卷进度95%', content='绘卷进度已达95%，请立即空降')
-
-        # 判断是否需要捐献碎片
+        if con.notification_95:
+            number = self.O_NUMBER.ocr_digit(self.device.image)
+            if number >= 9500 and number < 10000:
+                self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即空降')
+                self.set_next_run(task='MemoryScrolls', success=False)
+            elif number >= 9300 and number < 9500:
+                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(seconds=50))
+            elif number >= 9000 and number < 9300:
+                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=5))
+                self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
+            elif number >= 8000 and number < 9000:
+                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=30))
+                self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
+            elif number >= 0 and number < 8000:
+                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=90))
+                self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
+            else:    
+                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(seconds=50))
+            logger.info(f'Memory Scrolls progress : {number/100.00}%')
+        '''# 判断是否需要捐献碎片
         if self.appear(self.I_MS_CONTRIBUTE) or not self.appear(self.I_MS_COMPLETE):
             logger.info(f'Contributing Memory Scrolls for scroll {con.scroll_number.name}')
             if con.auto_contribute_memoryscrolls:
@@ -120,7 +135,7 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
                 self.config.exploration.scheduler.enable = False
                 self.config.save()
                 # next_run=datetime.now() + timedelta(days=1)
-                # self.set_next_run(task='Exploration', success=False, finish=False, target=next_run)
+                # self.set_next_run(task='Exploration', success=False, finish=False, target=next_run)'''
         # 返回绘卷主界面
         self.ui_click_until_disappear(self.I_MS_CLOSE, interval=1)
         logger.info('Closed Memory Scrolls contribution page')

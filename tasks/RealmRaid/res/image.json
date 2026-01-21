@@ -178,5 +178,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "fire_count_0",
+    "imageName": "res_fire_count_0.png",
+    "roiFront": "289,602,53,16",
+    "roiBack": "287,599,57,20",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
   }
 ]

@@ -51,6 +51,8 @@ class RealmRaidAssets:
 	I_MEDAL_3_2 = RuleImage(roi_front=(575,489,188,32), roi_back=(575,489,188,32), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3_2.png")
 	# description 
 	I_MEDAL_3_3 = RuleImage(roi_front=(902,479,201,50), roi_back=(902,479,201,50), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3_3.png")
+	# description 
+	I_FIRE_COUNT_0 = RuleImage(roi_front=(289,602,53,16), roi_back=(287,599,57,20), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fire_count_0.png")
 
 
 	# Image Rule Assets
@@ -89,6 +91,8 @@ class RealmRaidAssets:
 	O_FROG_9 = RuleOcr(roi=(825,440,33,33), area=(825,440,33,33), mode="Digit", method="Default", keyword="", name="frog_9")
 	# text 
 	O_TEXT = RuleOcr(roi=(1143,13,80,39), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="text")
+	# Ocr-description 
+	O_FIRE_COUNT = RuleOcr(roi=(213,599,29,32), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="fire_count")
 
 
 	# Click Rule Assets

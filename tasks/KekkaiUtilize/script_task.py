@@ -45,12 +45,13 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # 查看育成满级
         self.check_max_lv(con.shikigami_class)
         # 检查蹭卡收获
-        self.check_utilize_harvest()
+        if con.guild_ap_enable:
+            self.check_utilize_harvest()
         # 收体力盒子或者是经验盒子
         self.check_box_ap_or_exp(con.box_ap_enable, con.box_exp_enable, con.box_exp_waste)
-
         # 收取寮资金和体力
-        self.recive_guild_ap_or_assets(con.harvest_guild_max_times)
+        if con.guild_assets_enable:
+            self.recive_guild_ap_or_assets(con.harvest_guild_max_times)
         if not con.utilize_enable:
             self.set_next_run(task='KekkaiUtilize', finish=True, success=True)
         raise TaskEnd

@@ -151,6 +151,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         # 开始循环
         success = True
         last_battle = True  # 记录上一次战斗的结果
+        exit_all = False
         # 更改循环顺序
         while 1:
             self.screenshot()
@@ -161,24 +162,34 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             if self.current_count >= con.raid_config.number_attack:
                 logger.info(f'Current count {self.current_count}, max count {con.raid_config.number_attack}')
                 break
+            # 判断是否降低突破等级
+            #if self.appear(self.I_BACK_RED) and not exit_all and self.O_FIRE_COUNT.ocr_single(self.device.image) == 0:
+            if self.appear(self.I_BACK_RED) and not exit_all and self.appear(self.I_FIRE_COUNT_0):
+                if self.wait_until_appear(RuleImage(roi_front=(0,0,1280,720), roi_back=(216,187,919,364), threshold=0.9, method="Template matching", file="./tasks/RealmRaid/res/res_medal_4.png"),wait_time=5) or self.wait_until_appear(RuleImage(roi_front=(0,0,1280,720), roi_back=(216,187,919,364), threshold=0.9, method="Template matching", file="./tasks/RealmRaid/res/res_medal_5.png"),wait_time=5):
+                    exit_all = False
+                else:
+                    exit_all = True
+                logger.info(f'self.O_FIRE_COUNT 11 {exit_all}')
             # ----------------------------------------开始进攻
             medal, index = self.find_one(False)
+            
             if not medal and not index:
                 # 已经没有可以挑战的了，只能刷新
                 if con.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
                     logger.info('No one can attack and then refresh')
                     if self.check_refresh():
+                        exit_all = False
                         continue
-                    else:
-                        success = False
-                        break
+                    else :
+                        self.set_next_run(task='RealmRaid', target=datetime.now() + timedelta(minutes=5))
+                        raise TaskEnd
                 else:
                     logger.info('No one can attack, break')
                     success = False
                     break
             # 判断是不是左上角第一个
             lock_before = con.general_battle_config.lock_team_enable
-            if index == 1:
+            if index == 1 and not exit_all:
                 logger.info('Now is the first one')
                 if con.raid_config.exit_four:
                     logger.info('Exit four enable')
@@ -194,7 +205,12 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
                 con.general_battle_config.lock_team_enable = False
             self.fire(index)
-            last_battle = self.run_general_battle(con.general_battle_config)
+            if exit_all:
+                logger.info('Exit all')
+                self.run_general_battle_back(con.general_battle_config, exit_four=True)
+                last_battle = False
+            else:
+                last_battle = self.run_general_battle(con.general_battle_config)
             if lock_before:
                 con.general_battle_config.lock_team_enable = lock_before
             # 检查是否每三次领一个奖励
