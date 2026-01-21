@@ -22,14 +22,14 @@ class ActivityShikigamiAssets:
 	# description 
 	C_RANDOM_ALL = RuleClick(roi_front=(42,94,1207,543), roi_back=(42,94,1207,543), name="random_all")
 	# description 
-	C_RANDOM_BOSS = RuleClick(roi_front=(536,603,249,100), roi_back=(536,603,249,100), name="random_boss")
+	C_RANDOM_BOSS = RuleClick(roi_front=(364,507,249,100), roi_back=(364,506,249,100), name="random_boss")
 
 
 	# Image Rule Assets
 	# 上锁图标 
-	I_LOCK = RuleImage(roi_front=(824,651,31,31), roi_back=(739,613,276,85), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_lock.png")
+	I_LOCK = RuleImage(roi_front=(824,651,31,31), roi_back=(658,634,276,85), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_lock.png")
 	# 还未上锁图片 
-	I_UNLOCK = RuleImage(roi_front=(824,653,28,29), roi_back=(733,607,266,95), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_unlock.png")
+	I_UNLOCK = RuleImage(roi_front=(824,653,28,29), roi_back=(664,624,266,95), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_unlock.png")
 	# 寿司体力 
 	I_AP = RuleImage(roi_front=(1099,524,26,35), roi_back=(1084,504,161,71), threshold=0.65, method="Template matching", file="./tasks/ActivityShikigami/as/as_ap.png")
 	# 活动体力 
@@ -60,7 +60,7 @@ class ActivityShikigamiAssets:
 	# description 
 	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(149,13,135,46), roi_back=(138,1,157,74), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_main.png")
 	# description 
-	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(93,19,126,39), roi_back=(78,4,154,63), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_boss.png")
+	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(152,18,126,39), roi_back=(133,6,154,63), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_boss.png")
 	# 从main进入到式神录 
 	I_BATTLE_MAIN_TO_RECORDS = RuleImage(roi_front=(1016,574,39,42), roi_back=(983,544,100,100), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_battle_main_to_records.png")
 
@@ -106,7 +106,7 @@ class ActivityShikigamiAssets:
 	# 活动票数（没有百分比） 
 	O_REMAIN_PASS2 = RuleOcr(roi=(526,17,88,29), area=(513,8,103,50), mode="Digit", method="Default", keyword="", name="remain_pass2")
 	# boss剩余攻击次数 
-	O_REMAIN_BOSS = RuleOcr(roi=(1115,663,131,31), area=(1099,659,162,52), mode="DigitCounter", method="Default", keyword="", name="remain_boss")
+	O_REMAIN_BOSS = RuleOcr(roi=(1132,664,131,31), area=(1106,654,162,52), mode="DigitCounter", method="Default", keyword="", name="remain_boss")
 	# 100体活动门票检测 
 	O_REMAIN_AP100 = RuleOcr(roi=(922,21,112,39), area=(913,8,131,62), mode="Digit", method="Default", keyword="", name="remain_ap100")
 	# 进入100体活动标识 

@@ -65,8 +65,8 @@
   {
     "itemName": "check_battle_boss",
     "imageName": "as_check_battle_boss.png",
-    "roiFront": "93,19,126,39",
-    "roiBack": "78,4,154,63",
+    "roiFront": "152,18,126,39",
+    "roiBack": "133,6,154,63",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

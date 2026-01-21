@@ -31,8 +31,8 @@
   },
   {
     "itemName": "random_boss",
-    "roiFront": "536,603,249,100",
-    "roiBack": "536,603,249,100",
+    "roiFront": "364,507,249,100",
+    "roiBack": "364,506,249,100",
     "description": "description"
   }
 ]
