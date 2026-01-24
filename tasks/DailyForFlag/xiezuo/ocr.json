@@ -1,0 +1,11 @@
+[
+  {
+    "itemName": "acc_name",
+    "roiFront": "233,283,226,46",
+    "roiBack": "0,0,100,100",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "Ocr-description"
+  }
+]

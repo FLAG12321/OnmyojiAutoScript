@@ -54,7 +54,7 @@ class SwitchAccountAssets:
 	# 登录界面 服务器列表的手指向左滑动 
 	S_SA_SVR_SWIPE_LEFT = RuleSwipe(roi_front=(730,460,30,21), roi_back=(470,410,26,21), mode="default", name="sa_svr_swipe_left")
 	# 登录界面 账号列表的手指向上滑动 
-	S_SA_ACCOUNT_LIST_UP = RuleSwipe(roi_front=(600,520,30,20), roi_back=(750,270,30,20), mode="default", name="sa_account_list_up")
+	S_SA_ACCOUNT_LIST_UP = RuleSwipe(roi_front=(588,387,30,20), roi_back=(750,275,30,20), mode="default", name="sa_account_list_up")
 
 
 	# Image Rule Assets
@@ -77,9 +77,9 @@ class SwitchAccountAssets:
 	# 登录界面-选取账号界面-账号下拉菜单-已经打开标志. 
 	I_SA_ACCOUNT_LOGIN_BTN = RuleImage(roi_front=(400,400,480,90), roi_back=(400,400,480,90), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_login_btn.png")
 	# 登录界面-选择手机类型为苹果. 
-	I_SA_LOGIN_FORM_APPLE = RuleImage(roi_front=(490,350,100,100), roi_back=(490,350,100,100), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_apple.png")
+	I_SA_LOGIN_FORM_APPLE = RuleImage(roi_front=(459,326,187,168), roi_back=(459,326,187,168), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_apple.png")
 	# 登录界面-选择手机类型为android 
-	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(690,350,100,100), roi_back=(690,350,100,100), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_android.png")
+	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(642,324,162,163), roi_back=(642,324,162,163), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_android.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标还未显示时 
 	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(240,530,120,40), roi_back=(240,530,120,40), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时 

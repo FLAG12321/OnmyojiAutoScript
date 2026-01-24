@@ -1,0 +1,11 @@
+[
+  {
+    "itemName": "page_account",
+    "imageName": "xiezuo_page_account.png",
+    "roiFront": "222,489,54,54",
+    "roiBack": "169,394,156,190",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "itemName": "mian_to_task",
+    "imageName": "tingyuan_mian_to_task.png",
+    "roiFront": "780,415,31,33",
+    "roiBack": "583,303,418,270",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "page_task",
+    "imageName": "tingyuan_page_task.png",
+    "roiFront": "264,41,187,51",
+    "roiBack": "257,23,201,84",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "finish",
+    "imageName": "tingyuan_finish.png",
+    "roiFront": "1120,594,88,87",
+    "roiBack": "1106,578,117,116",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "back_red",
+    "imageName": "tingyuan_back_red.png",
+    "roiFront": "850,91,45,37",
+    "roiBack": "844,80,59,55",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "success",
+    "imageName": "tingyuan_success.png",
+    "roiFront": "307,27,176,54",
+    "roiBack": "300,13,193,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "task_to_main",
+    "imageName": "tingyuan_task_to_main.png",
+    "roiFront": "17,11,46,54",
+    "roiBack": "0,0,92,98",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "normal",
+    "imageName": "tingyuan_normal.png",
+    "roiFront": "1130,123,88,77",
+    "roiBack": "1099,91,149,132",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  }
+]

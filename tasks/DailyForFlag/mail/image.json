@@ -1,0 +1,65 @@
+[
+  {
+    "itemName": "m_main_to_mail",
+    "imageName": "mail_m_main_to_mail.png",
+    "roiFront": "1135,31,41,31",
+    "roiBack": "1114,3,82,89",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "邮件"
+  },
+  {
+    "itemName": "m_get_mail",
+    "imageName": "mail_m_get_mail.png",
+    "roiFront": "65,575,87,66",
+    "roiBack": "61,563,98,92",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "领取邮件"
+  },
+  {
+    "itemName": "m_page_get",
+    "imageName": "mail_m_page_get.png",
+    "roiFront": "554,48,195,51",
+    "roiBack": "539,33,225,88",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "m_ensure_get",
+    "imageName": "mail_m_ensure_get.png",
+    "roiFront": "728,549,96,46",
+    "roiBack": "676,531,188,88",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "m_award",
+    "imageName": "mail_m_award.png",
+    "roiFront": "478,131,325,100",
+    "roiBack": "427,125,416,114",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "奖励"
+  },
+  {
+    "itemName": "m_back_red",
+    "imageName": "mail_m_back_red.png",
+    "roiFront": "1152,91,49,47",
+    "roiBack": "1148,84,57,61",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "m_page_mail",
+    "imageName": "mail_m_page_mail.png",
+    "roiFront": "609,54,70,47",
+    "roiBack": "585,38,115,89",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  }
+]
