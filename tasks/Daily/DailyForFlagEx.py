@@ -11,3 +11,6 @@ def get_config(self):
     config.daily_for_flag_config.tongxin_limit_count = self.account_info.tongxin_limit_count
     config.daily_for_flag_config.xiezuo_enable = self.account_info.xiezuo_enable
     return config
+def run_success(self):
+    self.daily_conf.update_account_login_history
+    self.config.save()

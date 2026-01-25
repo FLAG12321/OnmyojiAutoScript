@@ -6,7 +6,7 @@ from module.logger import logger
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Daily import DailyForFlagEx 
 from tasks.Daily.assets import DailyAssets
-from tasks.Daily.config import AccountInfo, Daily
+from tasks.Daily.config import AccountInfo, Daily, ExtendedAccountInfo
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.config import  DailyForFlagConfig,GeneralBattleConfig
 
@@ -18,25 +18,55 @@ class ScriptTask(GameUi, DailyAssets):
         self.daily_conf = self.config.daily         
 
         for accountInfo in self.daily_conf.sup_account_list:
+            logger.info(f"next_run{self.daily_conf.scheduler.next_run.date()}")
+            logger.info(f"datetime.now(){datetime.now().date()}")
+            config = ExtendedAccountInfo()
+            if  self.daily_conf.daily_config.total_tongxin_battle_enable:
+                if not accountInfo.tongxin_battle_enable:
+                    continue
+                config.tongxin_battle_enable = True
+                config.tongxin_ap_enable = False
+                config.mail_enable = False
+                config.juangou_enable = False
+                config.tingyuan_enable = False
+                config.xiezuo_enable = False
+            else:
+                config.tongxin_battle_enable = False
+                config.tongxin_ap_enable = self.daily_conf.daily_config.total_tongxin_ap_enable
+                config.mail_enable = self.daily_conf.daily_config.total_mail_enable
+                config.juangou_enable = self.daily_conf.daily_config.total_juangou_enable
+                config.tingyuan_enable = self.daily_conf.daily_config.total_tingyuan_enable
+                config.xiezuo_enable = self.daily_conf.daily_config.total_xiezuo_enable
+
+            
+            config.tongxin_battle_enable &= accountInfo.tongxin_battle_enable
+            config.tongxin_ap_enable &= accountInfo.tongxin_ap_enable
+            config.mail_enable  &= accountInfo.mail_enable
+            config.juangou_enable   &= accountInfo.juangou_enable
+            config.tingyuan_enable  &= accountInfo.tingyuan_enable
+            config.xiezuo_enable &= accountInfo.xiezuo_enable
+
             logger.info("start %s-%s ", accountInfo.character, accountInfo.svr)
-            if not self.is_need_login(accountInfo):
+            if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo):
                 logger.warning("%s Skipped last Login Time:%s", accountInfo.character, accountInfo.last_complete_time)
-                continue
+                continue 
             suc = SwitchAccount(self.config, self.device, accountInfo).switchAccount()
             if not suc:
                 logger.warning("switch to %s-%s Failed", accountInfo.character, accountInfo.svr)
                 continue
-            # 第46行附近，修改这部分代码
+            # 创建子任务实例
             dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
             # 根据目标模块的配置要求，正确设置配置属性
             dff.daily_conf = self.daily_conf
-            dff.account_info = accountInfo
+            dff.account_info = config
             try:
                 dff.run()
             except TaskEnd as e:
                 logger.warning("%s-%s TaskEnd", accountInfo.character, accountInfo.svr)
                 # 更新配置文件中的时间
                 self.daily_conf.update_account_login_history(accountInfo)
+                # 将修改后的 daily_conf 同步回主配置模型，确保保存时包含最新数据
+                self.config.model.daily = self.daily_conf
                 self.save_config()
                 continue
             except RequestHumanTakeover as e:

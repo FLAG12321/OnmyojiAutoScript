@@ -42,7 +42,7 @@ class DailyForFlagAssets:
 
 	# Image Rule Assets
 	# description 
-	I_MIAN_TO_TASK = RuleImage(roi_front=(780,415,31,33), roi_back=(583,303,418,270), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_mian_to_task.png")
+	I_MIAN_TO_TASK = RuleImage(roi_front=(788,451,22,23), roi_back=(583,303,418,270), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_mian_to_task.png")
 	# description 
 	I_PAGE_TASK = RuleImage(roi_front=(264,41,187,51), roi_back=(257,23,201,84), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_page_task.png")
 	# description 

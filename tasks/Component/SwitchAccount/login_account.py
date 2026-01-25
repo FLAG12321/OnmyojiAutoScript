@@ -174,7 +174,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
 
                 # 账号列表已打开状态
                 ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(self.device.image)
-
+                
                 # 找到该账号
                 for index, ocr_account in enumerate([ocrResItem.ocr_text for ocrResItem in ocrRes]):
                     if not accountInfo.is_account_alias(ocr_account):

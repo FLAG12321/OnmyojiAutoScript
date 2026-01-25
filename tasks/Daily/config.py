@@ -11,17 +11,25 @@ from tasks.WantedQuests.config import CooperationSelectMaskDescription, Cooperat
 
 class ExtendedAccountInfo(AccountInfo):
     # 继承所有AccountInfo的属性，并添加新属性
-    tongxin_battle_enable: bool = Field(default=True, description='是否开启同心队战斗')
+    tongxin_battle_enable: bool = Field(default=False, description='是否开启同心队战斗')
     tongxin_limit_count: int = Field(default=30, description='limit_count_help')
     tongxin_ap_enable: bool = Field(default=True, description='是否开启补充体力')
     juangou_enable: bool = Field(default=True, description='是否开启捐勾')
     tingyuan_enable: bool = Field(default=True, description='是否开启庭院事务')
     mail_enable: bool = Field(default=True, description='是否开启领取邮件')
-    xiezuo_enable: bool = Field(default=False, description='是否开启寻找协作')
+    xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
 
 class DailyConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
+    total_tongxin_battle_enable: bool = Field(default=False, description='同心模式')
+    total_tongxin_ap_enable: bool = Field(default=True, description='补充同心体力')
+    total_juangou_enable: bool = Field(default=True, description='捐勾')
+    total_tingyuan_enable: bool = Field(default=True, description='庭院事务')
+    total_mail_enable: bool = Field(default=True, description='邮件')
+    total_xiezuo_enable: bool = Field(default=True, description='寻找协作')
+    need_login: bool = Field(default=True, description='无视时间登录')
+
 
 class Daily(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
@@ -31,9 +39,11 @@ class Daily(ConfigBase):
     def update_account_login_history(self, account: ExtendedAccountInfo):
         accountInfoList = self.sup_account_list
         for info in accountInfoList:
+            logger.info(f"update account login history: {info.character} {info.svr}")
             if info.character != account.character or info.svr != account.svr:
                 continue
             info.last_complete_time = datetime.now()
+            logger.info(f"update invite history : {info}")
             break
     @model_validator(mode='before')
     @classmethod

@@ -8,8 +8,8 @@
   },
   {
     "itemName": "sa_account_list_up",
-    "roiFront": "588,387,30,20",
-    "roiBack": "750,275,30,20",
+    "roiFront": "520,500,28,6",
+    "roiBack": "700,388,33,8",
     "mode": "default",
     "description": "登录界面 账号列表的手指向上滑动"
   }

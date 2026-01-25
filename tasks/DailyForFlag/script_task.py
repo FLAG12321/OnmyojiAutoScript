@@ -46,7 +46,7 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
             self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
-        raise TaskEnd
+        raise TaskEnd ("DailyForFlag")
     def run_juangou(self):
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -190,11 +190,9 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
                     continue
                 if self.appear_then_click(self.I_CREATE_AGAIN, interval=1):
                     continue
-            if self.appear_then_click(self.I_INVITE, interval=1):
-                continue
             if self.appear_then_click(self.I_FORM, interval=1):
                 continue
-            if self.appear_then_click(self.I_CREATE_TEAM, interval=1):
+            if self.appear_then_click(self.I_INVITE, interval=1):
                 continue
         self.run_alone()
 
@@ -211,9 +209,10 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
 
             if not is_in_evozone():
                 continue
-            if self.current_count >= self.get_config().daily_for_flag_config.tongxin_limit_count:
+            if self.current_count >= 30:
                 logger.info('Orochi count limit out')
                 break
+            logger.info('Orochi count limit 111')
             # 点击挑战
             while 1:
                 self.screenshot()

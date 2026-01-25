@@ -1,7 +1,7 @@
 from pydantic import Field, BaseModel
 
 from tasks.Component.config_base import DateTime
-
+from module.logger import logger
 
 class AccountInfo(BaseModel):
     """
@@ -23,6 +23,7 @@ class AccountInfo(BaseModel):
 
     def is_account_alias(self, ocr_account):
         tmp_account = AccountInfo.preprocessAccount(self.account)
+        logger.info(f"compare ocr_account:{ocr_account} with account:{self.account} and tmp_account:{tmp_account} ")
         if ocr_account == self.account or ocr_account.startswith(tmp_account):
             return True
         if not self.account_alias:
@@ -43,7 +44,8 @@ class AccountInfo(BaseModel):
         @return:
         @rtype:
         """
-        return account.split('@')[0]
+
+        return account.split('@')[0].lower()
 
     def is_valid(self):
         return self.character!="" and self.character is not None
