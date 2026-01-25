@@ -25,18 +25,13 @@ class ScriptTask(GameUi, DailyAssets):
                 if not accountInfo.tongxin_battle_enable:
                     continue
                 config.tongxin_battle_enable = True
-                config.tongxin_ap_enable = False
-                config.mail_enable = False
-                config.juangou_enable = False
-                config.tingyuan_enable = False
-                config.xiezuo_enable = False
             else:
                 config.tongxin_battle_enable = False
-                config.tongxin_ap_enable = self.daily_conf.daily_config.total_tongxin_ap_enable
-                config.mail_enable = self.daily_conf.daily_config.total_mail_enable
-                config.juangou_enable = self.daily_conf.daily_config.total_juangou_enable
-                config.tingyuan_enable = self.daily_conf.daily_config.total_tingyuan_enable
-                config.xiezuo_enable = self.daily_conf.daily_config.total_xiezuo_enable
+            config.tongxin_ap_enable = self.daily_conf.daily_config.total_tongxin_ap_enable
+            config.mail_enable = self.daily_conf.daily_config.total_mail_enable
+            config.juangou_enable = self.daily_conf.daily_config.total_juangou_enable
+            config.tingyuan_enable = self.daily_conf.daily_config.total_tingyuan_enable
+            config.xiezuo_enable = self.daily_conf.daily_config.total_xiezuo_enable
 
             
             config.tongxin_battle_enable &= accountInfo.tongxin_battle_enable
@@ -45,7 +40,8 @@ class ScriptTask(GameUi, DailyAssets):
             config.juangou_enable   &= accountInfo.juangou_enable
             config.tingyuan_enable  &= accountInfo.tingyuan_enable
             config.xiezuo_enable &= accountInfo.xiezuo_enable
-
+            config.xiezuo_enable = accountInfo.tongxin_limit_count
+            
             logger.info("start %s-%s ", accountInfo.character, accountInfo.svr)
             if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo):
                 logger.warning("%s Skipped last Login Time:%s", accountInfo.character, accountInfo.last_complete_time)
