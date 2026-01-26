@@ -14,23 +14,27 @@ from module.exception import TaskEnd
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
 from tasks.DailyForFlag.config import DailyForFlag
-from tasks.GameUi.page import page_main, page_guild , page_team,page_soul_zones
+from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.login import LoginHandler
 from tasks.WantedQuests.config import CooperationType
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GlobalGame.assets import GlobalGameAssets
-from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
-
+from tasks.RichMan.guild import Guild
+from tasks.RichMan.mall.mall import Mall
 from module.base.utils import point2str
+from tasks.RichMan.config import GuildStore,Consignment
+from tasks.WeeklyTrifles.config import Trifles
+from tasks.WeeklyTrifles.assets import WeeklyTriflesAssets
+from tasks.WeeklyTrifles.script_task import ScriptTask as WeeklyTrifles
 import random
 
 
 
 
-class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets):
+class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets,):
     account_info: dict= None
     def run(self):
         con = self.get_config()
@@ -47,6 +51,12 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
             self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
         if con.daily_for_flag_config.huili_enable:
             self.run_huili()
+        if con.daily_for_flag_config.weekaward_enable:
+            xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
+            self.execute_guild(xzconfig)
+            self.execute_mall()
+            self._share_collect()
+
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
         raise TaskEnd ("DailyForFlag")
@@ -433,7 +443,17 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
             else:
                 self.ui_goto(page_main)
 
-
+    def execute_mall(self):
+            logger.hr('Mall', 1)
+            self.ui_get_current_page()
+            self.ui_goto(page_mall, confirm_wait=2.5)
+            # 寄售屋
+            config = Consignment(enable=True,buy_sale_ticket=True)
+            self.execute_consignment(config)
+            
+            # 退出
+            if self.ui_get_current_page() != page_main:
+                self.ui_goto(page_main)    
     def get_config(self):
         return self.config.daily_for_flag
 

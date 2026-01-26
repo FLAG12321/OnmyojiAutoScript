@@ -19,7 +19,7 @@ class ExtendedAccountInfo(AccountInfo):
     mail_enable: bool = Field(default=True, description='是否开启领取邮件')
     xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
     huili_enable: bool = Field(default=True, description='是否开启回礼')
-
+    weekaward_enable: bool = Field(default=True, description='是否领取每周奖励')
 class DailyConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
@@ -30,6 +30,7 @@ class DailyConfig(ConfigBase):
     total_mail_enable: bool = Field(default=True, description='邮件')
     total_xiezuo_enable: bool = Field(default=True, description='寻找协作')
     total_huili_enable: bool = Field(default=True, description='开启回礼')
+    total_weekaward_enable: bool = Field(default=True, description='领取每周奖励')
     need_login: bool = Field(default=True, description='无视时间登录')
 
 

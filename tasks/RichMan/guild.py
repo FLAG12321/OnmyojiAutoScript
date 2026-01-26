@@ -69,11 +69,24 @@ class Guild(Buy, GameUi, RichManAssets):
         self.screenshot()
         if not self.buy_check_money(self.O_GUILD_TOTAL, 240):
             return False
-        number = self.check_remain(self.I_GUILD_BLUE)
+        retry_count = 0
+        while 1:
+            self.screenshot()  
+            if retry_count  >= 3:
+                logger.warning('Guild mystery amulet retry count out')
+                return False
+            if self.appear(self.I_BUY_PLUS):
+                break
+            if self.appear(self.I_GUILD_BLUE):
+                if self.appear_then_click(self.I_GUILD_BLUE, interval=1):
+                    retry_count  += 1
+                    time.sleep(2)
+                continue
+        """         number = self.check_remain(self.I_GUILD_BLUE)
         if number == 0:
             logger.warning('No mystery amulet can buy')
-            return False
-        self.buy_more(self.I_GUILD_BLUE, number)
+            return False """
+        self.buy_more(self.I_GUILD_BLUE)
         time.sleep(0.5)
         return True
 

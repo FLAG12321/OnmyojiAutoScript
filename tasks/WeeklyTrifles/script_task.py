@@ -86,6 +86,7 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             if self.appear_then_click(self.I_WT_COLLECT_WECHAT, interval=1):
                 continue
             if self.appear_then_click(self.I_WT_COLLECT, interval=5):
+                time.sleep(2)
                 continue
         logger.info('Click share')
         get_timer = Timer(3)

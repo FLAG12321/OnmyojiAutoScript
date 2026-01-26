@@ -35,7 +35,7 @@ class ScriptTask(GameUi, DailyAssets):
             config.tingyuan_enable = self.daily_conf.daily_config.total_tingyuan_enable
             config.xiezuo_enable = self.daily_conf.daily_config.total_xiezuo_enable
             config.huili_enable = self.daily_conf.daily_config.total_huili_enable
-
+            config.weekaward_enable = self.daily_conf.daily_config.total_weekaward_enable
             
             config.tongxin_battle_enable &= accountInfo.tongxin_battle_enable
             config.tongxin_ap_enable &= accountInfo.tongxin_ap_enable
@@ -44,6 +44,7 @@ class ScriptTask(GameUi, DailyAssets):
             config.tingyuan_enable  &= accountInfo.tingyuan_enable
             config.xiezuo_enable &= accountInfo.xiezuo_enable
             config.huili_enable &= accountInfo.huili_enable
+            config.weekaward_enable &= accountInfo.weekaward_enable
             config.tongxin_limit_count = accountInfo.tongxin_limit_count
             
             logger.info("start %s-%s ", accountInfo.character, accountInfo.svr)

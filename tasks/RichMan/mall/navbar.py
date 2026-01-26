@@ -20,7 +20,7 @@ class MallNavbar(GameUi, RichManAssets):
         进入寄售屋
         :return:
         """
-        self.ui_click(self.I_MALL_CONSIGNMENT, self.I_MALL_CONSIGNMENT_CHECK)
+        self.ui_click(self.I_MALL_CONSIGNMENT, self.I_CON_ENTER)
 
     def _enter_scales(self):
         """

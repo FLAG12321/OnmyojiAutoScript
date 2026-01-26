@@ -14,14 +14,14 @@ from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleCon
 class DailyForFlagConfig(BaseModel):
 
   tongxin_battle_enable: bool = Field(default=False, description='是否开启同心队战斗')
-  tongxin_limit_count: int = Field(default=30, description='limit_count_help')
+  tongxin_limit_count: int = Field(default=30, description='战斗次数')
   tongxin_ap_enable: bool = Field(default=False, description='是否开启补充体力')
   juangou_enable: bool = Field(default=True, description='是否开启捐勾')
   tingyuan_enable: bool = Field(default=True, description='是否开启庭院事务')
   mail_enable: bool = Field(default=True, description='是否开启领取邮件')
   xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
   huili_enable: bool = Field(default=False, description='是否开启回礼')
-
+  weekaward_enable: bool = Field(default=False, description='领取周奖励')
 
 class DailyForFlag(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
