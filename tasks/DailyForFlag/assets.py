@@ -10,6 +10,28 @@ from module.atom.list import RuleList
 class DailyForFlagAssets: 
 
 
+	# Click Rule Assets
+	# description 
+	C_BACK_RED = RuleClick(roi_front=(838,134,57,49), roi_back=(837,133,60,50), name="back_red")
+
+
+	# Image Rule Assets
+	# description 
+	I_QIYUAN = RuleImage(roi_front=(966,630,67,61), roi_back=(949,607,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_qiyuan.png")
+	# description 
+	I_BTN_THINK = RuleImage(roi_front=(921,604,53,51), roi_back=(876,556,143,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_btn_think.png")
+	# description 
+	I_H_BACK_RED = RuleImage(roi_front=(851,144,31,33), roi_back=(777,114,182,110), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_h_back_red.png")
+	# description 
+	I_BTN_ENSURE = RuleImage(roi_front=(693,405,134,49), roi_back=(639,376,244,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_btn_ensure.png")
+	# description 
+	I_TO_THINK = RuleImage(roi_front=(1060,602,58,53), roi_back=(1042,580,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_to_think.png")
+	# description 
+	I_FLAG_THINK = RuleImage(roi_front=(969,176,64,106), roi_back=(938,147,133,158), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_flag_think.png")
+	# description 
+	I_H_BACK_RED2 = RuleImage(roi_front=(933,88,44,39), roi_back=(906,55,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_h_back_red2.png")
+
+
 	# Image Rule Assets
 	# description 
 	I_DONATE = RuleImage(roi_front=(270,494,27,26), roi_back=(243,465,80,87), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/juangou/juangou_donate.png")
@@ -48,7 +70,7 @@ class DailyForFlagAssets:
 	# description 
 	I_FINISH = RuleImage(roi_front=(1120,594,88,87), roi_back=(1106,578,117,116), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_finish.png")
 	# description 
-	I_BACK_RED = RuleImage(roi_front=(850,91,45,37), roi_back=(844,80,59,55), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_back_red.png")
+	I_T_BACK_RED = RuleImage(roi_front=(850,91,45,37), roi_back=(844,80,59,55), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_t_back_red.png")
 	# description 
 	I_SUCCESS = RuleImage(roi_front=(307,27,176,54), roi_back=(300,13,193,90), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_success.png")
 	# description 
@@ -90,6 +112,10 @@ class DailyForFlagAssets:
 	I_ENSURE_EXIT = RuleImage(roi_front=(708,404,117,54), roi_back=(651,375,199,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_ensure_exit.png")
 	# description 
 	I_EXIT_2 = RuleImage(roi_front=(353,568,102,44), roi_back=(332,541,157,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_exit_2.png")
+	# description 
+	I_UNLOCK = RuleImage(roi_front=(28,647,29,30), roi_back=(1,627,75,78), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_unlock.png")
+	# description 
+	I_LOCK = RuleImage(roi_front=(25,645,33,30), roi_back=(11,627,63,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_lock.png")
 
 
 	# Click Rule Assets
@@ -100,6 +126,8 @@ class DailyForFlagAssets:
 	# Image Rule Assets
 	# description 
 	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_page_account.png")
+	# description 
+	I_REAL_JADE_FLAG = RuleImage(roi_front=(159,294,29,31), roi_back=(143,129,276,470), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_jade_flag.png")
 
 
 	# Ocr Rule Assets

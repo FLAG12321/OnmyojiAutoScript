@@ -7,5 +7,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "real_jade_flag",
+    "imageName": "xiezuo_real_jade_flag.png",
+    "roiFront": "159,294,29,31",
+    "roiBack": "143,129,276,470",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
   }
 ]

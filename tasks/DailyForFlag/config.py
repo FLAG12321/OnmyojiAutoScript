@@ -20,6 +20,7 @@ class DailyForFlagConfig(BaseModel):
   tingyuan_enable: bool = Field(default=True, description='是否开启庭院事务')
   mail_enable: bool = Field(default=True, description='是否开启领取邮件')
   xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
+  huili_enable: bool = Field(default=False, description='是否开启回礼')
 
 
 class DailyForFlag(ConfigBase):

@@ -21,6 +21,7 @@ from tasks.WantedQuests.config import CooperationType
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GlobalGame.assets import GlobalGameAssets
+from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 
 from module.base.utils import point2str
@@ -44,6 +45,8 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
             self.run_juangou()
         if con.daily_for_flag_config.tongxin_battle_enable or con.daily_for_flag_config.tongxin_ap_enable:
             self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
+        if con.daily_for_flag_config.huili_enable:
+            self.run_huili()
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
         raise TaskEnd ("DailyForFlag")
@@ -136,6 +139,47 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
                 continue
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
+    def harvest_mail(self) -> bool:
+        logger.info('Harvest mail')
+        retry_count = 0
+        while 1:
+            if retry_count >= 3:
+                break
+            self.screenshot()
+            if self.appear(self.I_M_PAGE_MAIL):
+                break
+            if self.appear_then_click(self.I_M_MAIN_TO_MAIL, interval=1.5):
+                retry_count += 1
+                continue
+
+        logger.info('Exec harvest mail')
+        retry_count = 0
+        while 1:
+            if retry_count >= 3:
+                break
+            self.screenshot()
+            if self.appear_then_click(self.I_HARVEST_MAIL_CONFIRM, interval=0.8):
+                break
+            if self.appear_then_click(self.I_READ_ALL_MAIL, interval=1.5):
+                continue
+            if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=1.5):
+                continue
+            if self.appear_then_click(self.I_MAIL_RED_POINT, interval=4):
+                continue
+            if self.appear(self.I_M_PAGE_MAIL):
+                retry_count += 1
+                break
+        retry_count = 0    
+        while 1:
+            self.screenshot() 
+            if retry_count >= 3:
+                break
+            if self.appear_then_click(self.I_M_AWARD, interval=1.5):
+                continue
+            if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
+                retry_count += 1
+                break
+        return True
     def run_mail(self):
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -151,25 +195,27 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
             self.run_tongxing_battle()
     def run_tongxing_ap(self):    
         logger.info('开始执行补体力任务')
+        retry_count = 0
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_TO_TEAM, interval=1):
                 continue
             if self.appear_then_click(self.I_TO_AP, interval=1):
                 continue
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1) or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or self.appear_then_click(self.I_ENSURE_AP, interval=1):
+            if self.appear(self.I_ENSURE_AP):
+                self.ui_click_until_disappear(self.I_ENSURE_AP, interval=1)
                 break
-            if self.appear_then_click(self.I_BACK_RED, interval=1):
+            if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 continue
             if self.appear_then_click(self.I_LIST_MEMBER, interval=1):
                 continue
-            if self.appear_then_click(self.I_SAVE_ALL):
+            if self.appear_then_click(self.I_SAVE_ALL, interval=1):
                 continue
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_UI_BACK_YELLOW):
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
                 continue
-            if self.appear_then_click(self.I_BACK_BLACK):
+            if self.appear_then_click(self.I_BACK_BLACK, interval=1):
                 continue
             if self.ui_get_current_page() == page_main:
                 break
@@ -179,31 +225,55 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
         logger.info('开始执行战斗任务')
         while 1:
             self.screenshot()
-            if self.appear(self.I_BATTLE, interval=1):  
+            if self.appear(self.I_FORM_OVER):
                 break
             if self.appear_then_click(self.I_TO_TEAM, interval=1):
                 continue
-            if self.appear(self.I_FORM_OVER):
-                if self.appear_then_click(self.I_SELECT_LEVEL, interval=1):
-                    continue
-                if self.appear_then_click(self.I_CREATE_TEAM, interval=1):
-                    continue
-                if self.appear_then_click(self.I_CREATE_AGAIN, interval=1):
-                    continue
             if self.appear_then_click(self.I_FORM, interval=1):
                 continue
             if self.appear_then_click(self.I_INVITE, interval=1):
                 continue
+            
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_BATTLE, interval=1):  
+                break
+            if self.appear_then_click(self.I_CREATE_AGAIN, interval=1):
+                continue
+            if self.appear_then_click(self.I_CREATE_TEAM, interval=1):
+                continue
+            if self.appear_then_click(self.I_SELECT_LEVEL, interval=1):
+                    continue
         self.run_alone()
 
-    
+    def check_lock(self, lock: bool = True) -> bool:
+        """
+        检查是否锁定阵容, 要求在觉醒界面
+        :param lock:
+        :return:
+        """
+        logger.info('Check lock: %s', lock)
+        if lock:
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_LOCK):
+                    return True
+                if self.appear_then_click(self.I_UNLOCK, interval=1):
+                    continue
+        else:
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_UNLOCK):
+                    return True
+                if self.appear_then_click(self.I_LOCK, interval=1):
+                    continue
     def run_alone(self):
         def is_in_evozone(screenshot=False) -> bool:
             if screenshot:
                 self.screenshot()
             return self.appear(self.I_BATTLE)
         logger.info('Start run alone')
-        #self.check_lock(self.config.daily_for_flag.general_battle_config.lock_team_enable,)
+        self.check_lock(True)
         while 1:
             self.screenshot()
 
@@ -227,9 +297,9 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
                 continue
             if self.appear_then_click(self.I_ENSURE_EXIT, interval=1):
                 continue
-            if self.appear_then_click(self.I_UI_BACK_YELLOW):
+            if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
                 continue
-            if self.appear_then_click(self.I_BACK_BLACK):
+            if self.appear_then_click(self.I_BACK_BLACK,interval=1):
                 continue
             if self.ui_get_current_page() == page_main:
                 break
@@ -279,9 +349,14 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
                 break
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_JADE_" + str(index + 1))):
                 retList.append({'type': CooperationType.Jade, 'inviteBtn': btn})
-                logger.info(f"find jade cooperation ")
-                self.push_notify(content=f"   {self.account_info} 发现勾协", title="协作任务提醒")
-                self.config.notifier.push(content=f"   {self.account_info} 发现勾协", title="协作任务提醒")
+                if self.appear(self.I_REAL_JADE_FLAG) and index == 0:
+                    logger.info(f"find real jade cooperation ")
+                    self.push_notify(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
+                    self.config.notifier.push(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
+                else:
+                    logger.info(f"find  jade cooperation ")
+                    self.push_notify(content=f"   {self.account_info} 发现普通勾协", title="协作任务提醒")
+                    self.config.notifier.push(content=f"   {self.account_info} 发现普通勾协", title="协作任务提醒")
                 continue
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn})
@@ -293,9 +368,14 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
                 continue
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_SUSHI_" + str(index + 1))):
                 retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn})
-                self.push_notify(content=f"发现体协   {self.account_info}  存在体协", title="协作任务提醒")
-                self.config.notifier.push(content=f"   {self.account_info}  发现体协", title="协作任务提醒")
-                logger.info(f"find sushi cooperation ")
+                if self.appear(self.I_REAL_JADE_FLAG) and index == 0:
+                    logger.info(f"find real sushi cooperation ")
+                    self.push_notify(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
+                    self.config.notifier.push(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
+                else:
+                    logger.info(f"find  sushi cooperation ")
+                    self.push_notify(content=f"   {self.account_info} 发现普通体协", title="协作任务提醒")
+                    self.config.notifier.push(content=f"   {self.account_info} 发现普通体协", title="协作任务提醒")
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):
@@ -305,8 +385,55 @@ class ScriptTask(GeneralBattle,GameUi,LoginHandler,WantedQuestsAssets,GlobalGame
         logger.info(f"get cooperation size {len(retList)}")
         return retList
 
+    def run_huili(self):
+        if self.ui_get_current_page() != page_main:
+            self.ui_goto(page_main)
+        self.ui_goto(page_guild)
+        retry_count = 0
+        while 1:
+            self.screenshot()
+            if retry_count >= 3:
+                self.appear_then_click(self.I_TO_THINK, threshold=0.9, interval=1)
+                break
+            if self.appear_then_click(self.I_H_BACK_RED, interval=1):
+                logger.info(f"I_BACK_RED found ")
+                continue
+            if self.appear(self.I_TO_THINK, threshold=0.9, interval=1):
+                retry_count += 1
+                logger.info(f"I_TO_THINK found ")
+                continue
+            if self.appear_then_click(self.I_QIYUAN, interval=1):
+                #self.wait_until_appear_then_click(self.I_BACK_RED,wait_time=1)
+                continue
+        retry_count = 0
+        while 1:
+            self.screenshot()
+            logger.info(f"screenshot found ")
+            if retry_count >= 3:
+                break
+            if not self.appear(self.I_FLAG_THINK) and self.appear(self.I_TO_THINK,):
+                self.appear_then_click(self.I_TO_THINK, interval=3)
+                continue
+            if  self.appear(self.I_BTN_ENSURE):
+                self.ui_click_until_disappear(self.I_BTN_ENSURE, interval=1)
+                break
+            if self.appear_then_click(self.I_BTN_THINK, interval=1):
+                continue
+            if self.appear(self.I_FLAG_THINK):
+                retry_count += 1
+                continue
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_H_BACK_RED2, interval=1):
+                continue
+            if self.appear_then_click(self.I_BACK_YELLOW, interval=1):
+                continue
+            if self.ui_get_current_page() == page_main:
+                break
+            else:
+                self.ui_goto(page_main)
 
-    
+
     def get_config(self):
         return self.config.daily_for_flag
 

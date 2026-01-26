@@ -10,6 +10,7 @@ def get_config(self):
     config.daily_for_flag_config.tingyuan_enable = self.account_info.tingyuan_enable
     config.daily_for_flag_config.tongxin_limit_count = self.account_info.tongxin_limit_count
     config.daily_for_flag_config.xiezuo_enable = self.account_info.xiezuo_enable
+    config.daily_for_flag_config.huili_enable = self.account_info.huili_enable
     return config
 def run_success(self):
     self.daily_conf.update_account_login_history

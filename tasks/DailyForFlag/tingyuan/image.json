@@ -27,8 +27,8 @@
     "description": "description"
   },
   {
-    "itemName": "back_red",
-    "imageName": "tingyuan_back_red.png",
+    "itemName": "t_back_red",
+    "imageName": "tingyuan_t_back_red.png",
     "roiFront": "850,91,45,37",
     "roiBack": "844,80,59,55",
     "method": "Template matching",

@@ -142,5 +142,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "unlock",
+    "imageName": "tongxin_unlock.png",
+    "roiFront": "28,647,29,30",
+    "roiBack": "1,627,75,78",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "lock",
+    "imageName": "tongxin_lock.png",
+    "roiFront": "25,645,33,30",
+    "roiBack": "11,627,63,70",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
   }
 ]

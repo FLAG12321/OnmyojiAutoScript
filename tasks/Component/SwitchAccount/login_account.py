@@ -171,6 +171,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     self.ui_click_until_disappear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED,
                                                   interval=1.5)
                     continue
+                if self.appear(self.I_SA_LOGIN_FORM_APPLE):
+                    return False
 
                 # 账号列表已打开状态
                 ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(self.device.image)
@@ -266,6 +268,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 if not self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
                     # 没有找到account
                     if not self.selectAccount(accountInfo):
+                        if self.appear(self.I_SA_LOGIN_FORM_APPLE):
+                            continue
                         self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ACCOUNT_CLOSE_BTN,
                                                       stop=self.I_SA_NETEASE_GAME_LOGO)
                         return False

@@ -18,6 +18,7 @@ class ExtendedAccountInfo(AccountInfo):
     tingyuan_enable: bool = Field(default=True, description='是否开启庭院事务')
     mail_enable: bool = Field(default=True, description='是否开启领取邮件')
     xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
+    huili_enable: bool = Field(default=True, description='是否开启回礼')
 
 class DailyConfig(ConfigBase):
     # 小号数
@@ -28,6 +29,7 @@ class DailyConfig(ConfigBase):
     total_tingyuan_enable: bool = Field(default=True, description='庭院事务')
     total_mail_enable: bool = Field(default=True, description='邮件')
     total_xiezuo_enable: bool = Field(default=True, description='寻找协作')
+    total_huili_enable: bool = Field(default=True, description='开启回礼')
     need_login: bool = Field(default=True, description='无视时间登录')
 
 
