@@ -162,7 +162,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         self.O_SA_ACCOUNT_ACCOUNT_LIST.keyword = accountInfo.account
         self.O_SA_ACCOUNT_ACCOUNT_SELECTED.keyword = accountInfo.account
         # 正常情况一次就行,但防不住OCR搞幺蛾子 保险起见 多来几次吧 反正挂机不差这点
-        for i in range(3):
+        for i in range(5):
             while 1:
                 self.screenshot()
                 if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED):

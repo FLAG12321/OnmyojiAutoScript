@@ -19,7 +19,7 @@ class DailyForFlagAssets:
 	# description 
 	I_QIYUAN = RuleImage(roi_front=(966,630,67,61), roi_back=(949,607,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_qiyuan.png")
 	# description 
-	I_BTN_THINK = RuleImage(roi_front=(921,604,53,51), roi_back=(876,556,143,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_btn_think.png")
+	I_BTN_THINK = RuleImage(roi_front=(928,613,38,35), roi_back=(916,596,70,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_btn_think.png")
 	# description 
 	I_H_BACK_RED = RuleImage(roi_front=(851,144,31,33), roi_back=(777,114,182,110), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_h_back_red.png")
 	# description 
@@ -127,7 +127,11 @@ class DailyForFlagAssets:
 	# description 
 	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_page_account.png")
 	# description 
-	I_REAL_JADE_FLAG = RuleImage(roi_front=(159,294,29,31), roi_back=(143,129,276,470), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_jade_flag.png")
+	I_REAL_FLAG_1 = RuleImage(roi_front=(458,293,29,31), roi_back=(143,129,65,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
+	# description 
+	I_REAL_FLAG_2 = RuleImage(roi_front=(457,292,32,34), roi_back=(443,128,67,200), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
+	# description 
+	I_REAL_FLAG_3 = RuleImage(roi_front=(455,291,35,37), roi_back=(741,129,68,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
 
 
 	# Ocr Rule Assets

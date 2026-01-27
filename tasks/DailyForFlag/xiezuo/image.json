@@ -9,10 +9,28 @@
     "description": "description"
   },
   {
-    "itemName": "real_jade_flag",
-    "imageName": "xiezuo_real_jade_flag.png",
-    "roiFront": "159,294,29,31",
-    "roiBack": "143,129,276,470",
+    "itemName": "real_flag_1",
+    "imageName": "xiezuo_real_flag_1.png",
+    "roiFront": "458,293,29,31",
+    "roiBack": "143,129,65,240",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "real_flag_2",
+    "imageName": "xiezuo_real_flag_1.png",
+    "roiFront": "457,292,32,34",
+    "roiBack": "443,128,67,200",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "real_flag_3",
+    "imageName": "xiezuo_real_flag_1.png",
+    "roiFront": "455,291,35,37",
+    "roiBack": "741,129,68,240",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

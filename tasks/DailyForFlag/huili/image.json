@@ -11,8 +11,8 @@
   {
     "itemName": "btn_think",
     "imageName": "huili_btn_think.png",
-    "roiFront": "921,604,53,51",
-    "roiBack": "876,556,143,144",
+    "roiFront": "928,613,38,35",
+    "roiBack": "916,596,70,70",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

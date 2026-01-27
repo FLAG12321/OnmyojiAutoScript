@@ -75,6 +75,7 @@ class ScriptTask(GameUi, DailyAssets):
             except Exception as e:
                 logger.error(e)
                 self.next_run("Daily", success=False)
+        self.config.notifier.push(content=f"Daily任务执行完毕", title="任务提醒")
         self.next_run("Daily", success=True)
         raise TaskEnd("Daily")
         pass
@@ -86,13 +87,10 @@ class ScriptTask(GameUi, DailyAssets):
         @param item:
         @type item:
         """
+        now=self.daily_conf.sup_account_list[0].last_complete_time
         lastTime = item.last_complete_time
-        now = datetime.now()
-        if now - lastTime > timedelta(hours=13):
-            return True
-        if (lastTime.hour >= 18 or lastTime.hour < 5) and (18 > now.hour >= 5):
-            return True
-        if (5 <= lastTime.hour < 18) and now.hour >= 18:
+        #now = datetime.now()
+        if now > lastTime :
             return True
         return False
 

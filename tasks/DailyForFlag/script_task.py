@@ -355,11 +355,14 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         i = 0
         for index in range(3):
             btn = self.__getattribute__("I_WQ_INVITE_" + str(index + 1))
-            if not self.appear(btn):
+            btn2 = self.__getattribute__("I_REAL_FLAG_" + str(index + 1))
+            normal_flag=self.appear(btn)
+            real_flag=self.appear(btn2)
+            if not normal_flag and not real_flag:
                 break
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_JADE_" + str(index + 1))):
                 retList.append({'type': CooperationType.Jade, 'inviteBtn': btn})
-                if self.appear(self.I_REAL_JADE_FLAG) and index == 0:
+                if real_flag:
                     logger.info(f"find real jade cooperation ")
                     self.push_notify(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
                     self.config.notifier.push(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
@@ -378,7 +381,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_SUSHI_" + str(index + 1))):
                 retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn})
-                if self.appear(self.I_REAL_JADE_FLAG) and index == 0:
+                if real_flag:
                     logger.info(f"find real sushi cooperation ")
                     self.push_notify(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
                     self.config.notifier.push(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
