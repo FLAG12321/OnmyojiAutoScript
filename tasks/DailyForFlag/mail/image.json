@@ -29,8 +29,8 @@
   {
     "itemName": "m_ensure_get",
     "imageName": "mail_m_ensure_get.png",
-    "roiFront": "728,549,96,46",
-    "roiBack": "676,531,188,88",
+    "roiFront": "737,553,76,40",
+    "roiBack": "698,550,151,52",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

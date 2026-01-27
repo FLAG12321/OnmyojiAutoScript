@@ -169,12 +169,14 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 break
             self.screenshot()
             if self.appear_then_click(self.I_M_ENSURE_GET, interval=0.8):
+                logger.info('I_M_ENSURE_GET success')
                 break
-            if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=1.5):
+            if self.appear_rgb(self.I_HARVEST_MAIL_ALL):
+                if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=1.5):
+                    logger.info('I_HARVEST_MAIL_ALL success')
                 continue
             if self.appear(self.I_M_PAGE_MAIL,interval=0.8):
                 retry_count += 1
-                break
         retry_count = 0    
         while 1:
             self.screenshot() 
