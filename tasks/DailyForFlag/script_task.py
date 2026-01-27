@@ -168,26 +168,23 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if retry_count >= 3:
                 break
             self.screenshot()
-            if self.appear_then_click(self.I_HARVEST_MAIL_CONFIRM, interval=0.8):
+            if self.appear_then_click(self.I_M_ENSURE_GET, interval=0.8):
                 break
-            if self.appear_then_click(self.I_READ_ALL_MAIL, interval=1.5):
-                continue
             if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=1.5):
                 continue
-            if self.appear_then_click(self.I_MAIL_RED_POINT, interval=4):
-                continue
-            if self.appear(self.I_M_PAGE_MAIL):
+            if self.appear(self.I_M_PAGE_MAIL,interval=0.8):
                 retry_count += 1
                 break
         retry_count = 0    
         while 1:
             self.screenshot() 
-            if retry_count >= 3:
-                break
             if self.appear_then_click(self.I_M_AWARD, interval=1.5):
                 continue
             if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
-                retry_count += 1
+                continue
+            if self.ui_get_current_page() != page_main:
+                self.ui_goto(page_main)
+            else:
                 break
         return True
     def run_mail(self):
