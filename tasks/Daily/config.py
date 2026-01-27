@@ -42,11 +42,10 @@ class Daily(ConfigBase):
     def update_account_login_history(self, account: ExtendedAccountInfo):
         accountInfoList = self.sup_account_list
         for info in accountInfoList:
-            logger.info(f"update account login history: {info.character} {info.svr}")
             if info.character != account.character or info.svr != account.svr:
                 continue
             info.last_complete_time = datetime.now()
-            logger.info(f"update invite history : {info}")
+            logger.info(f"update login history name:{info.character}  time :{info.last_complete_time}")
             break
     @model_validator(mode='before')
     @classmethod

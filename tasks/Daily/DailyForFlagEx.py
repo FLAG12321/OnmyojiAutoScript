@@ -1,7 +1,6 @@
 from tasks.DailyForFlag.config import  DailyForFlagConfig,GeneralBattleConfig,DailyForFlag
 from module.logger import logger
 def get_config(self):
-    logger.info(self.account_info)
     config=DailyForFlag()
     config.daily_for_flag_config.tongxin_battle_enable = self.account_info.tongxin_battle_enable
     config.daily_for_flag_config.tongxin_ap_enable = self.account_info.tongxin_ap_enable

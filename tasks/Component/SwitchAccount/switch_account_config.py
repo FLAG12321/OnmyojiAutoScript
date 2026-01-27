@@ -23,7 +23,7 @@ class AccountInfo(BaseModel):
 
     def is_account_alias(self, ocr_account):
         tmp_account = AccountInfo.preprocessAccount(self.account)
-        logger.info(f"compare ocr_account:{ocr_account} with account:{self.account} and tmp_account:{tmp_account} ")
+        #logger.info(f"compare ocr_account:{ocr_account} with account:{self.account} and tmp_account:{tmp_account} ")
         if ocr_account == self.account or ocr_account.startswith(tmp_account):
             return True
         if not self.account_alias:

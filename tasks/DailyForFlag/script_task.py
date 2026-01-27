@@ -183,11 +183,11 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_M_AWARD, interval=1.5):
                 continue
             if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
-                continue
-            if self.ui_get_current_page() != page_main:
-                self.ui_goto(page_main)
-            else:
                 break
+
+        if self.ui_get_current_page() != page_main:
+            self.ui_goto(page_main)
+                
         return True
     def run_mail(self):
         if self.ui_get_current_page() != page_main:
@@ -282,13 +282,15 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 self.screenshot()
             return self.appear(self.I_BATTLE)
         logger.info('Start run alone')
+        tongxin_limit_count=self.get_config().daily_for_flag_config.tongxin_limit_count
+        logger.info(f' tongxin_limit_count: {tongxin_limit_count}')
         self.check_lock(True)
         while 1:
             self.screenshot()
 
             if not is_in_evozone():
                 continue
-            if self.current_count >= 30:
+            if self.current_count >= tongxin_limit_count:
                 logger.info('Orochi count limit out')
                 break
             logger.info('Orochi count limit 111')

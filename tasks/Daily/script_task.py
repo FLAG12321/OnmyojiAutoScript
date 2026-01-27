@@ -54,6 +54,7 @@ class ScriptTask(GameUi, DailyAssets):
             suc = SwitchAccount(self.config, self.device, accountInfo).switchAccount()
             if not suc:
                 logger.warning("switch to %s-%s Failed", accountInfo.character, accountInfo.svr)
+                self.config.notifier.push(content=f"switch to {accountInfo.character}-{accountInfo.svr} Failed,account info :{accountInfo.account}",  title="未找到账号")
                 continue
             # 创建子任务实例
             dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
@@ -75,6 +76,9 @@ class ScriptTask(GameUi, DailyAssets):
             except Exception as e:
                 logger.error(e)
                 self.next_run("Daily", success=False)
+        for info in self.daily_conf.sup_account_list:
+            logger.info(f"update login  name:{info.character} time :{info.last_complete_time}")
+            break
         self.config.notifier.push(content=f"Daily任务执行完毕", title="任务提醒")
         self.next_run("Daily", success=True)
         raise TaskEnd("Daily")
@@ -87,7 +91,7 @@ class ScriptTask(GameUi, DailyAssets):
         @param item:
         @type item:
         """
-        now=self.daily_conf.sup_account_list[0].last_complete_time
+        now=self.daily_conf.sup_account_list[0].last_complete_time-timedelta(seconds=10)
         lastTime = item.last_complete_time
         #now = datetime.now()
         if now > lastTime :
