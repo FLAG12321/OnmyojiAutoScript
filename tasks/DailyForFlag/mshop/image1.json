@@ -27,78 +27,6 @@
     "description": "description"
   },
   {
-    "itemName": "ms_goods_1",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,1,100,100",
-    "roiBack": "156,66,198,187",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_2",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,52,100,100",
-    "roiBack": "362,71,218,183",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_3",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "7,82,100,100",
-    "roiBack": "587,83,224,171",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_4",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "5,104,100,100",
-    "roiBack": "806,81,214,173",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_5",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "0,62,100,100",
-    "roiBack": "152,364,202,149",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_6",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "0,52,100,100",
-    "roiBack": "360,366,218,150",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_7",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,43,100,100",
-    "roiBack": "583,370,220,144",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_8",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "12,36,100,100",
-    "roiBack": "815,364,208,152",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
     "itemName": "ms_gold",
     "imageName": "mshop_ms_gold.png",
     "roiFront": "194,254,44,41",
@@ -135,12 +63,255 @@
     "description": "description"
   },
   {
-    "itemName": "ms_all",
+    "itemName": "ms_all_shepi",
     "imageName": "mshop_ms_shepi.png",
     "roiFront": "1,65,100,100",
     "roiBack": "139,107,887,454",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "ms_all_fmpi",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "1,65,100,100",
+    "roiBack": "139,107,887,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_all_heisui",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "1,65,100,100",
+    "roiBack": "139,107,887,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_1",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "1,1,100,100",
+    "roiBack": "156,66,198,187",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_2",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "1,52,100,100",
+    "roiBack": "362,71,218,183",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_3",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "7,82,100,100",
+    "roiBack": "587,83,224,171",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_4",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "5,104,100,100",
+    "roiBack": "806,81,214,173",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_5",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "0,62,100,100",
+    "roiBack": "152,364,202,149",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_6",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "0,52,100,100",
+    "roiBack": "360,366,218,150",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_7",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "1,43,100,100",
+    "roiBack": "583,370,220,144",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_shepi_8",
+    "imageName": "mshop_ms_shepi.png",
+    "roiFront": "12,36,100,100",
+    "roiBack": "815,364,208,152",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_1",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "1,1,100,100",
+    "roiBack": "156,66,198,187",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_2",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "1,52,100,100",
+    "roiBack": "362,71,218,183",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_3",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "7,82,100,100",
+    "roiBack": "587,83,224,171",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_4",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "5,104,100,100",
+    "roiBack": "806,81,214,173",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_5",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "0,62,100,100",
+    "roiBack": "152,364,202,149",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_6",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "0,52,100,100",
+    "roiBack": "360,366,218,150",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_7",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "1,43,100,100",
+    "roiBack": "583,370,220,144",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_fmpi_8",
+    "imageName": "mshop_ms_fmpi.png",
+    "roiFront": "12,36,100,100",
+    "roiBack": "815,364,208,152",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_1",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "1,1,100,100",
+    "roiBack": "156,66,198,187",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_2",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "1,52,100,100",
+    "roiBack": "362,71,218,183",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_3",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "7,82,100,100",
+    "roiBack": "587,83,224,171",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_4",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "5,104,100,100",
+    "roiBack": "806,81,214,173",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_5",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "0,62,100,100",
+    "roiBack": "152,364,202,149",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_6",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "0,52,100,100",
+    "roiBack": "360,366,218,150",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_7",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "1,43,100,100",
+    "roiBack": "583,370,220,144",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_goods_heisui_8",
+    "imageName": "mshop_ms_heisui.png",
+    "roiFront": "12,36,100,100",
+    "roiBack": "815,364,208,152",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_fmpi",
+    "roiFront": "432,127,54,79",
+    "roiBack": "387,95,161,154",
+    "description": "description",
+    "imageName": "ms_fmpi.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

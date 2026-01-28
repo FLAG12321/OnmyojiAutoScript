@@ -11,6 +11,7 @@ from module.atom.image_grid import ImageGrid
 from module.logger import logger
 from module.exception import TaskEnd
 
+from module.atom.image import RuleImage
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
 from tasks.DailyForFlag.config import DailyForFlag,GoodsType,CoinType
@@ -29,6 +30,10 @@ from tasks.RichMan.config import GuildStore,Consignment
 from tasks.WeeklyTrifles.config import Trifles
 from tasks.WeeklyTrifles.assets import WeeklyTriflesAssets
 from tasks.WeeklyTrifles.script_task import ScriptTask as WeeklyTrifles
+from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigami,_prepare_image_for_ocr 
+from tasks.MysteryShop.config import MysteryShop, ShopConfig, ShareConfig
+from tasks.MysteryShop.assets import MysteryShopAssets
+from tasks.MysteryShop.script_task import ScriptTask as MysteryShop
 import random
 
 
@@ -38,6 +43,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
     account_info: dict= None
     def run(self):
         con = self.get_config()
+        
         if con.daily_for_flag_config.tingyuan_enable:
             self.run_tingyuan()
         if con.daily_for_flag_config.mail_enable:
@@ -55,6 +61,8 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.execute_guild(xzconfig)
             self.execute_mall()
             self._share_collect()
+        if con.daily_for_flag_config.mysteryshop_enable:
+            self.run_mysteryshop()
 
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
@@ -145,6 +153,10 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
             if self.appear(self.I_LOGIN_RED_CLOSE):
                 self.click(self.I_LOGIN_RED_CLOSE, interval=2)
+                continue
+            if self.appear_then_click(self.I_CORD_EXIT, interval=2):
+                continue
+            if self.appear_then_click(self.I_CORD_BACK_RED, interval=2):
                 continue
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -330,7 +342,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
         self.get_cooperation_info()
         self.screenshot()
-        self.appear_then_click(self.I_UI_BACK_RED)
+        self.appear_then_click(self.I_UI_BACK_RED,interval=2)
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 
@@ -455,7 +467,108 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             
             # 退出
             if self.ui_get_current_page() != page_main:
-                self.ui_goto(page_main)          
+                self.ui_goto(page_main) 
+
+    def run_mysteryshop(self):
+        self.account_info = self.get_account_info()
+        self.ui_get_current_page()
+        self.ui_goto(page_mall)
+        self.ui_click(MysteryShopAssets.I_ME_ENTER, MysteryShopAssets.I_MS_SHARE)
+        logger.info('Mysteryshop')
+
+        if not self.MsFind():
+            retry_count = 0
+            while 1:    
+
+                self.screenshot()
+                if retry_count >= 3:
+                    break
+                if self.appear_then_click(self.I_MS_ENSURE,interval=1):
+                    self.screenshot()
+                    if not self.appear(self.I_MS_ENSURE):
+                        break
+                if self.appear_rgb(self.I_MS_REFRESH):
+                    self.screenshot()
+                    self.appear_then_click(self.I_MS_REFRESH,action=self.C_MS_REFRESH_ACTION,interval=1)
+                    continue
+                if self.appear(MysteryShopAssets.I_MS_SHARE,interval=2):
+                    retry_count += 1
+            self.MsFind()
+        self.ui_goto(page_mall)
+    def MsFind(self):
+        all_info_list = []
+        cointype_and_coinNum_list=self.FindCoinTypeAndCoinNum()
+        self.screenshot()
+        if self.appear(self.I_MS_ALL_SHEPI):
+            logger.info(f"appear: self.I_MS_ALL_SHEPI{all_info_list}")
+            info_list=self.FindGoodsType(GoodsType.shepi,cointype_and_coinNum_list)
+            if len(info_list) > 0:
+                all_info_list.extend(info_list)
+        if self.appear(self.I_MS_ALL_FMPI):
+            logger.info(f"appear: self.I_MS_ALL_SHEPI{all_info_list}")
+            info_list=self.FindGoodsType(GoodsType.fmpi,cointype_and_coinNum_list)
+            if len(info_list) > 0:
+                all_info_list.extend(info_list)
+        if self.appear(self.I_MS_ALL_HEISUI):
+            logger.info(f"appear I_MS_ALL_HEISUI: {all_info_list}")
+            info_list=self.FindGoodsType(GoodsType.heisui,cointype_and_coinNum_list)
+            if len(info_list) > 0:
+                all_info_list.extend(info_list)
+        logger.info(f"FindGoodsType 返回的商品信息: {all_info_list}")
+        if len(all_info_list) > 0 and self.InfoFilter(all_info_list):  
+            return True
+        else:
+            logger.info('没有找到物品')
+            return False
+    def FindGoodsType(self, goodstype: GoodsType,cointype_and_coinNum_list:list):
+        all_info_list=[]
+        for index in range(8):
+            if goodstype == GoodsType.shepi:
+                appear_goodstype = getattr(self, f'I_MS_GOODS_SHEPI_{index+1}')
+                #logger.info(f"使用蛇皮商品图像文件: {appear_goodstype} {index+1}")
+            elif goodstype == GoodsType.fmpi:
+                appear_goodstype = getattr(self, f'I_MS_GOODS_FMPI_{index+1}')  # 注意：这里可能需要修正为GOLD
+                #logger.info(f"使用逢魔商品图像文件: {appear_goodstype} {index+1}")
+            elif goodstype == GoodsType.heisui:
+                appear_goodstype = getattr(self, f'I_MS_GOODS_HEISUI_{index+1}')
+                #logger.info(f"使用黑碎商品图像文件: {appear_goodstype} {index+1}")
+            if self.appear(appear_goodstype):
+                #logger.info(f"appear_goodstype: {cointype_and_coinNum_list}")
+                all_info_list.append([goodstype,cointype_and_coinNum_list[index][0],cointype_and_coinNum_list[index][1]])
+            logger.info(f'FindGoodsType :{all_info_list}')
+        return all_info_list    
+        pass
+    def FindCoinTypeAndCoinNum(self):
+        info_list=[ ]
+        for index in range(8):
+            logger.debug(f"检查第 {index + 1} 个商品位置")
+            appear_coin_jade = getattr(self, f'I_MS_PRICE_{index+1}')
+            appear_coin_gold = getattr(self, f'I_MS_PRICES_{index+1}')
+            appear_coin_num = self.__getattribute__("O_MS_PRICENUM_" + str(index + 1))
+            coin_num = appear_coin_num.ocr_digit(_prepare_image_for_ocr(self.device.image,appear_coin_num))
+            if self.appear(appear_coin_jade):
+                info_list.append([CoinType.jade,coin_num])
+            elif self.appear(appear_coin_gold):
+                info_list.append([CoinType.gold,coin_num])
+            else:
+                info_list.append([CoinType.unknow,coin_num])
+        logger.info(f"FindCoinTypeAndCoinNum :{info_list} ")
+        return  info_list
+    def InfoFilter(self,info_list:list):
+        flag :bool= False
+        for info in info_list:
+            if info[1]==CoinType.gold:
+                if info[0]==GoodsType.shepi or info[0]==GoodsType.fmpi:
+                    flag=True
+                    logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
+                    self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}金币 {info[0]}", title="神秘商店提醒")
+            if info[1]==CoinType.jade: 
+                 if info[0]==GoodsType.heisui: 
+                    if info[2]<45 or 70<info[2]<96 or info[2]>133:
+                        flag=True
+                        logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
+                        self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}勾黑碎", title="神秘商店提醒")
+        return flag
     def get_config(self):
         return self.config.daily_for_flag
 
@@ -465,15 +578,9 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-
-    c = Config('switch')
+    c = Config('QMUMU3')
     d = Device(c)
     t = ScriptTask(c, d)
-    for i in range(10):
-        t.perform_swipe_action()
-    t.recive_guild_ap_or_assets()
-    # t.check_utilize_add()
-    # t.check_card_num('勾玉', 67)
-    # t.screenshot()
-    # print(t.appear(t.I_BOX_EXP, threshold=0.6))
-    # print(t.appear(t.I_BOX_EXP_MAX, threshold=0.6))
+    #t.run_mysteryshop()
+    t.screenshot()
+    t.run_mysteryshop()

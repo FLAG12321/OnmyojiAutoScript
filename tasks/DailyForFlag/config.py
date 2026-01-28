@@ -22,6 +22,7 @@ class DailyForFlagConfig(BaseModel):
   xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
   huili_enable: bool = Field(default=False, description='是否开启回礼')
   weekaward_enable: bool = Field(default=False, description='领取周奖励')
+  mysteryshop_enable: bool = Field(default=False, description='是否开启神秘商店')
 
 class DailyForFlag(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)

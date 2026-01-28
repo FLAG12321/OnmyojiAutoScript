@@ -61,5 +61,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "cord_exit",
+    "roiFront": "1163,38,63,27",
+    "roiBack": "1111,15,158,131",
+    "description": "description",
+    "imageName": "cord_exit.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "cord_back_red",
+    "roiFront": "1159,42,45,43",
+    "roiBack": "1112,11,139,134",
+    "description": "description",
+    "imageName": "cord_back_red.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

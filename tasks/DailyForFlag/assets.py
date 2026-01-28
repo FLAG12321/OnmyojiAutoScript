@@ -75,22 +75,6 @@ class DailyForFlagAssets:
 	# description 
 	I_MS_ENSURE = RuleImage(roi_front=(718,408,81,43), roi_back=(684,404,155,56), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_ensure.png")
 	# description 
-	I_MS_GOODS_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
-	# description 
 	I_MS_GOLD = RuleImage(roi_front=(194,254,44,41), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
 	# description 
 	I_MS_JADE = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
@@ -99,7 +83,61 @@ class DailyForFlagAssets:
 	# description 
 	I_MS_HEISUI = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
 	# description 
-	I_MS_ALL = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	I_MS_ALL_SHEPI = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_ALL_FMPI = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_ALL_HEISUI = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_SHEPI_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_SHEPI_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_FMPI_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_FMPI_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_fmpi.png")
+	# description 
+	I_MS_GOODS_HEISUI_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_GOODS_HEISUI_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_FMPI = RuleImage(roi_front=(432,127,54,79), roi_back=(387,95,161,154), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/ms_fmpi.png")
 
 
 	# Image Rule Assets
@@ -119,6 +157,22 @@ class DailyForFlagAssets:
 	I_MS_PRICE_7 = RuleImage(roi_front=(0,37,100,100), roi_back=(608,511,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
 	# description 
 	I_MS_PRICE_8 = RuleImage(roi_front=(0,58,100,100), roi_back=(833,512,174,46), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICES_1 = RuleImage(roi_front=(72,1,172,45), roi_back=(159,252,173,48), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_2 = RuleImage(roi_front=(3,29,100,100), roi_back=(383,250,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_3 = RuleImage(roi_front=(1,42,100,100), roi_back=(610,251,172,47), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_4 = RuleImage(roi_front=(0,31,100,100), roi_back=(836,253,171,46), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_5 = RuleImage(roi_front=(19,82,100,100), roi_back=(158,513,174,45), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_6 = RuleImage(roi_front=(0,37,100,100), roi_back=(386,512,172,48), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_7 = RuleImage(roi_front=(0,37,100,100), roi_back=(608,511,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_PRICES_8 = RuleImage(roi_front=(0,58,100,100), roi_back=(833,512,174,46), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
 
 
 	# Ocr Rule Assets
@@ -155,6 +209,10 @@ class DailyForFlagAssets:
 	I_TASK_TO_MAIN = RuleImage(roi_front=(17,11,46,54), roi_back=(0,0,92,98), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_task_to_main.png")
 	# description 
 	I_NORMAL = RuleImage(roi_front=(1130,123,88,77), roi_back=(1099,91,149,132), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_normal.png")
+	# description 
+	I_CORD_EXIT = RuleImage(roi_front=(1163,38,63,27), roi_back=(1111,15,158,131), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_exit.png")
+	# description 
+	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1112,11,139,134), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
 
 
 	# Image Rule Assets
