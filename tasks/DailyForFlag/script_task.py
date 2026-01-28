@@ -13,7 +13,7 @@ from module.exception import TaskEnd
 
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
-from tasks.DailyForFlag.config import DailyForFlag
+from tasks.DailyForFlag.config import DailyForFlag,GoodsType,CoinType
 from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.login import LoginHandler
@@ -38,7 +38,6 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
     account_info: dict= None
     def run(self):
         con = self.get_config()
-        
         if con.daily_for_flag_config.tingyuan_enable:
             self.run_tingyuan()
         if con.daily_for_flag_config.mail_enable:
@@ -293,7 +292,6 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.current_count >= tongxin_limit_count:
                 logger.info('Orochi count limit out')
                 break
-            logger.info('Orochi count limit 111')
             # 点击挑战
             while 1:
                 self.screenshot()
@@ -457,7 +455,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             
             # 退出
             if self.ui_get_current_page() != page_main:
-                self.ui_goto(page_main)    
+                self.ui_goto(page_main)          
     def get_config(self):
         return self.config.daily_for_flag
 

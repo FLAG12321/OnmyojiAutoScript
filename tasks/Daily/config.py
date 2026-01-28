@@ -32,6 +32,8 @@ class DailyConfig(ConfigBase):
     total_huili_enable: bool = Field(default=True, description='开启回礼')
     total_weekaward_enable: bool = Field(default=True, description='领取每周奖励')
     need_login: bool = Field(default=True, description='无视时间登录')
+    need_login_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"),description='需要登录时间点')
+
 
 
 class Daily(ConfigBase):
@@ -46,7 +48,8 @@ class Daily(ConfigBase):
                 continue
             info.last_complete_time = datetime.now()
             logger.info(f"update login history name:{info.character}  time :{info.last_complete_time}")
-            break
+            return  info.last_complete_time
+
     @model_validator(mode='before')
     @classmethod
     def validator_all(cls, v: dict) -> Any:

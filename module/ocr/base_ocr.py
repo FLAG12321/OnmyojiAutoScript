@@ -11,7 +11,8 @@ from enum import Enum
 
 from module.base.decorator import cached_property
 from module.base.utils import area_pad, crop, float2str
-from module.ocr.ppocr import TextSystem
+#from module.ocr.ppocr import TextSystem
+from module.ocr.onnx_paddle_ocr import ONNXPaddleOcr
 from module.ocr.models import OCR_MODEL
 from module.exception import ScriptError
 from module.logger import logger
@@ -122,7 +123,8 @@ class BaseCor:
         self.keyword = keyword
 
     @cached_property
-    def model(self) -> TextSystem:
+    #def model(self) -> TextSystem:
+    def model(self) -> ONNXPaddleOcr:  #因为目前只有一个语言，所以直接返回对应的模型
         return OCR_MODEL.__getattribute__(self.lang)
 
     def pre_process(self, image):

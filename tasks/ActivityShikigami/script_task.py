@@ -352,7 +352,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             self.screenshot()
             if win:
                 # 点击赢了
-                action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
+                action_click = self.C_RANDOM_BOSS
                 if self.appear_then_click(self.I_WIN, action=action_click, interval=0.5):
                     continue
                 if not self.appear(self.I_WIN):

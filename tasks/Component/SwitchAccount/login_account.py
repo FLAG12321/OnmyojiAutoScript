@@ -9,6 +9,7 @@ from module.atom.ocr import RuleOcr
 from module.logger import logger
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
+from tasks.ActivityShikigami.script_task import _prepare_image_for_ocr 
 from tasks.base_task import BaseTask
 
 
@@ -156,7 +157,6 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 self.click(self.C_SA_LOGIN_FORM_USER_CENTER, 1.5)
                 continue
         return
-
     def selectAccount(self, accountInfo: AccountInfo):
         logger.info("start selectAccount")
         self.O_SA_ACCOUNT_ACCOUNT_LIST.keyword = accountInfo.account
@@ -175,7 +175,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     return False
 
                 # 账号列表已打开状态
-                ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(self.device.image)
+                ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(self.device.image, asset=self.O_SA_ACCOUNT_ACCOUNT_LIST))
                 
                 # 找到该账号
                 for index, ocr_account in enumerate([ocrResItem.ocr_text for ocrResItem in ocrRes]):

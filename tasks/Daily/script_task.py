@@ -15,11 +15,14 @@ class ScriptTask(GameUi, DailyAssets):
     daily_conf: Daily= None
 
     def run(self):
-        self.daily_conf = self.config.daily         
-
-        for accountInfo in self.daily_conf.sup_account_list:
-            logger.info(f"next_run{self.daily_conf.scheduler.next_run.date()}")
-            logger.info(f"datetime.now(){datetime.now().date()}")
+        self.daily_conf = self.config.daily 
+        sup_account_list=self.daily_conf.sup_account_list
+        if  self.daily_conf.sup_account_list[0].last_complete_time<self.daily_conf.sup_account_list[1].last_complete_time: 
+            sup_account_list=reversed(self.daily_conf.sup_account_list)
+        logger.info(f"sup_account_list: {list(self.daily_conf.sup_account_list)}")
+        loggin_time=self.daily_conf.daily_config.need_login_time
+        
+        for accountInfo in sup_account_list:
             config = ExtendedAccountInfo()
             if  self.daily_conf.daily_config.total_tongxin_battle_enable:
                 if not accountInfo.tongxin_battle_enable:
@@ -47,8 +50,8 @@ class ScriptTask(GameUi, DailyAssets):
             config.weekaward_enable &= accountInfo.weekaward_enable
             config.tongxin_limit_count = accountInfo.tongxin_limit_count
             
-            logger.info("start %s-%s ", accountInfo.character, accountInfo.svr)
-            if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo):
+            logger.info("start %s-%s ", accountInfo.character, accountInfo.svr) 
+            if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo,loggin_time):
                 logger.warning("%s Skipped last Login Time:%s", accountInfo.character, accountInfo.last_complete_time)
                 continue 
             suc = SwitchAccount(self.config, self.device, accountInfo).switchAccount()
@@ -69,32 +72,34 @@ class ScriptTask(GameUi, DailyAssets):
                 self.daily_conf.update_account_login_history(accountInfo)
                 # 将修改后的 daily_conf 同步回主配置模型，确保保存时包含最新数据
                 self.config.model.daily = self.daily_conf
+                self.daily_conf.daily_config.need_login_time = self.start_time
                 self.save_config()
+                
                 continue
             except RequestHumanTakeover as e:
                 raise
             except Exception as e:
                 logger.error(e)
+                self.config.notifier.push(content=f" {accountInfo.character}-{accountInfo.svr} 任务执行错误\n  error: {e}",  title="ERROR")
                 self.next_run("Daily", success=False)
         for info in self.daily_conf.sup_account_list:
-            logger.info(f"update login  name:{info.character} time :{info.last_complete_time}")
-            break
+            logger.info(f"name:{info.character}")
+            logger.info(f"time :{info.last_complete_time}")
         self.config.notifier.push(content=f"Daily任务执行完毕", title="任务提醒")
         self.next_run("Daily", success=True)
         raise TaskEnd("Daily")
         pass
 
 
-    def is_need_login(self, item: AccountInfo):
+    def is_need_login(self, item: AccountInfo,last_complete_time:datetime):
         """
             根据上次登陆时间 判断是否需要登录查找
         @param item:
         @type item:
         """
-        now=self.daily_conf.sup_account_list[0].last_complete_time-timedelta(seconds=10)
         lastTime = item.last_complete_time
         #now = datetime.now()
-        if now > lastTime :
+        if last_complete_time > lastTime :
             return True
         return False
 

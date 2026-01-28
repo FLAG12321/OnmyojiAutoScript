@@ -6,6 +6,7 @@ from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.exit_game import ExitGame
 from tasks.Component.SwitchAccount.login_account import LoginAccount
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
+from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigami,_prepare_image_for_ocr 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_login
 from tasks.base_task import BaseTask
@@ -57,7 +58,7 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
 
 if __name__ == '__main__':
     config = Config('oas1')
-    device=Device()
+    device=Device(config)
     toAccount=AccountInfo(account="email0@163.com", account_alias="emailO#emailo", apple_or_android=True, character="粘贴", svr="立秋夕烛")
-    sa=SwitchAccount(config,device,toAccount)
-    sa.switchAccount()
+    sa=SwitchAccount(config,device,toAccount) 
+    ocrRes = sa.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST))

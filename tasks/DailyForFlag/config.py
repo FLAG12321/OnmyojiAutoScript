@@ -28,3 +28,12 @@ class DailyForFlag(ConfigBase):
     daily_for_flag_config: DailyForFlagConfig  = Field(default_factory=DailyForFlagConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
 
+class GoodsType(Enum):
+    shepi = 0
+    fmpi = 1
+    heisui = 2
+
+class CoinType(Enum):
+    jade = 0
+    gold = 1
+    unknow = 2

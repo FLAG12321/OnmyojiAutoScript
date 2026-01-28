@@ -62,6 +62,84 @@ class DailyForFlagAssets:
 	I_M_PAGE_MAIL = RuleImage(roi_front=(609,54,70,47), roi_back=(585,38,115,89), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_page_mail.png")
 
 
+	# Click Rule Assets
+	# description 
+	C_MS_REFRESH_ACTION = RuleClick(roi_front=(1202,534,55,52), roi_back=(1202,534,55,52), name="ms_refresh_action")
+
+
+	# Image Rule Assets
+	# description 
+	I_MS_REFRESH = RuleImage(roi_front=(1172,589,103,31), roi_back=(1135,501,144,135), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_refresh.png")
+	# description 
+	I_MS_FLAG = RuleImage(roi_front=(1209,384,60,84), roi_back=(1179,354,100,152), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_flag.png")
+	# description 
+	I_MS_ENSURE = RuleImage(roi_front=(718,408,81,43), roi_back=(684,404,155,56), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_ensure.png")
+	# description 
+	I_MS_GOODS_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOODS_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_GOLD = RuleImage(roi_front=(194,254,44,41), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_gold.png")
+	# description 
+	I_MS_JADE = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_SHEPI = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+	# description 
+	I_MS_HEISUI = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_heisui.png")
+	# description 
+	I_MS_ALL = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_shepi.png")
+
+
+	# Image Rule Assets
+	# description 
+	I_MS_PRICE_1 = RuleImage(roi_front=(72,1,172,45), roi_back=(159,252,173,48), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_2 = RuleImage(roi_front=(3,29,100,100), roi_back=(383,250,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_3 = RuleImage(roi_front=(1,42,100,100), roi_back=(610,251,172,47), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_4 = RuleImage(roi_front=(0,31,100,100), roi_back=(836,253,171,46), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_5 = RuleImage(roi_front=(19,82,100,100), roi_back=(158,513,174,45), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_6 = RuleImage(roi_front=(0,37,100,100), roi_back=(386,512,172,48), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_7 = RuleImage(roi_front=(0,37,100,100), roi_back=(608,511,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+	# description 
+	I_MS_PRICE_8 = RuleImage(roi_front=(0,58,100,100), roi_back=(833,512,174,46), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mshop/mshop_ms_jade.png")
+
+
+	# Ocr Rule Assets
+	# Ocr-description 
+	O_MS_PRICENUM_1 = RuleOcr(roi=(173,253,151,44), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_1")
+	# Ocr-description 
+	O_MS_PRICENUM_2 = RuleOcr(roi=(398,256,152,37), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_2")
+	# Ocr-description 
+	O_MS_PRICENUM_3 = RuleOcr(roi=(619,258,155,37), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_3")
+	# Ocr-description 
+	O_MS_PRICENUM_4 = RuleOcr(roi=(846,255,156,38), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_4")
+	# Ocr-description 
+	O_MS_PRICENUM_5 = RuleOcr(roi=(169,515,157,43), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_5")
+	# Ocr-description 
+	O_MS_PRICENUM_6 = RuleOcr(roi=(400,516,147,42), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_6")
+	# Ocr-description 
+	O_MS_PRICENUM_7 = RuleOcr(roi=(620,516,155,41), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_7")
+	# Ocr-description 
+	O_MS_PRICENUM_8 = RuleOcr(roi=(843,516,159,41), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_8")
+
+
 	# Image Rule Assets
 	# description 
 	I_MIAN_TO_TASK = RuleImage(roi_front=(788,451,22,23), roi_back=(583,303,418,270), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_mian_to_task.png")
