@@ -207,9 +207,10 @@ class Device(Platform, Screenshot, Control, AppControl):
             logger.warning(f'Too many click for a button: {count[0][0]}')
             logger.warning(f'History click: {[str(prev) for prev in self.click_record]}')
             
-            self.click_record_clear()
             if str("sa_account_list_up")==str(self.click_record[0]):
+                self.click_record_clear()
                 return
+            self.click_record_clear()
             raise GameTooManyClickError(f'Too many click for a button: {count[0][0]}')
         if len(count) >= 2 and count[0][1] >= 6 and count[1][1] >= 6:
             logger.warning(f'Too many click between 2 buttons: {count[0][0]}, {count[1][0]}')

@@ -212,7 +212,7 @@ class DailyForFlagAssets:
 	# description 
 	I_CORD_EXIT = RuleImage(roi_front=(1163,38,63,27), roi_back=(1111,15,158,131), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_exit.png")
 	# description 
-	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1112,11,139,134), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
+	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(697,26,541,304), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
 
 
 	# Image Rule Assets
@@ -261,7 +261,7 @@ class DailyForFlagAssets:
 
 	# Image Rule Assets
 	# description 
-	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_page_account.png")
+	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_page_account.png")
 	# description 
 	I_REAL_FLAG_1 = RuleImage(roi_front=(458,293,29,31), roi_back=(143,129,65,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
 	# description 

@@ -74,10 +74,10 @@
   {
     "itemName": "cord_back_red",
     "roiFront": "1159,42,45,43",
-    "roiBack": "1112,11,139,134",
+    "roiBack": "697,26,541,304",
     "description": "description",
     "imageName": "cord_back_red.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": "0.6"
   }
 ]

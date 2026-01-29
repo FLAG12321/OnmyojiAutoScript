@@ -99,7 +99,7 @@ class GameUi(BaseTask, GameUiAssets):
         :param skip_first_screenshot:
         :return:
         """
-        logger.info("UI get current page")
+        #logger.info("UI get current page")
 
         @run_once
         def app_check():

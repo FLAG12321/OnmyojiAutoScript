@@ -74,8 +74,8 @@
   {
     "itemName": "sa_account_login_btn",
     "imageName": "sa_account_login_btn.png",
-    "roiFront": "400,400,480,90",
-    "roiBack": "400,400,480,90",
+    "roiFront": "569,424,129,38",
+    "roiBack": "416,417,451,55",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "登录界面-选取账号界面-账号下拉菜单-已经打开标志."
@@ -83,7 +83,7 @@
   {
     "itemName": "sa_login_form_apple",
     "imageName": "sa_login_form_apple.png",
-    "roiFront": "459,326,187,168",
+    "roiFront": "526,374,66,60",
     "roiBack": "459,326,187,168",
     "method": "Template matching",
     "threshold": 0.8,
@@ -92,7 +92,7 @@
   {
     "itemName": "sa_login_form_android",
     "imageName": "sa_login_form_android.png",
-    "roiFront": "642,324,162,163",
+    "roiFront": "691,373,61,62",
     "roiBack": "642,324,162,163",
     "method": "Template matching",
     "threshold": 0.8,
@@ -115,5 +115,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时"
+  },
+  {
+    "itemName": "sa_account_drop_down_opened",
+    "roiFront": "866,581,26,17",
+    "roiBack": "859,578,38,23",
+    "description": "description",
+    "imageName": "sa_account_drop_down_opened.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

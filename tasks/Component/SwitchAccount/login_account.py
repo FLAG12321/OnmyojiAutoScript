@@ -184,16 +184,37 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     # if accountInfo.account in [ocrResItem.ocr_text for ocrResItem in ocrRes]:
                     #     index = [ocrResItem.ocr_text for ocrResItem in ocrRes].index(accountInfo.account)
                     ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
-                    self.O_SA_ACCOUNT_ACCOUNT_LIST.area = [
+                    
+                    roi = [
                         self.O_SA_ACCOUNT_ACCOUNT_LIST.roi[0] + ocrResBoxList[index][0][
                             0],
                         self.O_SA_ACCOUNT_ACCOUNT_LIST.roi[1] + ocrResBoxList[index][0][
                             1],
                         ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0],
                         ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]]
+                    self.O_SA_ACCOUNT_ACCOUNT_LIST.area=roi
+                    acount_click = RuleClick(roi,roi,"account_select")
+                    
                     time.sleep(1)
-                    self.click(self.O_SA_ACCOUNT_ACCOUNT_LIST)
+                    retry_count = 0
                     logger.info("account [ %s ] found", accountInfo.account)
+                    self.click(acount_click)
+                    logger.info(f"acount_click.roi_front{acount_click.roi_back} \nacount_click.roi_front{ acount_click.coord()}\nself.O_SA_ACCOUNT_ACCOUNT_LIST.area{self.O_SA_ACCOUNT_ACCOUNT_LIST.area}\n11111111")
+                    while 1:
+                        self.screenshot()
+                        if retry_count >= 5:
+                            logger.info("retry 3 times and not found LOGIN_BTN ")
+                            return False
+                        if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
+                            break
+                        if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_OPENED):
+                            retry_count+=1
+                            self.click(acount_click)
+                            logger.info(f"acount_click.roi_front{acount_click.roi_back} \nacount_click.roi_front{ acount_click.roi_front}\nself.O_SA_ACCOUNT_ACCOUNT_LIST.area{self.O_SA_ACCOUNT_ACCOUNT_LIST.area}\n2222222")
+                            time.sleep(1)
+                            continue
+                    time.sleep(0.5)
+                    logger.info("found LOGIN_BTN ,selectAccount success")
                     return True
 
                 # 未找到该账号
@@ -268,14 +289,16 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 if not self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
                     # 没有找到account
                     if not self.selectAccount(accountInfo):
+                        if self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
+                            return True
                         if self.appear(self.I_SA_LOGIN_FORM_APPLE):
-                            continue
+                            return False
                         self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ACCOUNT_CLOSE_BTN,
                                                       stop=self.I_SA_NETEASE_GAME_LOGO)
                         return False
                     # selectAccount 后更新图片
                     self.screenshot()
-                self.ui_click(self.I_SA_ACCOUNT_LOGIN_BTN, stop=self.I_SA_LOGIN_FORM_APPLE, interval=1)
+                self.ui_click(self.I_SA_ACCOUNT_LOGIN_BTN, stop=self.I_SA_LOGIN_FORM_APPLE, interval=3)
                 continue
             # 在用户中心界面
             if self.appear(self.I_SA_SWITCH_ACCOUNT_BTN):

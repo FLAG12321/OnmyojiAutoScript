@@ -188,6 +188,11 @@ page_travel = Page(G.I_CHECK_TRAVEL)
 page_travel.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_TRAVEL, destination=page_travel)
 
+# 英杰试炼 hero test
+page_hero_test = Page(G.I_CHECK_HERO_TEST)
+page_hero_test.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
+page_exploration.link(button=G.I_EXPLORATION_GOTO_HERO_TEST, destination=page_hero_test)
+
 # 道馆
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Dokan.assets import DokanAssets

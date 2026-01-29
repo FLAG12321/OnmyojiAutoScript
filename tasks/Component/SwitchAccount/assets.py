@@ -75,14 +75,16 @@ class SwitchAccountAssets:
 	# 登录界面-选取账号界面-账号下拉菜单-添加新账号. 
 	I_SA_ACCOUNT_DROP_DOWN_ADD_ACCOUNT = RuleImage(roi_front=(400,540,220,60), roi_back=(400,540,220,60), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_drop_down_add_account.png")
 	# 登录界面-选取账号界面-账号下拉菜单-已经打开标志. 
-	I_SA_ACCOUNT_LOGIN_BTN = RuleImage(roi_front=(400,400,480,90), roi_back=(400,400,480,90), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_login_btn.png")
+	I_SA_ACCOUNT_LOGIN_BTN = RuleImage(roi_front=(569,424,129,38), roi_back=(416,417,451,55), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_login_btn.png")
 	# 登录界面-选择手机类型为苹果. 
-	I_SA_LOGIN_FORM_APPLE = RuleImage(roi_front=(459,326,187,168), roi_back=(459,326,187,168), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_apple.png")
+	I_SA_LOGIN_FORM_APPLE = RuleImage(roi_front=(526,374,66,60), roi_back=(459,326,187,168), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_apple.png")
 	# 登录界面-选择手机类型为android 
-	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(642,324,162,163), roi_back=(642,324,162,163), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_android.png")
+	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(691,373,61,62), roi_back=(642,324,162,163), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_android.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标还未显示时 
 	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(240,530,120,40), roi_back=(240,530,120,40), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时 
 	I_SA_CHECK_SELECT_SVR_2 = RuleImage(roi_front=(240,410,120,40), roi_back=(240,410,120,40), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr.png")
+	# description 
+	I_SA_ACCOUNT_DROP_DOWN_OPENED = RuleImage(roi_front=(866,581,26,17), roi_back=(859,578,38,23), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_drop_down_opened.png")
 
 

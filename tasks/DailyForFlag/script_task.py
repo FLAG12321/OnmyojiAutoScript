@@ -349,12 +349,36 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
     def get_account_info(self):
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
-        self.ui_click(self.C_TO_ACCOUNT,stop=self.I_PAGE_ACCOUNT, interval=1)
-        self.screenshot()
-        if self.appear(self.I_PAGE_ACCOUNT):
-            account_info = self.O_ACC_NAME.ocr(self.device.image)
-            logger.info(f"get account info : {account_info}")
-        self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=1)
+        retry_count = 0
+        while 1:
+            self.screenshot()
+            if retry_count > 5:
+                logger.info("get account info failed")
+                return None
+            if self.appear(self.I_PAGE_ACCOUNT):
+                account_info = self.O_ACC_NAME.ocr(self.device.image)
+                logger.info(f"get account info : {account_info}")
+                break
+            else:
+                self.click(self.C_TO_ACCOUNT)
+                retry_count += 1
+                time.sleep(1.5)
+                continue
+        retry_count = 0
+        while 1:
+            self.screenshot()
+            if retry_count > 5:
+                self.ui_goto(page_main)
+                break
+            if self.appear_then_click(self.I_UI_BACK_RED, interval=2):
+                retry_count += 1
+                continue
+            if self.ui_get_current_page()==page_main:
+                break
+            if not self.appear(self.I_UI_BACK_RED):
+                if self.ui_get_current_page()==page_main:
+                    self.ui_goto(page_main)
+                break
         return account_info
     def get_cooperation_info(self) -> List:
         """
