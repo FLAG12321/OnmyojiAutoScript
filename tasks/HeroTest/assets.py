@@ -27,7 +27,7 @@ class HeroTestAssets:
 	# 鬼兵演武返回按钮 
 	I_BACK = RuleImage(roi_front=(20,24,75,76), roi_back=(20,24,75,76), threshold=0.8, method="Template matching", file="./tasks/HeroTest/as/as_back.png")
 	# 挑战按钮 
-	I_BATTLE = RuleImage(roi_front=(1129,588,99,49), roi_back=(1129,588,99,49), threshold=0.8, method="Template matching", file="./tasks/HeroTest/as/as_battle.png")
+	I_BATTLE = RuleImage(roi_front=(1135,597,86,49), roi_back=(1128,584,99,77), threshold=0.8, method="Template matching", file="./tasks/HeroTest/as/as_battle.png")
 	# 解锁阵容 
 	I_UNLOCK = RuleImage(roi_front=(824,651,20,25), roi_back=(734,632,286,71), threshold=0.8, method="Template matching", file="./tasks/HeroTest/as/as_unlock.png")
 	# 阵容锁定状态 

@@ -47,8 +47,8 @@
   {
     "itemName": "battle",
     "imageName": "as_battle.png",
-    "roiFront": "1129,588,99,49",
-    "roiBack": "1129,588,99,49",
+    "roiFront": "1135,597,86,49",
+    "roiBack": "1128,584,99,77",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "挑战按钮"

@@ -41,9 +41,10 @@ import random
 
 class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets,):
     account_info: dict= None
+    msg: list = []
     def run(self):
         con = self.get_config()
-        
+        self.msg = [False,""]
         if con.daily_for_flag_config.tingyuan_enable:
             self.run_tingyuan()
         if con.daily_for_flag_config.mail_enable:
@@ -66,7 +67,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
 
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
-        raise TaskEnd ("DailyForFlag")
+        raise TaskEnd (self.msg)
     def run_juangou(self):
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -328,7 +329,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 self.ui_goto(page_main)
         self.ui_goto(page_main)
     def run_xiezuo(self):   
-        self.account_info = self.get_account_info()
+        self.account_info =[] #self.get_account_info()
         # 打开悬赏封印 界面
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -342,7 +343,8 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
         self.get_cooperation_info()
         self.screenshot()
-        self.appear_then_click(self.I_UI_BACK_RED,interval=2)
+        if self.appear(self.I_UI_BACK_RED):
+            self.click(self.I_UI_BACK_RED)
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 
@@ -400,11 +402,11 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
                     self.push_notify(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
-                    self.config.notifier.push(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
+                    self.msg=[True,"发现现世勾协"]
                 else:
                     logger.info(f"find  jade cooperation ")
                     self.push_notify(content=f"   {self.account_info} 发现普通勾协", title="协作任务提醒")
-                    self.config.notifier.push(content=f"   {self.account_info} 发现普通勾协", title="协作任务提醒")
+                    self.msg=[True,"发现普通勾协"]
                 continue
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn})
@@ -418,12 +420,12 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn})
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")
+                    self.msg=[True,"发现现世体协"]
                     self.push_notify(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
-                    self.config.notifier.push(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
                 else:
                     logger.info(f"find  sushi cooperation ")
+                    self.msg=[True,"发现普通体协"]
                     self.push_notify(content=f"   {self.account_info} 发现普通体协", title="协作任务提醒")
-                    self.config.notifier.push(content=f"   {self.account_info} 发现普通体协", title="协作任务提醒")
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):

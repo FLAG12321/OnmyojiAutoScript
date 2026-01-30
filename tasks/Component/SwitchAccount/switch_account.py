@@ -11,9 +11,57 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_login
 from tasks.base_task import BaseTask
 from tasks.Restart.login import LoginHandler
-
+import numpy as np
+from module.atom.ocr import RuleOcr
+import cv2
 from module.logger import logger
 
+def _prepare_image_for_ocr(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
+    """
+    入参：image(np.ndarray/cv2 BGR格式)、asset(RuleOcr含ROI)
+    返回：np.ndarray处理后图片
+    核心逻辑：仅保留ROI内邮箱区域，擦除该区域内其他所有内容，原图非ROI区域不变
+    """
+    # 深拷贝原图，避免修改原始输入数据
+    img_process = image.copy()
+    # 提取ROI坐标并裁剪出目标区域（仅处理ROI内内容）
+    roi_x, roi_y, roi_w, roi_h = asset.roi
+    roi_area = img_process[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
+    
+    # 防护：若ROI裁剪后为空，直接返回原图
+    if roi_area.size == 0:
+        return img_process
+
+    # 1. ROI转灰度图（兼容3通道BGR/单通道灰度图）
+    if len(roi_area.shape) == 3 and roi_area.shape[2] == 3:
+        gray = cv2.cvtColor(roi_area, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = roi_area
+
+    # 2. OTSU自动阈值反相二值化（自适应亮度，精准提取文字轮廓）
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+
+    # 3. 横向膨胀（连接邮箱零散文字轮廓，确保检测到完整邮箱区域）
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (6, 2))
+    binary_dilate = cv2.dilate(binary, kernel, iterations=1)
+
+    # 4. 查找外部轮廓（兼容所有OpenCV版本）
+    contours, _ = cv2.findContours(binary_dilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # 5. 先将整个ROI填充为白色（擦除所有内容）
+    roi_area[:] = (255, 255, 255)
+
+    # 6. 筛选邮箱轮廓，将原邮箱内容还原回去（仅保留邮箱）
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        # 邮箱特征：水平长条形（可根据实际图片微调）
+        if w >= 30 and h >= 8 and (w / h) >= 4:
+            # 从原始ROI中截取邮箱区域，还原到白色ROI中
+            roi_area[y:y+h, x:x+w] = image[roi_y+y:roi_y+y+h, roi_x+x:roi_x+x+w]
+
+    # 7. 将处理后的ROI写回原图，返回结果
+    img_process[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w] = roi_area
+    return img_process
 
 class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
 
@@ -57,8 +105,11 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
 
 
 if __name__ == '__main__':
-    config = Config('oas1')
+    config = Config('QMUMU3')
     device=Device(config)
     toAccount=AccountInfo(account="email0@163.com", account_alias="emailO#emailo", apple_or_android=True, character="粘贴", svr="立秋夕烛")
     sa=SwitchAccount(config,device,toAccount) 
+    sa.screenshot()
+    prepared_image=_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST)
+    prepared_image.save("prepared_image.png")
     ocrRes = sa.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST))
