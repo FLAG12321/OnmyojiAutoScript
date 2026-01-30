@@ -73,15 +73,11 @@ class ScriptTask(GameUi, DailyAssets):
                 logger.warning("%s-%s %s", accountInfo.character, accountInfo.svr, msg_data[1])
                 
                 if msg_data[0]:
-                    device_type = "ios" if accountInfo.apple_or_android else "android"
+                    device_type = "android" if accountInfo.apple_or_android else "ios"
                     self.config.notifier.push(
                         content=f"   {accountInfo.character} {msg_data[1]}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
                         title="协作任务提醒"
                     )
-                """ if msg[0]:
-                    device_type = "ios" if accountInfo.apple_or_android else "android"
-                    self.config.notifier.push(content=f"   {accountInfo.character} {msg[1]}\n所属账号为:{accountInfo.account},客户端为：{device_type }", title="协作任务提醒")
-                logger.warning("%s-%s TaskEnd", accountInfo.character, accountInfo.svr) """
                 # 更新配置文件中的时间
                 self.daily_conf.update_account_login_history(accountInfo)
                 # 将修改后的 daily_conf 同步回主配置模型，确保保存时包含最新数据

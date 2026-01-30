@@ -345,6 +345,8 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         self.screenshot()
         if self.appear(self.I_UI_BACK_RED):
             self.click(self.I_UI_BACK_RED)
+            time.sleep(1)
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 

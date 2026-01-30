@@ -7,6 +7,7 @@ from module.exception import RequestHumanTakeover, GameTooManyClickError, GameSt
 from module.logger import logger
 from tasks.Restart.assets import RestartAssets
 from tasks.base_task import BaseTask
+from module.atom.click import RuleClick
 import time
 
 class LoginHandler(BaseTask, RestartAssets):
@@ -99,8 +100,31 @@ class LoginHandler(BaseTask, RestartAssets):
                 logger.info("click onmyoji genie")
                 continue
             # 点击屏幕进入游戏
-            if self.appear(self.I_LOGIN_SPECIFIC_SERVE, interval=0.6) \
-                    and self.ocr_appear_click(self.O_LOGIN_SPECIFIC_SERVE, interval=0.6):
+            if self.appear(self.I_LOGIN_SPECIFIC_SERVE, interval=0.6):
+                for i in range(5):
+                    self.screenshot()
+                    ocrRes = self.O_LOGIN_SPECIFIC_SERVE.detect_and_ocr(self.device.image)
+                    # 找到该账号
+                    acount_click=""
+                    for index, ocr_account in enumerate([ocrResItem.ocr_text for ocrResItem in ocrRes]):
+                        if not self.O_LOGIN_SPECIFIC_SERVE.keyword==ocr_account:
+                            continue
+                        ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
+                        
+                        roi = [
+                            self.O_LOGIN_SPECIFIC_SERVE.roi[0] + ocrResBoxList[index][0][
+                                0],
+                            self.O_LOGIN_SPECIFIC_SERVE.roi[1] + ocrResBoxList[index][0][
+                                1],
+                            ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0],
+                            ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]]
+                        acount_click = RuleClick(roi,roi,"character select")
+                        break
+                    if not acount_click=="":
+                        self.click(acount_click)
+                        time.sleep(1)   
+                        self.click(acount_click)
+                        break
                 while True:
                     self.screenshot()
                     if self.appear(self.I_LOGIN_SPECIFIC_SERVE):
