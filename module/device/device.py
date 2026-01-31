@@ -20,7 +20,7 @@ from module.exception import (GameNotRunningError,
                               RequestHumanTakeover,
                               EmulatorNotRunningError)
 from module.logger import logger
-
+import time
 
 class Device(Platform, Screenshot, Control, AppControl):
     _screen_size_checked = False
@@ -29,7 +29,7 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_timer = Timer(60, count=60).start()
     stuck_timer_long = Timer(300, count=300).start()
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
-
+    retry_times :int = 0
     def __init__(self, *args, **kwargs):
         for trial in range(4):
             try:
@@ -211,12 +211,22 @@ class Device(Platform, Screenshot, Control, AppControl):
                 self.click_record_clear()
                 return
             self.click_record_clear()
-            raise GameTooManyClickError(f'Too many click for a button: {count[0][0]}')
+            if self.retry_times >= 5:
+                self.retry_times = 0
+                raise GameTooManyClickError(f'Too many click for a button: {count[0][0]}')
+            self.retry_times += 1
+            time.sleep(10)
+            return
         if len(count) >= 2 and count[0][1] >= 6 and count[1][1] >= 6:
             logger.warning(f'Too many click between 2 buttons: {count[0][0]}, {count[1][0]}')
             logger.warning(f'History click: {[str(prev) for prev in self.click_record]}')
             self.click_record_clear()
-            raise GameTooManyClickError(f'Too many click between 2 buttons: {count[0][0]}, {count[1][0]}')
+            if self.retry_times >= 5:
+                self.retry_times = 0
+                raise GameTooManyClickError(f'Too many click for a button: {count[0][0]}')
+            self.retry_times += 1
+            time.sleep(10)
+            return
 
     def disable_stuck_detection(self):
         """

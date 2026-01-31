@@ -8,7 +8,7 @@ from tasks.Daily import DailyForFlagEx
 from tasks.Daily.assets import DailyAssets
 from tasks.Daily.config import AccountInfo, Daily, ExtendedAccountInfo
 from tasks.GameUi.game_ui import GameUi
-from tasks.DailyForFlag.config import  DailyForFlagConfig,GeneralBattleConfig
+from tasks.DailyForFlag.config import MSGType
 
 
 class ScriptTask(GameUi, DailyAssets):
@@ -40,7 +40,10 @@ class ScriptTask(GameUi, DailyAssets):
             config.huili_enable = self.daily_conf.daily_config.total_huili_enable
             config.weekaward_enable = self.daily_conf.daily_config.total_weekaward_enable
             config.mysteryshop_enable = self.daily_conf.daily_config.total_mysteryshop_enable
-
+            config.kekkaiActivation_enable = self.daily_conf.daily_config.total_kekkaiActivation_enable
+            config.KekkaiUtilize_enable = self.daily_conf.daily_config.total_KekkaiUtilize_enable
+            
+            
             config.tongxin_battle_enable &= accountInfo.tongxin_battle_enable
             config.tongxin_ap_enable &= accountInfo.tongxin_ap_enable
             config.mail_enable  &= accountInfo.mail_enable
@@ -50,7 +53,11 @@ class ScriptTask(GameUi, DailyAssets):
             config.huili_enable &= accountInfo.huili_enable
             config.weekaward_enable &= accountInfo.weekaward_enable
             config.mysteryshop_enable &= accountInfo.mysteryshop_enable
+            config.kekkaiActivation_enable &= accountInfo.kekkaiActivation_enable
+            config.KekkaiUtilize_enable &= accountInfo.KekkaiUtilize_enable
+            config.isflower = accountInfo.isflower
             config.tongxin_limit_count = accountInfo.tongxin_limit_count
+
             
             logger.info("start %s-%s ", accountInfo.character, accountInfo.svr) 
             if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo,loggin_time):
@@ -69,15 +76,31 @@ class ScriptTask(GameUi, DailyAssets):
             try:
                 dff.run()
             except TaskEnd as msg:
-                msg_data = msg.args[0] if msg.args else [False, ""]
-                logger.warning("%s-%s %s", accountInfo.character, accountInfo.svr, msg_data[1])
-                
-                if msg_data[0]:
-                    device_type = "android" if accountInfo.apple_or_android else "ios"
-                    self.config.notifier.push(
-                        content=f"   {accountInfo.character} {msg_data[1]}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
-                        title="协作任务提醒"
-                    )
+                logger.info(f"TaskEndTaskEndTaskEndTaskEnd{msg.args}")
+                if msg.args == () or msg.args == []:
+                    logger.info("Daily任务执行完毕")
+                else:
+                    logger.info(f"msg len{len(msg.args)}")
+                    for item in msg.args[0]:
+                        logger.info(f"item{item}")
+                        if len(item) >= 2:
+                            msg_type = item[0]  # MSGType
+                            msg_content = item[1]  #Content
+                            print(f"类型: {msg_type}, 内容: {msg_content}")
+                            match msg_type:
+                                case MSGType.xiezuo:
+                                    device_type = "android" if accountInfo.apple_or_android else "ios"
+                                    self.config.notifier.push(
+                                        content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
+                                        title="协作任务提醒"
+                                    )
+                                case MSGType.mshop:
+                                    device_type = "android" if accountInfo.apple_or_android else "ios"
+                                    self.config.notifier.push(
+                                        content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
+                                        title="神秘商店提醒  "
+                                    )
+                #logger.warning("%s-%s %s", accountInfo.character, accountInfo.svr, msg_data[1])
                 # 更新配置文件中的时间
                 self.daily_conf.update_account_login_history(accountInfo)
                 # 将修改后的 daily_conf 同步回主配置模型，确保保存时包含最新数据

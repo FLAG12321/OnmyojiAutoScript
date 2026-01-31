@@ -12,6 +12,9 @@ def get_config(self):
     config.daily_for_flag_config.huili_enable = self.account_info.huili_enable
     config.daily_for_flag_config.weekaward_enable = self.account_info.weekaward_enable
     config.daily_for_flag_config.mysteryshop_enable = self.account_info.mysteryshop_enable
+    config.daily_for_flag_config.isflower = self.account_info.isflower
+    config.daily_for_flag_config.kekkaiActivation_enable = self.account_info.kekkaiActivation_enable
+    config.daily_for_flag_config.KekkaiUtilize_enable = self.account_info.KekkaiUtilize_enable
     return config
 def run_success(self):
     self.daily_conf.update_account_login_history

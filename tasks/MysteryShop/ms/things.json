@@ -28,8 +28,8 @@
   },
   {
     "itemName": "ms_taiko_4",
-    "imageName": "ms_ms_taiko_4.png",
-    "roiFront": "204,372,90,88",
+    "imageName": "ms_taiko_4.png",
+    "roiFront": "399,380,146,101",
     "roiBack": "156,81,874,473",
     "method": "Template matching",
     "threshold": 0.8,
@@ -77,16 +77,16 @@
     "roiFront": "567,259,70,81",
     "roiBack": "465,245,252,124",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.7",
     "description": "description"
   },
   {
     "itemName": "ms_check_taiko_4",
-    "imageName": "ms_ms_check_taiko_4.png",
-    "roiFront": "591,277,66,73",
-    "roiBack": "453,235,280,146",
+    "imageName": "ms_check_taiko_4.png",
+    "roiFront": "580,191,117,37",
+    "roiBack": "475,169,336,230",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.6",
     "description": "description"
   },
   {
@@ -95,7 +95,7 @@
     "roiFront": "580,253,100,100",
     "roiBack": "430,220,334,171",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.7",
     "description": "description"
   },
   {

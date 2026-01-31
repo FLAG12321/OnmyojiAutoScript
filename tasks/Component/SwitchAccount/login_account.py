@@ -187,11 +187,11 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     
                     roi = [
                         self.O_SA_ACCOUNT_ACCOUNT_LIST.roi[0] + ocrResBoxList[index][0][
-                            0],
+                            0]+(ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0])/4,
                         self.O_SA_ACCOUNT_ACCOUNT_LIST.roi[1] + ocrResBoxList[index][0][
-                            1],
-                        ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0],
-                        ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]]
+                            1]+(ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1])/4,
+                        (ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0])/2,
+                        (ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1])/2]
                     self.O_SA_ACCOUNT_ACCOUNT_LIST.area=roi
                     acount_click = RuleClick(roi,roi,"account_select")
                     

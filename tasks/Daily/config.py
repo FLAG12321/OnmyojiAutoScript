@@ -21,6 +21,9 @@ class ExtendedAccountInfo(AccountInfo):
     huili_enable: bool = Field(default=True, description='是否开启回礼')
     weekaward_enable: bool = Field(default=True, description='是否领取每周奖励')
     mysteryshop_enable: bool = Field(default=False, description='是否开启神秘商店')
+    isflower: bool = Field(default=False, description='是否二花')
+    kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
+    KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
 class DailyConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
@@ -35,7 +38,8 @@ class DailyConfig(ConfigBase):
     total_mysteryshop_enable: bool = Field(default=False, description='神秘商店')
     need_login: bool = Field(default=True, description='无视时间登录')
     need_login_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"),description='需要登录时间点')
-
+    total_kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
+    total_KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
 
 
 class Daily(ConfigBase):

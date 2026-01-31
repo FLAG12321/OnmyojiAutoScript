@@ -29,6 +29,7 @@ class Buy(BaseTask, BuyAssets):
             self.screenshot()
 
             if self.appear(check_image):
+                logger.info('check_image')
                 break
 
             if isinstance(start_click, RuleImage):
@@ -40,6 +41,7 @@ class Buy(BaseTask, BuyAssets):
             elif isinstance(start_click, RuleClick):
                 if self.click(start_click, interval=1):
                     continue
+            logger.info(f'self.screenshot()1{check_image}')
         while 1:
             self.screenshot()
 
@@ -73,7 +75,7 @@ class Buy(BaseTask, BuyAssets):
 
             if self.click(self.C_BUY_ONE, interval=2.8):
                 continue
-
+            logger.info('self.screenshot()2')
         return True
 
     def buy_more(self, start_click: Union[RuleImage, RuleOcr, RuleClick],

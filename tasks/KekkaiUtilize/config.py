@@ -27,17 +27,17 @@ class UtilizeScheduler(Scheduler):
     failure_interval: TimeDelta = Field(default=TimeDelta(hours=6), description='failure_interval_help')
 
 class UtilizeConfig(BaseModel):
-    utilize_rule: UtilizeRule = Field(default=UtilizeRule.DEFAULT, description='utilize_rule_help')
+    utilize_rule: UtilizeRule = Field(default=UtilizeRule.TAIKO, description='utilize_rule_help')
     select_friend_list: SelectFriendList = Field(default=SelectFriendList.SAME_SERVER, description='select_friend_list_help')
     shikigami_class: ShikigamiClass = Field(default=ShikigamiClass.N, description='shikigami_class_help')
-    shikigami_order: int = Field(default=4, description='shikigami_order_help')
-    harvest_guild_max_times: int = Field(default=3, description='收取寮资金或体力失败的最大尝试次数')
+    shikigami_order: int = Field(default=1, description='shikigami_order_help')
+    harvest_guild_max_times: int = Field(default=0, description='收取寮资金或体力失败的最大尝试次数')
     utilize_enable: bool = Field(default=True, description='是否蹭卡，小号可以选择不蹭卡')
-    guild_ap_enable: bool = Field(default=True, description='收取寄养资源')
-    guild_assets_enable: bool = Field(default=True, description='guild_assets_enable_help')
-    box_ap_enable: bool = Field(default=True, description='box_ap_enable_help')
-    box_exp_enable: bool = Field(default=True, description='box_exp_enable_help')
-    box_exp_waste: bool = Field(default=True, description='box_exp_waste_help')
+    guild_ap_enable: bool = Field(default=False, description='收取寄养资源')
+    guild_assets_enable: bool = Field(default=False, description='guild_assets_enable_help')
+    box_ap_enable: bool = Field(default=False, description='box_ap_enable_help')
+    box_exp_enable: bool = Field(default=False, description='box_exp_enable_help')
+    box_exp_waste: bool = Field(default=False, description='box_exp_waste_help')
 
 
 class KekkaiUtilize(ConfigBase):

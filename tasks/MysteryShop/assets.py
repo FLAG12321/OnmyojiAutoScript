@@ -38,7 +38,7 @@ class MysteryShopAssets:
 	# description 
 	I_MS_TAIKO_3 = RuleImage(roi_front=(176,353,140,104), roi_back=(144,50,866,494), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_taiko_3.png")
 	# description 
-	I_MS_TAIKO_4 = RuleImage(roi_front=(204,372,90,88), roi_back=(156,81,874,473), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_taiko_4.png")
+	I_MS_TAIKO_4 = RuleImage(roi_front=(399,380,146,101), roi_back=(156,81,874,473), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_taiko_4.png")
 	# description 
 	I_MS_TAIKO_6 = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_taiko_6.png")
 	# description 
@@ -48,11 +48,11 @@ class MysteryShopAssets:
 	# description 
 	I_MS_CHECK_BLACK = RuleImage(roi_front=(598,258,86,92), roi_back=(455,238,273,123), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_black.png")
 	# description 
-	I_MS_CHECK_TAIKO_3 = RuleImage(roi_front=(567,259,70,81), roi_back=(465,245,252,124), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_taiko_3.png")
+	I_MS_CHECK_TAIKO_3 = RuleImage(roi_front=(567,259,70,81), roi_back=(465,245,252,124), threshold=0.7, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_taiko_3.png")
 	# description 
-	I_MS_CHECK_TAIKO_4 = RuleImage(roi_front=(591,277,66,73), roi_back=(453,235,280,146), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_taiko_4.png")
+	I_MS_CHECK_TAIKO_4 = RuleImage(roi_front=(580,191,117,37), roi_back=(475,169,336,230), threshold=0.6, method="Template matching", file="./tasks/MysteryShop/ms/ms_check_taiko_4.png")
 	# description 
-	I_MS_CHECK_TAIKO_6 = RuleImage(roi_front=(580,253,100,100), roi_back=(430,220,334,171), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_taiko_6.png")
+	I_MS_CHECK_TAIKO_6 = RuleImage(roi_front=(580,253,100,100), roi_back=(430,220,334,171), threshold=0.7, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_taiko_6.png")
 	# description 
 	I_MS_CHECK_EXP = RuleImage(roi_front=(589,255,100,100), roi_back=(472,225,243,149), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_check_exp.png")
 	# description 

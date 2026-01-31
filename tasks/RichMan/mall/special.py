@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 import time
 import re
+import cv2
 
 from module.logger import logger
 from module.atom.image import RuleImage
@@ -153,22 +154,36 @@ class Special(Buy, MallNavbar):
         # 重设roi
         roi = self.O_SP_RES_NUMBER.roi
         self.O_SP_RES_NUMBER.roi[0] = upper_midpoint[0] - roi[2] // 2
-        self.O_SP_RES_NUMBER.roi[1] = upper_midpoint[1] - roi[3]
+        self.O_SP_RES_NUMBER.roi[1] = upper_midpoint[1] - roi[3] -10
         # logger.info(f'图片的ROI是: {target.roi_front}')
         # logger.info(f'上中点是：{upper_midpoint}')
         # logger.info(f'数字的ROI是: {self.O_SP_RES_NUMBER.roi}')
+        
+        """  # 获取 O_SP_RES_NUMBER 区域坐标
+        x, y, w, h = self.O_SP_RES_NUMBER.roi
+        original_image = self.device.image # 替换为实际的原始图像属性
+        
+        # 使用 OpenCV 截取
+        roi_image_cv2 = original_image[y:y+h, x:x+w]
+        
+        # 保存截取的区域
+        cv2.imwrite('roi_sp_res_number.jpg', roi_image_cv2)  """
         result = self.O_SP_RES_NUMBER.ocr(self.device.image)
-        result = result.replace('？', '2').replace('?', '2').replace(':', '；').replace('火', '次').replace('教', '数').replace('刺', '剩').replace('头', '买')
+        result = result.replace('？', '2').replace('?', '2').replace('火', '次').replace('教', '数').replace('刺', '剩').replace('头', '买').replace('茶', '余').replace('。', ':2')
+        logger.info(f'Result: {result}')
+        matches = re.findall(r'[：:](\d+)', result)
+        logger.info(f'Matches: {matches}')
         try:
-            if '：' in result:
-                result = re.findall(r'(?:剩余)?购买次数：(\d+)', result)[0]
-                result = int(result)
+            if matches:
+                result = int(matches[0])
+                logger.info(f'Remain: {result}')
             else:
                 result = re.findall(r'本周剩余数量(\d+)', result)[0]
                 result = int(result)
+                logger.info(f'Remain2: {result}')
         except:
             result = 0
-        logger.info(f'Remain [{result}]')
+        logger.info(f'Remain3 [{result}]')
         return result
 
 

@@ -3,6 +3,9 @@
 # github https://github.com/runhey
 import re
 import time
+import cv2
+import numpy as np
+from PIL import Image
 from cached_property import cached_property
 from datetime import timedelta, datetime
 from typing import List
@@ -14,7 +17,7 @@ from module.exception import TaskEnd
 from module.atom.image import RuleImage
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
-from tasks.DailyForFlag.config import DailyForFlag,GoodsType,CoinType
+from tasks.DailyForFlag.config import DailyForFlag,GoodsType,CoinType,MSGType
 from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.login import LoginHandler
@@ -34,17 +37,21 @@ from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigami,
 from tasks.MysteryShop.config import MysteryShop, ShopConfig, ShareConfig
 from tasks.MysteryShop.assets import MysteryShopAssets
 from tasks.MysteryShop.script_task import ScriptTask as MysteryShop
+from tasks.KekkaiActivation.script_task import ScriptTask as KekkaiActivation
+from tasks.KekkaiUtilize.script_task import ScriptTask as KekkaiUtilize
+from module.atom.ocr import RuleOcr 
 import random
-
-
 
 
 class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets,):
     account_info: dict= None
     msg: list = []
+    
     def run(self):
+        
+ 
         con = self.get_config()
-        self.msg = [False,""]
+        self.msg = []
         if con.daily_for_flag_config.tingyuan_enable:
             self.run_tingyuan()
         if con.daily_for_flag_config.mail_enable:
@@ -64,9 +71,24 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self._share_collect()
         if con.daily_for_flag_config.mysteryshop_enable:
             self.run_mysteryshop()
+            # 执行挂卡（只执行核心逻辑，避免TaskEnd）
+        if con.daily_for_flag_config.kekkaiActivation_enable:
+            try:
+                activation_task = KekkaiActivation(self.config, self.device)
+                activation_task.run()
+            except TaskEnd:
+                pass  # 忽略挂卡任务的结束信号
+        if con.daily_for_flag_config.KekkaiUtilize_enable:    
+            # 执行蹭卡
+            try:
+                utilize_task = KekkaiUtilize(self.config, self.device)
+                utilize_task.run()
+            except TaskEnd:
+                pass  # 如果蹭卡任务也有TaskEnd，也需要处理
 
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
+        logger.info(self.msg)
         raise TaskEnd (self.msg)
     def run_juangou(self):
         if self.ui_get_current_page() != page_main:
@@ -329,7 +351,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 self.ui_goto(page_main)
         self.ui_goto(page_main)
     def run_xiezuo(self):   
-        self.account_info =[] #self.get_account_info()
+        #self.account_info =[] #self.get_account_info()
         # 打开悬赏封印 界面
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -403,12 +425,12 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 retList.append({'type': CooperationType.Jade, 'inviteBtn': btn})
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
-                    self.push_notify(content=f"   {self.account_info} 发现现世勾协", title="协作任务提醒")
-                    self.msg=[True,"发现现世勾协"]
+                    self.push_notify(content=f"    发现现世勾协", title="协作任务提醒")
+                    self.msg.append([MSGType.xiezuo,"发现现世勾协"])
                 else:
                     logger.info(f"find  jade cooperation ")
-                    self.push_notify(content=f"   {self.account_info} 发现普通勾协", title="协作任务提醒")
-                    self.msg=[True,"发现普通勾协"]
+                    self.push_notify(content=f"    发现普通勾协", title="协作任务提醒")
+                    self.msg.append([MSGType.xiezuo,"发现普通勾协"])
                 continue
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn})
@@ -422,12 +444,12 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn})
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")
-                    self.msg=[True,"发现现世体协"]
-                    self.push_notify(content=f"   {self.account_info} 发现现世体协", title="协作任务提醒")
+                    self.msg.append([MSGType.xiezuo,"发现现世体协"])
+                    self.push_notify(content=f"    发现现世体协", title="协作任务提醒")
                 else:
                     logger.info(f"find  sushi cooperation ")
-                    self.msg=[True,"发现普通体协"]
-                    self.push_notify(content=f"   {self.account_info} 发现普通体协", title="协作任务提醒")
+                    self.msg.append([MSGType.xiezuo,"发现普通体协"])
+                    self.push_notify(content=f"    发现普通体协", title="协作任务提醒")
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):
@@ -498,8 +520,9 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 self.ui_goto(page_main) 
 
     def run_mysteryshop(self):
-        self.account_info = self.get_account_info()
-        self.ui_get_current_page()
+        #self.account_info = self.get_account_info()
+        if self.ui_get_current_page()!=page_main:
+            self.ui_goto(page_main)
         self.ui_goto(page_mall)
         self.ui_click(MysteryShopAssets.I_ME_ENTER, MysteryShopAssets.I_MS_SHARE)
         logger.info('Mysteryshop')
@@ -507,7 +530,6 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         if not self.MsFind():
             retry_count = 0
             while 1:    
-
                 self.screenshot()
                 if retry_count >= 3:
                     break
@@ -522,8 +544,24 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 if self.appear(MysteryShopAssets.I_MS_SHARE,interval=2):
                     retry_count += 1
             self.MsFind()
-        self.ui_goto(page_mall)
+        retry_count = 0
+        while 1:
+            self.screenshot()
+            if retry_count >3:
+                break
+            if self.appear_then_click(self.I_BACK_Y,interval=2):
+                retry_count +=1
+                continue
+            if not self.appear(self.I_BACK_Y):
+                break
     def MsFind(self):
+        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
+                                money_ocr=self.O_MALL_RESOURCE_5, buy_money=80):
+            pass
+        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_3, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_3,
+                                    money_ocr=self.O_MALL_RESOURCE_5, buy_money=45):
+            pass
+        
         all_info_list = []
         cointype_and_coinNum_list=self.FindCoinTypeAndCoinNum()
         self.screenshot()
@@ -537,7 +575,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             info_list=self.FindGoodsType(GoodsType.fmpi,cointype_and_coinNum_list)
             if len(info_list) > 0:
                 all_info_list.extend(info_list)
-        if self.appear(self.I_MS_ALL_HEISUI):
+        if self.get_config().daily_for_flag_config.isflower and self.appear(self.I_MS_ALL_HEISUI):
             logger.info(f"appear I_MS_ALL_HEISUI: {all_info_list}")
             info_list=self.FindGoodsType(GoodsType.heisui,cointype_and_coinNum_list)
             if len(info_list) > 0:
@@ -573,7 +611,13 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             appear_coin_jade = getattr(self, f'I_MS_PRICE_{index+1}')
             appear_coin_gold = getattr(self, f'I_MS_PRICES_{index+1}')
             appear_coin_num = self.__getattribute__("O_MS_PRICENUM_" + str(index + 1))
-            coin_num = appear_coin_num.ocr_digit(_prepare_image_for_ocr(self.device.image,appear_coin_num))
+            ocr_results = appear_coin_num.detect_and_ocr(self.device.image)
+            if ocr_results:
+                coin_num = int(ocr_results[0].ocr_text)
+            else:
+                logger.warning(f"无法识别第 {index + 1} 个位置的数量，使用默认值 0")
+                coin_num = 0  # 或者其他合适的默认值
+            logger.info(f"数量: {coin_num}")
             if self.appear(appear_coin_jade):
                 info_list.append([CoinType.jade,coin_num])
             elif self.appear(appear_coin_gold):
@@ -589,13 +633,16 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 if info[0]==GoodsType.shepi or info[0]==GoodsType.fmpi:
                     flag=True
                     logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
-                    self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}金币 {info[0]}", title="神秘商店提醒")
+                    self.msg.append([MSGType.mshop,f"发现{info[2]}金币 {info[0]}"])
+                    #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}金币 {info[0]}", title="神秘商店提醒")
             if info[1]==CoinType.jade: 
                  if info[0]==GoodsType.heisui: 
-                    if info[2]<45 or 70<info[2]<96 or info[2]>133:
+                    if 0<info[2]<45 or 70<info[2]<96 or info[2]>133:
                         flag=True
                         logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
-                        self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}勾黑碎", title="神秘商店提醒")
+                        #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}勾黑碎", title="神秘商店提醒")
+                        self.msg.append([MSGType.mshop,f"发现{info[2]}勾黑碎"])
+                        self.push_notify(content=f" 发现{info[2]}勾黑碎", title="协作任务提醒")
         return flag
     def get_config(self):
         return self.config.daily_for_flag
