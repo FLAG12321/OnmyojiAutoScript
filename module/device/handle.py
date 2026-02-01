@@ -294,13 +294,54 @@ class Handle:
 
                 # 递归遍历子窗体的子窗体
                 Handle.handle_tree(child_hwnd, child_node, level + 1)
-
     @cached_property
     def emulator_family(self) -> EmulatorFamily:
         """
         通过句柄树来判断这个是那个模拟器大类
         :return:
         """
+        children_num = len(self.root_node.children)
+        if children_num == 1:  #
+            if len(self.root_node.children) == 0:
+                logger.error('No children found in root node for emulator detection')
+                return EmulatorFamily.FAMILY_OTHER
+            name = self.root_node.children[0].name
+            if name == 'MuMuPlayer':
+                return EmulatorFamily.FAMILY_MUMU
+            elif name == 'NemuPlayer':
+                return EmulatorFamily.FAMILY_MUMU
+            elif name == 'TheRender':
+                return EmulatorFamily.FAMILY_LD
+            elif name == 'HD-Player':
+                return EmulatorFamily.FAMILY_BLUESTACKS
+        elif children_num >= 3:
+            if len(self.root_node.children) == 0:
+                logger.error('No children found in root node for emulator detection')
+                return EmulatorFamily.FAMILY_OTHER
+            name = self.root_node.children[0].name
+            if name == 'Nox':
+                return EmulatorFamily.FAMILY_NOX
+
+        # 基于句柄标题的判定
+        for emu in Handle.emulator_list:
+            if self.root_handle_title.find(emu) != -1:
+                if emu == 'MuMu':
+                    return EmulatorFamily.FAMILY_MUMU
+                elif emu == '雷电':
+                    return EmulatorFamily.FAMILY_LD
+                elif emu == '夜神':
+                    return EmulatorFamily.FAMILY_NOX
+                elif emu == '蓝叠':
+                    return EmulatorFamily.FAMILY_BLUESTACKS
+                elif emu == '逍遥':
+                    return EmulatorFamily.FAMILY_MEMU
+        return EmulatorFamily.FAMILY_OTHER
+    """ @cached_property
+    def emulator_family(self) -> EmulatorFamily:
+        
+        通过句柄树来判断这个是那个模拟器大类
+        :return:
+        
         children_num = len(self.root_node.children)
         if children_num == 1:  #
             name = self.root_node.children[0].name
@@ -330,7 +371,7 @@ class Handle:
                     return EmulatorFamily.FAMILY_BLUESTACKS
                 elif emu == '逍遥':
                     return EmulatorFamily.FAMILY_MEMU
-        return EmulatorFamily.FAMILY_OTHER
+        return EmulatorFamily.FAMILY_OTHER """
 
     @cached_property
     def screenshot_handle_num(self) -> int:
@@ -338,6 +379,53 @@ class Handle:
         截屏的句柄其实并不是根句柄
         :return:  出错返回None
         """
+        if self.emulator_family == EmulatorFamily.FAMILY_MUMU:
+            # 使用正则匹配12 来判定是不是mumu12这并不是一个好的方法
+            if len(self.root_node.children) == 0:
+                logger.error('No children found in root node for MuMu emulator')
+                return self.root_node.num
+            name = self.root_node.children[0].name
+            num = self.root_node.children[0].num
+            if name == 'MuMuPlayer':
+                logger.info('The emulator is MuMu模拟器12')
+                return num
+            elif name == 'NemuPlayer':
+                logger.info('The emulator is MuMu模拟器')
+                return num
+        # 夜神
+        elif self.emulator_family == EmulatorFamily.FAMILY_NOX:
+            try:
+                if len(self.root_node.children) < 2 or len(self.root_node.children[1].children) < 2:
+                    logger.error('Insufficient children nodes for Nox emulator')
+                    return self.root_node.num
+                return self.root_node.children[1].children[1].num
+            except:
+                if len(self.root_node.children) < 3 or len(self.root_node.children[2].children) < 2:
+                    logger.error('Insufficient children nodes for Nox emulator')
+                    return self.root_node.num
+                return self.root_node.children[2].children[1].num
+
+        elif self.emulator_family == EmulatorFamily.FAMILY_LD:
+            for node in PreOrderIter(self.root_node):
+                if node.name == Handle.emulator_handle['ld_player_family'][0]:
+                    return node.num
+
+        elif self.emulator_family == EmulatorFamily.FAMILY_MEMU:
+            for node in PreOrderIter(self.root_node):
+                if node.name == Handle.emulator_handle['memu_player_family']:
+                    return node.num
+
+        elif self.emulator_family == EmulatorFamily.FAMILY_BLUESTACKS:
+            for node in PreOrderIter(self.root_node):
+                if node.name == Handle.emulator_handle['bluestacks_family']:
+                    return node.num
+        return self.root_node.num
+    """  @cached_property
+    def screenshot_handle_num(self) -> int:
+        
+        截屏的句柄其实并不是根句柄
+        :return:  出错返回None
+        
         if self.emulator_family == EmulatorFamily.FAMILY_MUMU:
             # 使用正则匹配12 来判定是不是mumu12这并不是一个好的方法
             name = self.root_node.children[0].name
@@ -369,7 +457,7 @@ class Handle:
             for node in PreOrderIter(self.root_node):
                 if node.name == Handle.emulator_handle['bluestacks_family']:
                     return node.num
-        return self.root_node.num
+        return self.root_node.num """
 
     @cached_property
     def screenshot_size(self) -> tuple or None:

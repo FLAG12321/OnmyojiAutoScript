@@ -35,7 +35,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         con = self.config.kekkai_utilize.utilize_config
         self.ui_get_current_page()
         self.ui_goto(page_guild)
-
+        logger.info(f'开始蹭卡{self.config.kekkai_utilize.utilize_config.utilize_rule}')
         # 进入寮结界
         self.goto_realm()
         # 育成界面去蹭卡
@@ -77,7 +77,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
                 self.push_notify(content=f"没有合适可以蹭的卡, 5分钟后再次执行蹭卡")
                 self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
-                self.config.notifier.push(content=f'没有合适可以蹭的卡, 5分钟后再次执行蹭卡', title='寄养')
+                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.TAIKO:
+                    self.config.notifier.push(content=f'没有合适可以蹭的卡, 5分钟后再次执行蹭卡', title='寄养')
                 return
 
             # 无论收不收到菜，都会进入看看至少看一眼时间还剩多少
@@ -95,7 +96,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 # remaining_time = remaining_time - timedelta(seconds=30)
                 next_time = datetime.now() + remaining_time
                 self.set_next_run(task='KekkaiUtilize', target=next_time)
-                self.config.notifier.push(content=f'下次寄养时间: {next_time}', title='寄养')
+                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.TAIKO:
+                    self.config.notifier.push(content=f'下次寄养时间: {next_time}', title='寄养')
                 return
             if not self.grown_goto_utilize():
                 logger.info('Utilize failed, exit')
@@ -413,7 +415,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                       CardClass.TAIKO3]
         elif rule == UtilizeRule.TAIKO:
             result = [CardClass.TAIKO6, CardClass.TAIKO5,
-                      CardClass.FISH6, CardClass.FISH5, CardClass.TAIKO4, CardClass.FISH4, CardClass.TAIKO3,
+                      CardClass.TAIKO4, CardClass.TAIKO3, CardClass.FISH6, CardClass.FISH5, CardClass.FISH4,
                       CardClass.FISH3]
         else:
             logger.error('Unknown utilize rule')

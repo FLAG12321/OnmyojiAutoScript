@@ -41,7 +41,9 @@ from tasks.KekkaiActivation.script_task import ScriptTask as KekkaiActivation
 from tasks.KekkaiUtilize.script_task import ScriptTask as KekkaiUtilize
 from module.atom.ocr import RuleOcr 
 import random
-
+from tasks.Utils.config_enum import ShikigamiClass
+from tasks.KekkaiActivation.config import CardType
+from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 
 class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets,):
     account_info: dict= None
@@ -75,6 +77,13 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         if con.daily_for_flag_config.kekkaiActivation_enable:
             try:
                 activation_task = KekkaiActivation(self.config, self.device)
+                activation_conf=activation_task.config.kekkai_activation.activation_config
+                activation_conf.card_type=CardType.TAIKO
+                activation_conf.min_taiko_num=1
+                activation_conf.exchange_before=False
+                activation_conf.exchange_max=False
+                activation_conf.card_not_found_count=0
+                activation_conf.shikigami_class=ShikigamiClass.N
                 activation_task.run()
             except TaskEnd:
                 pass  # 忽略挂卡任务的结束信号
@@ -82,6 +91,18 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             # 执行蹭卡
             try:
                 utilize_task = KekkaiUtilize(self.config, self.device)
+                utilize_conf=utilize_task.config.kekkai_utilize.utilize_config
+                utilize_conf.utilize_rule=UtilizeRule.TAIKO
+                utilize_conf.select_friend_list=SelectFriendList.SAME_SERVER
+                utilize_conf.shikigami_class=ShikigamiClass.N
+                utilize_conf.shikigami_order=1
+                utilize_conf.harvest_guild_max_times=0
+                utilize_conf.utilize_enable=True
+                utilize_conf.guild_ap_enable=False
+                utilize_conf.guild_assets_enable=False
+                utilize_conf.box_ap_enable=False
+                utilize_conf.box_exp_enable=False
+                utilize_conf.box_exp_waste=False
                 utilize_task.run()
             except TaskEnd:
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
@@ -91,12 +112,14 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         logger.info(self.msg)
         raise TaskEnd (self.msg)
     def run_juangou(self):
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_guild)
         self.goto_realm()
         self.juangou()
         self.back_guild()
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
     
@@ -152,15 +175,17 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
     
     def run_tingyuan(self):
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         retry_count = 0
+        cycle_count = 0
         while 1:
             self.screenshot()
             if retry_count >= 4:
                 if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
                     break
-            if self.appear_then_click(self.I_MIAN_TO_TASK):
+            if self.appear_then_click(self.I_MIAN_TO_TASK, interval=1):
                 continue
             if self.appear_then_click(self.I_FINISH, interval=1):
                 retry_count += 1
@@ -169,10 +194,16 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
             if self.appear_then_click(self.I_SUCCESS, interval=1):
                 continue
-            if self.ui_reward_appear_click():
+            if cycle_count <= 8:
+                cycle_count +=1
+                logger.info(f'Cycle count: {cycle_count}')
+                continue
+            cycle_count = 0
+            self.get_award_daliy(self.I_FINISH)
+            """ if self.ui_reward_appear_click():
                 continue
             # 获得奖励
-            if self.appear_then_click(self.I_UI_AWARD, interval=0.2):
+             if self.appear_then_click(self.I_UI_AWARD, interval=0.2):
                 continue
             if self.appear(self.I_LOGIN_RED_CLOSE):
                 self.click(self.I_LOGIN_RED_CLOSE, interval=2)
@@ -180,7 +211,8 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_CORD_EXIT, interval=2):
                 continue
             if self.appear_then_click(self.I_CORD_BACK_RED, interval=2):
-                continue
+                continue """
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
     def harvest_mail(self) -> bool:
@@ -204,31 +236,35 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.screenshot()
             if self.appear_then_click(self.I_M_ENSURE_GET, interval=0.8):
                 logger.info('I_M_ENSURE_GET success')
+                self.get_award_daliy(self.I_M_PAGE_MAIL)
                 break
             if self.appear_rgb(self.I_HARVEST_MAIL_ALL):
                 if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=1.5):
                     logger.info('I_HARVEST_MAIL_ALL success')
                 continue
             if self.appear(self.I_M_PAGE_MAIL,interval=0.8):
-                retry_count += 1
-        retry_count = 0    
+                retry_count += 1   
+        retry_count = 0 
         while 1:
-            self.screenshot() 
-            if self.appear_then_click(self.I_M_AWARD, interval=1.5):
-                continue
+            self.screenshot()
+            if retry_count>=3: 
+                break
             if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
                 break
-
+            retry_count+=1
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
                 
         return True
     def run_mail(self):
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         return self.harvest_mail()
 
     def run_tongxing(self, battle_enable, ap_enable):
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_team)
@@ -353,6 +389,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
     def run_xiezuo(self):   
         #self.account_info =[] #self.get_account_info()
         # 打开悬赏封印 界面
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         while 1:
@@ -373,6 +410,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.ui_goto(page_main)
 
     def get_account_info(self):
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         retry_count = 0
@@ -402,6 +440,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.ui_get_current_page()==page_main:
                 break
             if not self.appear(self.I_UI_BACK_RED):
+                self.screenshot()
                 if self.ui_get_current_page()==page_main:
                     self.ui_goto(page_main)
                 break
@@ -460,6 +499,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         return retList
 
     def run_huili(self):
+        self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_guild)
@@ -509,6 +549,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
 
     def execute_mall(self):
             logger.hr('Mall', 1)
+            self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_mall, confirm_wait=2.5)
             # 寄售屋
@@ -516,11 +557,13 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.execute_consignment(config)
             
             # 退出
+            self.screenshot()
             if self.ui_get_current_page() != page_main:
                 self.ui_goto(page_main) 
 
     def run_mysteryshop(self):
         #self.account_info = self.get_account_info()
+        self.screenshot()
         if self.ui_get_current_page()!=page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_mall)
@@ -644,6 +687,42 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                         self.msg.append([MSGType.mshop,f"发现{info[2]}勾黑碎"])
                         self.push_notify(content=f" 发现{info[2]}勾黑碎", title="协作任务提醒")
         return flag
+    def get_award_daliy(self,image:RuleImage=None):
+        retry_count=0
+        while 1:
+            self.screenshot() 
+            if retry_count>=6:
+                break
+            if self.appear_then_click(self.I_M_FRAME_BACK_RED, interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(self.I_M_AWARD,action=self.C_MS_REFRESH_ACTION ,interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(target=self.I_M_PICTURE,action=self.C_MS_REFRESH_ACTION, interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(self.I_M_PICTURE_REFUSE, interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(self.I_CORD_EXIT, interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(self.I_CORD_BACK_RED, interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1):
+                retry_count=0
+                continue
+            """  if image and self.appear_rgb(image):
+                logger.info('get_award_daliy: 找到图片')
+                retry_count+=1
+                time.sleep(0.3)
+                continue """
+            time.sleep(0.5)
+            retry_count+=1
+            logger.info('get_award_daliy: 找到图片222')
+        pass
     def get_config(self):
         return self.config.daily_for_flag
 

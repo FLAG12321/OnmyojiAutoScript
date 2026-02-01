@@ -27,10 +27,10 @@
     "description": "description"
   },
   {
-    "itemName": "t_back_red",
-    "imageName": "tingyuan_t_back_red.png",
+    "itemName": "t_back_red_sign",
+    "imageName": "t_back_red_sign.png",
     "roiFront": "850,91,45,37",
-    "roiBack": "844,80,59,55",
+    "roiBack": "811,63,117,94",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -74,7 +74,7 @@
   {
     "itemName": "cord_back_red",
     "roiFront": "1159,42,45,43",
-    "roiBack": "697,26,541,304",
+    "roiBack": "1128,19,110,97",
     "description": "description",
     "imageName": "cord_back_red.png",
     "method": "Template matching",

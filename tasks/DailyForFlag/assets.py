@@ -46,6 +46,11 @@ class DailyForFlagAssets:
 
 
 	# Image Rule Assets
+	# description 
+	I_M_PICTURE = RuleImage(roi_front=(294,10,658,74), roi_back=(292,9,661,77), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/m_picture.png")
+
+
+	# Image Rule Assets
 	# 邮件 
 	I_M_MAIN_TO_MAIL = RuleImage(roi_front=(1135,31,41,31), roi_back=(1114,3,82,89), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_main_to_mail.png")
 	# 领取邮件 
@@ -57,9 +62,15 @@ class DailyForFlagAssets:
 	# 奖励 
 	I_M_AWARD = RuleImage(roi_front=(478,131,325,100), roi_back=(427,125,416,114), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_award.png")
 	# description 
-	I_M_BACK_RED = RuleImage(roi_front=(1152,91,49,47), roi_back=(1148,84,57,61), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_back_red.png")
+	I_M_BACK_RED = RuleImage(roi_front=(1152,91,49,47), roi_back=(1131,74,91,82), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_back_red.png")
 	# description 
 	I_M_PAGE_MAIL = RuleImage(roi_front=(609,54,70,47), roi_back=(585,38,115,89), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_page_mail.png")
+	# description 
+	I_M_PICTURE = RuleImage(roi_front=(507,51,260,66), roi_back=(449,22,388,101), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/mail/m_picture.png")
+	# description 
+	I_M_PICTURE_REFUSE = RuleImage(roi_front=(469,408,109,43), roi_back=(412,375,224,105), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/m_picture_refuse.png")
+	# description 
+	I_M_FRAME_BACK_RED = RuleImage(roi_front=(1196,31,53,49), roi_back=(1165,13,102,86), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_back_red.png")
 
 
 	# Click Rule Assets
@@ -202,7 +213,7 @@ class DailyForFlagAssets:
 	# description 
 	I_FINISH = RuleImage(roi_front=(1120,594,88,87), roi_back=(1106,578,117,116), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_finish.png")
 	# description 
-	I_T_BACK_RED = RuleImage(roi_front=(850,91,45,37), roi_back=(844,80,59,55), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_t_back_red.png")
+	I_T_BACK_RED_SIGN = RuleImage(roi_front=(850,91,45,37), roi_back=(811,63,117,94), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_back_red_sign.png")
 	# description 
 	I_SUCCESS = RuleImage(roi_front=(307,27,176,54), roi_back=(300,13,193,90), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_success.png")
 	# description 
@@ -212,7 +223,7 @@ class DailyForFlagAssets:
 	# description 
 	I_CORD_EXIT = RuleImage(roi_front=(1163,38,63,27), roi_back=(1111,15,158,131), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_exit.png")
 	# description 
-	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(697,26,541,304), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
+	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1128,19,110,97), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
 
 
 	# Image Rule Assets

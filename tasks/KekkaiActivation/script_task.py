@@ -24,6 +24,7 @@ from tasks.KekkaiActivation.config import ActivationConfig
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.GameUi.page import page_main, page_guild
 from tasks.KekkaiActivation.config import CardType
+from tasks.KekkaiUtilize.config import UtilizeRule
 
 """ 结界挂卡 """
 class ScriptTask(KU, KekkaiActivationAssets):
@@ -32,7 +33,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
         con = self.config.kekkai_activation.activation_config
         self.ui_get_current_page()
         self.ui_goto(page_guild)
-
+        logger.info(f'开始挂卡{self.config.kekkai_activation.activation_config.card_type}')
         # 在寮的主界面 检查是否有收取体力或者是收取寮资金
         # self.check_guild_ap_or_assets()
 
@@ -128,7 +129,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
                 logger.info('Card is using')
                 interval = self.ocr_time()
                 self.set_next_run("KekkaiActivation", target=interval+datetime.now())
-                self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
+                
+                if not self.config.kekkai_activation.activation_config.card_type == CardType.TAIKO :
+                    self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
                 return False
             # 如果已经选中这张卡了， 那就激活这张卡
             if card_status and not card_effect:
@@ -145,7 +148,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
                 interval = self.ocr_time(True)
 
                 self.set_next_run("KekkaiActivation", target=interval + datetime.now())
-                self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
+                if not self.config.kekkai_activation.activation_config.card_type == CardType.TAIKO :
+                    self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
                 return True
             # 如果是什么都没有，那就是可以开始挂卡了
             if not card_status and not card_effect:

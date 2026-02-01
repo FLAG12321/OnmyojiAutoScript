@@ -6,7 +6,6 @@ from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.exit_game import ExitGame
 from tasks.Component.SwitchAccount.login_account import LoginAccount
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
-from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigami,_prepare_image_for_ocr 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_login
 from tasks.base_task import BaseTask

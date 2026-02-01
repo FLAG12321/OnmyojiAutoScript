@@ -65,10 +65,10 @@
   {
     "itemName": "sa_account_drop_down_add_account",
     "imageName": "sa_account_drop_down_add_account.png",
-    "roiFront": "400,540,220,60",
+    "roiFront": "427,552,163,39",
     "roiBack": "400,540,220,60",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.7",
     "description": "登录界面-选取账号界面-账号下拉菜单-添加新账号."
   },
   {
@@ -122,6 +122,15 @@
     "roiBack": "859,578,38,23",
     "description": "description",
     "imageName": "sa_account_drop_down_opened.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "sa_apple_back",
+    "roiFront": "898,169,22,22",
+    "roiBack": "869,149,73,62",
+    "description": "description",
+    "imageName": "sa_apple_back.png",
     "method": "Template matching",
     "threshold": 0.8
   }

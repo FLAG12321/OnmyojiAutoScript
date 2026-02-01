@@ -48,7 +48,7 @@
     "itemName": "m_back_red",
     "imageName": "mail_m_back_red.png",
     "roiFront": "1152,91,49,47",
-    "roiBack": "1148,84,57,61",
+    "roiBack": "1131,74,91,82",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -61,5 +61,32 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "m_picture",
+    "roiFront": "507,51,260,66",
+    "roiBack": "449,22,388,101",
+    "description": "description",
+    "imageName": "m_picture.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "m_picture_refuse",
+    "roiFront": "469,408,109,43",
+    "roiBack": "412,375,224,105",
+    "description": "description",
+    "imageName": "m_picture_refuse.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "m_frame_back_red",
+    "roiFront": "1196,31,53,49",
+    "roiBack": "1165,13,102,86",
+    "description": "description",
+    "imageName": "mail_m_back_red.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]
