@@ -205,6 +205,13 @@ class DailyForFlagAssets:
 	O_MS_PRICENUM_8 = RuleOcr(roi=(843,516,159,41), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_8")
 
 
+	# Click Rule Assets
+	# description 
+	C_T_EXIT_SUCCESS = RuleClick(roi_front=(1187,361,63,119), roi_back=(1185,360,66,122), name="t_exit_success")
+	# description 
+	C_T_EXIT_SIGN = RuleClick(roi_front=(851,95,38,30), roi_back=(850,94,41,33), name="t_exit_sign")
+
+
 	# Image Rule Assets
 	# description 
 	I_MIAN_TO_TASK = RuleImage(roi_front=(788,451,22,23), roi_back=(583,303,418,270), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_mian_to_task.png")
@@ -215,7 +222,7 @@ class DailyForFlagAssets:
 	# description 
 	I_T_BACK_RED_SIGN = RuleImage(roi_front=(850,91,45,37), roi_back=(811,63,117,94), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_back_red_sign.png")
 	# description 
-	I_SUCCESS = RuleImage(roi_front=(307,27,176,54), roi_back=(300,13,193,90), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_success.png")
+	I_SUCCESS = RuleImage(roi_front=(307,27,176,54), roi_back=(300,13,193,90), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_success.png")
 	# description 
 	I_TASK_TO_MAIN = RuleImage(roi_front=(17,11,46,54), roi_back=(0,0,92,98), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_task_to_main.png")
 	# description 
@@ -224,6 +231,8 @@ class DailyForFlagAssets:
 	I_CORD_EXIT = RuleImage(roi_front=(1163,38,63,27), roi_back=(1111,15,158,131), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_exit.png")
 	# description 
 	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1128,19,110,97), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
+	# description 
+	I_T_SIGN_FLAG = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_sign_flag.png")
 
 
 	# Image Rule Assets

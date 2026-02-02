@@ -41,7 +41,7 @@
     "roiFront": "307,27,176,54",
     "roiBack": "300,13,193,90",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.7",
     "description": "description"
   },
   {
@@ -79,5 +79,14 @@
     "imageName": "cord_back_red.png",
     "method": "Template matching",
     "threshold": "0.6"
+  },
+  {
+    "itemName": "t_sign_flag",
+    "roiFront": "869,452,63,34",
+    "roiBack": "803,387,203,275",
+    "description": "description",
+    "imageName": "t_sign_flag.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

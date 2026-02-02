@@ -186,15 +186,19 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
                     break
             if self.appear_then_click(self.I_MIAN_TO_TASK, interval=1):
+                cycle_count = 0
                 continue
             if self.appear_then_click(self.I_FINISH, interval=1):
                 retry_count += 1
+                cycle_count = 0
                 continue
             if self.appear_then_click(self.I_NORMAL, interval=1):
+                cycle_count = 0
                 continue
-            if self.appear_then_click(self.I_SUCCESS, interval=1):
+            if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
+                cycle_count = 0
                 continue
-            if cycle_count <= 8:
+            if cycle_count <= 5:
                 cycle_count +=1
                 logger.info(f'Cycle count: {cycle_count}')
                 continue
@@ -712,6 +716,9 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1):
+                retry_count=0
+                continue
+            if self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1):
                 retry_count=0
                 continue
             """  if image and self.appear_rgb(image):
