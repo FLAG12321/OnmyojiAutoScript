@@ -34,5 +34,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "net_check",
+    "roiFront": "121,130,334,487",
+    "roiBack": "119,129,336,489",
+    "description": "description",
+    "imageName": "net_check.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "net_normal_flag",
+    "roiFront": "1020,328,27,31",
+    "roiBack": "129,110,1022,507",
+    "description": "description",
+    "imageName": "net_normal_flag.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

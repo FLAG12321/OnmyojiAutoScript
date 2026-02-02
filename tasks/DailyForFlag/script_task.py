@@ -54,6 +54,27 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
  
         con = self.get_config()
         self.msg = []
+        net_normal_flag = False
+
+        while 1:    
+            self.screenshot()
+            if self.appear(self.I_NET_NORMAL_FLAG,interval=1):
+                net_normal_flag = True
+                continue
+            if self.appear_then_click(self.I_NET_CHECK,action=self.C_NET_CLICK,interval=1):
+                time.sleep(7)
+                self.screenshot()
+            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL,interval=1):
+                continue
+            if self.appear(self.I_UI_BACK_RED):
+                self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=2)
+                if net_normal_flag:
+                    break
+                continue
+        self.screenshot()
+        if self.ui_get_current_page() != page_main:
+            self.ui_goto(page_main)
+
         if con.daily_for_flag_config.tingyuan_enable:
             self.run_tingyuan()
         if con.daily_for_flag_config.mail_enable:
@@ -396,6 +417,21 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
+        self.screenshot()
+        retry_count = 0
+        while 1:    
+            self.screenshot()
+            if  retry_count >3:
+                self.screenshot()
+                self.ui_goto(page_guild)
+                time.sleep(1)
+                self.screenshot()
+                if self.ui_get_current_page() != page_main:
+                    self.ui_goto(page_main)
+            if self.appear(WantedQuestsAssets.I_WQ_SEAL,interval=1):
+                break
+            retry_count += 1
+            time.sleep(1)
         while 1:
             self.screenshot()
             if self.appear(WantedQuestsAssets.I_TRACE_ENABLE) or self.appear(WantedQuestsAssets.I_TRACE_DISABLE) or self.appear(self.I_UI_BACK_RED):

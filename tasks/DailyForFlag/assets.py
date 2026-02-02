@@ -277,6 +277,8 @@ class DailyForFlagAssets:
 	# Click Rule Assets
 	# description 
 	C_TO_ACCOUNT = RuleClick(roi_front=(21,27,72,63), roi_back=(21,27,72,63), name="to_account")
+	# description 
+	C_NET_CLICK = RuleClick(roi_front=(191,219,187,296), roi_back=(190,218,190,299), name="net_click")
 
 
 	# Image Rule Assets
@@ -288,6 +290,10 @@ class DailyForFlagAssets:
 	I_REAL_FLAG_2 = RuleImage(roi_front=(457,292,32,34), roi_back=(443,128,67,200), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
 	# description 
 	I_REAL_FLAG_3 = RuleImage(roi_front=(455,291,35,37), roi_back=(741,129,68,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
+	# description 
+	I_NET_CHECK = RuleImage(roi_front=(121,130,334,487), roi_back=(119,129,336,489), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/net_check.png")
+	# description 
+	I_NET_NORMAL_FLAG = RuleImage(roi_front=(1020,328,27,31), roi_back=(129,110,1022,507), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/xiezuo/net_normal_flag.png")
 
 
 	# Ocr Rule Assets
