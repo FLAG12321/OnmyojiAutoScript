@@ -579,9 +579,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             '斗鱼': {'max': 151, 'record_attr': 'ap_max_num'},
             '太鼓': {'max': 76, 'record_attr': 'jade_max_num'}
         }
-        MAX_SWIPES = 20  # 最大滑动次数
-        CONSEC_MISS = 3  # 允许连续无卡次数
-        TIMEOUT = 120  # 操作超时(秒)
+        MAX_SWIPES = 50  # 最大滑动次数
+        CONSEC_MISS = 8  # 允许连续无卡次数
+        TIMEOUT = 240  # 操作超时(秒)
 
         # ============== 初始化阶段 ==============#
         logger.info(f'启动{"探索模式" if not selected_card else f"确认模式 | 目标: {best_card_type} @ {best_card_num}"}')

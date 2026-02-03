@@ -359,7 +359,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             if self.appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8):
                 continue
             if self.appear(self.I_EXPLORATION_TITLE) or self.appear(self.I_CHECK_EXPLORATION):
-                continue
+                break
             if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3.5):
                 continue
 

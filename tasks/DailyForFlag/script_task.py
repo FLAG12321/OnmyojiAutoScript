@@ -64,7 +64,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_NET_CHECK,action=self.C_NET_CLICK,interval=1):
                 time.sleep(7)
                 self.screenshot()
-            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL,interval=1):
+            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL,interval=1) or self.appear_then_click(WantedQuestsAssets.I_WQ_DONE,interval=1):
                 continue
             if self.appear(self.I_UI_BACK_RED):
                 self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=2)
@@ -213,7 +213,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 retry_count += 1
                 cycle_count = 0
                 continue
-            if self.appear_then_click(self.I_NORMAL, interval=1):
+            if self.appear_then_click(self.I_T_SPECIAL_FLAG,action=self.C_T_TONORMAL, interval=1):
                 cycle_count = 0
                 continue
             if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
@@ -428,7 +428,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 self.screenshot()
                 if self.ui_get_current_page() != page_main:
                     self.ui_goto(page_main)
-            if self.appear(WantedQuestsAssets.I_WQ_SEAL,interval=1):
+            if self.appear(WantedQuestsAssets.I_WQ_SEAL,interval=1) or self.appear(WantedQuestsAssets.I_WQ_DONE,interval=1):
                 break
             retry_count += 1
             time.sleep(1)
@@ -780,4 +780,7 @@ if __name__ == "__main__":
     t = ScriptTask(c, d)
     #t.run_mysteryshop()
     t.screenshot()
-    t.run_mysteryshop()
+    if t.appear(t.I_NORMAL):
+        logger.info('appear正常')
+    if t.appear_rgb(t.I_NORMAL):
+        logger.info('appear_rgb正常')

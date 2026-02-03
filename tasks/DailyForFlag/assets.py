@@ -210,6 +210,8 @@ class DailyForFlagAssets:
 	C_T_EXIT_SUCCESS = RuleClick(roi_front=(1187,361,63,119), roi_back=(1185,360,66,122), name="t_exit_success")
 	# description 
 	C_T_EXIT_SIGN = RuleClick(roi_front=(851,95,38,30), roi_back=(850,94,41,33), name="t_exit_sign")
+	# description 
+	C_T_TONORMAL = RuleClick(roi_front=(1132,137,74,47), roi_back=(1131,135,77,50), name="t_tonormal")
 
 
 	# Image Rule Assets
@@ -233,6 +235,8 @@ class DailyForFlagAssets:
 	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1128,19,110,97), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
 	# description 
 	I_T_SIGN_FLAG = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_sign_flag.png")
+	# description 
+	I_T_SPECIAL_FLAG = RuleImage(roi_front=(1140,629,47,67), roi_back=(1092,568,138,143), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_special_flag.png")
 
 
 	# Image Rule Assets

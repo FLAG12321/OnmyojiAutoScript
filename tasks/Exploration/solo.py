@@ -38,12 +38,12 @@ class SoloExploration(BaseExploration):
 
             #
             if scene == Scene.WORLD:
-                if self.appear(self.I_TREASURE_BOX_CLICK):
+                """ if self.appear(self.I_TREASURE_BOX_CLICK):
                     # 宝箱
                     logger.info('Treasure box appear, get it.')
                     self.ui_click_until_disappear(self.I_TREASURE_BOX_CLICK)
                 if self.check_exit():
-                    break
+                    break """
                 self.open_expect_level()
                 explore_init = False
                 continue
