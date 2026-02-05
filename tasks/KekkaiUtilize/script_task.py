@@ -76,9 +76,10 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             if self.utilize_add_count >= 5:
                 logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
                 self.push_notify(content=f"没有合适可以蹭的卡, 5分钟后再次执行蹭卡")
-                self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
-                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.TAIKO:
+                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
                     self.config.notifier.push(content=f'没有合适可以蹭的卡, 5分钟后再次执行蹭卡', title='寄养')
+                self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
+
                 return
 
             # 无论收不收到菜，都会进入看看至少看一眼时间还剩多少
@@ -88,16 +89,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.screenshot()
 
             if not self.appear(self.I_UTILIZE_ADD):
-                remaining_time = self.O_UTILIZE_RES_TIME.ocr(self.device.image)
+                remaining_time = self.O_UTILIZE_RES_TIME.ocr_duration(self.device.image)
                 if not isinstance(remaining_time, timedelta):
                     logger.warning('Ocr remaining time error')
                 logger.info(f'Utilize remaining time: {remaining_time}')
                 # 已经蹭上卡了，设置下次蹭卡时间  # 减少30秒
                 # remaining_time = remaining_time - timedelta(seconds=30)
+                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
+                    self.config.notifier.push(content=f'下次寄养时间: {next_time}', title='寄养')
                 next_time = datetime.now() + remaining_time
                 self.set_next_run(task='KekkaiUtilize', target=next_time)
-                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.TAIKO:
-                    self.config.notifier.push(content=f'下次寄养时间: {next_time}', title='寄养')
                 return
             if not self.grown_goto_utilize():
                 logger.info('Utilize failed, exit')
@@ -398,6 +399,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             return ImageGrid([self.I_U_FISH_6, self.I_U_FISH_5])
         elif rule == UtilizeRule.TAIKO:
             return ImageGrid([self.I_U_TAIKO_6, self.I_U_TAIKO_5])
+        elif rule == UtilizeRule.DAILY:
+            return ImageGrid([self.I_U_TAIKO_6, self.I_U_TAIKO_5, self.I_U_TAIKO_4, self.I_U_TAIKO_3])
         else:
             logger.error('Unknown utilize rule')
             raise ValueError('Unknown utilize rule')
@@ -417,6 +420,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             result = [CardClass.TAIKO6, CardClass.TAIKO5,
                       CardClass.TAIKO4, CardClass.TAIKO3, CardClass.FISH6, CardClass.FISH5, CardClass.FISH4,
                       CardClass.FISH3]
+        elif rule == UtilizeRule.DAILY:
+            result = [CardClass.TAIKO6, CardClass.TAIKO5,
+                      CardClass.TAIKO4, CardClass.TAIKO3]
         else:
             logger.error('Unknown utilize rule')
             raise ValueError('Unknown utilize rule')
@@ -523,7 +529,14 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                     return idx
             logger.warning(f'⚠️ {resource_name}值[{current_value}]低于所有预设')
             return MAX_INDEX
-
+        if self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
+            logger.info('DAILY规则：寻找任意太鼓卡')
+            if self._find_any_taiko_card():
+                logger.info('✅ 找到太鼓卡，立即寄养')
+                return True
+            else:
+                logger.info('❌ 未找到合适的太鼓卡')
+                return False
         while True:
             self.screenshot()
 
@@ -562,7 +575,81 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 logger.warning(f'❌ {res_type}卡确认失败，重置状态')
                 self.ap_max_num, self.jade_max_num = 0, 0
                 return False
+# ... existing code ...
+    def _find_any_taiko_card(self):
+        """在DAILY规则下寻找任意太鼓卡并立即使用"""
+        logger.info('开始寻找任意太鼓卡...')
+        RESOURCE_CONFIG = {
+            '斗鱼': {'max': 151, 'record_attr': 'ap_max_num'},
+            '太鼓': {'max': 76, 'record_attr': 'jade_max_num'}
+        }
+        MAX_SWIPES = 20  # 最大滑动次数
+        CONSEC_MISS = 3  # 允许连续无卡次数
+        TIMEOUT = 120  # 操作超时(秒)
 
+        # ============== 初始化阶段 ==============#
+        timer = Timer(TIMEOUT).start()
+        miss_count = 0  # 连续无卡计数器
+
+        # ============== 主滑动循环 ==============#
+        for swipe_count in range(MAX_SWIPES + 1):
+            # 超时检测
+            if timer.reached():
+                logger.warning('⏰ 操作超时，终止流程')
+                return False
+
+            # ------ 步骤1: 截图识别结界卡 ------#
+            self.screenshot()
+            cards = self.order_targets.find_everyone(self.device.image)
+
+            # 处理无卡情况
+            if not cards:
+                miss_count += 1
+                logger.info(f'第{swipe_count}次滑动 | 未检测到结界卡' if swipe_count > 0 else '初始界面 | 未检测到结界卡')
+                # 连续无卡超过阈值则终止
+                if miss_count > CONSEC_MISS:
+                    logger.warning(f'⚠️ 连续{miss_count}次 | 未检测到结界卡, 终止流程')
+                    return False
+                # 执行滑动操作
+                self.perform_swipe_action()
+                continue
+
+            miss_count = 0  # 重置无卡计数器
+
+            # ------ 步骤2: 处理识别到的结界卡 ------
+            cards_list = [target for target, _, _ in cards]
+            logger.info((f'第{swipe_count}次滑动' if swipe_count > 0 else '初始界面') + f' | 检测到结界卡：{cards_list}')
+
+            # 遍历所有结界卡（已按位置排序）
+            for _, _, area in cards:
+                # 设置点击区域并获取结界卡详情
+                self.C_SELECT_CARD.roi_front = area
+                self.click(self.C_SELECT_CARD)
+                time.sleep(2)  # 等待结界卡详情加载
+
+                # 解析结界卡类型和数值
+                card_type, card_value = self.check_card_num()
+
+                # 跳过无效结界卡（类型未知或数值异常）
+                if card_type == 'unknown' or card_value <= 0 or card_type not in RESOURCE_CONFIG:
+                    logger.info(f'⏭️ 跳过无效卡: {card_type}@{card_value}')
+                    continue
+
+                # 如果是太鼓卡，检查是否有空位（未被占用），如果是则立即确认寄养
+                if card_type == '太鼓':
+                    # 检查该太鼓卡是否被占用
+                   if card_type == '太鼓':
+                        logger.info(f'🎉 发现太鼓卡: {card_type}@{card_value}，返回成功')
+                        self.save_image(push_flag=False, wait_time=0, content=f'🎉 发现太鼓卡（{card_type}: {card_value}）')
+                        return True
+
+            # ------ 步骤3: 滑动到下一屏 ------#
+            self.perform_swipe_action()
+
+        # ============== 终止处理 ==============#
+        logger.warning(f'⚠️ 已达到最大滑动次数{MAX_SWIPES}, 未找到可用太鼓卡')
+        return False
+# ... existing code ...
     def _current_select_best(self, best_card_type=None, best_card_num=0, selected_card=False):
         """结界卡选择核心逻辑（集成版）
         功能：滑动屏幕寻找最优资源卡，支持两种模式：

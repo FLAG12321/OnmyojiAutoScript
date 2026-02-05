@@ -94,6 +94,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
             return ImageGrid([self.I_CARDS_KAIKO_6, self.I_CARDS_KAIKO_5])
         elif rule == CardType.FISH:
             return ImageGrid([self.I_CARDS_FISH_6, self.I_CARDS_FISH_5])
+        elif rule == CardType.DAILY:
+            return ImageGrid([self.I_CARDS_KAIKO_6, self.I_CARDS_KAIKO_5, self.I_CARDS_KAIKO_4, self.I_CARDS_KAIKO_3])
         else:
             logger.error('Unknown utilize rule')
             raise ValueError('Unknown utilize rule')
@@ -128,10 +130,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
             if card_status and card_effect:
                 logger.info('Card is using')
                 interval = self.ocr_time()
-                self.set_next_run("KekkaiActivation", target=interval+datetime.now())
-                
-                if not self.config.kekkai_activation.activation_config.card_type == CardType.TAIKO :
+                if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY :
                     self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
+                self.set_next_run("KekkaiActivation", target=interval+datetime.now())
                 return False
             # 如果已经选中这张卡了， 那就激活这张卡
             if card_status and not card_effect:
@@ -146,10 +147,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
                     if self.appear_then_click(self.I_A_ACTIVATE_YELLOW, interval=1):
                         continue
                 interval = self.ocr_time(True)
-
-                self.set_next_run("KekkaiActivation", target=interval + datetime.now())
-                if not self.config.kekkai_activation.activation_config.card_type == CardType.TAIKO :
+                if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY :
                     self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
+                self.set_next_run("KekkaiActivation", target=interval + datetime.now())
                 return True
             # 如果是什么都没有，那就是可以开始挂卡了
             if not card_status and not card_effect:
@@ -229,6 +229,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
         elif rule == CardType.FISH:
             card_class = CardClass.FISH
             target_class = self.I_A_CARD_FISH
+        elif rule == CardType.DAILY:
+            card_class = CardClass.TAIKO
+            target_class = self.I_A_CARD_KAIKO
         else:
             logger.warning('Unknown card rule')
             self.push_notify(content='Unknown card rule')
@@ -280,6 +283,10 @@ class ScriptTask(KU, KekkaiActivationAssets):
         elif rule == CardType.FISH:
             min_card_num = self.config.kekkai_activation.activation_config.min_fish_num
             check_card = "体力"
+        elif rule == CardType.DAILY:
+            # DAILY 规则使用太鼓规则，但不设最小值限制，选择任意太鼓卡
+            min_card_num = 1
+            check_card = "勾玉"
         else:
             logger.error('Unknown utilize rule')
             raise ValueError('Unknown utilize rule')

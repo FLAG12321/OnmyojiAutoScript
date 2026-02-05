@@ -99,12 +99,12 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             try:
                 activation_task = KekkaiActivation(self.config, self.device)
                 activation_conf=activation_task.config.kekkai_activation.activation_config
-                activation_conf.card_type=CardType.TAIKO
+                activation_conf.card_type=CardType.DAILY
                 activation_conf.min_taiko_num=1
                 activation_conf.exchange_before=False
                 activation_conf.exchange_max=False
                 activation_conf.card_not_found_count=0
-                activation_conf.shikigami_class=ShikigamiClass.N
+                activation_conf.shikigami_class=ShikigamiClass.MATERIAL
                 activation_task.run()
             except TaskEnd:
                 pass  # 忽略挂卡任务的结束信号
@@ -112,18 +112,20 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             # 执行蹭卡
             try:
                 utilize_task = KekkaiUtilize(self.config, self.device)
-                utilize_conf=utilize_task.config.kekkai_utilize.utilize_config
-                utilize_conf.utilize_rule=UtilizeRule.TAIKO
-                utilize_conf.select_friend_list=SelectFriendList.SAME_SERVER
-                utilize_conf.shikigami_class=ShikigamiClass.N
-                utilize_conf.shikigami_order=1
-                utilize_conf.harvest_guild_max_times=0
-                utilize_conf.utilize_enable=True
-                utilize_conf.guild_ap_enable=False
-                utilize_conf.guild_assets_enable=False
-                utilize_conf.box_ap_enable=False
-                utilize_conf.box_exp_enable=False
-                utilize_conf.box_exp_waste=False
+                # 确保在运行前修改配置
+                utilize_task.config.kekkai_utilize.utilize_config.utilize_rule = UtilizeRule.DAILY
+                # 同时也设置其他参数
+                utilize_task.config.kekkai_utilize.utilize_config.select_friend_list = SelectFriendList.SAME_SERVER
+                utilize_task.config.kekkai_utilize.utilize_config.shikigami_class = ShikigamiClass.MATERIAL
+                utilize_task.config.kekkai_utilize.utilize_config.shikigami_order = 1
+                utilize_task.config.kekkai_utilize.utilize_config.harvest_guild_max_times = 0
+                utilize_task.config.kekkai_utilize.utilize_config.utilize_enable = True
+                utilize_task.config.kekkai_utilize.utilize_config.guild_ap_enable = False
+                utilize_task.config.kekkai_utilize.utilize_config.guild_assets_enable = False
+                utilize_task.config.kekkai_utilize.utilize_config.box_ap_enable = False
+                utilize_task.config.kekkai_utilize.utilize_config.box_exp_enable = False
+                utilize_task.config.kekkai_utilize.utilize_config.box_exp_waste = False
+                
                 utilize_task.run()
             except TaskEnd:
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
@@ -224,7 +226,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 logger.info(f'Cycle count: {cycle_count}')
                 continue
             cycle_count = 0
-            self.get_award_daliy(self.I_FINISH)
+            self.get_award_daliy(self.I_SUCCESS)
             """ if self.ui_reward_appear_click():
                 continue
             # 获得奖励
@@ -728,43 +730,56 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                         self.push_notify(content=f" 发现{info[2]}勾黑碎", title="协作任务提醒")
         return flag
     def get_award_daliy(self,image:RuleImage=None):
-        retry_count=0
+        retry_count = 0
+        image_status = False
         while 1:
             self.screenshot() 
             if retry_count>=6:
                 break
             if self.appear_then_click(self.I_M_FRAME_BACK_RED, interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_M_AWARD,action=self.C_MS_REFRESH_ACTION ,interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(target=self.I_M_PICTURE,action=self.C_MS_REFRESH_ACTION, interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_M_PICTURE_REFUSE, interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_CORD_EXIT, interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_CORD_BACK_RED, interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1):
+                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1):
+                image_status = False
                 retry_count=0
                 continue
-            """  if image and self.appear_rgb(image):
+            if image and self.appear_rgb(image):
+                if image_status:
+                    retry_count+=1
+                else:
+                    image_status = True
                 logger.info('get_award_daliy: 找到图片')
-                retry_count+=1
-                time.sleep(0.3)
-                continue """
+                #retry_count+=1
+                time.sleep(0.1)
+                continue
             time.sleep(0.5)
             retry_count+=1
-            logger.info('get_award_daliy: 找到图片222')
+            #logger.info('get_award_daliy: 找到图片222')
         pass
     def get_config(self):
         return self.config.daily_for_flag

@@ -94,6 +94,7 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
         start_time = time.time()   # 记录起始时间
         click_interval_timer = Timer(1.5).start()  # 点击选择式神间隔
         clicked = False
+        retry_count = 0
         while 1:
             # ——1. 先做超时检查——
             if time.time() - start_time > TIMEOUT_SEC:
@@ -109,6 +110,9 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
                 break
 
             if self.appear_then_click(self.I_U_CONFIRM_SMALL, interval=0.5):
+                if retry_count > 5:
+                    break
+                retry_count += 1
                 clicked = False  # 点击了确认, 恢复选式神的操作
                 continue
 

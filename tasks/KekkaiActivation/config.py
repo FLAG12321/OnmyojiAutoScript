@@ -11,6 +11,7 @@ from tasks.Utils.config_enum import ShikigamiClass
 class CardType(str, Enum):
     FISH = '斗鱼'
     TAIKO = '太鼓'
+    DAILY = '日常'
     
 
 class ActivationScheduler(Scheduler):

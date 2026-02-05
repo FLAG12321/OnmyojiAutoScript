@@ -10,6 +10,7 @@ from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets as KUA
 class CardClass(str, Enum):
 
     UNKNOWN = 'unknown'  # 未知
+    DAILY   = 'daily'
 
     TAIKO6 = 'taiko_6'  # 太鼓
     TAIKO5 = 'taiko_5'

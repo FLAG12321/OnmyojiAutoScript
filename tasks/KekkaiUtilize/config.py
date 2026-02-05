@@ -17,6 +17,7 @@ class UtilizeRule(str, Enum):
     DEFAULT = 'default'  # 默认就好
     TAIKO = 'kaiko'  # 太鼓优先
     FISH = 'fish'  # 斗鱼优先
+    DAILY= 'daily'
     # AUTO = 'auto'  # 自动 兼容代码罢了
 
 
