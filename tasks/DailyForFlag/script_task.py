@@ -127,7 +127,12 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 utilize_task.config.kekkai_utilize.utilize_config.box_exp_waste = False
                 
                 utilize_task.run()
-            except TaskEnd:
+            except TaskEnd as msg:
+                # 直接将KekkaiUtilize的消息透传给Daily，不做额外处理
+                if msg.args and msg.args[0]:  # 如果TaskEnd带有参数且不为空
+                    for msg_item in msg.args[0]:
+                        # 直接将消息添加到当前任务的消息列表中
+                        self.msg.append(msg_item)
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
 
 

@@ -70,7 +70,7 @@ class ScriptTask(GameUi, DailyAssets):
                 continue
             # 创建子任务实例
             dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
-            # 根据目标模块的配置要求，正确设置配置属性
+            # 根据目标模块的配置要求,正确设置配置属性
             dff.daily_conf = self.daily_conf
             dff.account_info = config
             try:
@@ -100,10 +100,13 @@ class ScriptTask(GameUi, DailyAssets):
                                         content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
                                         title="神秘商店提醒  "
                                     )
+                                case MSGType.Utilize:
+                                    logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
+                                    self.daily_conf.daily_config.total_KekkaiUtilize_enable = False
                 #logger.warning("%s-%s %s", accountInfo.character, accountInfo.svr, msg_data[1])
                 # 更新配置文件中的时间
                 self.daily_conf.update_account_login_history(accountInfo)
-                # 将修改后的 daily_conf 同步回主配置模型，确保保存时包含最新数据
+                # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
                 self.config.model.daily = self.daily_conf
                 self.daily_conf.daily_config.need_login_time = self.start_time
                 self.save_config()

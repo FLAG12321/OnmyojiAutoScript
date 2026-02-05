@@ -30,9 +30,10 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     ap_max_num = 0
     jade_max_num = 0
     first_utilize = True
-
+    msg: list = []
     def run(self):
         con = self.config.kekkai_utilize.utilize_config
+        self.msg = []
         self.ui_get_current_page()
         self.ui_goto(page_guild)
         logger.info(f'开始蹭卡{self.config.kekkai_utilize.utilize_config.utilize_rule}')
@@ -54,7 +55,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.recive_guild_ap_or_assets(con.harvest_guild_max_times)
         if not con.utilize_enable:
             self.set_next_run(task='KekkaiUtilize', finish=True, success=True)
-        raise TaskEnd
+        logger.info(self.msg)
+        raise TaskEnd(self.msg)
 
     def recive_guild_ap_or_assets(self, max_tries: int = 3):
         for i in range(1, max_tries+1):
@@ -75,7 +77,11 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.utilize_add_count += 1
             if self.utilize_add_count >= 5:
                 logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
+                # 添加消息到列表，以便在TaskEnd时返回
+                from tasks.DailyForFlag.config import MSGType
+                self.msg.append([MSGType.Utilize, "未找到寄养卡"])
                 self.push_notify(content=f"没有合适可以蹭的卡, 5分钟后再次执行蹭卡")
+                
                 if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
                     self.config.notifier.push(content=f'没有合适可以蹭的卡, 5分钟后再次执行蹭卡', title='寄养')
                 self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
