@@ -17,8 +17,8 @@ class ConfigManual:
         > BondlingFairyland > EvoZone > GoryouRealm > HeroTest
         > CollectiveMissionsr
         > Pets > TalismanPass > Delegation > Hyakkiyakou
-        > Secret > WeeklyTrifles > MysteryShop > Duel 
-        > TrueOrochi > RichMan
+        > Secret > WeeklyTrifles > MysteryShop > Duel > ReturnGift
+        > TrueOrochi > RichMan 
         > MetaDemon > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls
         """
 

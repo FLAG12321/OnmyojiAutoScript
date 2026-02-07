@@ -61,40 +61,49 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear(self.I_NET_NORMAL_FLAG,interval=1):
                 net_normal_flag = True
                 continue
+
             if self.appear_then_click(self.I_NET_CHECK,action=self.C_NET_CLICK,interval=1):
                 time.sleep(7)
                 self.screenshot()
+
             if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL,interval=1) or self.appear_then_click(WantedQuestsAssets.I_WQ_DONE,interval=1):
                 continue
+
             if self.appear(self.I_UI_BACK_RED):
                 self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=2)
                 if net_normal_flag:
                     break
                 continue
+            
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 
         if con.daily_for_flag_config.tingyuan_enable:
             self.run_tingyuan()
+
         if con.daily_for_flag_config.mail_enable:
             self.run_mail()
+
         if con.daily_for_flag_config.xiezuo_enable:
             self.run_xiezuo()
+
         if con.daily_for_flag_config.juangou_enable:
             self.run_juangou()
-        if con.daily_for_flag_config.tongxin_battle_enable or con.daily_for_flag_config.tongxin_ap_enable:
-            self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
+        
         if con.daily_for_flag_config.huili_enable:
             self.run_huili()
+
         if con.daily_for_flag_config.weekaward_enable:
             xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
             self.execute_guild(xzconfig)
             self.execute_mall()
             self._share_collect()
+
         if con.daily_for_flag_config.mysteryshop_enable:
             self.run_mysteryshop()
             # 执行挂卡（只执行核心逻辑，避免TaskEnd）
+
         if con.daily_for_flag_config.kekkaiActivation_enable:
             try:
                 activation_task = KekkaiActivation(self.config, self.device)
@@ -108,6 +117,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 activation_task.run()
             except TaskEnd:
                 pass  # 忽略挂卡任务的结束信号
+
         if con.daily_for_flag_config.KekkaiUtilize_enable:    
             # 执行蹭卡
             try:
@@ -135,6 +145,8 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                         self.msg.append(msg_item)
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
 
+        if con.daily_for_flag_config.tongxin_battle_enable or con.daily_for_flag_config.tongxin_ap_enable:
+            self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
         logger.info(self.msg)

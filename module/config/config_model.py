@@ -36,6 +36,7 @@ from tasks.Delegation.config import Delegation
 from tasks.WantedQuests.config import WantedQuests
 from tasks.Tako.config import Tako
 from tasks.DailyForFlag.config import DailyForFlag
+from tasks.ReturnGift.config import ReturnGift
 # ----------------------------------------------------------------------------------------------------------------------
 from tasks.Orochi.config import Orochi
 from tasks.OrochiMoans.config import OrochiMoans
@@ -106,7 +107,7 @@ class ConfigModel(ConfigBase):
     wanted_quests: WantedQuests = Field(default_factory=WantedQuests)
     tako: Tako = Field(default_factory=Tako)
     daily_for_flag: DailyForFlag = Field(default_factory=DailyForFlag)
-
+    
     # 这些是刷御魂的
     orochi: Orochi = Field(default_factory=Orochi)
     orochi_moans: OrochiMoans = Field(default_factory=OrochiMoans)
@@ -133,7 +134,7 @@ class ConfigModel(ConfigBase):
     find_jade: FindJade = Field(default_factory=FindJade)
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
     daily: Daily = Field(default_factory=Daily)
-
+    return_gift: ReturnGift = Field(default_factory=ReturnGift)
     # 这些是每周任务
     true_orochi: TrueOrochi = Field(default_factory=TrueOrochi)
     rich_man: RichMan = Field(default_factory=RichMan)

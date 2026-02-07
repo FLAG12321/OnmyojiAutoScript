@@ -1,0 +1,13 @@
+# This Python file uses the following encoding: utf-8
+# @author runhey
+# github https://github.com/runhey
+from pydantic import BaseModel, Field
+from tasks.Component.config_scheduler import Scheduler
+from tasks.Component.config_base import ConfigBase, Time
+
+class ReturnGiftConfig(BaseModel):
+    return_gift_timeout: Time = Field(default=Time(hour=0, minute=40, second=0), description='回礼限制运行时间')
+class ReturnGift(ConfigBase):
+    scheduler: Scheduler = Field(default_factory=Scheduler)
+    return_gift_config: ReturnGiftConfig  = Field(default_factory=ReturnGiftConfig)
+
