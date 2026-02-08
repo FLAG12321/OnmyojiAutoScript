@@ -133,5 +133,23 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
+  },
+  {
+    "itemName": "ms_taiko_off_3",
+    "roiFront": "397,118,151,102",
+    "roiBack": "123,50,920,558",
+    "description": "description",
+    "imageName": "ms_taiko_off_3.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "ms_taiko_off_4",
+    "roiFront": "621,384,151,98",
+    "roiBack": "121,53,932,566",
+    "description": "description",
+    "imageName": "ms_taiko_off_4.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

@@ -61,5 +61,9 @@ class MysteryShopAssets:
 	I_MS_REWARD_5 = RuleImage(roi_front=(682,632,48,42), roi_back=(682,632,48,42), threshold=0.7, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_reward_5.png")
 	# description 
 	I_MS_REWARD_10 = RuleImage(roi_front=(851,637,47,32), roi_back=(851,637,47,32), threshold=0.7, method="Template matching", file="./tasks/MysteryShop/ms/ms_ms_reward_10.png")
+	# description 
+	I_MS_TAIKO_OFF_3 = RuleImage(roi_front=(397,118,151,102), roi_back=(123,50,920,558), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_taiko_off_3.png")
+	# description 
+	I_MS_TAIKO_OFF_4 = RuleImage(roi_front=(621,384,151,98), roi_back=(121,53,932,566), threshold=0.8, method="Template matching", file="./tasks/MysteryShop/ms/ms_taiko_off_4.png")
 
 

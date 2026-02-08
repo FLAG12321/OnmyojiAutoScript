@@ -44,7 +44,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.check_utilize_add()
 
         # 查看育成满级
-        self.check_max_lv(con.shikigami_class)
+        if con.exchange_before:
+            self.check_max_lv(con.shikigami_class)
         # 检查蹭卡收获
         if con.guild_ap_enable:
             self.check_utilize_harvest()

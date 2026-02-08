@@ -79,7 +79,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 continue
             retry_count +=1
             if retry_count > 5:
-                if  swipe_count >=3:
+                if  swipe_count >3:
                     break
                 retry_count = 0
                 duration = 2

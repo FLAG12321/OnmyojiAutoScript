@@ -135,7 +135,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 utilize_task.config.kekkai_utilize.utilize_config.box_ap_enable = False
                 utilize_task.config.kekkai_utilize.utilize_config.box_exp_enable = False
                 utilize_task.config.kekkai_utilize.utilize_config.box_exp_waste = False
-                
+                utilize_task.config.kekkai_utilize.utilize_config.exchange_before = False
                 utilize_task.run()
             except TaskEnd as msg:
                 # 直接将KekkaiUtilize的消息透传给Daily，不做额外处理
@@ -657,8 +657,14 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if not self.appear(self.I_BACK_Y):
                 break
     def MsFind(self):
+        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
+                                money_ocr=self.O_MALL_RESOURCE_5, buy_money=80):
+            pass
         while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
                                 money_ocr=self.O_MALL_RESOURCE_5, buy_money=80):
+            pass
+        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_3, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_3,
+                                    money_ocr=self.O_MALL_RESOURCE_5, buy_money=45):
             pass
         while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_3, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_3,
                                     money_ocr=self.O_MALL_RESOURCE_5, buy_money=45):
@@ -739,7 +745,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                     #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}金币 {info[0]}", title="神秘商店提醒")
             if info[1]==CoinType.jade: 
                  if info[0]==GoodsType.heisui: 
-                    if 0<info[2]<45 or 70<info[2]<96 or info[2]>133:
+                    if 0<info[2]<45 or 70<info[2]<96 or info[2]>=120:
                         flag=True
                         logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
                         #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}勾黑碎", title="神秘商店提醒")
@@ -785,7 +791,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 image_status = False
                 retry_count=0
                 continue
-            if image and self.appear_rgb(image):
+            """ if image and self.appear_rgb(image):
                 if image_status:
                     retry_count+=1
                 else:
@@ -793,7 +799,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 logger.info('get_award_daliy: 找到图片')
                 #retry_count+=1
                 time.sleep(0.1)
-                continue
+                continue """
             time.sleep(0.5)
             retry_count+=1
             #logger.info('get_award_daliy: 找到图片222')
