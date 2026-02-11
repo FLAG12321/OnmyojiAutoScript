@@ -202,7 +202,7 @@ class Device(Platform, Screenshot, Control, AppControl):
         count = {}
         for key in self.click_record:
             count[key] = count.get(key, 0) + 1
-        count = sorted(count.items(), key=lambda item: item[1])
+        count = sorted(count.items(), key=lambda item: item[1], reverse=True)
         if count[0][1] >= 12:
             logger.warning(f'Too many click for a button: {count[0][0]}')
             logger.warning(f'History click: {[str(prev) for prev in self.click_record]}')
