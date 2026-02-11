@@ -102,9 +102,10 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 logger.info(f'Utilize remaining time: {remaining_time}')
                 # 已经蹭上卡了，设置下次蹭卡时间  # 减少30秒
                 # remaining_time = remaining_time - timedelta(seconds=30)
+                next_time = datetime.now() + remaining_time
                 if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
                     self.config.notifier.push(content=f'下次寄养时间: {next_time}', title='寄养')
-                next_time = datetime.now() + remaining_time
+                
                 self.set_next_run(task='KekkaiUtilize', target=next_time)
                 return
             if not self.grown_goto_utilize():

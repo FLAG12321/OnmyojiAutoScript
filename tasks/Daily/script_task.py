@@ -23,101 +23,108 @@ class ScriptTask(GameUi, DailyAssets):
         loggin_time=self.daily_conf.daily_config.need_login_time
         
         for accountInfo in sup_account_list:
-            config = ExtendedAccountInfo()
-            if  self.daily_conf.daily_config.total_tongxin_battle_enable:
-                if not accountInfo.tongxin_battle_enable:
-                    continue
-                config.tongxin_battle_enable = True
-                if self.daily_conf.daily_config.total_huili_enable:
-                    config.tongxin_battle_enable = False
-            else:
-                config.tongxin_battle_enable = False
-            config.tongxin_ap_enable = self.daily_conf.daily_config.total_tongxin_ap_enable
-            config.mail_enable = self.daily_conf.daily_config.total_mail_enable
-            config.juangou_enable = self.daily_conf.daily_config.total_juangou_enable
-            config.tingyuan_enable = self.daily_conf.daily_config.total_tingyuan_enable
-            config.xiezuo_enable = self.daily_conf.daily_config.total_xiezuo_enable
-            config.huili_enable = self.daily_conf.daily_config.total_huili_enable
-            config.weekaward_enable = self.daily_conf.daily_config.total_weekaward_enable
-            config.mysteryshop_enable = self.daily_conf.daily_config.total_mysteryshop_enable
-            config.kekkaiActivation_enable = self.daily_conf.daily_config.total_kekkaiActivation_enable
-            config.KekkaiUtilize_enable = self.daily_conf.daily_config.total_KekkaiUtilize_enable
-            
-            
-            config.tongxin_battle_enable &= accountInfo.tongxin_battle_enable
-            config.tongxin_ap_enable &= accountInfo.tongxin_ap_enable
-            config.mail_enable  &= accountInfo.mail_enable
-            config.juangou_enable   &= accountInfo.juangou_enable
-            config.tingyuan_enable  &= accountInfo.tingyuan_enable
-            config.xiezuo_enable &= accountInfo.xiezuo_enable
-            config.huili_enable &= accountInfo.huili_enable
-            config.weekaward_enable &= accountInfo.weekaward_enable
-            config.mysteryshop_enable &= accountInfo.mysteryshop_enable
-            config.kekkaiActivation_enable &= accountInfo.kekkaiActivation_enable
-            config.KekkaiUtilize_enable &= accountInfo.KekkaiUtilize_enable
-            config.isflower = accountInfo.isflower
-            config.tongxin_limit_count = accountInfo.tongxin_limit_count
-
-            
-            logger.info("start %s-%s ", accountInfo.character, accountInfo.svr) 
-            if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo,loggin_time):
-                logger.warning("%s Skipped last Login Time:%s", accountInfo.character, accountInfo.last_complete_time)
-                continue 
-            suc = SwitchAccount(self.config, self.device, accountInfo).switchAccount()
-            if not suc:
-                logger.warning("switch to %s-%s Failed", accountInfo.character, accountInfo.svr)
-                self.config.notifier.push(content=f"switch to {accountInfo.character}-{accountInfo.svr} Failed,account info :{accountInfo.account}",  title="未找到账号")
-                continue
-            # 创建子任务实例
-            dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
-            # 根据目标模块的配置要求,正确设置配置属性
-            dff.daily_conf = self.daily_conf
-            dff.account_info = config
-            try:
-                dff.run()
-            except TaskEnd as msg:
-                logger.info(f"TaskEndTaskEndTaskEndTaskEnd{msg.args}")
-                if msg.args == () or msg.args == []:
-                    logger.info("Daily任务执行完毕")
+            net_err_flag = True
+            while  net_err_flag:
+                net_err_flag = False
+                config = ExtendedAccountInfo()
+                if  self.daily_conf.daily_config.total_tongxin_battle_enable:
+                    if not accountInfo.tongxin_battle_enable:
+                        continue
+                    config.tongxin_battle_enable = True
+                    if self.daily_conf.daily_config.total_huili_enable:
+                        config.tongxin_battle_enable = False
                 else:
-                    logger.info(f"msg len{len(msg.args)}")
-                    for item in msg.args[0]:
-                        logger.info(f"item{item}")
-                        if len(item) >= 2:
-                            msg_type = item[0]  # MSGType
-                            msg_content = item[1]  #Content
-                            print(f"类型: {msg_type}, 内容: {msg_content}")
-                            match msg_type:
-                                case MSGType.xiezuo:
-                                    device_type = "android" if accountInfo.apple_or_android else "ios"
-                                    self.config.notifier.push(
-                                        content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
-                                        title="协作任务提醒"
-                                    )
-                                case MSGType.mshop:
-                                    device_type = "android" if accountInfo.apple_or_android else "ios"
-                                    self.config.notifier.push(
-                                        content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
-                                        title="神秘商店提醒  "
-                                    )
-                                case MSGType.Utilize:
-                                    logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
-                                    self.daily_conf.daily_config.total_KekkaiUtilize_enable = False
-                #logger.warning("%s-%s %s", accountInfo.character, accountInfo.svr, msg_data[1])
-                # 更新配置文件中的时间
-                self.daily_conf.update_account_login_history(accountInfo)
-                # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
-                self.config.model.daily = self.daily_conf
-                self.daily_conf.daily_config.need_login_time = self.start_time
-                self.save_config()
+                    config.tongxin_battle_enable = False
+                config.tongxin_ap_enable = self.daily_conf.daily_config.total_tongxin_ap_enable
+                config.mail_enable = self.daily_conf.daily_config.total_mail_enable
+                config.juangou_enable = self.daily_conf.daily_config.total_juangou_enable
+                config.tingyuan_enable = self.daily_conf.daily_config.total_tingyuan_enable
+                config.xiezuo_enable = self.daily_conf.daily_config.total_xiezuo_enable
+                config.huili_enable = self.daily_conf.daily_config.total_huili_enable
+                config.weekaward_enable = self.daily_conf.daily_config.total_weekaward_enable
+                config.mysteryshop_enable = self.daily_conf.daily_config.total_mysteryshop_enable
+                config.kekkaiActivation_enable = self.daily_conf.daily_config.total_kekkaiActivation_enable
+                config.KekkaiUtilize_enable = self.daily_conf.daily_config.total_KekkaiUtilize_enable
                 
-                continue
-            except RequestHumanTakeover as e:
-                raise
-            except Exception as e:
-                logger.error(e)
-                self.config.notifier.push(content=f" {accountInfo.character}-{accountInfo.svr} 任务执行错误\n  error: {e}",  title="ERROR")
-                self.next_run("Daily", success=False)
+                
+                config.tongxin_battle_enable &= accountInfo.tongxin_battle_enable
+                config.tongxin_ap_enable &= accountInfo.tongxin_ap_enable
+                config.mail_enable  &= accountInfo.mail_enable
+                config.juangou_enable   &= accountInfo.juangou_enable
+                config.tingyuan_enable  &= accountInfo.tingyuan_enable
+                config.xiezuo_enable &= accountInfo.xiezuo_enable
+                config.huili_enable &= accountInfo.huili_enable
+                config.weekaward_enable &= accountInfo.weekaward_enable
+                config.mysteryshop_enable &= accountInfo.mysteryshop_enable
+                config.kekkaiActivation_enable &= accountInfo.kekkaiActivation_enable
+                config.KekkaiUtilize_enable &= accountInfo.KekkaiUtilize_enable
+                config.isflower = accountInfo.isflower
+                config.tongxin_limit_count = accountInfo.tongxin_limit_count
+
+                
+                logger.info("start %s-%s ", accountInfo.character, accountInfo.svr) 
+                if not self.daily_conf.daily_config.need_login and not self.is_need_login(accountInfo,loggin_time):
+                    logger.warning("%s Skipped last Login Time:%s", accountInfo.character, accountInfo.last_complete_time)
+                    continue 
+                suc = SwitchAccount(self.config, self.device, accountInfo).switchAccount()
+                if not suc:
+                    logger.warning("switch to %s-%s Failed", accountInfo.character, accountInfo.svr)
+                    self.config.notifier.push(content=f"switch to {accountInfo.character}-{accountInfo.svr} Failed,account info :{accountInfo.account}",  title="未找到账号")
+                    continue
+                # 创建子任务实例
+                dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
+                # 根据目标模块的配置要求,正确设置配置属性
+                dff.daily_conf = self.daily_conf
+                dff.account_info = config
+                try:
+                    dff.run()
+                except TaskEnd as msg:
+                    logger.info(f"TaskEndTaskEndTaskEndTaskEnd{msg.args}")
+                    if msg.args == () or msg.args == []:
+                        logger.info("Daily任务执行完毕")
+                    else:
+                        logger.info(f"msg len{len(msg.args)}")
+                        for item in msg.args[0]:
+                            logger.info(f"item{item}")
+                            if len(item) >= 2:
+                                msg_type = item[0]  # MSGType
+                                msg_content = item[1]  #Content
+                                print(f"类型: {msg_type}, 内容: {msg_content}")
+                                match msg_type:
+                                    case MSGType.xiezuo:
+                                        device_type = "android" if accountInfo.apple_or_android else "ios"
+                                        self.config.notifier.push(
+                                            content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
+                                            title="协作任务提醒"
+                                        )
+                                    case MSGType.mshop:
+                                        device_type = "android" if accountInfo.apple_or_android else "ios"
+                                        self.config.notifier.push(
+                                            content=f"   {accountInfo.character} {msg_content}\n所属账号为:{accountInfo.account},客户端为：{device_type}",
+                                            title="神秘商店提醒  "
+                                        )
+                                    case MSGType.Utilize:
+                                        logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
+                                        self.daily_conf.daily_config.total_KekkaiUtilize_enable = False
+                                    case MSGType.neterror:
+                                        logger.info("网络错误,重新登录")
+                                        net_err_flag = True
+                                        break
+                    if not net_err_flag:
+                        #logger.warning("%s-%s %s", accountInfo.character, accountInfo.svr, msg_data[1])
+                        # 更新配置文件中的时间
+                        self.daily_conf.update_account_login_history(accountInfo)
+                        # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
+                        self.config.model.daily = self.daily_conf
+                        self.daily_conf.daily_config.need_login_time = self.start_time
+                        self.save_config()
+                        continue
+                except RequestHumanTakeover as e:
+                    raise
+                except Exception as e:
+                    logger.error(e)
+                    self.config.notifier.push(content=f" {accountInfo.character}-{accountInfo.svr} 任务执行错误\n  error: {e}",  title="ERROR")
+                    self.next_run("Daily", success=False)
         for info in self.daily_conf.sup_account_list:
             logger.info(f"name:{info.character}")
             logger.info(f"time :{info.last_complete_time}")
@@ -162,15 +169,58 @@ class ScriptTask(GameUi, DailyAssets):
         now = datetime.now()
         if success:
             if 5 <= now.hour < 18:
+                self.daily_conf.daily_config.total_tongxin_battle_enable = False
+                self.daily_conf.daily_config.total_tongxin_ap_enable = False
+                self.daily_conf.daily_config.total_huili_enable = False
+                self.daily_conf.daily_config.total_tingyuan_enable  = True
+                self.daily_conf.daily_config.total_mail_enable  = True
+                self.daily_conf.daily_config.total_xiezuo_enable    = True
+                self.daily_conf.daily_config.need_login = True
+                self.config.model.daily = self.daily_conf
+                
                 self.set_next_run(task, target=now.replace(hour=18, minute=5))
+                self.save_config()
             elif now.hour < 5:
                 self.set_next_run(task, target=now.replace(hour=5, minute=5))
+                if self.daily_conf.daily_config.total_tongxin_battle_enable and self.daily_conf.daily_config.need_login :
+                    self.daily_conf.daily_config.total_tongxin_battle_enable = False
+                    self.daily_conf.daily_config.total_tongxin_ap_enable = True
+                    self.daily_conf.daily_config.total_tingyuan_enable  = False
+                    self.daily_conf.daily_config.total_mail_enable  = True
+                    self.daily_conf.daily_config.total_xiezuo_enable    = True
+                    self.config.model.daily = self.daily_conf
+                    
+                    self.set_next_run(task, target=now.replace(hour=5, minute=5))
+                    self.save_config()
+                if self.daily_conf.daily_config.need_login and self.daily_conf.daily_config.total_huili_enable:
+                    self.daily_conf.daily_config.total_tongxin_battle_enable = True
+                    self.daily_conf.daily_config.total_tongxin_ap_enable = False
+                    self.daily_conf.daily_config.total_huili_enable = False
+                    self.daily_conf.daily_config.total_tingyuan_enable  = False
+                    self.daily_conf.daily_config.total_mail_enable  = False
+                    self.daily_conf.daily_config.total_xiezuo_enable    = False
+                    self.daily_conf.daily_config.need_login = True
+                    self.config.model.daily = self.daily_conf
+                    
+                    self.set_next_run(task, target=now+timedelta(minutes=20))
+                    self.save_config()
+            elif 18  <  now.hour <= 23:
+                self.daily_conf.daily_config.total_tongxin_battle_enable = False
+                self.daily_conf.daily_config.total_tongxin_ap_enable = False
+                self.daily_conf.daily_config.total_huili_enable = True
+                self.daily_conf.daily_config.total_tingyuan_enable  = False
+                self.daily_conf.daily_config.total_mail_enable  = False
+                self.daily_conf.daily_config.total_xiezuo_enable    = False
+                self.daily_conf.daily_config.need_login = True
+                self.config.model.daily = self.daily_conf
+                self.set_next_run(task, target=now.replace(hour=0, minute=20)+ timedelta(days=1))
+                self.save_config()
             else:
-                self.set_next_run(task, target=now.replace(hour=18, minute=5) + timedelta(days=1))
+                self.set_next_run(task, target=now.replace(hour=5, minute=5) + timedelta(days=1))
+            
         else:
             self.set_next_run(task, target=now + timedelta(minutes=10))
-
-
+        
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device

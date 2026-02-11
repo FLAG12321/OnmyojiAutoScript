@@ -44,4 +44,5 @@ class MSGType(Enum):
     none = 0
     xiezuo = 1
     mshop = 2
-    Utilize= 3
+    Utilize = 3
+    neterror = 4
