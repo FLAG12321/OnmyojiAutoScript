@@ -502,7 +502,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         if click_now:
             self.click(target, interval=1.8)
         return target
-
+'''
 
 if __name__ == '__main__':
     from module.config.config import Config
