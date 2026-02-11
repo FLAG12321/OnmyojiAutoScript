@@ -53,7 +53,7 @@ page_login = Page(G.I_CHECK_LOGIN_FORM)
 # Main Home 主页
 page_main = Page(G.I_CHECK_MAIN)
 page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
-                        [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROOLL_CLOSE_AREA]]
+                        [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
 page_summon.link(button=G.I_SUMMON_GOTO_MAIN, destination=page_main)
@@ -113,6 +113,10 @@ page_exploration.link(button=G.I_EXPLORATION_GOTO_SIX_GATES, destination=page_si
 page_bondling_fairyland = Page(G.I_CHECK_BONDLING_FAIRYLAND)
 page_bondling_fairyland.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_BONDLING_FAIRYLAND, destination=page_bondling_fairyland)
+# 英杰试炼 hero test
+page_hero_test = Page(G.I_CHECK_HERO_TEST)
+page_hero_test.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
+page_exploration.link(button=G.I_EXPLORATION_GOTO_HERO_TEST, destination=page_hero_test)
 
 # ************************************* 町中部分 *****************************************#
 # 斗技 duel
@@ -187,11 +191,6 @@ page_main.link(button=G.I_MAIN_GOTO_COLLECTION, destination=page_collection)
 page_travel = Page(G.I_CHECK_TRAVEL)
 page_travel.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_TRAVEL, destination=page_travel)
-
-# 英杰试炼 hero test
-page_hero_test = Page(G.I_CHECK_HERO_TEST)
-page_hero_test.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
-page_exploration.link(button=G.I_EXPLORATION_GOTO_HERO_TEST, destination=page_hero_test)
 
 # 道馆
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets

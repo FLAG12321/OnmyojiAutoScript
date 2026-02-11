@@ -19,20 +19,14 @@
   },
   {
     "itemName": "random_bottom",
-    "roiFront": "179,577,972,100",
-    "roiBack": "179,579,972,100",
+    "roiFront": "179,598,972,78",
+    "roiBack": "179,597,972,81",
     "description": "description"
   },
   {
     "itemName": "random_all",
     "roiFront": "42,94,1207,543",
     "roiBack": "42,94,1207,543",
-    "description": "description"
-  },
-  {
-    "itemName": "random_boss",
-    "roiFront": "364,507,249,100",
-    "roiBack": "364,506,249,100",
     "description": "description"
   }
 ]

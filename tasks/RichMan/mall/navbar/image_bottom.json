@@ -50,7 +50,7 @@
     "roiFront": "1194,421,69,74",
     "roiBack": "1194,421,69,74",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "契灵商店"
   },
   {
@@ -77,14 +77,14 @@
     "roiFront": "880,646,53,54",
     "roiBack": "834,621,116,90",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.65,
     "description": "杂货铺"
   },
   {
     "itemName": "mall_sundry_check",
     "imageName": "navbar_mall_sundry_check.png",
-    "roiFront": "1050,0,31,44",
-    "roiBack": "1050,0,150,100",
+    "roiFront": "1093,10,31,44",
+    "roiBack": "1093,10,150,100",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "杂货铺"

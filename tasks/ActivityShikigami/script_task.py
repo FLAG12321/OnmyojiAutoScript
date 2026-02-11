@@ -152,10 +152,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         #
         for climb_type in self.conf.general_climb.run_sequence_v:
             # 进入到活动的主页面，不是具体的战斗页面
-            logger.info(self.ui_get_current_page())
-            if self.ui_get_current_page()==game.page_main:
-                    logger.info('主界面')
-                    self.ui_click(game.asa.I_TOGGLE_BUTTON, stop =game.asa.I_SHI, interval=1)
+            self.ui_get_current_page()
             self.ui_goto(game.page_climb_act)
             try:
                 method_func = getattr(self, f'_run_{climb_type}')
@@ -184,25 +181,23 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         logger.hr(f'Start run climb type PASS', 1)
         self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
-        while 1:
-            self.screenshot()
-            
-            if self.appear(self.I_AP_ACTIVITY):
-                break
-            if self.appear(self.I_AP):
-                self.screenshot()
-                self.appear_then_click(self.I_SWITCH, interval=1)
-                continue
+        self.switch_climb_mode_in_game('pass')
+
         ocr_limit_timer = Timer(1).start()
+        click_limit_timer = Timer(4).start()
         while 1:
             self.screenshot()
             self.put_status()
             # --------------------------------------------------------------
+            if (self.appear_then_click(self.I_UI_CONFIRM, interval=0.5)
+                    or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=0.5)):
+                continue
+            if self.ui_reward_appear_click():
+                continue
             if not ocr_limit_timer.reached():
                 continue
             ocr_limit_timer.reset()
             if not self.ocr_appear(self.O_FIRE):
-                self.appear_then_click(self.I_CHECK_BATTLE_MAIN, interval=4)
                 continue
             #  --------------------------------------------------------------
             self.lock_team(self.conf.general_battle)
@@ -223,14 +218,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         logger.hr(f'Start run climb type AP')
         self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_AP):
-                break
-            if self.appear(self.I_AP_ACTIVITY):
-                self.screenshot()
-                self.appear_then_click(self.I_SWITCH, interval=1)
-                continue
+        self.switch_climb_mode_in_game('ap')
+
         ocr_limit_timer = Timer(1).start()
         while 1:
             self.screenshot()
@@ -259,31 +248,9 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type BOSS')
-        self.ui_click(self.I_TO_BATTLE_BOSS, stop=self.I_CHECK_BATTLE_BOSS, interval=1)
-        ocr_limit_timer = Timer(1).start()
-        while 1:
-            self.screenshot()
-            self.put_status()
-            # --------------------------------------------------------------
-            if not ocr_limit_timer.reached():
-                continue
-            ocr_limit_timer.reset()
-            if not self.ocr_appear(self.O_FIRE):
-                continue
-            #  --------------------------------------------------------------
-            #self.lock_team(self.conf.general_battle)
-            if not self.check_tickets_enough():
-                logger.warning(f'No tickets left, wait for next time')
-                break
-            if self.conf.general_climb.random_sleep:
-                random_sleep(probability=0.2)
-            if self.start_battle():
-                continue
-
-        self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_BOSS, interval=1)
 
     def start_battle(self):
-        click_times, max_times = 0, random.randint(5, 7)
+        click_times, max_times = 0, random.randint(2, 4)
         while 1:
             self.screenshot()
             if self.is_in_battle(False):
@@ -405,7 +372,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
         ok_cnt, max_retry = 0, 5
-        single_start_time = datetime.now()
         while 1:
             sleep(random.uniform(0.5, 1.5))
             self.screenshot()
@@ -423,34 +389,30 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             # 战斗成功
             if self.appear_then_click(self.I_WIN, interval=2):
                 continue
-            
-                
-            if self.appear(self.I_REWARD_GOLD, threshold=0.8):
-                self.ui_click_until_disappear(self.I_REWARD_GOLD, interval=1.5)
-                return True
-            if self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN, threshold=0.8):
-                self.ui_click_until_disappear(self.I_REWARD_PURPLE_SNAKE_SKIN, interval=1.5)
-                return True
+            #  出现 “魂” 和 紫蛇皮
             if self.appear(self.I_REWARD):
                 logger.info('Win battle')
-                self.ui_click_until_disappear(self.I_REWARD, interval=1.5)
+                while 1:
+                    self.screenshot()
+                    appear_reward = self.appear_then_click(self.I_REWARD)
+                    appear_reward_purple_snake_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)
+                    if not appear_reward and not appear_reward_purple_snake_skin:
+                        break
+                    if appear_reward or appear_reward_purple_snake_skin:
+                        reward_click = random.choice(
+                            [self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP])
+                        self.click(reward_click, interval=1.8)
+                        continue
                 return True
             # 已经不在战斗中了, 且奖励也识别过了, 则随机点击
             # if ok_cnt > 0 and not self.is_in_battle(False):
             #     self.random_reward_click(exclude_click=[self.C_RANDOM_BOTTOM])
             #     ok_cnt += 1
             #     continue
-            # # 单局到时间自动退出战斗
-            # if ok_cnt == 0 and datetime.now() - single_start_time > self.conf.general_climb.get_single_limit_time(
-            #         self.climb_type, timedelta(days=1)):
-            #     logger.attr(self.climb_type, 'Time limit arrived, close current battle')
-            #     self.exit_battle(skip_first=True)
-            #     ok_cnt += 1
-            #     continue
             # 战斗中随机滑动
             if ok_cnt == 0 and random_click_swipt_enable:
                 self.random_click_swipt()
-        return True'''
+        return True
 
     def switch_soul(self, enter_button: RuleImage, cur_img: RuleImage):
         conf = self.conf.switch_soul_config
@@ -467,6 +429,14 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             group_team = getattr(conf, f"{self.climb_type}_group_team")
             self.run_switch_soul(group_team)
         self.ui_click(self.I_UI_BACK_YELLOW, stop=cur_img, interval=1)
+
+    def switch_climb_mode_in_game(self, mode: str = 'ap'):
+        map_check = {
+            'ap': self.I_CLIMB_MODE_AP,
+            'pass': self.I_CLIMB_MODE_PASS,
+        }
+        logger.info(f'Switch climb mode to {mode}')
+        self.ui_click(self.I_CLIMB_MODE_SWITCH, stop=map_check[mode], interval=1)
 
     def lock_team(self, battle_conf: GeneralBattleConfig):
         """

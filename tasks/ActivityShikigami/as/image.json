@@ -2,8 +2,8 @@
   {
     "itemName": "lock",
     "imageName": "as_lock.png",
-    "roiFront": "824,651,31,31",
-    "roiBack": "658,634,276,85",
+    "roiFront": "825,657,28,25",
+    "roiBack": "739,613,276,85",
     "method": "Template matching",
     "threshold": 0.5,
     "description": "上锁图标"
@@ -11,64 +11,37 @@
   {
     "itemName": "unlock",
     "imageName": "as_unlock.png",
-    "roiFront": "824,653,28,29",
-    "roiBack": "664,624,266,95",
+    "roiFront": "884,648,28,25",
+    "roiBack": "733,607,266,95",
     "method": "Template matching",
     "threshold": 0.5,
     "description": "还未上锁图片"
   },
   {
-    "itemName": "ap",
-    "imageName": "as_ap.png",
-    "roiFront": "1099,524,26,35",
-    "roiBack": "1084,504,161,71",
-    "method": "Template matching",
-    "threshold": 0.65,
-    "description": "寿司体力"
-  },
-  {
-    "itemName": "ap_activity",
-    "imageName": "as_ap_activity.png",
-    "roiFront": "1152,527,23,34",
-    "roiBack": "1143,515,43,54",
+    "itemName": "climb_mode_pass",
+    "imageName": "as_climb_mode_pass.png",
+    "roiFront": "1151,528,21,28",
+    "roiBack": "1118,500,62,100",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "活动体力"
+    "description": "活动爬塔标志"
   },
   {
-    "itemName": "switch",
-    "imageName": "as_switch.png",
-    "roiFront": "1240,531,24,29",
-    "roiBack": "1223,523,55,44",
+    "itemName": "climb_mode_ap",
+    "imageName": "as_climb_mode_ap.png",
+    "roiFront": "1100,530,22,25",
+    "roiBack": "1063,508,100,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "体力爬塔标志"
+  },
+  {
+    "itemName": "climb_mode_switch",
+    "imageName": "as_climb_mode_switch.png",
+    "roiFront": "1238,531,29,26",
+    "roiBack": "1179,494,100,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "切换按键"
-  },
-  {
-    "itemName": "buy_jade",
-    "imageName": "as_buy_jade.png",
-    "roiFront": "1004,192,38,42",
-    "roiBack": "836,619,38,42",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "购买活动的体力"
-  },
-  {
-    "itemName": "add_max",
-    "imageName": "as_add_max.png",
-    "roiFront": "17,24,33,37",
-    "roiBack": "974,524,57,54",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "增加到最大"
-  },
-  {
-    "itemName": "toggle_button",
-    "imageName": "as_toggle_button.png",
-    "roiFront": "1195,530,27,25",
-    "roiBack": "1171,127,73,443",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
   }
 ]
