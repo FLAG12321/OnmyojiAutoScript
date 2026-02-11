@@ -35,6 +35,7 @@ from tasks.SoulsTidy.config import SoulsTidy
 from tasks.Delegation.config import Delegation
 from tasks.WantedQuests.config import WantedQuests
 from tasks.Tako.config import Tako
+from tasks.AutoCheckinBigGod.config import AutoCheckinBigGod
 from tasks.DailyForFlag.config import DailyForFlag
 from tasks.ReturnGift.config import ReturnGift
 # ----------------------------------------------------------------------------------------------------------------------
@@ -106,8 +107,13 @@ class ConfigModel(ConfigBase):
     exploration: Exploration = Field(default_factory=Exploration)
     wanted_quests: WantedQuests = Field(default_factory=WantedQuests)
     tako: Tako = Field(default_factory=Tako)
+<<<<<<< HEAD
     daily_for_flag: DailyForFlag = Field(default_factory=DailyForFlag)
     
+=======
+    auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
+
+>>>>>>> pr-1411
     # 这些是刷御魂的
     orochi: Orochi = Field(default_factory=Orochi)
     orochi_moans: OrochiMoans = Field(default_factory=OrochiMoans)
