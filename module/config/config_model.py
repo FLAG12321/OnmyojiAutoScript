@@ -107,13 +107,9 @@ class ConfigModel(ConfigBase):
     exploration: Exploration = Field(default_factory=Exploration)
     wanted_quests: WantedQuests = Field(default_factory=WantedQuests)
     tako: Tako = Field(default_factory=Tako)
-<<<<<<< HEAD
+    auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
     daily_for_flag: DailyForFlag = Field(default_factory=DailyForFlag)
     
-=======
-    auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
-
->>>>>>> pr-1411
     # 这些是刷御魂的
     orochi: Orochi = Field(default_factory=Orochi)
     orochi_moans: OrochiMoans = Field(default_factory=OrochiMoans)
