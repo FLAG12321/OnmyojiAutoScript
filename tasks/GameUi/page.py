@@ -56,6 +56,7 @@ page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANC
                         [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
+page_summon.additional = [G.O_SUMMON_BACK_Y, G.I_SUMMON_BACK_R,G.I_SUMMON_BACK_TICKET]
 page_summon.link(button=G.I_SUMMON_GOTO_MAIN, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_SUMMON, destination=page_summon)
 # 探索exploration
@@ -164,7 +165,7 @@ page_friends.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_FRIENDS, destination=page_friends)
 # 花合战 daily
 page_daily = Page(G.I_CHECK_DAILY)
-# page_daily.additional = [G.O_CLICK_CLOSE_1, G.O_CLICK_CLOSE_2]
+page_daily.additional = [G.O_CLICK_CLOSE_1, G.O_CLICK_CLOSE_2]
 page_daily.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_DAILY, destination=page_daily)
 from tasks.DailyTrifles.assets import DailyTriflesAssets

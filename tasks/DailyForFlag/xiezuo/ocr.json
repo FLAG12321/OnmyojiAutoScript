@@ -7,5 +7,14 @@
     "method": "Default",
     "keyword": "",
     "description": "Ocr-description"
+  },
+  {
+    "itemName": "huahe",
+    "roiFront": "477,634,300,71",
+    "roiBack": "493,665,259,31",
+    "description": "description",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": ""
   }
 ]

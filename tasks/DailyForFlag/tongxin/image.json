@@ -160,5 +160,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "exit3",
+    "roiFront": "472,412,98,37",
+    "roiBack": "463,405,118,53",
+    "description": "description",
+    "imageName": "exit3.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

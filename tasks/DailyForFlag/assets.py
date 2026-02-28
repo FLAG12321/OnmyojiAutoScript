@@ -276,6 +276,8 @@ class DailyForFlagAssets:
 	I_UNLOCK = RuleImage(roi_front=(28,647,29,30), roi_back=(1,627,75,78), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_unlock.png")
 	# description 
 	I_LOCK = RuleImage(roi_front=(25,645,33,30), roi_back=(11,627,63,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_lock.png")
+	# description 
+	I_EXIT3 = RuleImage(roi_front=(472,412,98,37), roi_back=(463,405,118,53), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/exit3.png")
 
 
 	# Click Rule Assets
@@ -303,5 +305,7 @@ class DailyForFlagAssets:
 	# Ocr Rule Assets
 	# Ocr-description 
 	O_ACC_NAME = RuleOcr(roi=(233,283,226,46), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="acc_name")
+	# description 
+	O_HUAHE = RuleOcr(roi=(477,634,300,71), area=(493,665,259,31), mode="Single", method="Default", keyword="", name="huahe")
 
 

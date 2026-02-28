@@ -43,8 +43,8 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                     self.ui_goto(page_main)
                     self.ui_goto(page_guild)
                     continue
-            if datetime.now() - self.start_time >= timeout_duration  or datetime.now() > timeout + timedelta(minutes=5):
-                raise TaskEnd
+            if datetime.now() - self.start_time >= timeout_duration  or datetime.now() > timeout + timedelta(minutes=3):
+                break
             if self.appear(self.I_R_SEND_FLAG):
                 sendtimeout=self.send_gift()
                 if sendtimeout:
@@ -64,7 +64,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 continue
             retry_count += 1
          
-        self.set_next_run(task='ReturnGift', finish=True, success=True)
+        self.set_next_run(task='ReturnGift', success=True)
         raise TaskEnd 
     def send_gift(self):
         send_time=False

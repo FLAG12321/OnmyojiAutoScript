@@ -85,11 +85,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 logger.info('Close video')
                 continue
             # 右上角的红色的关闭
-            if self.appear_then_click(self.I_LOGIN_RED_CLOSE, interval=0.6):
+            if self.appear_then_click(self.I_LOGIN_RED_CLOSE, interval=1.6):
                 logger.info('Close red close')
                 continue
             # 左上角的黄色关闭
-            if self.appear_then_click(self.I_LOGIN_YELLOW_CLOSE, interval=0.6):
+            if self.appear_then_click(self.I_LOGIN_YELLOW_CLOSE, interval=1.6):
                 logger.info('Close yellow close')
                 continue
             # 绑定手机号弹窗
@@ -108,6 +108,14 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             # 关闭阴阳师精灵提示
             if self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
                 logger.info("click onmyoji genie")
+                continue
+            # 当账号未登录时点击登录
+            from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
+            if self.appear_then_click(SwitchAccountAssets.I_SA_ACCOUNT_LOGIN_BTN, interval=0.8):
+                logger.info("click login")
+                continue
+            if self.appear_then_click(SwitchAccountAssets.I_SA_LOGIN_FORM_ANDROID, interval=0.8):
+                logger.info("click ANDROID")
                 continue
             # 点击屏幕进入游戏
             if self.appear(self.I_LOGIN_SPECIFIC_SERVE, interval=0.6):
