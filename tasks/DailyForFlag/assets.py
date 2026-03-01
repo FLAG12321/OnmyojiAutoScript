@@ -239,6 +239,11 @@ class DailyForFlagAssets:
 	I_T_SPECIAL_FLAG = RuleImage(roi_front=(1140,629,47,67), roi_back=(1092,568,138,143), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_special_flag.png")
 
 
+	# Click Rule Assets
+	# description 
+	C_FRIEND_HELP_CLICK = RuleClick(roi_front=(1204,540,38,70), roi_back=(1203,539,41,73), name="friend_help_click")
+
+
 	# Image Rule Assets
 	# description 
 	I_INVITE = RuleImage(roi_front=(1094,619,89,77), roi_back=(1088,602,97,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_invite.png")
@@ -278,6 +283,10 @@ class DailyForFlagAssets:
 	I_LOCK = RuleImage(roi_front=(25,645,33,30), roi_back=(11,627,63,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_lock.png")
 	# description 
 	I_EXIT3 = RuleImage(roi_front=(472,412,98,37), roi_back=(463,405,118,53), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/exit3.png")
+	# description 
+	I_FRIEND_HELP = RuleImage(roi_front=(1205,541,38,71), roi_back=(1187,512,71,118), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help.png")
+	# description 
+	I_FRIEND_HELP_FLAG = RuleImage(roi_front=(803,107,167,34), roi_back=(782,93,210,63), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help_flag.png")
 
 
 	# Click Rule Assets

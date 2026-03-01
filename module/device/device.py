@@ -207,11 +207,12 @@ class Device(Platform, Screenshot, Control, AppControl):
             logger.warning(f'Too many click for a button: {count[0][0]}')
             logger.warning(f'History click: {[str(prev) for prev in self.click_record]}')
             
-            if str("sa_account_list_up")==str(self.click_record[0]):
+            # 特殊处理sa_account_list_up，这是滑动列表的操作，不应该抛出异常
+            if str(count[0][0]) == "sa_account_list_up":
                 self.click_record_clear()
                 return
             self.click_record_clear()
-            if self.retry_times >= 5:
+            if self.retry_times >=2:
                 self.retry_times = 0
                 raise GameTooManyClickError(f'Too many click for a button: {count[0][0]}')
             self.retry_times += 1

@@ -199,7 +199,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     break
             # 判断是不是左上角第一个
             lock_before = con.general_battle_config.lock_team_enable
-            if index == 1 and not exit_all:
+            if index == 1 and not (exit_all and con.raid_config.auto_exit_all):
                 logger.info('Now is the first one')
                 if con.raid_config.exit_four:
                     logger.info('Exit four enable')
@@ -215,7 +215,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
                 con.general_battle_config.lock_team_enable = False
             self.fire(index)
-            if exit_all:
+            if exit_all and con.raid_config.auto_exit_all:
                 logger.info('Exit all')
                 self.run_general_battle_back(con.general_battle_config, exit_four=True)
                 last_battle = False

@@ -23,7 +23,7 @@
     "roiFront": "176,353,140,104",
     "roiBack": "144,50,866,494",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.9,
     "description": "description"
   },
   {
@@ -32,7 +32,7 @@
     "roiFront": "399,380,146,101",
     "roiBack": "156,81,874,473",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.9,
     "description": "description"
   },
   {
@@ -141,7 +141,7 @@
     "description": "description",
     "imageName": "ms_taiko_off_3.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.9
   },
   {
     "itemName": "ms_taiko_off_4",
@@ -150,6 +150,6 @@
     "description": "description",
     "imageName": "ms_taiko_off_4.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.9
   }
 ]

@@ -187,7 +187,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         # self.ui_current = page_ryou_toppa
         # self.ui_goto(page_main)
         if success:
-            self.set_next_run(task='RyouToppa', finish=True, server=True, success=True)
+            self.plan_tomorrow_ryoutoppa()
+            #self.set_next_run(task='RyouToppa', finish=True, server=True, success=True)
         else:
             self.set_next_run(task='RyouToppa', finish=True, server=True, success=False)
         raise TaskEnd
@@ -196,7 +197,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         # 安排下次寮突破，便于复用
         now = datetime.now()
         # 如果时间在00:00-5:00之间则设定时间为当天的自定义时间
-        if now.time() < dt_time(5, 0):  # 不确定 time 的使用范围，重命名 datetime 中的 time
+        if now.hour < 5:  # 不确定 time 的使用范围，重命名 datetime 中的 time
             self.custom_next_run(task='RyouToppa', custom_time=self.config.ryou_toppa.raid_config.next_ryoutoppa_time, time_delta=0)
         # 如果时间在05:00-23:59之间则设定时间为明天的自定义时间
         else:

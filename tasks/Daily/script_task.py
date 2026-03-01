@@ -1,7 +1,7 @@
 import importlib
 from datetime import datetime, timedelta
 
-from module.exception import TaskEnd, RequestHumanTakeover
+from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError
 from module.logger import logger
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Daily import DailyForFlagEx 
@@ -9,6 +9,7 @@ from tasks.Daily.assets import DailyAssets
 from tasks.Daily.config import AccountInfo, Daily, ExtendedAccountInfo
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.config import MSGType
+from script import Script 
 
 
 class ScriptTask(GameUi, DailyAssets):
@@ -37,34 +38,36 @@ class ScriptTask(GameUi, DailyAssets):
                         if retry_count < max_retries:
                             logger.info(f"Account {accountInfo.character} failed, retrying ({retry_count}/{max_retries})...")
                         else:
-                            logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")
-                            
+                            logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")            
+                except GameNotRunningError:
+                    raise   GameNotRunningError("Game Not Running")
                 except Exception as e:
                     logger.error(f"Error processing account {accountInfo.character}: {e}")
-                    retry_count += 1
-                    if retry_count >= max_retries:
-                        # 如果多次失败，记录错误并继续下一个账号
-                        self.config.notifier.push(
-                            content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",  
-                            title="ERROR"
-                        )
-                        self.daily_conf.daily_config.need_login = False
-                        self.daily_conf.daily_config.need_login_time = login_time
-                        self.save_config()
-                        self.next_run("Daily", success=False)
-                        
+                    self.config.notifier.push(
+                        content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",  
+                        title="ERROR"
+                    )
+                    self.daily_conf.daily_config.need_login = False
+                    self.daily_conf.daily_config.need_login_time = login_time
+                    self.save_config()
+                    self.next_run("Daily", success=False)
+                    Script.save_error_log(self)
+                            
         self._notify_daily_completion()
         self.next_run("Daily", success=True)
         raise TaskEnd("Daily")
 
     def _get_sorted_accounts(self):
         """获取按最后完成时间排序的账号列表"""
-        if self.daily_conf.sup_account_list[0].last_complete_time < self.daily_conf.sup_account_list[1].last_complete_time: 
-            return reversed(self.daily_conf.sup_account_list)
+        if len(self.daily_conf.sup_account_list) > 1:
+            if self.daily_conf.sup_account_list[0].last_complete_time < self.daily_conf.sup_account_list[1].last_complete_time: 
+                return reversed(self.daily_conf.sup_account_list)
         return self.daily_conf.sup_account_list
 
     def _should_process_account(self, account_info, login_time):
         """判断是否应该处理该账号"""
+        logger.info(f"Checking if account {account_info.character} should be processed")
+        logger.info(f"need_login: {self.daily_conf.daily_config.need_login}")
         if not self.daily_conf.daily_config.need_login and not self.is_need_login(account_info, login_time):
             logger.warning(f"{account_info.character} Skipped last Login Time: {account_info.last_complete_time}")
             return False
@@ -74,7 +77,18 @@ class ScriptTask(GameUi, DailyAssets):
         """处理单个账号的逻辑"""
         # 创建配置对象
         config = self._create_account_config(account_info)
-        
+        # 如果没有任何任务被启用，跳过该账号
+        if not ( 
+            config.tongxin_battle_enable or config.tongxin_ap_enable or \
+            config.mail_enable or config.juangou_enable or  \
+            config.tingyuan_enable or config.xiezuo_enable or   \
+            config.huili_enable or config.weekaward_enable or   \
+            config.mysteryshop_enable or config.kekkaiActivation_enable or  \
+            config.KekkaiUtilize_enable \
+            ):
+            logger.info(f"Skipping account {account_info.character} - No tasks enabled")
+            return True
+         
         logger.info("Start processing %s-%s", account_info.character, account_info.svr) 
         
         # 切换账号
@@ -101,7 +115,6 @@ class ScriptTask(GameUi, DailyAssets):
         config.mysteryshop_enable = base_config.total_mysteryshop_enable and account_info.mysteryshop_enable
         config.kekkaiActivation_enable = base_config.total_kekkaiActivation_enable and account_info.kekkaiActivation_enable
         config.KekkaiUtilize_enable = base_config.total_KekkaiUtilize_enable and account_info.KekkaiUtilize_enable
-        
         # 账号特定配置
         config.isflower = account_info.isflower
         config.tongxin_limit_count = account_info.tongxin_limit_count
@@ -130,16 +143,17 @@ class ScriptTask(GameUi, DailyAssets):
         except TaskEnd as msg:
             return self._handle_task_end(msg, account_info)
         except RequestHumanTakeover:
+            Script.save_error_log(self)
             raise
         except Exception as e:
             logger.error(f"Error in daily tasks for {account_info.character}: {e}")
+            Script.save_error_log(self)
             return False
 
-    def _create_task_instance(self, config):
-        """创建任务实例"""
+    def CreatObjectFromModule(self, task_name: str, **kwargs):
         module_name = 'script_task'
         from pathlib import Path
-        module_path = str(Path.cwd() / 'tasks' / 'DailyForFlag' / (module_name + '.py'))
+        module_path = str(Path.cwd() / 'tasks' / task_name / (module_name + '.py'))
 
         spec = importlib.util.spec_from_file_location(module_name, module_path)
         module = importlib.util.module_from_spec(spec)
@@ -148,9 +162,14 @@ class ScriptTask(GameUi, DailyAssets):
         WQEX = type("WQEX", (module.ScriptTask,), {
             "get_config": DailyForFlagEx.get_config
         })
-        wq = WQEX(config=self.config, device=self.device)
+        wq = WQEX(**kwargs)
         return wq
-
+    def _create_task_instance(self, config):
+        """创建任务实例"""
+        dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
+        dff.daily_conf = self.daily_conf
+        dff.account_info = config
+        return dff
     def _handle_task_end(self, msg, account_info):
         """处理任务结束消息"""
         logger.info(f"TaskEnd received: {msg.args}")
@@ -167,8 +186,11 @@ class ScriptTask(GameUi, DailyAssets):
                         return False  # 如果是网络错误，需要重试
                         
         # 更新账号登录历史
+        # 更新配置文件中的时间
         self.daily_conf.update_account_login_history(account_info)
+        # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
         self.config.model.daily = self.daily_conf
+        self.daily_conf.daily_config.need_login_time = self.start_time
         self.save_config()
         return True
 

@@ -169,5 +169,23 @@
     "imageName": "exit3.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "friend_help",
+    "roiFront": "1205,541,38,71",
+    "roiBack": "1187,512,71,118",
+    "description": "description",
+    "imageName": "friend_help.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "friend_help_flag",
+    "roiFront": "803,107,167,34",
+    "roiBack": "782,93,210,63",
+    "description": "description",
+    "imageName": "friend_help_flag.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

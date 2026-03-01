@@ -34,6 +34,7 @@ class RaidConfig(BaseModel):
     order_attack: str = Field(title='Order Attack', default='5 > 4 > 3 > 2 > 1 > 0', description='order_attack_help')
     three_refresh: bool = Field(title='Three Refresh', default=False, description='three_refresh_help')
     when_attack_fail: WhenAttackFail = Field(title='WhenAttackFail', default=WhenAttackFail.REFRESH, description='when_attack_fail_help')
+    auto_exit_all: bool = Field(title='Auto Exit All', default=False, description='auto_exit_all_help')
 
 class RealmRaid(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)

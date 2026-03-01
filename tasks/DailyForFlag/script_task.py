@@ -1,6 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import os
 import re
 import time
 import cv2
@@ -10,37 +11,27 @@ from cached_property import cached_property
 from datetime import timedelta, datetime
 from typing import List
 from module.base.timer import Timer
-from module.atom.image_grid import ImageGrid
 from module.logger import logger
 from module.exception import TaskEnd
 
 from module.atom.image import RuleImage
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
-from tasks.DailyForFlag.config import DailyForFlag,GoodsType,CoinType,MSGType
-from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
+from tasks.DailyForFlag.config import GoodsType,CoinType,MSGType
+from tasks.GameUi.page import page_main, page_guild , page_team,page_mall,page_friends
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.login import LoginHandler
 from tasks.WantedQuests.config import CooperationType
 from tasks.WantedQuests.assets import WantedQuestsAssets
-from tasks.GameUi.assets import GameUiAssets
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.RichMan.guild import Guild
 from tasks.RichMan.mall.mall import Mall
-from module.base.utils import point2str
 from tasks.RichMan.config import GuildStore,Consignment
-from tasks.WeeklyTrifles.config import Trifles
-from tasks.WeeklyTrifles.assets import WeeklyTriflesAssets
 from tasks.WeeklyTrifles.script_task import ScriptTask as WeeklyTrifles
-from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigami,_prepare_image_for_ocr 
-from tasks.MysteryShop.config import MysteryShop, ShopConfig, ShareConfig
 from tasks.MysteryShop.assets import MysteryShopAssets
-from tasks.MysteryShop.script_task import ScriptTask as MysteryShop
 from tasks.KekkaiActivation.script_task import ScriptTask as KekkaiActivation
 from tasks.KekkaiUtilize.script_task import ScriptTask as KekkaiUtilize
-from module.atom.ocr import RuleOcr 
-import random
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiActivation.config import CardType
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
@@ -390,6 +381,36 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             else:
                 self.ui_goto(page_main)
         self.ui_goto(page_main)
+        if self.get_config().daily_for_flag_config.tongxin_limit_count == 13:
+            self.screenshot()
+            self.ui_goto(page_friends)
+            while 1:    
+                self.screenshot()
+                if self.appear(self.I_FRIEND_HELP_FLAG, interval=1):
+                    break
+                if self.appear_then_click(self.I_FRIEND_HELP,self.C_FRIEND_HELP_CLICK, interval=1):
+                    continue
+                
+            from module.base.utils import save_image
+            now=datetime.now()
+            folder_name = f'{now.year}{now.month}{now.day}'
+            if not os.path.exists( f'./{folder_name}'):
+                os.mkdir(f'./{folder_name}')
+            folder = f'./{folder_name}'
+            save_image(self.screenshot(), f'{folder}/{now.hour}{now.minute}{now.second}.png')
+            run_timer=Timer(5)
+            run_timer.start()
+            while 1:    
+                self.screenshot()
+                if run_timer.reached():
+                    break
+                if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                    break
+            self.screenshot()
+            if self.ui_get_current_page() != page_main:
+                self.ui_goto(page_main)
+            
+
 
     def check_lock(self, lock: bool = True) -> bool:
         """
@@ -821,12 +842,35 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('QMUMU3')
+    c = Config('QMUMU2')
     d = Device(c)
-    t = ScriptTask(c, d)
+    self = ScriptTask(c, d)
     #t.run_mysteryshop()
-    t.screenshot()
-    if t.appear(t.I_NORMAL):
-        logger.info('appear正常')
-    if t.appear_rgb(t.I_NORMAL):
-        logger.info('appear_rgb正常')
+    self.screenshot()
+    self.screenshot()
+    self.ui_goto(page_friends)
+    while 1:    
+        self.screenshot()
+        if self.appear(self.I_FRIEND_HELP_FLAG, interval=1):
+            break
+        if self.appear_then_click(self.I_FRIEND_HELP,self.C_FRIEND_HELP_CLICK, interval=1):
+            continue
+        
+    from module.base.utils import save_image
+    now=datetime.now()
+    folder_name = f'{now.year}{now.month}{now.day}'
+    if not os.path.exists( f'./{folder_name}'):
+        os.mkdir(f'./{folder_name}')
+    folder = f'./{folder_name}'
+    save_image(self.screenshot(), f'{folder}/{now.hour}:{now.minute}:{now.second}.png')
+    run_timer=Timer(5)
+    run_timer.start()
+    while 1:    
+        self.screenshot()
+        if run_timer.reached():
+            break
+        if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+            break
+    self.screenshot()
+    if self.ui_get_current_page() != page_main:
+        self.ui_goto(page_main)
