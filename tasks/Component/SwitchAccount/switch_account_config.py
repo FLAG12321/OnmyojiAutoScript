@@ -31,6 +31,8 @@ class AccountInfo(BaseModel):
             return False
         _accountAliasList = self.account_alias.split('#')
         for alias in _accountAliasList:
+            if '@' in self.account:
+                alias =alias+'@'
             if ocr_account.startswith(alias):
                 return True
         return False
@@ -39,14 +41,19 @@ class AccountInfo(BaseModel):
     def preprocessAccount(account: str):
         """
             预处理账号信息 便于比对
-            邮箱账号        去除@后面的部分 防止@被识别为其他
+            邮箱账号        保留@符号及@之前的部分，并全部转换为小写
         @param account:
         @type account:
         @return:
         @rtype:
         """
 
-        return account.split('@')[0].lower()
+        if '@' in account:
+            # 如果包含@符号，则只保留@及其前面的部分并转为小写
+            return account.split('@')[0].lower() + '@'
+        else:
+            # 如果不包含@符号，则返回原账号的小写形式
+            return account.lower()
 
     def is_valid(self):
         return self.character!="" and self.character is not None

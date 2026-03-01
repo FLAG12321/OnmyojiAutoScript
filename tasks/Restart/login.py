@@ -44,6 +44,10 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')
                 continue
+                        # 确认进入庭院
+            if self.appear_then_click(self.I_LOGIN_SCROOLL_CLOSE, interval=2, threshold=0.9):
+                logger.info('Open scroll')
+                continue
             # 确认进入庭院(优化：当出现闲庭图片时，点击卷轴关闭区域，然后判断式神录按钮出现就代表登录成功)
             if self.appear(self.I_LOGIN_COURTYARD, interval=0.2):
                 if self.click(self.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
