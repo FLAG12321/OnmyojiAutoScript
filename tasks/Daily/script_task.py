@@ -58,11 +58,17 @@ class ScriptTask(GameUi, DailyAssets):
         raise TaskEnd("Daily")
 
     def _get_sorted_accounts(self):
-        """获取按最后完成时间排序的账号列表"""
-        if len(self.daily_conf.sup_account_list) > 1:
-            if self.daily_conf.sup_account_list[0].last_complete_time < self.daily_conf.sup_account_list[1].last_complete_time: 
-                return reversed(self.daily_conf.sup_account_list)
-        return self.daily_conf.sup_account_list
+        """获取按最后完成时间排序的账号列表，按时间从大到小排序（最新完成的在前）"""
+        if not self.daily_conf.sup_account_list:
+            return []
+        
+        # 按照 last_complete_time 从大到小排序（时间最新的在前）
+        sorted_list = sorted(
+            self.daily_conf.sup_account_list, 
+            key=lambda account: account.last_complete_time, 
+            reverse=True  # 从大到小排序
+        )
+        return sorted_list
 
     def _should_process_account(self, account_info, login_time):
         """判断是否应该处理该账号"""
