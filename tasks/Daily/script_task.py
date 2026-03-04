@@ -1,5 +1,6 @@
 import importlib
 from datetime import datetime, timedelta
+import os
 
 from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError
 from module.logger import logger
@@ -54,8 +55,46 @@ class ScriptTask(GameUi, DailyAssets):
                     Script.save_error_log(self)
                             
         self._notify_daily_completion()
+        # 检查是否需要关机
+        if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_tongxin_battle_enable:
+            self._shutdown_system()
         self.next_run("Daily", success=True)
+        
         raise TaskEnd("Daily")
+
+    def _shutdown_system(self):
+        """执行系统关机操作"""
+        import platform
+        import subprocess
+        
+        system = platform.system()
+        try:
+            if system == "Windows":
+                logger.info("正在关闭系统...")
+                # Windows 关机命令，/s 表示关机，/t 30 表示30秒后关机
+                subprocess.run(["shutdown", "/s", "/t", "30"], check=True)
+                self.config.notifier.push(
+                    content="系统将在30秒后关机，请及时保存工作",
+                    title="系统关机提醒"
+                )
+            elif system == "Linux" or system == "Darwin":  # Darwin 是 macOS
+                logger.info("正在关闭系统...")
+                # Linux/macOS 关机命令
+                subprocess.run(["sudo", "shutdown", "-h", "now"], check=True)
+                self.config.notifier.push(
+                    content="系统即将关机",
+                    title="系统关机提醒"
+                )
+            else:
+                logger.warning(f"不支持的操作系统: {system}，无法执行关机操作")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"关机命令执行失败: {e}")
+            self.config.notifier.push(
+                content=f"关机失败: {e}",
+                title="关机错误"
+            )
+        except Exception as e:
+            logger.error(f"执行关机时发生错误: {e}")
 
     def _get_sorted_accounts(self):
         """获取按最后完成时间排序的账号列表，按时间从大到小排序（最新完成的在前）"""

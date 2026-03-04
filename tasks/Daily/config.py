@@ -40,6 +40,7 @@ class DailyConfig(ConfigBase):
     need_login_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"),description='需要登录时间点')
     total_kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
     total_KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
+    shutdown_after_finish: bool = Field(default=False, description='日常任务完成后是否关机')
 
 class Daily(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)

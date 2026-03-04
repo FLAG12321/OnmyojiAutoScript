@@ -360,26 +360,29 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_SELECT_LEVEL, interval=1):
                     continue
         self.run_alone()
-        retry_count = 0
+        run_time=Timer(5).start()
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_EXIT_2, interval=1):
+                run_time.reset()
                 continue
             if self.appear_then_click(self.I_ENSURE_EXIT, interval=1):
+                run_time.reset()
                 continue
             if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
+                run_time.reset()
                 continue
             if self.appear_then_click(self.I_BACK_BLACK,interval=1):
+                run_time.reset()
                 continue
             if self.appear_then_click(self.I_EXIT3, interval=1):
+                run_time.reset()
                 continue
-            retry_count += 1
-            if retry_count >= 4:
-                retry_count = 0
-            if self.ui_get_current_page() == page_main:
-                break
-            else:
-                self.ui_goto(page_main)
+            if run_time.reached():
+                if self.ui_get_current_page() == page_main:
+                    break
+                else:
+                    self.ui_goto(page_main)
         self.ui_goto(page_main)
         if self.get_config().daily_for_flag_config.tongxin_limit_count == 13:
             self.screenshot()

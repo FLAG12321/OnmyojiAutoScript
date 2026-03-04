@@ -163,8 +163,8 @@
   },
   {
     "itemName": "exit3",
-    "roiFront": "472,412,98,37",
-    "roiBack": "463,405,118,53",
+    "roiFront": "722,415,75,33",
+    "roiBack": "697,403,131,53",
     "description": "description",
     "imageName": "exit3.png",
     "method": "Template matching",

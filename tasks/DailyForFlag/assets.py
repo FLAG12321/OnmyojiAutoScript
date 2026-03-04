@@ -282,7 +282,7 @@ class DailyForFlagAssets:
 	# description 
 	I_LOCK = RuleImage(roi_front=(25,645,33,30), roi_back=(11,627,63,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_lock.png")
 	# description 
-	I_EXIT3 = RuleImage(roi_front=(472,412,98,37), roi_back=(463,405,118,53), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/exit3.png")
+	I_EXIT3 = RuleImage(roi_front=(722,415,75,33), roi_back=(697,403,131,53), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/exit3.png")
 	# description 
 	I_FRIEND_HELP = RuleImage(roi_front=(1205,541,38,71), roi_back=(1187,512,71,118), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help.png")
 	# description 
