@@ -1,14 +1,20 @@
 [
   {
+    "itemName": "dokan_ready_sel",
+    "roiFront": "1113,179,100,100",
+    "roiBack": "1113,179,100,100",
+    "description": "选择寮"
+  },
+  {
     "itemName": "dokan_random_click_area",
-    "roiFront": "142,294,107,150",
-    "roiBack": "142,294,107,150",
+    "roiFront": "142,294,107,555",
+    "roiBack": "142,294,107,555",
     "description": "道馆随机点击安全区域"
   },
   {
     "itemName": "dokan_random_click_area1",
-    "roiFront": "42,594,10,30",
-    "roiBack": "42,594,10,30",
+    "roiFront": "42,594,10,100",
+    "roiBack": "42,594,10,100",
     "description": "道馆随机点击安全区域1：竂友突破信息"
   },
   {
@@ -24,16 +30,16 @@
     "description": "道馆随机点击安全区域3"
   },
   {
-    "itemName": "dokan_toppa_rank_close_area",
-    "roiFront": "1150,380,100,150",
-    "roiBack": "1150,380,100,150",
-    "description": "道馆突破排名弹出时,点击此区域关闭"
-  },
-  {
     "itemName": "dokan_ready_for_battle",
     "roiFront": "42,94,1207,543",
     "roiBack": "42,94,1207,543",
     "description": "准备战斗"
+  },
+  {
+    "itemName": "dokan_green_left_5",
+    "roiFront": "1006,482,38,96",
+    "roiBack": "1006,482,38,96",
+    "description": "道馆从左开始第五个绿标"
   },
   {
     "itemName": "dokan_cancel_select_dokan",

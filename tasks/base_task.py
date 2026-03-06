@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import cv2
+import os
 from time import sleep, time
 
 import random
@@ -25,7 +26,23 @@ from tasks.Component.config_base import Time
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.GlobalGame.config_emergency import FriendInvitation
 from typing import Union
+from enum import Enum
+from pydantic import Field
+from tasks.Component.config_base import ConfigBase
 
+
+class Week(str, Enum):
+            mon = '周一'
+            tue = '周二'
+            wed = '周三'
+            thu = '周四'
+            fri = '周五'
+            sat = '周六'
+            sun = '周日'
+
+
+class SwitchWeek(ConfigBase):
+    next_week_day: Week = Field(default=Week.mon, description='选择下周周几运行')
 
 class BaseTask(GlobalGameAssets, CostumeBase):
     config: Config = None
@@ -605,7 +622,58 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                                                                             minute=custom_time.minute,
                                                                             second=custom_time.second)
         self.set_next_run(task, target=target_time)
+    def next_run_week(self, target_day: int = 1, push_notify: bool = True):
+        """
+        计算下一次运行的时间，目标是每周的特定一天。
 
+        参数:
+        target_day (int): 目标运行的日，取值1到7代表周一到周日，默认为1（周一）。
+        """
+        
+        def convert_week_to_number(week_day: Week) -> int:
+            """
+            将 Week 枚举转换为对应的数字
+            周一对应 1，周二对应 2，... 周日对应 7
+
+            :param week_day: Week 枚举值
+            :return: 对应的数字 (1-7)
+            """
+            week_map = {
+                Week.mon: 1,
+                Week.tue: 2,
+                Week.wed: 3,
+                Week.thu: 4,
+                Week.fri: 5,
+                Week.sat: 6,
+                Week.sun: 7
+            }
+
+            return week_map.get(week_day, 0)  # 如果找不到返回0
+
+        if isinstance(target_day, Week):
+            target_day = convert_week_to_number(target_day)
+
+        today = datetime.today()
+        current_weekday = today.weekday()  # 周一为0，周日为6
+        target = target_day - 1  # 将输入1-7转换为0-6
+        days_diff = (target - current_weekday) % 7 or 7
+
+        TaskName = self.config.task.command
+        logger.info(f'{TaskName} done in {days_diff} days on next Week [{target_day}].')
+        from module.config.utils import convert_to_underscore
+        # 获取服务更新时间配置
+        task_name = convert_to_underscore(TaskName)
+        task_object = getattr(self.config.model, task_name, None)
+        scheduler = getattr(task_object, 'scheduler', None)
+        server_update = scheduler.server_update
+        if push_notify:
+            self.push_notify(content=f'任务下周{target_day}执行')
+
+        # 调用自定义函数设置下一次运行时间
+        self.custom_next_run(task=TaskName,
+                             custom_time=Time(hour=server_update.hour, minute=server_update.minute,
+                                              second=server_update.second),
+                             time_delta=days_diff)
     #  ---------------------------------------------------------------------------------------------------------------
     #
     #  ---------------------------------------------------------------------------------------------------------------
@@ -728,8 +796,56 @@ class BaseTask(GlobalGameAssets, CostumeBase):
     def push_notify(self, content='', title=None, level=3):
         logger.info(f'Push notify: {content}')
 
-    def save_image(self, task_name=None, content=None, wait_time=2, image_type=False, push_flag=False, level=3):
-        logger.info(f'Save image: {task_name}')
+    def save_image(self, task_name=None, content=None, wait_time=2, image_type=False, push_flag=False, level=3, custom_roi=None):
+        """
+        使用cv2保存截图
+        :param task_name: 图片保存的文件名
+        :param content: 日志内容
+        :param wait_time: 等待时间后截图
+        :param image_type: 是否为图片类型
+        :param push_flag: 是否推送通知
+        :param level: 日志等级
+        :param custom_roi: 自定义感兴趣区域 (x, y, w, h)
+        """
+        import time
+        time.sleep(wait_time)  # 等待指定时间
+        
+        # 获取当前截图
+        image = self.screenshot()
+        
+        # 如果指定了ROI，则裁剪图像
+        if custom_roi:
+            x, y, w, h = custom_roi
+            image = image[y:y+h, x:x+w]
+        
+        # 生成文件名
+        if task_name is None:
+            task_name = f"screenshot_{int(time.time())}"
+        
+        # 确保目录存在
+        folder = './screenshots'
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        
+        # 添加时间戳到文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # 包含毫秒的时间戳
+        filename = f"{task_name}_{timestamp}.png"
+        filepath = os.path.join(folder, filename)
+        
+        # 使用cv2保存图像
+        success = cv2.imwrite(filepath, image)
+        
+        if success:
+            logger.info(f"Save image: {filepath}")
+            if content:
+                logger.log(level, content)
+            
+            # 如果需要推送通知
+            if push_flag:
+                self.push_notify(content=content or f"Saved image: {filename}", level=level)
+        else:
+            logger.error(f"Failed to save image: {filepath}")
+
     def appear_rgb(self, target, image=None, difference: int = 10):
         """
         判断目标的平均颜色是否与图像中的颜色匹配。
