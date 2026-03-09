@@ -2,7 +2,7 @@
   {
     "itemName": "ss_group_name",
     "roiFront": "1087,91,155,566",
-    "roiBack": "1110,94,116,533",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",
@@ -11,7 +11,7 @@
   {
     "itemName": "ss_team_name",
     "roiFront": "573,140,277,481",
-    "roiBack": "667,144,32,475",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

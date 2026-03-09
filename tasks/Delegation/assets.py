@@ -48,7 +48,7 @@ class DelegationAssets:
 
 	# Ocr Rule Assets
 	# 委派的名字 
-	O_D_NAME = RuleOcr(roi=(766,127,509,529), area=(766,127,509,529), mode="Full", method="Default", keyword="弥助的画", name="d_name")
+	O_D_NAME = RuleOcr(roi=(766,127,509,529), area=(0,0,100,100), mode="Full", method="Default", keyword="弥助的画", name="d_name")
 
 
 	# Image Rule Assets
@@ -70,6 +70,6 @@ class DelegationAssets:
 
 	# Ocr Rule Assets
 	# 完成 
-	O_D_DONE = RuleOcr(roi=(675,129,441,517), area=(675,129,441,517), mode="Full", method="Default", keyword="完成", name="d_done")
+	O_D_DONE = RuleOcr(roi=(675,129,441,517), area=(0,0,100,100), mode="Full", method="Default", keyword="完成", name="d_done")
 
 

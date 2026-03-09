@@ -247,6 +247,24 @@ class GameUiAssets:
 	O_BATTLE_AUTO = RuleOcr(roi=(37,642,51,36), area=(0,589,133,128), mode="Single", method="Default", keyword="自动", name="battle_auto")
 	# 战斗页面手动标志 
 	O_BATTLE_HAND = RuleOcr(roi=(35,644,52,34), area=(0,589,136,129), mode="Single", method="Default", keyword="手动", name="battle_hand")
+	# description 
+	O_PAGE_MALL = RuleOcr(roi=(653,654,57,33), area=(674,632,17,25), mode="Full", method="Default", keyword="商店", name="page_mall")
+	# description 
+	O_PAGE_DAILY = RuleOcr(roi=(759,654,71,30), area=(786,628,18,30), mode="Full", method="Default", keyword="合战", name="page_daily")
+	# description 
+	O_PAGE_SHIKIGAMI_RECORDS = RuleOcr(roi=(1096,656,69,29), area=(1115,622,19,26), mode="Full", method="Default", keyword="式神录", name="page_shikigami_records")
+	# description 
+	O_PAGE_ONMYODO = RuleOcr(roi=(983,653,74,33), area=(1010,629,18,27), mode="Full", method="Default", keyword="阴阳术", name="page_onmyodo")
+	# description 
+	O_PAGE_FRIENDS = RuleOcr(roi=(885,656,49,31), area=(897,634,17,22), mode="Full", method="Default", keyword="好友", name="page_friends")
+	# description 
+	O_PAGE_GUILD = RuleOcr(roi=(531,656,73,30), area=(560,620,15,29), mode="Full", method="Default", keyword="阴阳寮", name="page_guild")
+	# description 
+	O_PAGE_TEAM = RuleOcr(roi=(431,657,51,29), area=(444,628,19,22), mode="Full", method="Default", keyword="组队", name="page_team")
+	# description 
+	O_PAGE_COLLECTION = RuleOcr(roi=(98,653,50,33), area=(111,616,15,27), mode="Full", method="Default", keyword="图鉴", name="page_collection")
+	# description 
+	O_PAGE_TRAVEL = RuleOcr(roi=(196,657,71,30), area=(216,625,23,35), mode="Full", method="Default", keyword="珍旅居", name="page_travel")
 
 
 	# Image Rule Assets

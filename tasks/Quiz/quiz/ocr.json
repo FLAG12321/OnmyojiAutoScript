@@ -65,7 +65,7 @@
   {
     "itemName": "question_and_answer",
     "roiFront": "902,34,325,534",
-    "roiBack": "902,34,325,534",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

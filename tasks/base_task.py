@@ -473,7 +473,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         """
         if not isinstance(target, RuleOcr):
             return None
-
+        #logger.info(f'Trying to OCR target.area{target.area} target.roi{target.roi} for {target.name}')
         if interval:
             if target.name in self.interval_timer:
                 # 如果传入的限制时间不一样，则替换限制新的传入的时间
@@ -485,7 +485,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             # 如果时间还没到达，则不执行
             if not self.interval_timer[target.name].reached():
                 return None
-
+        
         result = target.ocr(self.device.image)
         appear = False
 
@@ -521,8 +521,12 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :param duration:
         :return:
         """
+        area = None
+        if target.area == [0, 0, 100, 100]:
+           area = target.area
+           logger.info(f'Trying to OCR target.area{target.area} area{area}')
         appear = self.ocr_appear(target, interval)
-
+        logger.info(f'Trying to OCR target.area{target.area} target.roi{target.roi} for {target.name}')
         if not appear:
             return False
 
@@ -532,6 +536,9 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         else:
             x, y = target.coord()
             self.device.click(x=x, y=y, control_name=target.name)
+        if area == [0, 0, 100, 100]:
+            target.area=area
+            logger.info(f'Trying to OCR target.area{target.area} area{area}')
         return True
 
     def list_find(self, target: RuleList, name: str | list[str], max_swipe: int = 10) -> bool | tuple:

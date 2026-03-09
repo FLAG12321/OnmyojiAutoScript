@@ -154,44 +154,44 @@ page_town.link(button=G.I_TOWN_GOTO_HYAKKIYAKOU, destination=page_hyakkiyakou)
 page_shikigami_records = Page(G.I_CHECK_RECORDS)
 page_shikigami_records.additional = [G.I_AD_DISAPPEAR, G.I_RECORDS_CLOSE]
 page_shikigami_records.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_SHIKIGAMI_RECORDS, destination=page_shikigami_records)
+page_main.link(button=G.O_PAGE_SHIKIGAMI_RECORDS, destination=page_shikigami_records)
 # 阴阳术 onmyodo
 page_onmyodo = Page(G.I_CHECK_ONMYODO)
 page_onmyodo.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_ONMYODO, destination=page_onmyodo)
+page_main.link(button=G.O_PAGE_ONMYODO, destination=page_onmyodo)
 # 好友 friends
 page_friends = Page(G.I_CHECK_FRIENDS)
-page_friends.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_FRIENDS, destination=page_friends)
+page_friends.link(button=G.I_BACK_FRIENDS, destination=page_main)
+page_main.link(button=G.O_PAGE_FRIENDS, destination=page_friends)
 # 花合战 daily
 page_daily = Page(G.I_CHECK_DAILY)
 page_daily.additional = [G.O_CLICK_CLOSE_1, G.O_CLICK_CLOSE_2]
-page_daily.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_DAILY, destination=page_daily)
+page_daily.link(button=G.I_BACK_DAILY, destination=page_main)
+page_main.link(button=G.O_PAGE_DAILY, destination=page_daily)
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 
 # 商店 mall
 page_mall = Page(check_button=[G.I_CHECK_MALL, DailyTriflesAssets.I_ROOM_GIFT])
 page_mall.additional = [G.I_AD_CLOSE_RED, G.I_BACK_Y, G.I_DLC_CLOSE]
-page_mall.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_MALL, destination=page_mall)
+page_mall.link(button=G.I_BACK_MALL, destination=page_main)
+page_main.link(button=G.O_PAGE_MALL, destination=page_mall)
 # 阴阳寮 guild
 page_guild = Page(G.I_CHECK_GUILD)
 page_guild.additional = [KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE]
 page_guild.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_GUILD, destination=page_guild)
+page_main.link(button=G.O_PAGE_GUILD, destination=page_guild)
 # 组队 team
 page_team = Page(G.I_CHECK_TEAM)
 page_team.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_TEAM, destination=page_team)
+page_main.link(button=G.O_PAGE_TEAM, destination=page_team)
 # 收集 collection
 page_collection = Page(G.I_CHECK_COLLECTION)
 page_collection.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_COLLECTION, destination=page_collection)
+page_main.link(button=G.O_PAGE_COLLECTION, destination=page_collection)
 # 珍旅居
 page_travel = Page(G.I_CHECK_TRAVEL)
 page_travel.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.I_MAIN_GOTO_TRAVEL, destination=page_travel)
+page_main.link(button=G.O_PAGE_TRAVEL, destination=page_travel)
 
 # 道馆
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets

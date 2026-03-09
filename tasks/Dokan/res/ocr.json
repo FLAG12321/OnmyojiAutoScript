@@ -2,7 +2,7 @@
   {
     "itemName": "dokan_status",
     "roiFront": "492,628,222,44",
-    "roiBack": "492,628,222,44",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",
@@ -47,7 +47,7 @@
   {
     "itemName": "dokan_map",
     "roiFront": "270,130,740,460",
-    "roiBack": "270,130,740,460",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "万",
@@ -83,7 +83,7 @@
   {
     "itemName": "dokan_succeeded",
     "roiFront": "655,76,49,28",
-    "roiBack": "655,76,49,28",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "关闭",
@@ -110,7 +110,7 @@
   {
     "itemName": "dokan_center_people_number",
     "roiFront": "0,0,0,0",
-    "roiBack": "0,0,0,0",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

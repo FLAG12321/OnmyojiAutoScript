@@ -16,5 +16,86 @@
     "method": "Default",
     "keyword": "手动",
     "description": "战斗页面手动标志"
+  },
+  {
+    "itemName": "page_mall",
+    "roiFront": "653,654,57,33",
+    "roiBack": "674,632,17,25",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "商店"
+  },
+  {
+    "itemName": "page_daily",
+    "roiFront": "759,654,71,30",
+    "roiBack": "786,628,18,30",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "合战"
+  },
+  {
+    "itemName": "page_shikigami_records",
+    "roiFront": "1096,656,69,29",
+    "roiBack": "1115,622,19,26",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "式神录"
+  },
+  {
+    "itemName": "page_onmyodo",
+    "roiFront": "983,653,74,33",
+    "roiBack": "1010,629,18,27",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "阴阳术"
+  },
+  {
+    "itemName": "page_friends",
+    "roiFront": "885,656,49,31",
+    "roiBack": "897,634,17,22",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "好友"
+  },
+  {
+    "itemName": "page_guild",
+    "roiFront": "531,656,73,30",
+    "roiBack": "560,620,15,29",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "阴阳寮"
+  },
+  {
+    "itemName": "page_team",
+    "roiFront": "431,657,51,29",
+    "roiBack": "444,628,19,22",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "组队"
+  },
+  {
+    "itemName": "page_collection",
+    "roiFront": "98,653,50,33",
+    "roiBack": "111,616,15,27",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "图鉴"
+  },
+  {
+    "itemName": "page_travel",
+    "roiFront": "196,657,71,30",
+    "roiBack": "216,625,23,35",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "珍旅居"
   }
 ]

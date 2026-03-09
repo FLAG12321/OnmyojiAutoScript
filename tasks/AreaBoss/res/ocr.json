@@ -47,7 +47,7 @@
   {
     "itemName": "ab_boss_name",
     "roiFront": "114,36,248,69",
-    "roiBack": "114,36,248,69",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

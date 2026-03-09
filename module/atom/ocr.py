@@ -81,11 +81,13 @@ class RuleOcr(Digit, DigitCounter, Duration, Single, Full, Quantity):
         """
         area = None
         if self.mode == OcrMode.FULL:
+            logger.info(f"OCR [{self.name}] is in FULL mode")
             area = self.area
         else:
             area = self.roi
 
         x, y, w, h = self.area
+        logger.info(f"OCR [{self.name}] area: {self.area}")
         x = np.random.randint(x, x + w)
         y = np.random.randint(y, y + h)
         return x, y

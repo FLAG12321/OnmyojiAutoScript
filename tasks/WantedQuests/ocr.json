@@ -11,7 +11,7 @@
   {
     "itemName": "wq_wanted",
     "roiFront": "9,145,123,381",
-    "roiBack": "9,145,123,381",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",
@@ -146,7 +146,7 @@
   {
     "itemName": "wq_monster_type",
     "roiFront": "165,215,45,175",
-    "roiBack": "165,215,45,175",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",
@@ -155,7 +155,7 @@
   {
     "itemName": "wq_text_all",
     "roiFront": "20,140,110,390",
-    "roiBack": "20,140,110,390",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

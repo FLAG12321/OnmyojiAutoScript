@@ -94,7 +94,7 @@ class MetaDemonAssets:
 	# 一星卡 
 	O_CRAFTING_CARD_1 = RuleOcr(roi=(303,158,161,33), area=(303,158,161,33), mode="Single", method="Default", keyword="一星梦告铃鼓", name="crafting_card_1")
 	# 式神全名 
-	O_MD_FULL_NAME = RuleOcr(roi=(479,116,100,217), area=(479,116,100,217), mode="Full", method="Default", keyword="", name="md_full_name")
+	O_MD_FULL_NAME = RuleOcr(roi=(479,116,100,217), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="md_full_name")
 	# 判断别人是否给鬼王 
 	O_BOSS_EMPTY_1 = RuleOcr(roi=(141,400,94,32), area=(141,400,94,32), mode="Single", method="Default", keyword="剩余时间", name="boss_empty_1")
 

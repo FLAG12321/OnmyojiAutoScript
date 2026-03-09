@@ -104,11 +104,36 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
 
 
 if __name__ == '__main__':
-    config = Config('QMUMU3')
+    config = Config('oas2')
     device=Device(config)
     toAccount=AccountInfo(account="email0@163.com", account_alias="emailO#emailo", apple_or_android=True, character="粘贴", svr="立秋夕烛")
-    sa=SwitchAccount(config,device,toAccount) 
-    sa.screenshot()
+    self=SwitchAccount(config,device,toAccount) 
+    self.screenshot()
+                    # 账号列表已打开状态
+    ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(self.device.image, asset=self.O_SA_ACCOUNT_ACCOUNT_LIST))
+    
+    # 找到该账号
+    for index, ocr_account in enumerate([ocrResItem.ocr_text for ocrResItem in ocrRes]):
+        ocrResItem = ocrRes[index]
+        logger.info(f"ocrResItem.box {ocrResItem.box}, ocrResItem.ocr_text {ocrResItem.ocr_text}")
+        ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
+        roi_x = self.O_SA_ACCOUNT_ACCOUNT_LIST.roi[0] + ocrResBoxList[index][0][0]
+        roi_y = self.O_SA_ACCOUNT_ACCOUNT_LIST.roi[1] + ocrResBoxList[index][0][1]
+        roi_width = ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0]
+        roi_height = ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]
+        
+        # 创建一个较小的点击区域，确保点击在文字中心附近
+        # 避免点击到相邻账号区域
+        click_roi = [
+            roi_x + roi_width * 0.2,  # 从左边20%处开始
+            roi_y + roi_height * 0.2, # 从上边20%处开始
+            roi_width * 0.6,          # 使用60%的宽度
+            roi_height * 0.6          # 使用60%的高度
+        ]
+        logger.info(f"ocrResBoxList roi ({roi_x}, {roi_y}, {roi_width}, {roi_height})")
+        logger.info(f"click_roi {click_roi}")
+    """     
     prepared_image=_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST)
-    prepared_image.save("prepared_image.png")
-    ocrRes = sa.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST))
+        prepared_image.save("prepared_image.png")
+        ocrRes = sa.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST)) 
+"""

@@ -114,7 +114,7 @@ class RuleList:
                 pass
         elif self.is_ocr:
             if self._target is None or isinstance(self._target, RuleImage):
-                self._target = RuleOcr(roi=self.roi_back, area=(0, 0, 10, 10), mode="Full", method="Default",
+                self._target = RuleOcr(roi=self.roi_back, area=(0, 0, 100, 100), mode="Full", method="Default",
                                        keyword=name, name=name)
             elif self._target.name != name:
                 self._target.name = name

@@ -57,13 +57,15 @@ class Full(BaseCor):
             ) for index in index_list]
             area = merge_area(area_list)
             print(area)
-            self.area = area[0]+self.roi[0], area[1]+self.roi[1], area[2], area[3]
+            area = area[0]+self.roi[0], area[1]+self.roi[1], area[2], area[3]
         else:
             box = boxed_results[index_list[0]].box
             #self.area = box[0, 0]+self.roi[0], box[0, 1]+self.roi[1], box[1, 0] - box[0, 0], box[2, 1] - box[0, 1]
-            self.area = box[0][0]+self.roi[0], box[0][1]+self.roi[1], box[1][0] - box[0][0], box[2][1] - box[0][1]
-        logger.info(f"OCR [{self.name}] detected in {self.area}")
-        return self.area
+            area = box[0][0]+self.roi[0], box[0][1]+self.roi[1], box[1][0] - box[0][0], box[2][1] - box[0][1]
+        logger.info(f"OCR [{self.name}] detected in {area} self.area {self.area}")
+        if self.area == [0,0,100,100]:
+            self.area = area
+        return area
 
 class Single(BaseCor):
     """

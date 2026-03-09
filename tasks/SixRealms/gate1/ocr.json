@@ -2,7 +2,7 @@
   {
     "itemName": "ocr_map",
     "roiFront": "144,227,989,376",
-    "roiBack": "144,227,989,376",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

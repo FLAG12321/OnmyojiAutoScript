@@ -119,7 +119,7 @@ class SixRealmsAssets:
 
 	# Ocr Rule Assets
 	# Ocr-description 
-	O_OCR_MAP = RuleOcr(roi=(144,227,989,376), area=(144,227,989,376), mode="Full", method="Default", keyword="", name="ocr_map")
+	O_OCR_MAP = RuleOcr(roi=(144,227,989,376), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="ocr_map")
 	# Ocr-description 
 	O_ISLAND_NAME = RuleOcr(roi=(88,17,148,49), area=(88,17,148,49), mode="Single", method="Default", keyword="", name="island_name")
 	# 有多少钱 

@@ -2,7 +2,7 @@
   {
     "itemName": "e_exploration_level_number",
     "roiFront": "1079,193,147,467",
-    "roiBack": "1079,193,147,467",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

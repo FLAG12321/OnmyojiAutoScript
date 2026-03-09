@@ -38,7 +38,7 @@
   {
     "itemName": "md_full_name",
     "roiFront": "479,116,100,217",
-    "roiBack": "479,116,100,217",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

@@ -403,13 +403,13 @@ class RichManAssets:
 	# Ocr-description 
 	O_TT_TOTOL = RuleOcr(roi=(1121,10,116,35), area=(1121,10,116,35), mode="Digit", method="Default", keyword="", name="tt_totol")
 	# Ocr-description 
-	O_TT_BLUE_TICKET = RuleOcr(roi=(509,307,531,92), area=(509,307,531,92), mode="Full", method="Default", keyword="2000", name="tt_blue_ticket")
+	O_TT_BLUE_TICKET = RuleOcr(roi=(509,307,531,92), area=(0,0,100,100), mode="Full", method="Default", keyword="2000", name="tt_blue_ticket")
 	# Ocr-description 
-	O_TT_BLACK = RuleOcr(roi=(498,313,528,89), area=(498,313,528,89), mode="Full", method="Default", keyword="350", name="tt_black")
+	O_TT_BLACK = RuleOcr(roi=(498,313,528,89), area=(0,0,100,100), mode="Full", method="Default", keyword="350", name="tt_black")
 	# Ocr-description 
-	O_TT_AP = RuleOcr(roi=(502,311,535,91), area=(502,311,535,91), mode="Full", method="Default", keyword="300", name="tt_ap")
+	O_TT_AP = RuleOcr(roi=(502,311,535,91), area=(0,0,100,100), mode="Full", method="Default", keyword="300", name="tt_ap")
 	# Ocr-description 
-	O_TT_BUY = RuleOcr(roi=(602,509,104,61), area=(602,509,104,61), mode="Full", method="Default", keyword="", name="tt_buy")
+	O_TT_BUY = RuleOcr(roi=(602,509,104,61), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="tt_buy")
 	# Ocr-description 
 	O_TT_NUMBER = RuleOcr(roi=(576,415,58,49), area=(576,415,58,49), mode="Digit", method="Default", keyword="", name="tt_number")
 

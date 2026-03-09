@@ -35,6 +35,6 @@ class OrochiAssets:
 
 	# Ocr Rule Assets
 	# Ocr-description 
-	O_O_TEST_OCR = RuleOcr(roi=(126,136,360,491), area=(126,136,360,491), mode="Full", method="Default", keyword="", name="o_test_ocr")
+	O_O_TEST_OCR = RuleOcr(roi=(126,136,360,491), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="o_test_ocr")
 
 

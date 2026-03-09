@@ -122,9 +122,9 @@ class GeneralInviteAssets:
 	# Ocr-description 
 	O_F_LIST_4 = RuleOcr(roi=(688,91,74,45), area=(688,91,74,45), mode="Single", method="Default", keyword="", name="f_list_4")
 	# 寻找左侧的好友 
-	O_FRIEND_NAME_1 = RuleOcr(roi=(434,185,189,345), area=(434,185,189,345), mode="Full", method="Default", keyword="", name="friend_name_1")
+	O_FRIEND_NAME_1 = RuleOcr(roi=(434,185,189,345), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="friend_name_1")
 	# 寻找右侧的好友 
-	O_FRIEND_NAME_2 = RuleOcr(roi=(729,184,196,346), area=(729,184,196,346), mode="Full", method="Default", keyword="", name="friend_name_2")
+	O_FRIEND_NAME_2 = RuleOcr(roi=(729,184,196,346), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="friend_name_2")
 	# Ocr-description 
 	O_ONLINE = RuleOcr(roi=(790,102,124,42), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="online")
 

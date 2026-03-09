@@ -29,7 +29,7 @@
   {
     "itemName": "login_specific_serve",
     "roiFront": "110,120,350,600",
-    "roiBack": "110,120,350,600",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

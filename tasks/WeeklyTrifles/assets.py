@@ -45,7 +45,7 @@ class WeeklyTriflesAssets:
 	# 召唤的时候的数量 
 	O_BA_AMOUNT_2 = RuleOcr(roi=(762,570,125,35), area=(762,570,125,35), mode="DigitCounter", method="Default", keyword="", name="ba_amount_2")
 	# 破碎符咒召唤次数 
-	O_BA_TIMES = RuleOcr(roi=(741,564,174,44), area=(641,566,278,41), mode="Full", method="Default", keyword="", name="ba_times")
+	O_BA_TIMES = RuleOcr(roi=(741,564,174,44), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="ba_times")
 
 
 	# Click Rule Assets

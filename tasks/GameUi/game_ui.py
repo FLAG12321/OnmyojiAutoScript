@@ -22,7 +22,7 @@ from module.exception import (GameNotRunningError, GamePageUnknownError)
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.GameUi.assets import GameUiAssets
-from tasks.GameUi.page import Page, PageRegistry, page_main, random_click
+from tasks.GameUi.page import Page, PageRegistry, page_main, random_click,page_mall,page_shikigami_records,page_onmyodo,page_friends,page_guild,page_team,page_collection,page_travel,page_daily
 from tasks.Restart.assets import RestartAssets
 from tasks.SixRealms.assets import SixRealmsAssets
 from tasks.base_task import BaseTask
@@ -344,6 +344,7 @@ class GameUi(BaseTask, GameUiAssets):
         elif isinstance(target, (RuleImage, RuleGif)):
             operated = self.appear_then_click(target, interval=interval)
         elif isinstance(target, RuleOcr):
+            #logger.info(f'Trying to OCR target.area{target.area} target.roi{target.roi} for {target.name}')
             operated = self.ocr_appear_click(target, interval=interval)
         elif isinstance(target, RuleClick):
             operated = self.click(target, interval=interval)
@@ -354,8 +355,18 @@ if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('oas2')
+    c = Config('oas1')
     d = Device(c)
     game = GameUi(config=c, device=d)
     game.ui_get_current_page()
+    game.ui_goto(page_main)
+    game.ui_goto(page_shikigami_records)
+    game.ui_goto(page_onmyodo)
+    game.ui_goto(page_friends)
+    game.ui_goto(page_guild)
+    game.ui_goto(page_team)
+    game.ui_goto(page_collection)
+    game.ui_goto(page_travel)
+    game.ui_goto(page_daily)
+    game.ui_goto(page_mall)
     game.ui_goto(page_main)

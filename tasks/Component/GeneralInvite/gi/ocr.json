@@ -56,7 +56,7 @@
   {
     "itemName": "friend_name_1",
     "roiFront": "434,185,189,345",
-    "roiBack": "434,185,189,345",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",
@@ -65,7 +65,7 @@
   {
     "itemName": "friend_name_2",
     "roiFront": "729,184,196,346",
-    "roiBack": "729,184,196,346",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",

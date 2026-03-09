@@ -138,7 +138,7 @@ class ExplorationAssets:
 
 	# Ocr Rule Assets
 	# 识别当前显示的章节 
-	O_E_EXPLORATION_LEVEL_NUMBER = RuleOcr(roi=(1079,193,147,467), area=(1079,193,147,467), mode="Full", method="Default", keyword="", name="e_exploration_level_number")
+	O_E_EXPLORATION_LEVEL_NUMBER = RuleOcr(roi=(1079,193,147,467), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="e_exploration_level_number")
 	# 候补出战的数量 
 	O_E_ALTERNATE_NUMBER = RuleOcr(roi=(1092,122,69,32), area=(1092,122,69,32), mode="DigitCounter", method="Default", keyword="", name="e_alternate_number")
 	# 探索右上角 突破卷的数量 

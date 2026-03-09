@@ -2,7 +2,7 @@
   {
     "itemName": "d_name",
     "roiFront": "766,127,509,529",
-    "roiBack": "766,127,509,529",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "弥助的画",

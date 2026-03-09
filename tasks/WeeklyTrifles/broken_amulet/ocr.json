@@ -20,7 +20,7 @@
   {
     "itemName": "ba_times",
     "roiFront": "741,564,174,44",
-    "roiBack": "641,566,278,41",
+    "roiBack": "0,0,100,100",
     "mode": "Full",
     "method": "Default",
     "keyword": "",
