@@ -217,9 +217,9 @@
   },
   {
     "itemName": "check_bondling_fairyland",
-    "imageName": "page_check_bondling_fairyland.png",
-    "roiFront": "614,660,56,49",
-    "roiBack": "614,660,56,49",
+    "imageName": "check_bondling_fairyland.png",
+    "roiFront": "62,632,39,39",
+    "roiBack": "29,600,108,102",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

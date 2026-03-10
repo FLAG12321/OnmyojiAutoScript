@@ -396,11 +396,11 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 
             from module.base.utils import save_image
             now=datetime.now()
-            folder_name = f'{now.year}{now.month}{now.day}'
+            folder_name = f'{now.year}_{now.month}_{now.day}'
             if not os.path.exists( f'./{folder_name}'):
                 os.mkdir(f'./{folder_name}')
             folder = f'./{folder_name}'
-            save_image(self.screenshot(), f'{folder}/{now.hour}{now.minute}{now.second}.png')
+            save_image(self.screenshot(), f'{folder}/{now.hour}_{now.minute}_{now.second}.png')
             run_timer=Timer(5)
             run_timer.start()
             while 1:    

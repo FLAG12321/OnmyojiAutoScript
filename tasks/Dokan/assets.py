@@ -181,6 +181,8 @@ class DokanAssets:
 	O_DOKAN_RIGHTPAD_BOUNTY = RuleOcr(roi=(0,0,0,0), area=(0,0,0,0), mode="Single", method="Default", keyword="", name="dokan_rightpad_bounty")
 	# 查找道馆时,右侧边栏中的寮名称 
 	O_DOKAN_RIGHTPAD_NAME = RuleOcr(roi=(0,0,0,0), area=(0,0,0,0), mode="Single", method="Default", keyword="", name="dokan_rightpad_name")
+	# 查找道馆时,右侧边栏中的寮标签 
+	O_DOKAN_RIGHTPAD_TAG = RuleOcr(roi=(0,0,0,0), area=(0,0,0,0), mode="Single", method="Default", keyword="", name="dokan_rightpad_tag")
 	# 查找道馆时,中间卡片上防守人数 
 	O_DOKAN_CENTER_PEOPLE_NUMBER = RuleOcr(roi=(0,0,0,0), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="dokan_center_people_number")
 

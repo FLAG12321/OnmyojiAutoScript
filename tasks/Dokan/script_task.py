@@ -57,9 +57,13 @@ class DokanScene(Enum):
     RYOU_DOKAN_SCENE_BATTLE_OVER = 9
     # 等待BOSS战
     RYOU_DOKAN_SCENE_BOSS_WAITING = 10
+    # BOSS战斗结算，可点击退出  
+    RYOU_DOKAN_SCENE_BATTLE_OVER_WAITING_BOSS = 11
 
     # 正在查找道馆,处于地图界面
     RYOU_DOKAN_SCENE_FINDING_DOKAN = 97
+    
+    
 
     def __str__(self):
         return self.name.title()
@@ -88,6 +92,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
     first_open_dokan_time = None
     # 道馆可战斗次数
     dokan_battle_number = 0
+    boss_battle = False
 
     def welfare_name_str(self):
         """
@@ -261,6 +266,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 self.goto_dokan_num = 0
             # 场景状态：等待馆主战开始
             elif current_scene == DokanScene.RYOU_DOKAN_SCENE_BOSS_WAITING:
+                self.boss_battles = True
+
+            elif current_scene == DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER_WAITING_BOSS:
                 # 管理放弃第一次道馆
                 if self.dokan_quit and self.config.dokan.dokan_config.dokan_enable:
                     logger.info("今日第一次道馆，放弃本次道馆")
@@ -362,12 +370,12 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             self.appear_then_click(self.I_RYOU_DOKAN_BATTLE_OVER)
             return True, DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER
         # 如果出现失败 就点击
-        if self.appear(GeneralBattle.I_FALSE, threshold=0.8):
+        if (not self.boss_battles) and self.appear(GeneralBattle.I_FALSE, threshold=0.8):
             self.appear_then_click(GeneralBattle.I_FALSE)
             logger.info("战斗失败，返回")
             return True, DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER
         # 如果出现成功 就点击
-        if self.appear(GeneralBattle.I_WIN, threshold=0.8):
+        if (not self.boss_battles) and self.appear(GeneralBattle.I_WIN, threshold=0.8):
             self.appear_then_click(GeneralBattle.I_WIN)
             logger.info("战斗成功，鼓，返回")
             return True, DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER
@@ -380,15 +388,15 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             return True, DokanScene.RYOU_DOKAN_SCENE_CD
 
         # 如果出现馆主战斗失败 就点击，返回False。
-        if self.appear(self.I_RYOU_DOKAN_FAIL, threshold=0.8):
+        if self.boss_battles and self.appear(self.I_RYOU_DOKAN_FAIL, threshold=0.8):
             self.appear_then_click(self.I_RYOU_DOKAN_FAIL)
             logger.info("馆主战斗失败，返回")
-            return True, DokanScene.RYOU_DOKAN_SCENE_UNKNOWN
+            return True, DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER_WAITING_BOSS
         # 如果出现打败馆主的赢，就点击
-        if self.appear(self.I_RYOU_DOKAN_WIN, threshold=0.8):
+        if self.boss_battles and self.appear(self.I_RYOU_DOKAN_WIN, threshold=0.8):
             self.appear_then_click(self.I_RYOU_DOKAN_WIN)
             logger.info("馆主的赢，就点击.")
-            return True, DokanScene.RYOU_DOKAN_SCENE_UNKNOWN
+            return True, DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER_WAITING_BOSS
 
         return True, DokanScene.RYOU_DOKAN_SCENE_UNKNOWN
 
@@ -876,7 +884,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
 
         # 记录第一次开启道馆时间
         self.first_open_dokan_time = datetime.now()
-
+        self.boss_battles = False
         # 道馆数量
         filtered_list = [item for item in self.find_dokan_list if "刷新列表" not in item]
         logger.info(f"总共查看道馆数量: {len(filtered_list)}")

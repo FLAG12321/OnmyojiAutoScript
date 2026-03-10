@@ -88,5 +88,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "镇墓兽"
+  },
+  {
+    "itemName": "bf_switch_ui",
+    "roiFront": "1175,338,31,45",
+    "roiBack": "1125,276,131,143",
+    "description": "切换新契灵页面",
+    "imageName": "bf_switch_ui.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "bf_switch_ui2",
+    "roiFront": "73,321,30,51",
+    "roiBack": "22,257,148,189",
+    "description": "切换原契灵页面",
+    "imageName": "bf_switch_ui2.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

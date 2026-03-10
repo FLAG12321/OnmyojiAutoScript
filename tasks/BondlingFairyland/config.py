@@ -25,7 +25,10 @@ class BondlingClass(str, Enum):
     SNOWBALL = '茨球'
     LITTLE_KURO = '小黑'
     AZURE_BASAN = '火灵'
-
+    SEDUCTRESS = '针女'
+    SOUL_EDGE = '薙魂'
+    MOON_RABBIT = '月魔兔'
+    FOXFIRE = '狐火'
 
 class UserStatus(str, Enum):
     LEADER = 'leader'
@@ -56,7 +59,14 @@ class BondlingSwitchSoul(ConfigBase):
     little_kuro_switch: str = Field(default='-1,-1', description='little_kuro_switch_help')
     # 火灵 config
     azure_basan_switch: str = Field(default='-1,-1', description='azure_basan_switch_help')
-
+    # 针女 config
+    seductress_switch: str = Field(default='-1,-1', description='seductress_switch_help')
+    # 薙魂 config    
+    soul_edge_switch: str = Field(default='-1,-1', description='soul_edge_switch_help')
+    # 月魔兔 config
+    moon_rabbit_switch: str = Field(default='-1,-1', description='moon_rabbit_switch_help')
+    # 狐火 config
+    foxfire_switch: str = Field(default='-1,-1', description='foxfire_switch_help')
 
 class BondlingCheck(ConfigBase):
     check_enable: bool = Field(default=True, description='是否检查契忆数量')

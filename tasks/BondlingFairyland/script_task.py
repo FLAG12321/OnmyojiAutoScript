@@ -289,6 +289,14 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
                 current_ball_index = 3
             case BondlingClass.LITTLE_KURO:
                 current_ball_index = 4
+            case BondlingClass.SEDUCTRESS:
+                current_ball_index = 5
+            case BondlingClass.SOUL_EDGE:
+                current_ball_index = 6
+            case BondlingClass.MOON_RABBIT:
+                current_ball_index = 7
+            case BondlingClass.FOXFIRE:
+                current_ball_index = 8
             case _:
                 current_ball_index = 1
 
@@ -298,7 +306,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
                 self.ui_get_current_page()
                 self.ui_goto(page_bondling_fairyland)
                 continue
-
+            self.to_new_bondling(current_ball_index)
             if bondling_config.bondling_mode != BondlingMode.MODE1:
                 if self.ball_click(current_ball_index):
                     logger.info(f'Current ball number: {current_ball_index} ')
@@ -493,14 +501,18 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
         """
 
         def get_click_target(ind: int):
-            if ind > 5 or ind < 1:
-                raise ValueError('index must be 1-5')
+            if ind > 9 or ind < 1:
+                raise ValueError('index must be 1-9')
             match = {
                 1: self.C_STONE_1,
                 2: self.C_STONE_2,
                 3: self.C_STONE_3,
                 4: self.C_STONE_4,
-                5: self.C_STONE_5,
+                5: self.C_STONE_1,
+                6: self.C_STONE_2,
+                7: self.C_STONE_3,
+                8: self.C_STONE_4,
+                9: self.C_STONE_5,
             }
             return match[ind]
 
@@ -719,7 +731,24 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
         if screenshot:
             self.screenshot()
         return self.appear(self.I_BF_STORE)
-
+    def to_new_bondling(self,current_ball_index: int) -> bool:
+        if current_ball_index>=5:
+            if self.appear(self.I_BF_SWITCH_UI, interval=1):
+                while 1:
+                    self.screenshot()
+                    if self.appear(self.I_BF_SWITCH_UI2):
+                        break
+                    if self.appear_then_click(self.I_BF_SWITCH_UI, interval=1):
+                        continue
+        else:   
+            if self.appear(self.I_BF_SWITCH_UI2, interval=1):
+                while 1:
+                    self.screenshot()
+                    if self.appear(self.I_BF_SWITCH_UI):
+                        break
+                    if self.appear_then_click(self.I_BF_SWITCH_UI2, interval=1):
+                        continue 
+        pass
     def click_search(self) -> bool:
         """
         点击探查

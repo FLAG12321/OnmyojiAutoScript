@@ -98,7 +98,7 @@ class GameUiAssets:
 	# description 
 	I_CHECK_SIX_GATES = RuleImage(roi_front=(1174,621,55,44), roi_back=(1174,621,55,44), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_six_gates.png")
 	# description 
-	I_CHECK_BONDLING_FAIRYLAND = RuleImage(roi_front=(614,660,56,49), roi_back=(614,660,56,49), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_bondling_fairyland.png")
+	I_CHECK_BONDLING_FAIRYLAND = RuleImage(roi_front=(62,632,39,39), roi_back=(29,600,108,102), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_bondling_fairyland.png")
 	# description 
 	I_SIX_GATES_GOTO_EXPLORATION = RuleImage(roi_front=(18,19,52,55), roi_back=(18,19,52,55), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_six_gates_goto_exploration.png")
 	# description 
