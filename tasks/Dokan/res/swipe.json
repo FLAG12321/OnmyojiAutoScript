@@ -2,7 +2,7 @@
   {
     "itemName": "dokan_list_up",
     "roiFront": "1100,520,30,10",
-    "roiBack": "1100,70,30,10",
+    "roiBack": "1100,75,30,10",
     "mode": "default",
     "description": "道馆选择界面 右侧侧边栏 手指向上滑动"
   }

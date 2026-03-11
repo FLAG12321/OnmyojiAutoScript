@@ -43,5 +43,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "结算分享"
+  },
+  {
+    "itemName": "alone_ensure",
+    "roiFront": "1216,405,30,41",
+    "roiBack": "1138,148,140,435",
+    "description": "description",
+    "imageName": "alone_ensure.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "alone_ensure_2",
+    "roiFront": "1215,294,22,30",
+    "roiBack": "1167,162,107,427",
+    "description": "description",
+    "imageName": "alone_ensure_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

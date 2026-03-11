@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import random
+import time
 from cached_property import cached_property
 
 from tasks.GameUi.game_ui import GameUi
@@ -17,6 +18,7 @@ from module.base.timer import Timer
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
+from module.device.screenshot import Screenshot
 
 class NoTicket(Exception):
     pass
@@ -30,6 +32,7 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
     last_select_4 = ''
     # 添加倒计时状态变量
     last_countdown = None
+    runalone = False
 
     @cached_property
     def anwser(self) -> Answer:
@@ -117,10 +120,20 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
         self.close_fn()
 
     def detect_new(self, select_1, select_2, select_3, select_4) -> bool:
-        new = True if self.last_select_1 != select_1 and \
-                self.last_select_2 != select_2 and \
-                self.last_select_3 != select_3 and \
-                self.last_select_4 != select_4 else False
+        # 计算不同答案的数量
+        diff_count = 0
+        if self.last_select_1 != select_1:
+            diff_count += 1
+        if self.last_select_2 != select_2:
+            diff_count += 1
+        if self.last_select_3 != select_3:
+            diff_count += 1
+        if self.last_select_4 != select_4:
+            diff_count += 1
+            
+        # 如果有3个或以上答案不同，则认为是新问题
+        new = diff_count >= 3
+        
         self.last_select_1, self.last_select_2, self.last_select_3, self.last_select_4 = \
             select_1, select_2, select_3, select_4
         return new
@@ -135,9 +148,13 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
         
         self.last_countdown = countdown """
         
-        if countdown < 1 or countdown > 10:
+        if countdown < 2 or countdown > 5:
             # 最后两秒钟的时候 进行选择
-            return False
+            if countdown >100:
+                self.runalone = True
+            else:
+                return False
+
         question, answer_1, answer_2, answer_3, answer_4 = self.detect_question_and_answers()
         if answer_1 == '' and answer_2 == '' and answer_3 == '' and answer_4 == '':
             return False
@@ -145,6 +162,9 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
 
         new_question = self.detect_new(answer_1, answer_2, answer_3, answer_4)
         if not new_question:
+            if self.runalone:
+                self.appear_then_click(self.I_ALONE_ENSURE, interval=1)
+                pass
             return False
         self.answer_cnt += 1
         logger.info(f'Question count: {self.answer_cnt}')
@@ -166,8 +186,17 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
             index_options = {1, 2, 3, 4}
             index_options.remove(index)
             index = random.choice(list(index_options))
-        logger.info(f'Question: {question}, Answer: {index}')
+        logger.info(f'Question: {question}, Answer: {index}{[answer_1, answer_2, answer_3, answer_4]}')
         self.click(self.click_options[index-1], interval=1)
+        time.sleep(0.5)
+        if index == 1:
+            self.click(self.C_ANSWER_ENSURE_1)
+        if index == 2:
+            self.click(self.C_ANSWER_ENSURE_2)
+        if index == 3:
+            self.click(self.C_ANSWER_ENSURE_3)
+        if index == 4:
+            self.click(self.C_ANSWER_ENSURE_4)
         self.device.click_record_clear()
         return True
 
@@ -182,6 +211,13 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
         answer_2 = self.O_ANSWER2.ocr(self.device.image)
         answer_3 = self.O_ANSWER3.ocr(self.device.image)
         answer_4 = self.O_ANSWER4.ocr(self.device.image)    
+        
+        # 过滤answer中的符号'.', '''
+        answer_1 = answer_1.replace('.', '').replace("'", '').replace('：', '').replace(' ', '') if answer_1 else ''
+        answer_2 = answer_2.replace('.', '').replace("'", '').replace('：', '').replace(' ', '') if answer_2 else ''
+        answer_3 = answer_3.replace('.', '').replace("'", '').replace('：', '').replace(' ', '') if answer_3 else ''
+        answer_4 = answer_4.replace('.', '').replace("'", '').replace('：', '').replace(' ', '') if answer_4 else ''
+        
         for result in results:
             # box 是四个点坐标 左上， 右上， 右下， 左下
             # x1, y1, x2, y2 = result.box[0][0], result.box[0][1], result.box[2][0], result.box[2][1]

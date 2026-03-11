@@ -10,6 +10,17 @@ from module.atom.list import RuleList
 class QuizAssets: 
 
 
+	# Click Rule Assets
+	# description 
+	C_ANSWER_ENSURE_1 = RuleClick(roi_front=(1219,185,21,34), roi_back=(1218,184,23,37), name="answer_ensure_1")
+	# description 
+	C_ANSWER_ENSURE_2 = RuleClick(roi_front=(1223,298,19,26), roi_back=(1222,297,22,29), name="answer_ensure_2")
+	# description 
+	C_ANSWER_ENSURE_3 = RuleClick(roi_front=(1224,414,18,23), roi_back=(1223,413,21,26), name="answer_ensure_3")
+	# description 
+	C_ANSWER_ENSURE_4 = RuleClick(roi_front=(1226,524,13,29), roi_back=(1224,523,15,31), name="answer_ensure_4")
+
+
 	# Image Rule Assets
 	# description 
 	I_ENTRY = RuleImage(roi_front=(770,373,33,139), roi_back=(745,281,142,329), threshold=0.8, method="Template matching", file="./tasks/Quiz/quiz/entry.png")
@@ -21,6 +32,8 @@ class QuizAssets:
 	I_FAIL_QUIT = RuleImage(roi_front=(612,534,67,31), roi_back=(375,484,524,163), threshold=0.8, method="Template matching", file="./tasks/Quiz/quiz/fail_quit.png")
 	# 结算分享 
 	I_SHARE = RuleImage(roi_front=(1171,625,53,44), roi_back=(1152,592,100,100), threshold=0.8, method="Template matching", file="./tasks/Quiz/quiz/quiz_share.png")
+	# description 
+	I_ALONE_ENSURE = RuleImage(roi_front=(1216,405,30,41), roi_back=(1138,148,140,435), threshold=0.7, method="Template matching", file="./tasks/Quiz/quiz/alone_ensure.png")
 
 
 	# Ocr Rule Assets

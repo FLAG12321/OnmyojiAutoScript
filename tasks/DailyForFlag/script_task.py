@@ -216,6 +216,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.screenshot()
             if retry_count >= 4:
                 if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
+                    time.sleep(1)
                     break
             if self.appear_then_click(self.I_MIAN_TO_TASK, interval=1):
                 cycle_count = 0
