@@ -1,7 +1,7 @@
 [
   {
     "itemName": "fire",
-    "roiFront": "1137,599,83,44",
+    "roiFront": "1131,593,96,62",
     "roiBack": "1147,605,61,26",
     "mode": "Single",
     "method": "Default",
@@ -10,8 +10,8 @@
   },
   {
     "itemName": "remain_ap",
-    "roiFront": "575,16,73,29",
-    "roiBack": "575,16,73,29",
+    "roiFront": "944,18,83,31",
+    "roiBack": "940,15,86,31",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",
@@ -19,8 +19,8 @@
   },
   {
     "itemName": "remain_pass",
-    "roiFront": "783,18,57,28",
-    "roiBack": "783,18,57,28",
+    "roiFront": "543,15,63,34",
+    "roiBack": "543,18,27,19",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",

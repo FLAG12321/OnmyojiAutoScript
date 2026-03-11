@@ -20,8 +20,8 @@
   {
     "itemName": "login_courtyard",
     "imageName": "login_courtyard.png",
-    "roiFront": "40,640,100,50",
-    "roiBack": "40,640,100,50",
+    "roiFront": "45,649,63,38",
+    "roiBack": "15,591,144,116",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "闲庭图片(用户新增，用于判断是否需要点击卷轴关闭区域)"
@@ -169,5 +169,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "取消继续战斗"
+  },
+  {
+    "itemName": "login_courtyard2",
+    "roiFront": "1127,629,29,78",
+    "roiBack": "1066,585,128,131",
+    "description": "description",
+    "imageName": "login_courtyard2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

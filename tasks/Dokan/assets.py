@@ -148,6 +148,14 @@ class DokanAssets:
 	I_RYOU_DOKAN_FOUND_DOKAN = RuleImage(roi_front=(440,580,360,140), roi_back=(440,580,360,140), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_found_dokan.png")
 	# 道馆进入式神录 
 	I_PAGE_DOKAN_GOTO_SHIKIGAMI_RECORDS = RuleImage(roi_front=(1005,607,52,59), roi_back=(1005,607,52,59), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/page_dokan_goto_shikigami_records.png")
+	# 馆主战,第一阵容 
+	I_RYOU_DOKAN_BATTLE_MASTER_FIRST = RuleImage(roi_front=(1080,180,160,70), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_first.png")
+	# 馆主战,第二阵容 # TODO 截图 
+	I_RYOU_DOKAN_BATTLE_MASTER_SECOND = RuleImage(roi_front=(1080,180,160,70), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_second.png")
+	# 馆主战 等待 或 进行中时 在寮境中出现的馆主图标 
+	I_RYOU_DOKAN_MASTER_BATTLE = RuleImage(roi_front=(867,81,38,70), roi_back=(640,0,640,360), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_master_battle.png")
+	# 道馆战斗界面 点击退出按钮后 弹出的确认按钮 
+	I_RYOU_DOKAN_QUIT_BATTLE_ENSURE = RuleImage(roi_front=(0,0,1280,720), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_quit_battle_ensure.png")
 
 
 	# List Rule Assets
@@ -189,6 +197,6 @@ class DokanAssets:
 
 	# Swipe Rule Assets
 	# 道馆选择界面 右侧侧边栏 手指向上滑动 
-	S_DOKAN_LIST_UP = RuleSwipe(roi_front=(1100,520,30,10), roi_back=(1100,90,30,10), mode="default", name="dokan_list_up")
+	S_DOKAN_LIST_UP = RuleSwipe(roi_front=(1100,520,30,10), roi_back=(1100,70,30,10), mode="default", name="dokan_list_up")
 
 

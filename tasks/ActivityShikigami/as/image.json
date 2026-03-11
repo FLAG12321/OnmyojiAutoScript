@@ -19,8 +19,8 @@
   },
   {
     "itemName": "climb_mode_pass",
-    "imageName": "as_climb_mode_pass.png",
-    "roiFront": "1142,546,21,21",
+    "imageName": "climb_mode_pass.png",
+    "roiFront": "1150,527,23,35",
     "roiBack": "1118,500,62,100",
     "method": "Template matching",
     "threshold": 0.8,
@@ -28,8 +28,8 @@
   },
   {
     "itemName": "climb_mode_ap",
-    "imageName": "as_climb_mode_ap.png",
-    "roiFront": "1091,545,22,25",
+    "imageName": "climb_mode_ap.png",
+    "roiFront": "1098,530,27,26",
     "roiBack": "1049,504,100,100",
     "method": "Template matching",
     "threshold": 0.8,
@@ -37,8 +37,8 @@
   },
   {
     "itemName": "climb_mode_switch",
-    "imageName": "as_climb_mode_switch.png",
-    "roiFront": "1233,543,29,26",
+    "imageName": "climb_mode_switch.png",
+    "roiFront": "1236,531,29,27",
     "roiBack": "1179,494,100,100",
     "method": "Template matching",
     "threshold": 0.8,

@@ -82,7 +82,7 @@ class RestartAssets:
 	# 庭院卷轴关闭 
 	I_LOGIN_SCROOLL_CLOSE = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.7, method="Template matching", file="./tasks/Restart/login/login_login_scrooll_close.png")
 	# 闲庭图片(用户新增，用于判断是否需要点击卷轴关闭区域) 
-	I_LOGIN_COURTYARD = RuleImage(roi_front=(40,640,100,50), roi_back=(40,640,100,50), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_courtyard.png")
+	I_LOGIN_COURTYARD = RuleImage(roi_front=(45,649,63,38), roi_back=(15,591,144,116), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_courtyard.png")
 	# 卷轴关闭区域点击(用户新增，用于点击I_LOGIN_SCROOLL_CLOSE的区域而不依赖图片识别) 
 	I_LOGIN_SCROLL_CLOSE_AREA = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_scroll_close_area.png")
 	# description 
@@ -115,6 +115,8 @@ class RestartAssets:
 	I_EARLY_SERVER_CANCEL = RuleImage(roi_front=(435,404,172,56), roi_back=(435,404,172,56), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_early_server_cancel.png")
 	# 取消继续战斗 
 	I_CANCEL_BATTLE = RuleImage(roi_front=(471,395,129,55), roi_back=(367,227,545,296), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_cancel_battle.png")
+	# description 
+	I_LOGIN_COURTYARD2 = RuleImage(roi_front=(1127,629,29,78), roi_back=(1066,585,128,131), threshold=0.7, method="Template matching", file="./tasks/Restart/login/login_courtyard2.png")
 
 
 	# Ocr Rule Assets

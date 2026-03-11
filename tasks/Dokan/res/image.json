@@ -444,7 +444,7 @@
     "itemName": "ryou_dokan_spoils_of_dokan",
     "imageName": "res_ryou_dokan_spoils_of_dokan.png",
     "roiFront": "480,400,400,100",
-    "roiBack":  "480,400,400,100",
+    "roiBack": "480,400,400,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "道馆攻破后夺得资金界面"
@@ -502,5 +502,41 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "道馆进入式神录"
+  },
+  {
+    "itemName": "ryou_dokan_battle_master_first",
+    "imageName": "res_ryou_dokan_battle_master_first.png",
+    "roiFront": "1080,180,160,70",
+    "roiBack": "1080,180,160,70",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "馆主战,第一阵容"
+  },
+  {
+    "itemName": "ryou_dokan_battle_master_second",
+    "imageName": "res_ryou_dokan_battle_master_second.png",
+    "roiFront": "1080,180,160,70",
+    "roiBack": "1080,180,160,70",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "馆主战,第二阵容 # TODO 截图"
+  },
+  {
+    "itemName": "ryou_dokan_master_battle",
+    "imageName": "res_ryou_dokan_master_battle.png",
+    "roiFront": "867,81,38,70",
+    "roiBack": "640,0,640,360",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "馆主战 等待 或 进行中时 在寮境中出现的馆主图标"
+  },
+  {
+    "itemName": "ryou_dokan_quit_battle_ensure",
+    "imageName": "res_ryou_dokan_quit_battle_ensure.png",
+    "roiFront": "0,0,1280,720",
+    "roiBack": "0,0,1280,720",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "道馆战斗界面 点击退出按钮后 弹出的确认按钮"
   }
 ]

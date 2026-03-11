@@ -179,8 +179,9 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type PASS', 1)
-        self.ui_clicks([self.I_TO_BATTLE_MAIN, self.I_TO_BATTLE_MAIN_2],
-                       stop=self.I_CHECK_BATTLE_MAIN, interval=1)
+        """ self.ui_clicks([self.I_TO_BATTLE_MAIN\, self.I_TO_BATTLE_MAIN_2],
+                       stop=self.I_CHECK_BATTLE_MAIN, interval=1) """
+        self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
         self.switch_climb_mode_in_game('pass')
 

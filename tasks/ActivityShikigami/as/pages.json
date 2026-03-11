@@ -1,8 +1,8 @@
 [
   {
     "itemName": "shi",
-    "imageName": "as_shi.png",
-    "roiFront": "1184,460,47,29",
+    "imageName": "shi.png",
+    "roiFront": "1184,385,49,33",
     "roiBack": "1164,134,83,393",
     "method": "Template matching",
     "threshold": 0.7,
@@ -37,8 +37,8 @@
   },
   {
     "itemName": "to_battle_main",
-    "imageName": "as_to_battle_main.png",
-    "roiFront": "141,310,39,176",
+    "imageName": "to_battle_main.png",
+    "roiFront": "227,300,37,139",
     "roiBack": "100,242,238,269",
     "method": "Template matching",
     "threshold": 0.8,
@@ -55,9 +55,9 @@
   },
   {
     "itemName": "check_battle_main",
-    "imageName": "as_check_battle_main.png",
-    "roiFront": "34,639,39,46",
-    "roiBack": "12,597,264,105",
+    "imageName": "check_battle_main.png",
+    "roiFront": "148,17,135,39",
+    "roiBack": "78,5,260,107",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -73,7 +73,7 @@
   },
   {
     "itemName": "battle_main_to_records",
-    "imageName": "as_battle_main_to_records.png",
+    "imageName": "battle_main_to_records.png",
     "roiFront": "1017,572,39,42",
     "roiBack": "976,539,146,100",
     "method": "Template matching",
