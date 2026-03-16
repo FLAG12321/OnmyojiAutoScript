@@ -10,7 +10,7 @@ from module.logger import logger
 
 
 def remove_symbols(text):
-    return re.sub(r'[^\w\s]', '', text)
+    return re.sub(r'[^\w]', '', text)
 
 class Debugger:
 

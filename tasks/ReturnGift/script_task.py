@@ -60,6 +60,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                         break
                 continue
             if self.appear_then_click(self.I_R_PAGE_GUILD,action=self.C_R_TOSEND_CLICK,interval=2):
+                self.device.click_record_clear()
                 time.sleep(1)
                 continue
             retry_count += 1

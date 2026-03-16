@@ -65,7 +65,8 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 continue
 
             if self.appear(self.I_UI_BACK_RED):
-                self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=2)
+                self.device.click_record_clear()
+                self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=3)
                 if net_normal_flag:
                     break
                 continue

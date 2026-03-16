@@ -148,7 +148,7 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
         
         self.last_countdown = countdown """
         
-        if countdown < 2 or countdown > 5:
+        if countdown < 1 or countdown > 4:
             # 最后两秒钟的时候 进行选择
             if countdown >100:
                 self.runalone = True
@@ -220,7 +220,7 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
             text = result.ocr_text
             if y_start >= 0 and y_end <= 150:
                 question += text
-        
+        logger.info(f'answer_1: {answer_1}, answer_2: {answer_2}, answer_3: {answer_3}, answer_4: {answer_4}')    
         return question, answer_1, answer_2, answer_3, answer_4
 
 
