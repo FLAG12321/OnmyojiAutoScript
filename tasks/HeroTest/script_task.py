@@ -57,7 +57,7 @@ class ScriptTask(GameUi, GeneralBattle, HeroTestAssets, SwitchSoul):
                 logger.info("General battle success")
         self.close_exp_buff()
         self.set_next_run(task="HeroTest", success=self.success)
-        raise TaskEnd
+        raise TaskEnd('HeroTest')
 
     def enter_battle(self) -> bool:
         """进入战斗

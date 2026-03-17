@@ -172,7 +172,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         if self.conf.general_climb.active_souls_clean:
             self.set_next_run(task='SoulsTidy', success=False, finish=False, target=datetime.now())
         self.set_next_run(task="ActivityShikigami", success=True)
-        raise TaskEnd
+        raise TaskEnd('ActivityShikigami')
 
     def _run_pass(self):
         """

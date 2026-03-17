@@ -22,7 +22,7 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
         con = self.config.memory_scrolls.memory_scrolls_config
         # 进入绘卷主界面
         self.goto_memoryscrolls_main(con) 
-        raise TaskEnd
+        raise TaskEnd('MemoryScrolls')
     
     def goto_memoryscrolls_main(self, con):
         # 循环寻找&点击绘卷入口
@@ -48,7 +48,7 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
         else:
             logger.error('Failed to enter Memory Scrolls main page')
             self.set_next_run(task='MemoryScrolls', success=False)
-            raise TaskEnd
+            raise TaskEnd('MemoryScrolls')
         # 如果每天只刷小绘卷50，则先检测小绘卷数量
         if self.config.memory_scrolls.memory_scrolls_finish.auto_finish_exploration:
             while 1:
@@ -95,7 +95,7 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
                 case _:
                     logger.error(f'Unknown scroll number: {con.scroll_number.name}')
                     self.set_next_run(task='MemoryScrolls', success=False)
-                    raise TaskEnd
+                    raise TaskEnd('MemoryScrolls')
         
         # 到达指定进度时进行通知提示
         if con.notification_95:

@@ -62,7 +62,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             # 非周五六日，直接退出
             logger.info(f"Today is not abyss shadows day, exit")
             self.set_next_run(task='AbyssShadows', finish=False, server=True, success=True)
-            raise TaskEnd
+            raise TaskEnd('AbyssShadows')
 
         # 进入狭间
         self.goto_abyss_shadows()
@@ -91,7 +91,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                 logger.warning("Failed to enter abyss shadows")
                 self.goto_main()
                 self.set_next_run(task='AbyssShadows', finish=False, server=False, success=False)
-                raise TaskEnd
+                raise TaskEnd('AbyssShadows')
 
             # 集结中图片
             self.wait_until_appear(self.I_WAIT_TO_START, wait_time=2)
@@ -122,7 +122,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
 
         self.clear_saved_params()
 
-        raise TaskEnd
+        raise TaskEnd('AbyssShadows')
 
     def init_list_from_cfg(self):
         if datetime.today().strftime('%Y-%m-%d') != self.config.model.abyss_shadows.saved_params.save_date:

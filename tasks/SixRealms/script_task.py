@@ -38,7 +38,7 @@ class ScriptTask(SwitchSoul, MoonSea, GameUi):
         # 设置下一次运行时间是周一
         #self.next_run_week(1)
         self.set_next_run('SixRealms', success=True, finish=False)
-        raise TaskEnd
+        raise TaskEnd('SixRealms')
 
     def run_moon_sea(self):
         self._run_moon_sea()

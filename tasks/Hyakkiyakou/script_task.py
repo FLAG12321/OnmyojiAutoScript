@@ -149,7 +149,7 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
                 break
         self.ui_click_until_disappear(self.I_HCLOSE_RED)
         self.set_next_run(task='Hyakkiyakou', success=True, finish=False)
-        raise TaskEnd
+        raise TaskEnd('Hyakkiyakou')
 
     # ------------ 新增三个函数：用于检测 ------------
     def _rarity_score(self, class_id: int) -> int:

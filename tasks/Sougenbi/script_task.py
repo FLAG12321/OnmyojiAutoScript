@@ -129,7 +129,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SougenbiAssets):
             self.close_buff()
 
         self.set_next_run("Sougenbi", success=True, finish=True)
-        raise TaskEnd
+        raise TaskEnd('Sougenbi')
 
 
 

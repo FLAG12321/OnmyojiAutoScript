@@ -140,13 +140,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             else:
                 logger.info("The ryou toppa is not open and you are a ryou member.")
                 self.set_next_run(task='RyouToppa', finish=True, server=True, success=False)
-                raise TaskEnd
+                raise TaskEnd('RyouToppa')
 
         # 100% 攻破, 第二天再执行
         if ryou_toppa_success_penetration:
             logger.info('RyouToppa is 100%')
             self.plan_tomorrow_ryoutoppa()
-            raise TaskEnd
+            raise TaskEnd('RyouToppa')
         if self.config.ryou_toppa.general_battle_config.lock_team_enable:
             logger.info("Lock team.")
             self.ui_click(self.I_TOPPA_UNLOCK_TEAM, self.I_TOPPA_LOCK_TEAM)
@@ -191,7 +191,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             #self.set_next_run(task='RyouToppa', finish=True, server=True, success=True)
         else:
             self.set_next_run(task='RyouToppa', finish=True, server=True, success=False)
-        raise TaskEnd
+        raise TaskEnd('RyouToppa')
 
     def plan_tomorrow_ryoutoppa(self):
         # 安排下次寮突破，便于复用
@@ -261,7 +261,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         if self.appear(f3, threshold=0.8) or self.appear(f4, threshold=0.8):
             logger.info('RyouToppa has tried to attack')
             self.plan_tomorrow_ryoutoppa()
-            raise TaskEnd
+            raise TaskEnd('RyouToppa')
         # 如果该区域攻略失败返回 False
         if self.appear(f1, threshold=0.8) or self.appear(f2, threshold=0.8):
             logger.info('Area [%s] is futile attack, skip.' % str(index + 1))

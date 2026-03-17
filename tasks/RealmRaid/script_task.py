@@ -187,7 +187,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                         continue
                     else :
                         self.set_next_run(task='RealmRaid', target=datetime.now() + timedelta(minutes=5))
-                        raise TaskEnd
+                        raise TaskEnd('RealmRaid')
                 else:
                     logger.info('No one can attack, break')
                     # 检查是否有“刷新确认”弹窗挡路
@@ -263,7 +263,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         self.set_next_run(task='RealmRaid', success=success, finish=True)
         
     
-        raise TaskEnd
+        raise TaskEnd('RealmRaid')
 
 
 

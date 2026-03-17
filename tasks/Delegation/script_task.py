@@ -36,7 +36,7 @@ class ScriptTask(GameUi, DelegationAssets):
 
 
         self.set_next_run(task='Delegation', success=True, finish=True)
-        raise TaskEnd
+        raise TaskEnd('Delegation')
 
     def delegate_one(self, name: str) -> bool:
         """

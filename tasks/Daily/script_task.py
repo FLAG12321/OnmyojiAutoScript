@@ -245,16 +245,14 @@ class ScriptTask(GameUi, DailyAssets):
         
         match msg_type:
             case MSGType.xiezuo:
-                device_type = "android" if account_info.apple_or_android else "ios"
                 self.config.notifier.push(
-                    content=f"{account_info.character} {msg_content}\n所属账号为:{account_info.account},客户端为：{device_type}",
-                    title="协作任务提醒"
+                    content=self._build_notify_content(account_info),
+                    title=self._build_notify_title(msg_content, "协作任务提醒"),
                 )
             case MSGType.mshop:
-                device_type = "android" if account_info.apple_or_android else "ios"
                 self.config.notifier.push(
-                    content=f"{account_info.character} {msg_content}\n所属账号为:{account_info.account},客户端为：{device_type}",
-                    title="神秘商店提醒"
+                    content=self._build_notify_content(account_info),
+                    title=self._build_notify_title(msg_content, "神秘商店提醒"),
                 )
             case MSGType.Utilize:
                 logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
@@ -266,6 +264,20 @@ class ScriptTask(GameUi, DailyAssets):
                 logger.info(f"未知消息类型: {msg_type}, 内容: {msg_content}")
                 
         return should_retry
+
+    @staticmethod
+    def _build_notify_title(msg_content, fallback_title):
+        clean_content = str(msg_content).strip()
+        return clean_content if clean_content else fallback_title
+
+    @staticmethod
+    def _build_notify_content(account_info):
+        device_type = "android" if account_info.apple_or_android else "ios"
+        return "\n".join([
+            f"角色：{account_info.character}",
+            f"客户端：{device_type}",
+            f"账号：{account_info.account}",
+        ])
 
     def _notify_daily_completion(self):
         """通知日常任务完成"""

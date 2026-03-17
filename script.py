@@ -34,6 +34,22 @@ from module.exception import *
 from module.server.i18n import I18n
 
 class Script:
+    TASK_END_NOTIFY_LIST = [
+        'Orochi',
+        'RealmRaid',
+        'ReturnGift',
+        'RyouToppa',
+        'SixRealms',
+        'FallenSun',
+        'Exploration',
+        'EvoZone',
+        'Dokan',
+        'ActivityShikigami',
+        'AbyssShadows',
+        'EternitySea',
+        'BondlingFairyland'
+    ]
+
     def __init__(self, config_name: str ='oas') -> None:
         self._emulator_down = False
         logger.hr('Start', level=0)
@@ -355,6 +371,40 @@ class Script:
         else:
             self._handle_close_game(task, close_game_limit_time)
 
+    @staticmethod
+    def _normalize_task_name(task_name: str) -> str:
+        return task_name.strip().lower()
+
+    def _resolve_task_end_name(self, command: str, error: TaskEnd) -> str:
+        task_name = command
+        if error.args and isinstance(error.args[0], str) and error.args[0].strip():
+            task_name = error.args[0].strip()
+        logger.info(f'TaskEnd final task name: {task_name}')
+        return task_name
+
+    def _should_notify_task_end(self, task_name: str) -> bool:
+        notify_task_end_list = self.TASK_END_NOTIFY_LIST
+        if isinstance(notify_task_end_list, str):
+            notify_task_end_list = [notify_task_end_list]
+        if not isinstance(notify_task_end_list, (list, tuple, set)):
+            notify_task_end_list = []
+
+        normalized_notify_list = {
+            self._normalize_task_name(item)
+            for item in notify_task_end_list
+            if isinstance(item, str) and item.strip()
+        }
+        logger.info(f'TaskEnd notify list: {list(normalized_notify_list)}')
+
+        if not normalized_notify_list:
+            logger.info('TaskEnd notify list is empty, skip notify')
+            return False
+
+        normalized_task_name = self._normalize_task_name(task_name)
+        hit = normalized_task_name in normalized_notify_list
+        logger.info(f'TaskEnd notify list {"hit" if hit else "miss"}: {task_name}')
+        return hit
+
     def run(self, command: str) -> bool:
         """
 
@@ -371,7 +421,13 @@ class Script:
             logger.info(f'module_path: {module_path}, module_name: {module_name}')
             task_module = load_module(module_name, module_path)
             task_module.ScriptTask(config=self.config, device=self.device).run()
-        except TaskEnd:
+        except TaskEnd as e:
+            task_name = self._resolve_task_end_name(command, e)
+            if self._should_notify_task_end(task_name):
+                self.config.notifier.push(
+                    title=f'任务提醒',
+                    content=f"{I18n.trans_zh_cn(command)}{command} 任务执行完毕"
+                )
             return True
         except GameNotRunningError as e:
             logger.warning(e)

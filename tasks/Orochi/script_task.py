@@ -78,7 +78,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         else:
             logger.info("Orochi task completed, RealmRaid chain disabled")
 
-        raise TaskEnd
+        raise TaskEnd('Orochi')
 
     def orochi_enter(self) -> bool:
         logger.info('Enter orochi')

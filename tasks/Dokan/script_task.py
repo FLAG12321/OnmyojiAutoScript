@@ -299,9 +299,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     self.click(self.I_RYOU_DOKAN_START_CHALLENGE, interval=2)
                     continue
                 # 放弃突破
-                # 管理放弃第一次道馆
                 if self.first_master_killed and self.dokan_quit and self.config.dokan.dokan_config.dokan_enable:
-                    logger.info("今日第一次道馆，放弃本次道馆")
+                    # logger.info("今日第一次道馆，放弃本次道馆")
                     time.sleep(5)
                     while 1:
                         self.screenshot()
@@ -1079,7 +1078,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         ipages.page_main.link(button=self.I_MAIN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
         ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_main)
 
-        raise TaskEnd
+        raise TaskEnd('Dokan')
     def quit_battle(self):
         """
             尝试退出战斗界面

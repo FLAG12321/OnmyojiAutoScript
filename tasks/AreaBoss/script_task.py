@@ -73,7 +73,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         self.set_next_run(task='AreaBoss', success=True, finish=False)
 
         # 以抛出异常的形式结束
-        raise TaskEnd
+        raise TaskEnd('AreaBoss')
 
     def go_back(self) -> None:
         """

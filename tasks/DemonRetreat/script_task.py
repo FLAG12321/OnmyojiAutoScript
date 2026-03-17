@@ -46,7 +46,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
 
                 # 设置下次运行时间
             self.custom_next_run(task='DemonRetreat', custom_time=cfg.demon_retreat_time.custom_run_time, time_delta=days_until_saturday)
-            raise TaskEnd
+            raise TaskEnd('DemonRetreat')
 
         if cfg.switch_soul_config.enable:
             self.ui_get_current_page()
@@ -64,7 +64,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
                 pass
             self.goto_main()
             self.set_next_run(task='DemonRetreat', finish=False, server=True, success=False)
-            raise TaskEnd
+            raise TaskEnd('DemonRetreat')
 
         # 首领退治战斗
         success = self.demon_retreat()
@@ -96,7 +96,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
         else:
             self.set_next_run(task="DemonRetreat", finish=True, server=True, success=False)
 
-        raise TaskEnd
+        raise TaskEnd('DemonRetreat')
 
 
 
@@ -138,7 +138,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
                 logger.info(f"The next time the demon retreat is next Saturday")
                 self.custom_next_run(task='DemonRetreat', custom_time=cfg.demon_retreat_time.custom_run_time,
                                      time_delta=7)
-                raise TaskEnd
+                raise TaskEnd('DemonRetreat')
 
             if self.appear(self.I_RANK_LSIT):
                 logger.info("Enter demon_retreat false")

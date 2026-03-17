@@ -68,7 +68,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
  
         next_run_time = now.replace(hour=0, minute=19, second=30, microsecond=0) + timedelta(days=1)
         self.set_next_run(task='ReturnGift', target=next_run_time)
-        raise TaskEnd 
+        raise TaskEnd('ReturnGift')
     def send_gift(self):
         send_time=False
         retry_count = 0

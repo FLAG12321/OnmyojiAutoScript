@@ -184,7 +184,7 @@ class ScriptTask(RightActivity, GeneralBattle, SwitchSoul, Star56):
         self.ui_click(self.I_UI_BACK_YELLOW, self.I_CHECK_MAIN, interval=1.4)
         logger.info('Exit MetaDemon')
         self.set_next_run(task="MetaDemon", success=True)
-        raise TaskEnd
+        raise TaskEnd('MetaDemon')
 
     def current_exhaustion(self) -> int:
         self.screenshot()

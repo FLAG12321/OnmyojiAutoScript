@@ -125,7 +125,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.exp_100(is_open=False)
             self.close_buff()
         self.set_next_run(task='Exploration', success=True, finish=False)
-        raise TaskEnd
+        raise TaskEnd('Exploration')
 
     # 打开指定的章节：
     def open_expect_level(self):
@@ -358,7 +358,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='Exploration', success=None, finish=False, target=next_run)
         self.set_next_run(task='RealmRaid', success=None, finish=False, target=datetime.now())
         self.set_next_run(task='MemoryScrolls', success=None, finish=False, target=datetime.now())
-        raise TaskEnd
+        raise TaskEnd('Exploration')
 
     #
     def check_exit(self) -> bool:

@@ -74,7 +74,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, GoryouRealmAssets):
         self.ui_click(self.I_UI_BACK_YELLOW, self.I_CHECK_EXPLORATION)
         logger.info('Back to exploration')
         self.set_next_run(task='GoryouRealm', success=True, finish=True)
-        raise TaskEnd
+        raise TaskEnd('GoryouRealm')
 
 
     def check_date(self, goryou_class: GoryouClass = GoryouClass.RANDOM) -> GoryouClass:

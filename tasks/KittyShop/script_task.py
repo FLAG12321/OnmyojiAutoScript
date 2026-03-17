@@ -42,7 +42,7 @@ class ScriptTask(GameUi, ActivityShikigamiAssets, KittyShopAssets):
 
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_CHECK_MAIN, interval=2.4)
         self.set_next_run(task="KittyShop", success=True)
-        raise TaskEnd
+        raise TaskEnd('KittyShop')
 
     def _run(self):
         logger.hr('Kitty Shop', level=1)

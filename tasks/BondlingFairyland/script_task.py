@@ -54,7 +54,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
                 self.ui_get_current_page()
                 self.ui_goto(page_main)
                 self.set_next_run(task='BondlingFairyland', finish=True, success=True)
-                raise TaskEnd
+                raise TaskEnd('BondlingFairyland')
 
             logger.info(f'契忆数量: {cu} 小于 {MAX_COUNT}, 继续任务')
 
@@ -206,7 +206,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
         self.ui_get_current_page()
         self.ui_goto(page_main)
         self.set_next_run(task='BondlingFairyland', finish=True, success=True)
-        raise TaskEnd
+        raise TaskEnd('BondlingFairyland')
 
     def run_member(self):
         logger.hr('Start run member', 2)
@@ -269,7 +269,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
             self.ui_get_current_page()
             self.ui_goto(page_main)
             self.set_next_run(task='BondlingFairyland', finish=True, success=True)
-            raise TaskEnd
+            raise TaskEnd('BondlingFairyland')
 
     def switch_ball(self):
         logger.hr('Start switch ball', 2)
@@ -341,7 +341,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
         self.ui_get_current_page()
         self.ui_goto(page_main)
         self.set_next_run(task='BondlingFairyland', finish=True, success=True)
-        raise TaskEnd
+        raise TaskEnd('BondlingFairyland')
 
     def run_stone(self, bondling_stone_enable: bool, bondling_stone_class: BondlingClass):
         """

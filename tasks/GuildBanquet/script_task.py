@@ -64,7 +64,7 @@ class ScriptTask(GameUi, GuildBanquetAssets):
                               target=time_later)
             self.ui_get_current_page()
             self.ui_goto(page_main)
-            raise TaskEnd
+            raise TaskEnd('GuildBanquet')
 
         last_check_time = 0  # 记录上次实际检测时间
         last_log_time = 0  # 记录上次日志输出时间
@@ -113,7 +113,7 @@ class ScriptTask(GameUi, GuildBanquetAssets):
         self.ui_get_current_page()
         self.ui_goto(page_main)
         self.plan_next_run()
-        raise TaskEnd
+        raise TaskEnd('GuildBanquet')
     
     def check_runtime(self) -> bool:
         """
@@ -189,7 +189,7 @@ class ScriptTask(GameUi, GuildBanquetAssets):
             self.config.save()
         except Exception as e:
             logger.error(f"Error setting banquet config: {e}")
-            raise TaskEnd
+            raise TaskEnd('GuildBanquet')
 
 
 if __name__ == '__main__':
