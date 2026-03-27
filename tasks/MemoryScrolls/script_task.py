@@ -100,10 +100,11 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
         # 到达指定进度时进行通知提示
         if con.notification_95:
             number = self.O_NUMBER.ocr_digit(self.device.image)
-            if number >= 9500 and number < 10000:
+            if number >= 9700 and number < 10000:
                 self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即空降')
                 self.set_next_run(task='MemoryScrolls', success=False)
-            elif number >= 9300 and number < 9500:
+            elif number >= 9300 and number < 9700:
+                self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
                 self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(seconds=50))
             elif number >= 9000 and number < 9300:
                 self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=5))

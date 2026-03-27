@@ -61,5 +61,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "sudden",
+    "roiFront": "534,179,63,22",
+    "roiBack": "430,160,419,98",
+    "description": "description",
+    "imageName": "sudden.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

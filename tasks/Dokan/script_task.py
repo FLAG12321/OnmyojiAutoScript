@@ -270,6 +270,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             # 场景状态：道馆集结中
             if current_scene == DokanScene.RYOU_DOKAN_SCENE_GATHERING:
                 self.goto_dokan_num = 0
+                self.first_master_killed = False
+
             # 场景状态：等待馆主战开始
             elif current_scene == DokanScene.RYOU_DOKAN_SCENE_BOSS_WAITING:
                 self.boss_battles = True
@@ -313,7 +315,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                             continue
                         if self.appear_then_click(self.I_QUIT_DOKAN, interval=1):
                             continue
-
+                    self.config.notifier.push(content=f'已放弃本次道馆', title='道馆')
                 # 非寮管理，检测到放弃突破，点击同意
                 if self.appear_then_click(self.I_CROWD_QUIT_DOKAN, interval=1):
                     logger.info("同意, 放弃本次道馆")
@@ -757,6 +759,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     self.dokan_quit = True
                     self.open_welfare = True
                 else:
+                    if dokan_tag == "鑫":
+                        self.push_notify(content=f'{dokan_name}')
+                        self.config.notifier.push(content=f'dokan_name', title='发现未收录的福利寮')
                     # 如果是要开启福利寮，但是此寮不是福利寮，则跳过
                     if welfare_flag:
                         self.find_dokan_list.append(f"道馆: {dokan_name}, 不是福利寮")

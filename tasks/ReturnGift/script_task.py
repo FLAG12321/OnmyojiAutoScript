@@ -26,6 +26,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
 
     def run(self):
         con = self.config.return_gift
+        total_send_btn_click_count = 0
         
         timeout_duration = timedelta(hours=con.return_gift_config.return_gift_timeout.hour,
                                     minutes=con.return_gift_config.return_gift_timeout.minute,
@@ -46,7 +47,8 @@ class ScriptTask(GameUi,ReturnGiftAssets):
             if datetime.now() - self.start_time >= timeout_duration  or datetime.now() > timeout + timedelta(minutes=3):
                 break
             if self.appear(self.I_R_SEND_FLAG):
-                sendtimeout=self.send_gift()
+                sendtimeout, send_btn_click_count = self.send_gift()
+                total_send_btn_click_count += send_btn_click_count
                 if sendtimeout:
                     timeout=sendtimeout
                 receivetimeout=self.receive_gift()
@@ -65,12 +67,18 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 continue
             retry_count += 1
         now = datetime.now()
+
+        self.config.notifier.push(
+            title='ReturnGift任务提醒',
+            content=f'送礼按钮点击次数: {total_send_btn_click_count}'
+        )
  
         next_run_time = now.replace(hour=0, minute=19, second=30, microsecond=0) + timedelta(days=1)
         self.set_next_run(task='ReturnGift', target=next_run_time)
         raise TaskEnd('ReturnGift')
     def send_gift(self):
         send_time=False
+        send_btn_click_count = 0
         retry_count = 0
         swipe_count = 0
         while 1:
@@ -79,6 +87,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 continue
             if self.appear_then_click(self.I_R_SEND_BTN, interval=0.5):
                 send_time=datetime.now()
+                send_btn_click_count += 1
                 continue
             retry_count +=1
             if retry_count > 5:
@@ -94,7 +103,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 self.device.swipe_adb(p1, p2, duration=duration)
                 swipe_count += 1
        
-        return send_time
+        return send_time, send_btn_click_count
     def receive_gift(self):
         send_time=False
         retry_count = 0

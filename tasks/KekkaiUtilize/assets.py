@@ -61,6 +61,10 @@ class KekkaiUtilizeAssets:
 	I_BOX_EXP_MAX = RuleImage(roi_front=(889,430,61,64), roi_back=(829,372,228,186), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_box_exp_max.png")
 	# 种树活动关闭标识 
 	I_PLANT_TREE_CLOSE = RuleImage(roi_front=(777,91,36,34), roi_back=(711,52,367,259), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_plant_tree_close.png")
+	# description 
+	I_PLANT_FLOWER_ENSURE = RuleImage(roi_front=(1167,576,46,55), roi_back=(951,391,325,317), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_flower_ensure.png")
+	# description 
+	I_PLANT_FLOWER_ENSURE2 = RuleImage(roi_front=(1085,171,31,31), roi_back=(939,55,318,253), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_flower_ensure2.png")
 
 
 	# Click Rule Assets

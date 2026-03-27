@@ -30,6 +30,8 @@ class DailyForFlagAssets:
 	I_FLAG_THINK = RuleImage(roi_front=(969,176,64,106), roi_back=(938,147,133,158), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_flag_think.png")
 	# description 
 	I_H_BACK_RED2 = RuleImage(roi_front=(933,88,44,39), roi_back=(906,55,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_h_back_red2.png")
+	# description 
+	I_SUDDEN = RuleImage(roi_front=(534,179,63,22), roi_back=(430,160,419,98), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/huili/sudden.png")
 
 
 	# Image Rule Assets
@@ -237,6 +239,8 @@ class DailyForFlagAssets:
 	I_T_SIGN_FLAG = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_sign_flag.png")
 	# description 
 	I_T_SPECIAL_FLAG = RuleImage(roi_front=(1140,629,47,67), roi_back=(1092,568,138,143), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_special_flag.png")
+	# description 
+	I_T_SIGN_FLAG2 = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_sign_flag2.png")
 
 
 	# Click Rule Assets

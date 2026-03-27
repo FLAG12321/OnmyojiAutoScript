@@ -316,6 +316,26 @@ class GameUi(BaseTask, GameUiAssets):
         if not page.additional:
             return
         for btn in page.additional:
+            # Support delayed click: [target, delay_seconds]
+            # Keep checking target within 1 second instead of a single detection.
+            if isinstance(btn, (list, tuple)) and len(btn) == 2 and isinstance(btn[1], (int, float)):
+                target, delay_seconds = btn
+                detected = False
+                detect_timer = Timer(1.5).start()
+                while not detect_timer.reached():
+                    self.screenshot()
+                    if self.appear(target):
+                        detected = True
+                        break
+                    sleep(0.1)
+                skip_first_screenshot = False
+                if detected:
+                    if delay_seconds > 0:
+                        sleep(delay_seconds)
+                    if self.appear_then_operate(target, interval=interval, skip_first_screenshot=False):
+                        logger.info(f'Page {page} additional delayed {target} clicked after {delay_seconds}s')
+                        skip_first_screenshot = False
+                continue
             # 支持复合条件操作: [条件元素, 操作元素]。出现条件图片时点击另一个区域。
             if isinstance(btn, list) and len(btn) == 2:
                 condition, action = btn

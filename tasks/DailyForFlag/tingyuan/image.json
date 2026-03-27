@@ -97,5 +97,14 @@
     "imageName": "t_special_flag.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "t_sign_flag2",
+    "roiFront": "869,452,63,34",
+    "roiBack": "803,387,203,275",
+    "description": "description",
+    "imageName": "t_sign_flag2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

@@ -108,7 +108,7 @@ class ScriptTask(GameUi, DailyAssets):
             reverse=True  # 从大到小排序
         )
         return sorted_list
-
+        #return self.daily_conf.sup_account_list
     def _should_process_account(self, account_info, login_time):
         """判断是否应该处理该账号"""
         logger.info(f"Checking if account {account_info.character} should be processed")

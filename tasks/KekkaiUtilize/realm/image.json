@@ -106,5 +106,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "种树活动关闭标识"
+  },
+  {
+    "itemName": "plant_flower_ensure",
+    "roiFront": "1167,576,46,55",
+    "roiBack": "951,391,325,317",
+    "description": "description",
+    "imageName": "plant_flower_ensure.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "plant_flower_ensure2",
+    "roiFront": "1085,171,31,31",
+    "roiBack": "939,55,318,253",
+    "description": "description",
+    "imageName": "plant_flower_ensure2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

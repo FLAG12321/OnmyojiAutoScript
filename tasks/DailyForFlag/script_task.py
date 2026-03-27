@@ -222,10 +222,11 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_MIAN_TO_TASK, interval=1):
                 cycle_count = 0
                 continue
-            if self.appear_then_click(self.I_FINISH, interval=1):
-                retry_count += 1
-                cycle_count = 0
-                continue
+            if self.appear_rgb(self.I_FINISH):
+                if self.appear_then_click(self.I_FINISH, interval=1):
+                    retry_count += 1
+                    cycle_count = 0
+                    continue
             if self.appear_then_click(self.I_T_SPECIAL_FLAG,action=self.C_T_TONORMAL, interval=1):
                 cycle_count = 0
                 continue
@@ -602,9 +603,12 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if retry_count >= 3:
                 self.appear_then_click(self.I_TO_THINK, threshold=0.9, interval=1)
                 break
-            if self.appear_then_click(self.I_H_BACK_RED, interval=1):
-                logger.info(f"I_BACK_RED found ")
+            if self.appear_then_click(self.I_SUDDEN,action=self.C_BACK_RED, interval=1):
+                logger.info(f"I_SUDDEN found ")
                 continue
+            """ if self.appear_then_click(self.I_H_BACK_RED, interval=1):
+                logger.info(f"I_BACK_RED found ")
+                continue """
             if self.appear(self.I_TO_THINK, threshold=0.9, interval=1):
                 retry_count += 1
                 logger.info(f"I_TO_THINK found ")
@@ -629,11 +633,16 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear(self.I_FLAG_THINK):
                 retry_count += 1
                 continue
+            if self.appear_then_click(self.I_SUDDEN,action=self.C_BACK_RED, interval=1):
+                continue
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_H_BACK_RED2, interval=1):
                 continue
             if self.appear_then_click(self.I_BACK_YELLOW, interval=1):
+                continue
+            if self.appear_then_click(self.I_SUDDEN,action=self.C_BACK_RED, interval=1):
+                logger.info(f"I_SUDDEN found ")
                 continue
             if self.ui_get_current_page() == page_main:
                 break
@@ -821,7 +830,7 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                 image_status = False
                 retry_count=0
                 continue
-            if self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1):
+            if self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1) or self.appear_then_click(self.I_T_SIGN_FLAG2,action=self.C_T_EXIT_SIGN, interval=1):
                 image_status = False
                 retry_count=0
                 continue

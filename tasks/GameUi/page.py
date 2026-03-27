@@ -177,7 +177,7 @@ page_mall.link(button=G.I_BACK_MALL, destination=page_main)
 page_main.link(button=G.O_PAGE_MALL, destination=page_mall)
 # 阴阳寮 guild
 page_guild = Page(G.I_CHECK_GUILD)
-page_guild.additional = [KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE]
+page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.0], [KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE2, 1.0],KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE]
 page_guild.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_GUILD, destination=page_guild)
 # 组队 team

@@ -204,7 +204,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
             elif self.appear(self.I_A_ACTIVATE_GRAY):
                 return False
 
-    def ocr_time(self, screenshot=False) -> timedelta or None:
+    def ocr_time(self, screenshot=False) -> timedelta or None: # type: ignore
         if screenshot:
             self.screenshot()
         delta = self.O_CARD_ALL_TIME.ocr_duration(self.device.image)
