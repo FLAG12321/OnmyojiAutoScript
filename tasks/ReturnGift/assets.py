@@ -44,6 +44,11 @@ class ReturnGiftAssets:
 	I_R_BACK_Y = RuleImage(roi_front=(29,10,41,41), roi_back=(3,3,93,77), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_back_y.png")
 
 
+	# Ocr Rule Assets
+	# 碎片数量 
+	O_PIECE_FLAG = RuleOcr(roi=(0,0,100,100), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="piece_flag")
+
+
 	# Swipe Rule Assets
 	# description 
 	S_R_FIND_SEND_BTN = RuleSwipe(roi_front=(995,504,114,23), roi_back=(984,75,122,25), mode="default", name="r_find_send_btn")

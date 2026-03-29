@@ -76,32 +76,76 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         next_run_time = now.replace(hour=0, minute=19, second=30, microsecond=0) + timedelta(days=1)
         self.set_next_run(task='ReturnGift', target=next_run_time)
         raise TaskEnd('ReturnGift')
+    def position_offset(self, src, offset: tuple):
+        return (src[0] + offset[0], src[1] + offset[1]
+                , src[2] + offset[2], src[3] + offset[3])
+    def is_piece_flag_equal_to_two(self, piece_flag: str) -> bool:
+        """
+        判断OCR识别结果是否包含数字2且不包含数字4
+        """
+        if not piece_flag:
+            return False
+            
+        cleaned_flag = piece_flag.strip()
+        return '2' in cleaned_flag and '4' not in cleaned_flag
+    def get_roi_back_list(self):
+        self.screenshot()
+        # 获取所有匹配结果并直接转换为所需格式
+        raw_matches = self.I_R_SEND_BTN.match_all_any(image=self.device.image, roi=[794,71,203,507])
+        # 直接从匹配结果中提取坐标信息并按y坐标排序
+        bounty_list = sorted(
+            [[x, y, w, h] for (sc, x, y, w, h) in raw_matches],
+            key=lambda item: item[1]  # 按y坐标排序
+        )
+        roilist=[]
+        for idx, item in enumerate(bounty_list):
+            self.O_PIECE_FLAG.roi = self.position_offset((item[0], item[1], 90, 50), (-215, 17, 0, 0))
+            piece_flag = self.O_PIECE_FLAG.ocr(self.device.image)
+            logger.info(f'piece_flag: {piece_flag}')
+            if self.is_piece_flag_equal_to_two(piece_flag):
+                roilist.append(list(self.position_offset((item[0], item[1], 200, 110), (-68, -43, 0, 0))))
+        logger.info(f'匹配到的ROI列表: {roilist}')
+        return roilist
+    
     def send_gift(self):
         send_time=False
         send_btn_click_count = 0
-        retry_count = 0
+        
         swipe_count = 0
+        logger.info('开始送礼')
         while 1:
-            self.screenshot()
-            if self.appear_then_click(self.I_R_AWARD,action=self.C_R_AWARD_CLICK,interval=0.5):
-                continue
-            if self.appear_then_click(self.I_R_SEND_BTN, interval=0.5):
-                send_time=datetime.now()
-                send_btn_click_count += 1
-                continue
-            retry_count +=1
-            if retry_count > 5:
-                if  swipe_count >=2:
-                    break
-                retry_count = 0
-                duration = 2
-                safe_pos_x = random.randint(980, 1080)
-                safe_pos_y = random.randint(500, 520)
-                p1 = (safe_pos_x, safe_pos_y)
-                p2 = (safe_pos_x, safe_pos_y - 300)
-                logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
-                self.device.swipe_adb(p1, p2, duration=duration)
-                swipe_count += 1
+            retry_count = 0
+            while 1:
+                self.screenshot()
+                if retry_count >= 3:
+                    break 
+                if self.appear_then_click(self.I_R_AWARD,action=self.C_R_AWARD_CLICK,interval=0.5):
+                    retry_count = 0
+                    self.device.click_record_clear()
+                    continue
+                roilist = self.get_roi_back_list()
+                if not roilist:
+                    retry_count +=1
+                    continue
+                self.I_R_SEND_BTN.roi_back = list(roilist[0]) 
+                if self.appear_then_click(self.I_R_SEND_BTN, interval=0.5):
+                    send_time=datetime.now()
+                    self.device.click_record_clear()
+                    send_btn_click_count += 1
+                    retry_count = 0
+                    continue
+                retry_count +=1
+                
+            if  swipe_count >=2:
+                break
+            duration = 2
+            safe_pos_x = random.randint(980, 1080)
+            safe_pos_y = random.randint(500, 520)
+            p1 = (safe_pos_x, safe_pos_y)
+            p2 = (safe_pos_x, safe_pos_y - 300)
+            logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
+            self.device.swipe_adb(p1, p2, duration=duration)
+            swipe_count += 1
        
         return send_time, send_btn_click_count
     def receive_gift(self):
@@ -152,4 +196,4 @@ if __name__ == "__main__":
     c = Config('OAS1')
     d = Device(c)
     t = ScriptTask(c, d)
-    t.run()
+    t.send_gift()

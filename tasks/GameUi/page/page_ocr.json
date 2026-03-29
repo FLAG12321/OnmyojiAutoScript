@@ -97,5 +97,14 @@
     "mode": "Full",
     "method": "Default",
     "keyword": "珍旅居"
+  },
+  {
+    "itemName": "page_six_gates",
+    "roiFront": "0,0,100,100",
+    "roiBack": "0,0,100,100",
+    "description": "description",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "六道之门"
   }
 ]
