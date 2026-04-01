@@ -90,7 +90,7 @@ class ActivityShikigamiAssets:
 	# description 
 	I_PAGE_SHOP = RuleImage(roi_front=(876,471,90,43), roi_back=(828,441,176,95), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_shop.png")
 	# description 
-	I_PAGE_FIRE2 = RuleImage(roi_front=(977,561,83,39), roi_back=(963,530,119,112), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_fire2.png")
+	I_PAGE_FIRE2 = RuleImage(roi_front=(990,564,69,59), roi_back=(963,530,119,112), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_fire2.png")
 
 
 	# Image Rule Assets

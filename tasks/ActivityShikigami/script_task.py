@@ -429,6 +429,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         logger.info("当前在战斗开始场景")
         # 检查是否有确认按钮
         self.screenshot()
+        
         if self.appear_then_click(self.I_PAGE_FIRE, interval=2.5):
             # 临时替换battle_wait方法以使用自定义的战斗等待逻辑
             original_battle_wait = self.battle_wait
@@ -439,10 +440,11 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 # 恢复原始的battle_wait方法
                 self.battle_wait = original_battle_wait
             return
-        if self.appear(self.I_PAGE_FIRE2,interval=1):
+        if self.appear(self.I_PAGE_FIRE2):
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
              logger.info("点击确认按钮")
             return
+        
 
     def handle_qa_scene(self) -> None:
         """ 处理问答场景 """
