@@ -266,22 +266,18 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type pass')
-        
+        self.screenshot()
         # 进入战斗主界面
-        self.ui_click(self.I_TO_BATTLE_MAIN_2, stop=self.I_CHECK_BATTLE_MAIN_2, interval=1)
+        self.appear_then_click(self.I_TO_BATTLE_MAIN_2, interval=1)
         #self.switch_climb_mode_in_game('pass')
-        current_scene=ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN
-        if  self.O_REMAIN_PASS.ocr_digit(self.device.image)<=0:
-            return
         while 1:
             self.screenshot()
-            
+            current_scene = self.get_current_scene()
             if current_scene == ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_UNKNOWN:
                 logger.warning("未能在10秒内识别到有效场景，返回主页面重新尝试")
                 if self.appear(self.I_TO_BATTLE_MAIN_2):
                     self.ui_click(self.I_TO_BATTLE_MAIN_2, stop=self.I_CHECK_BATTLE_MAIN_2, interval=1)
                     continue
-            current_scene = self.get_current_scene()
             if current_scene ==ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN and self.O_REMAIN_PASS.ocr_digit(self.device.image)<=0:
                 return
             self.handle_scene(current_scene)
