@@ -46,7 +46,7 @@ class ReturnGiftAssets:
 
 	# Ocr Rule Assets
 	# 碎片数量 
-	O_PIECE_FLAG = RuleOcr(roi=(0,0,100,100), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="piece_flag")
+	O_PIECE_FLAG = RuleOcr(roi=(0,0,100,100), area=(0,0,100,100), mode="DigitCounter", method="Default", keyword="", name="piece_flag")
 
 
 	# Swipe Rule Assets

@@ -28,5 +28,29 @@
     "roiFront": "42,94,1207,543",
     "roiBack": "42,94,1207,543",
     "description": "description"
+  },
+  {
+    "itemName": "dice_1",
+    "roiFront": "356,284,59,85",
+    "roiBack": "354,282,62,87",
+    "description": "description"
+  },
+  {
+    "itemName": "dice_2",
+    "roiFront": "599,268,73,90",
+    "roiBack": "597,267,75,92",
+    "description": "description"
+  },
+  {
+    "itemName": "dice_3",
+    "roiFront": "827,280,58,69",
+    "roiBack": "826,278,61,71",
+    "description": "description"
+  },
+  {
+    "itemName": "answer_click_1",
+    "roiFront": "593,294,134,39",
+    "roiBack": "592,293,136,42",
+    "description": "description"
   }
 ]

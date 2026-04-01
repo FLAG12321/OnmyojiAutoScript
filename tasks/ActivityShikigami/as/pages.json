@@ -2,7 +2,7 @@
   {
     "itemName": "shi",
     "imageName": "shi.png",
-    "roiFront": "1184,385,49,33",
+    "roiFront": "1188,304,37,26",
     "roiBack": "1164,134,83,393",
     "method": "Template matching",
     "threshold": 0.7,
@@ -38,8 +38,8 @@
   {
     "itemName": "to_battle_main",
     "imageName": "to_battle_main.png",
-    "roiFront": "227,300,37,139",
-    "roiBack": "100,242,238,269",
+    "roiFront": "860,247,38,138",
+    "roiBack": "797,172,229,306",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "进入主要的战斗界面"
@@ -82,11 +82,128 @@
   },
   {
     "itemName": "to_battle_main_2",
-    "imageName": "as_to_battle_main_2.png",
-    "roiFront": "15,94,247,38",
-    "roiBack": "2,68,311,100",
+    "imageName": "to_battle_main_2.png",
+    "roiFront": "664,360,29,132",
+    "roiBack": "645,325,85,212",
     "method": "Template matching",
-    "threshold": 0.65,
+    "threshold": "0.7",
     "description": "description"
+  },
+  {
+    "itemName": "check_battle_main_2",
+    "roiFront": "843,581,31,34",
+    "roiBack": "815,567,69,59",
+    "description": "description",
+    "imageName": "check_battle_main_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "fire_1",
+    "roiFront": "1143,592,61,90",
+    "roiBack": "1135,579,110,118",
+    "description": "description",
+    "imageName": "fire_1.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "fire_2",
+    "roiFront": "1143,592,61,90",
+    "roiBack": "1135,579,110,118",
+    "description": "description",
+    "imageName": "fire_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_qa",
+    "roiFront": "532,89,236,70",
+    "roiBack": "498,78,305,91",
+    "description": "description",
+    "imageName": "page_qa.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_fire",
+    "roiFront": "987,573,78,38",
+    "roiBack": "977,564,95,57",
+    "description": "description",
+    "imageName": "page_fire.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_roll",
+    "roiFront": "1061,555,90,35",
+    "roiBack": "990,512,212,126",
+    "description": "description",
+    "imageName": "page_roll.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "Dice_1",
+    "roiFront": "956,579,30,37",
+    "roiBack": "941,568,126,58",
+    "description": "description",
+    "imageName": "Dice_1.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "Dice_2",
+    "roiFront": "956,579,30,37",
+    "roiBack": "941,568,126,58",
+    "description": "description",
+    "imageName": "Dice_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "Dice_3",
+    "roiFront": "956,579,30,37",
+    "roiBack": "941,568,126,58",
+    "description": "description",
+    "imageName": "Dice_3.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_select_dice",
+    "roiFront": "761,201,38,30",
+    "roiBack": "401,171,492,73",
+    "description": "description",
+    "imageName": "page_select_dice.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "fire_switch",
+    "roiFront": "1219,520,29,25",
+    "roiBack": "1208,507,46,47",
+    "description": "description",
+    "imageName": "fire_switch.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_shop",
+    "roiFront": "876,471,90,43",
+    "roiBack": "828,441,176,95",
+    "description": "description",
+    "imageName": "page_shop.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_fire2",
+    "roiFront": "977,561,83,39",
+    "roiBack": "963,530,119,112",
+    "description": "description",
+    "imageName": "page_fire2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

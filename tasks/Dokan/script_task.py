@@ -761,7 +761,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 else:
                     if dokan_tag == "鑫":
                         self.push_notify(content=f'{dokan_name}')
-                        self.config.notifier.push(content=f'dokan_name', title='发现未收录的福利寮')
+                        self.config.notifier.push(content=f'{dokan_name}', title='发现未收录的福利寮')
                     # 如果是要开启福利寮，但是此寮不是福利寮，则跳过
                     if welfare_flag:
                         self.find_dokan_list.append(f"道馆: {dokan_name}, 不是福利寮")

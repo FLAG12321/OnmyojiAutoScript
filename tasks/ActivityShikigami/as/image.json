@@ -30,7 +30,7 @@
     "itemName": "climb_mode_ap",
     "imageName": "climb_mode_ap.png",
     "roiFront": "1098,530,27,26",
-    "roiBack": "1049,504,100,100",
+    "roiBack": "1062,516,200,193",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "体力爬塔标志"
