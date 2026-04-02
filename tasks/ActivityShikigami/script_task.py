@@ -266,16 +266,13 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type pass')
-        
+        self.screenshot()
         # 进入战斗主界面
-        self.ui_click(self.I_TO_BATTLE_MAIN_2, stop=self.I_CHECK_BATTLE_MAIN_2, interval=1)
+        self.appear_then_click(self.I_TO_BATTLE_MAIN_2, interval=1)
         #self.switch_climb_mode_in_game('pass')
-        current_scene=ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN
-        if  self.O_REMAIN_PASS.ocr_digit(self.device.image)<=0:
-            return
+        current_scene=self.get_current_scene()
         while 1:
             self.screenshot()
-            
             if current_scene == ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_UNKNOWN:
                 logger.warning("未能在10秒内识别到有效场景，返回主页面重新尝试")
                 if self.appear(self.I_TO_BATTLE_MAIN_2):
@@ -313,7 +310,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_QA
             if self.appear(self.I_PAGE_ROLL, interval=1):
                 return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_ROLL
-            if self.appear(self.I_CHECK_BATTLE_MAIN_2, interval=1):
+            if self.appear(self.I_CHECK_BATTLE_MAIN_2, interval=2):
                 return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN
             # 这里需要添加检测奖励页面的逻辑，假设我们有相关的图像元素
             # 需要根据实际情况定义奖励页面的图像元素
@@ -441,7 +438,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 self.battle_wait = original_battle_wait
             return
         if self.appear(self.I_PAGE_FIRE2):
-            if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
              logger.info("点击确认按钮")
             return
         
