@@ -310,7 +310,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_QA
             if self.appear(self.I_PAGE_ROLL, interval=1):
                 return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_ROLL
-            if self.appear(self.I_CHECK_BATTLE_MAIN_2, interval=2):
+            if self.appear(self.I_CHECK_BATTLE_MAIN_2, interval=3):
                 return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN
             # 这里需要添加检测奖励页面的逻辑，假设我们有相关的图像元素
             # 需要根据实际情况定义奖励页面的图像元素
@@ -536,23 +536,20 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             if self.appear_then_click(self.I_WIN, interval=2):
                 continue
             #  出现 "魂" 和 紫蛇皮
-            if self.appear(self.I_REWARD):
+            if self.appear(self.I_REWARD) or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN):
                 logger.info('Win battle')
-                while 1:
-                    self.screenshot()
-                    # appear_reward = self.appear_then_click(self.I_REWARD)
-                    appear_reward_purple_snake_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)
-                    appear_reward = self.appear(self.I_REWARD)
-                    if appear_reward:
-                        self.click(self.I_REWARD, interval=0.9)
-                    if not appear_reward and not appear_reward_purple_snake_skin:
-                        break
-                    if appear_reward or appear_reward_purple_snake_skin:
-                        reward_click = random.choice(
-                            [self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT])
-                        self.click(reward_click, interval=1.8)
-                        continue
-                return True
+                appear_reward_purple_snake_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)
+                appear_reward = self.appear(self.I_REWARD)
+                if appear_reward:
+                    self.click(self.I_REWARD, interval=0.9)
+                    ok_cnt += 1
+                    continue
+                if appear_reward_purple_snake_skin:
+                    reward_click = random.choice(
+                        [self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT])
+                    self.click(reward_click, interval=1.8)
+                    ok_cnt += 1
+                    continue
             # 已经不在战斗中了, 且奖励也识别过了, 则随机点击
             # if ok_cnt > 0 and not self.is_in_battle(False):
             #     self.random_reward_click(exclude_click=[self.C_RANDOM_BOTTOM])

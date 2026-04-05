@@ -302,32 +302,31 @@ class ScriptTask(GameUi, DailyAssets):
     def next_run(self, task: str, finish: bool = False,
                  success: bool = None, server: bool = True, target: datetime = None) -> None:
         """设置下一次运行时间"""
-        now = datetime.now()
-        
+        start_time = self.start_time  # 使用任务开始时间而不是当前时间
         if success:
-            if 5 <= now.hour < 18:
+            if 5 <= start_time.hour < 18:
                 # 工作时间段：18:05执行
-                self._schedule_normal_day(now)
-            elif now.hour < 5:
-                # 凌晨时段：5:05执行
-                self._schedule_after_midnight(now)
-            elif 18 <= now.hour <= 23:
+                self._schedule_normal_day(start_time)
+            elif start_time.hour < 5:
+                # 凌晨时段：6:05执行
+                self._schedule_after_midnight(start_time)
+            elif 18 <= start_time.hour <= 23:
                 # 晚上时段：次日00:20执行
-                self._schedule_evening(now)
+                self._schedule_evening(start_time)
             else:
-                # 异常情况：第二天5:05执行
-                self.set_next_run(task, target=now.replace(hour=5, minute=5) + timedelta(days=1))
+                # 异常情况：第二天6:05执行
+                self.set_next_run(task, target=start_time.replace(hour=6, minute=5) + timedelta(days=1))
         else:
             # 失败情况：10分钟后重试
-            self.set_next_run(task, target=now + timedelta(minutes=10))
+            self.set_next_run(task, target=datetime.now() + timedelta(minutes=10))
 
-    def _schedule_normal_day(self, now: datetime):
+    def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""
         # 周三或周六开启神秘商店
-        if now.weekday() == 2 or now.weekday() == 5:
+        if start_time.weekday() == 2 or start_time.weekday() == 5:
             self.daily_conf.daily_config.total_mysteryshop_enable = True
         # 周一开启周奖励
-        if now.weekday() == 0:
+        if start_time.weekday() == 0:
             self.daily_conf.daily_config.total_weekaward_enable = True
             
         self.daily_conf.daily_config.total_tongxin_battle_enable = False
@@ -339,12 +338,12 @@ class ScriptTask(GameUi, DailyAssets):
         self.daily_conf.daily_config.need_login = True
         self.config.model.daily = self.daily_conf
         
-        self.set_next_run("Daily", target=now.replace(hour=18, minute=5))
+        self.set_next_run("Daily", target=start_time.replace(hour=18, minute=5))
         self.save_config()
 
-    def _schedule_after_midnight(self, now: datetime):
+    def _schedule_after_midnight(self, start_time: datetime):
         """安排凌晨的运行时间"""
-        self.set_next_run("Daily", target=now.replace(hour=5, minute=5))
+        self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
 
         # 如果开启了同心战斗，则调整设置
         if self.daily_conf.daily_config.total_tongxin_battle_enable:
@@ -355,7 +354,7 @@ class ScriptTask(GameUi, DailyAssets):
             self.daily_conf.daily_config.total_xiezuo_enable = True
             self.config.model.daily = self.daily_conf
             
-            self.set_next_run("Daily", target=now.replace(hour=5, minute=5))
+            self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
             self.save_config()
         elif self.daily_conf.daily_config.total_huili_enable:
             # 如果开启了回礼功能
@@ -368,10 +367,10 @@ class ScriptTask(GameUi, DailyAssets):
             self.daily_conf.daily_config.need_login = True
             self.config.model.daily = self.daily_conf
             
-            self.set_next_run("Daily", target=now + timedelta(minutes=20))
+            self.set_next_run("Daily", target=datetime.now() + timedelta(minutes=20))
             self.save_config()
 
-    def _schedule_evening(self, now: datetime):
+    def _schedule_evening(self, start_time: datetime):
         """安排晚上的运行时间"""
         self.daily_conf.daily_config.total_weekaward_enable = False
         self.daily_conf.daily_config.total_mysteryshop_enable = False
@@ -383,7 +382,7 @@ class ScriptTask(GameUi, DailyAssets):
         self.daily_conf.daily_config.total_xiezuo_enable = False
         self.daily_conf.daily_config.need_login = True
         self.config.model.daily = self.daily_conf
-        self.set_next_run("Daily", target=now.replace(hour=0, minute=20) + timedelta(days=1))
+        self.set_next_run("Daily", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))
         self.save_config()
         
 if __name__ == '__main__':
