@@ -12,11 +12,14 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_summon
 from tasks.MemoryScrolls.assets import MemoryScrollsAssets
 from tasks.MemoryScrolls.config import ScrollNumber
-
+from tasks.Component.config_base import time
 
 class ScriptTask(GameUi, MemoryScrollsAssets):
 
-    def run(self):        
+    def run(self): 
+        logger.info('Starting Memory Scrolls task')
+        logger.info(f'Exploration limit time set to {self.config.exploration.exploration_config.limit_time}')
+
         self.ui_get_current_page()
         self.ui_goto(page_summon)
         con = self.config.memory_scrolls.memory_scrolls_config
@@ -99,44 +102,62 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
         
         # 到达指定进度时进行通知提示
         if con.notification_95:
+            exploration_limit_time = None
+            exploration_enable = None
+            memoryScrolls_next_run_time = None
+
             number = self.O_NUMBER.ocr_digit(self.device.image)
+
             if number >= 9700 and number < 10000:
+                memoryScrolls_next_run_time=datetime.now() + timedelta(seconds=90)
+                exploration_limit_time=time.fromisoformat('00:30:00')
+                exploration_enable = False
                 self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即空降')
-                self.set_next_run(task='MemoryScrolls', success=False)
-            elif number >= 9300 and number < 9700:
+            elif number >= 9500 and number < 9700:
+                memoryScrolls_next_run_time = datetime.now() + timedelta(minutes=5)
+                exploration_limit_time=time.fromisoformat('00:05:00')
+                exploration_enable = True
                 self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
-                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(seconds=50))
-            elif number >= 9000 and number < 9300:
-                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=5))
+            elif number >= 9000 and number < 9500:
+                memoryScrolls_next_run_time = datetime.now() + timedelta(minutes=30)
+                exploration_limit_time=time.fromisoformat('00:30:00')
+                exploration_enable = True
                 self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
             elif number >= 8000 and number < 9000:
-                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=30))
+                memoryScrolls_next_run_time = datetime.now() + timedelta(minutes=60)
+                exploration_limit_time=time.fromisoformat('01:00:00')
+                exploration_enable = True
                 self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
             elif number >= 0 and number < 8000:
-                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(minutes=90))
+                memoryScrolls_next_run_time = datetime.now() + timedelta(minutes=90)
+                exploration_limit_time=time.fromisoformat('01:30:00')
+                exploration_enable = True
                 self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即前往探索')
-            else:    
-                self.set_next_run(task='MemoryScrolls',target=datetime.now() + timedelta(seconds=50))
-            logger.info(f'Memory Scrolls progress : {number/100.00}%')
-        '''# 判断是否需要捐献碎片
+                logger.info(f'Memory Scrolls progress : {number/100.00}%')
+            logger.info(f'Exploration limit time: {exploration_limit_time}, Exploration enable: {exploration_enable}, Memory Scrolls next run time: {memoryScrolls_next_run_time}')
+            if  not exploration_limit_time == None and not exploration_enable == None and not memoryScrolls_next_run_time == None:
+                logger.info('No need to adjust next run time for Memory Scrolls or Exploration')
+                self.config.exploration.scheduler.enable = exploration_enable
+                self.config.exploration.exploration_config.limit_time = exploration_limit_time
+                self.config.save()
+                self.set_next_run(task='MemoryScrolls', target=memoryScrolls_next_run_time)
+                self.set_next_run(task='Exploration', target=datetime.now())
+                
+            else:
+                self.set_next_run(task='MemoryScrolls', target=datetime.now() + timedelta(seconds=50))
+                if number == 10000:
+                    self.set_next_run(task='MemoryScrolls', success=True)
+                    if con.auto_close_exploration:
+                        self.config.exploration.scheduler.enable = False
+                        self.config.save()
+                    self.config.notifier.push(title='追忆绘卷进度', content=f'绘卷进度已达{number/100.00}%，请立即空降')
+        # 判断是否需要捐献碎片
         if self.appear(self.I_MS_CONTRIBUTE) or not self.appear(self.I_MS_COMPLETE):
             logger.info(f'Contributing Memory Scrolls for scroll {con.scroll_number.name}')
             if con.auto_contribute_memoryscrolls:
                 # 自动捐献碎片
                 logger.info('Auto contributing Memory Scrolls')
                 self.contribute_memoryscrolls()
-            # 设置下一次运行时间
-            self.set_next_run(task='MemoryScrolls', success=True)
-        else:
-            logger.info(f'Scroll {con.scroll_number.name} is already completed')
-            self.set_next_run(task='MemoryScrolls', success=False)
-            if con.auto_close_exploration:
-                # 自动关闭探索任务
-                logger.info('Auto close exploration task after Memory Scrolls completion')
-                self.config.exploration.scheduler.enable = False
-                self.config.save()
-                # next_run=datetime.now() + timedelta(days=1)
-                # self.set_next_run(task='Exploration', success=False, finish=False, target=next_run)'''
         # 返回绘卷主界面
         self.ui_click_until_disappear(self.I_MS_CLOSE, interval=1)
         logger.info('Closed Memory Scrolls contribution page')
@@ -173,9 +194,11 @@ if __name__ == '__main__':
     c = Config('oas1')
     d = Device(c)
     t = ScriptTask(c, d)
-    t.screenshot()
-
-    t.run()
+    
+    logger.info(f'Exploration limit time set to {t.config.exploration.exploration_config.limit_time}')
+    t.config.exploration.exploration_config.limit_time = timedelta(seconds=50)
+    """ t.screenshot()
+    t.run() """
 
 
 
