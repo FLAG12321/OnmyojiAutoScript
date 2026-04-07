@@ -30,7 +30,7 @@
     "itemName": "red_exit",
     "imageName": "as_red_exit.png",
     "roiFront": "1162,96,39,38",
-    "roiBack": "1120,49,110,135",
+    "roiBack": "1029,53,216,159",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "红色退出"
@@ -189,11 +189,11 @@
     "threshold": "0.7"
   },
   {
-    "itemName": "page_shop",
+    "itemName": "buy_btn",
     "roiFront": "876,471,90,43",
     "roiBack": "828,441,176,95",
     "description": "description",
-    "imageName": "page_shop.png",
+    "imageName": "buy_btn.png",
     "method": "Template matching",
     "threshold": "0.7"
   },
@@ -203,6 +203,24 @@
     "roiBack": "963,530,119,112",
     "description": "description",
     "imageName": "page_fire2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "buy_enable",
+    "roiFront": "844,564,26,25",
+    "roiBack": "245,536,791,79",
+    "description": "description",
+    "imageName": "buy_enable.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_shop",
+    "roiFront": "512,67,257,71",
+    "roiBack": "421,38,414,140",
+    "description": "description",
+    "imageName": "page_shop.png",
     "method": "Template matching",
     "threshold": "0.7"
   }

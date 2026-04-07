@@ -52,7 +52,7 @@ class ActivityShikigamiAssets:
 	# 右上跳过按钮 
 	I_SKIP_BUTTON = RuleImage(roi_front=(1159,37,51,22), roi_back=(1141,27,86,43), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_skip_button.png")
 	# 红色退出 
-	I_RED_EXIT = RuleImage(roi_front=(1162,96,39,38), roi_back=(1120,49,110,135), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_red_exit.png")
+	I_RED_EXIT = RuleImage(roi_front=(1162,96,39,38), roi_back=(1029,53,216,159), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_red_exit.png")
 	# 进入主要的战斗界面 
 	I_TO_BATTLE_MAIN = RuleImage(roi_front=(860,247,38,138), roi_back=(797,172,229,306), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
 	# 点击进入boss战斗页面 
@@ -88,9 +88,13 @@ class ActivityShikigamiAssets:
 	# description 
 	I_FIRE_SWITCH = RuleImage(roi_front=(1219,520,29,25), roi_back=(1208,507,46,47), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/fire_switch.png")
 	# description 
-	I_PAGE_SHOP = RuleImage(roi_front=(876,471,90,43), roi_back=(828,441,176,95), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_shop.png")
+	I_BUY_BTN = RuleImage(roi_front=(876,471,90,43), roi_back=(828,441,176,95), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/buy_btn.png")
 	# description 
 	I_PAGE_FIRE2 = RuleImage(roi_front=(990,564,69,59), roi_back=(963,530,119,112), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_fire2.png")
+	# description 
+	I_BUY_ENABLE = RuleImage(roi_front=(844,564,26,25), roi_back=(245,536,791,79), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/buy_enable.png")
+	# description 
+	I_PAGE_SHOP = RuleImage(roi_front=(512,67,257,71), roi_back=(421,38,414,140), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_shop.png")
 
 
 	# Image Rule Assets

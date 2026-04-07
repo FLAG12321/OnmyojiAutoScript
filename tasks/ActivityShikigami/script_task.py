@@ -402,23 +402,34 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
     def handle_shop_scene(self) -> None:
         """ 处理商店场景 """
         logger.info("当前在商店场景")
+        self.screenshot()
+        current_image = self.device.image
+        buy_enables=self.I_BUY_ENABLE.match_all_any(current_image)
+        logger.info(f"buy_enables: {buy_enables}")
+        if len(buy_enables) ==1:
+            logger.info("buy_enables ==1")
+            self.I_BUY_BTN.roi_back=(buy_enables[0][1]-40,buy_enables[0][2]-140,230,120)
+            buy_enable=1
+        else:
+            buy_enable=0
         # 实现商店相关逻辑，购买道具
         import time
         start_time = time.time()
-        
+        #-40,-140       230 120
         while time.time() - start_time < 5:
             self.screenshot()
             # 尝试点击购买道具（如果有可购买的物品）
-            if self.appear_then_click(self.I_PAGE_SHOP, interval=2.5):
+            if buy_enable ==0 and self.appear_then_click(self.I_RED_EXIT, interval=2.5):
+                break
+            if buy_enable ==1 and self.appear_then_click(self.I_BUY_BTN, interval=2.5):
                 start_time = time.time()
                 continue
             # 检查是否有确认按钮或其他需要处理的弹窗
             if (self.appear_then_click(self.I_UI_CONFIRM, interval=1)
                     or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1)):
                 logger.info("点击确认按钮")
-                return
-
-        logger.info("商店场景处理完成，准备返回主场景")
+                break
+        logger.info("商店场景处理完成")
         pass
 
     def handle_fire_scene(self) -> None:
@@ -694,15 +705,19 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
+    from module.base.utils import load_image
+    img_array = load_image(r"C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\temp_path\2026-04-01 12-30-01.png")
     c = Config('OAS1')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
-    t.handle_fire_scene()
+    t.device.image = img_array
+    t.handle_shop_scene()
+    """ t.handle_fire_scene()
     # 获取当前截图
     current_image = t.device.image
     # 检测 I_DICE_1, I_DICE_2, I_DICE_3 出现的次数
     dice_1_count = len(t.I_DICE_1.match_all_any(current_image))
     dice_2_count = len(t.I_DICE_2.match_all_any(current_image))
     dice_3_count = len(t.I_DICE_3.match_all_any(current_image))
-    logger.info(f'Dice 1: {dice_1_count}, Dice 2: {dice_2_count}, Dice 3: {dice_3_count}')
+    logger.info(f'Dice 1: {dice_1_count}, Dice 2: {dice_2_count}, Dice 3: {dice_3_count}') """

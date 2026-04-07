@@ -659,10 +659,16 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.execute_consignment(config)
             
             # 退出
-            self.screenshot()
+            start_time = time.time()
+            while time.time()>start_time-5:
+                self.screenshot()
+                if self.ui_get_current_page() == page_main:
+                    break
+                if self.appear_then_click(self.I_BACK_YELLOW, interval=1):
+                    start_time = time.time()
+                    continue
             if self.ui_get_current_page() != page_main:
-                self.ui_goto(page_main) 
-
+                self.ui_goto(page_main)
     def run_mysteryshop(self):
         #self.account_info = self.get_account_info()
         self.screenshot()
