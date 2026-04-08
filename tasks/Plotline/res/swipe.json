@@ -1,0 +1,16 @@
+[
+  {
+    "itemName": "swipe_summon",
+    "roiFront": "494,158,326,71",
+    "roiBack": "484,422,333,89",
+    "description": "description",
+    "mode": "default"
+  },
+  {
+    "itemName": "swipe_shikigami",
+    "roiFront": "292,603,27,37",
+    "roiBack": "1001,431,22,50",
+    "description": "description",
+    "mode": "default"
+  }
+]

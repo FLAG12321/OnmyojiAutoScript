@@ -863,7 +863,6 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         返回:
         - 如果目标颜色与图像颜色匹配，则返回True，否则返回False。
         """
-        self.screenshot()
         # 如果未提供图像，则使用设备捕获的图像
         # logger.info(f"target [{target}], image [{image}]")
         if not self.appear(target):

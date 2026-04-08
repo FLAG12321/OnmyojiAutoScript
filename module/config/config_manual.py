@@ -9,8 +9,8 @@ class ConfigManual:
 
     SCHEDULER_PRIORITY = """
         Restart > SoulsTidy
-        > KekkaiUtilize > KekkaiActivation > DemonEncounter
-        > AreaBoss > GoldYoukai > ExperienceYoukai > Nian > Tako > AutoCheckinBigGod > RealmRaid > RyouToppa > DailyTrifles > Exploration > Daily > DailyForFlag>FindJade
+        > KekkaiUtilize > KekkaiActivation > Daily > DemonEncounter
+        > AreaBoss > GoldYoukai > ExperienceYoukai > Nian > Tako > AutoCheckinBigGod > RealmRaid > RyouToppa > DailyTrifles > Exploration >  DailyForFlag>FindJade
         > Dokan > AbyssShadows > Hunt > GuildBanquet > DemonRetreat
         > Orochi > OrochiMoans > OrochiJudgement > Sougenbi > FallenSun > EternitySea > SixRealms
         > ActivityShikigami > WantedQuests
@@ -19,7 +19,7 @@ class ConfigManual:
         > Pets > TalismanPass > Delegation > Hyakkiyakou
         > Secret > WeeklyTrifles > MysteryShop > Duel > ReturnGift
         > TrueOrochi > RichMan 
-        > MetaDemon > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls
+        > MetaDemon > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls> Plotline
         """
 
     DEVICE_OVER_HTTP = False
