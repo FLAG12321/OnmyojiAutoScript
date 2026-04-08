@@ -51,7 +51,8 @@ class SoloExploration(BaseExploration):
             elif scene == Scene.ENTRANCE:
                 if self.check_exit():
                     break
-                self.ui_click(self.I_E_EXPLORATION_CLICK, stop=self.I_E_SETTINGS_BUTTON)
+
+                self.ui_click(self.I_E_EXPLORATION_CLICK, stop=self.I_E_MAIN_FLAG)
                 explore_init = False
                 continue
             #
@@ -71,7 +72,11 @@ class SoloExploration(BaseExploration):
                                         retry_count = 3
                                 continue
                     else:
-                        self.ui_click(self.I_E_UNLOCK, stop=self.I_E_LOCK, interval=2)
+                        if self._config.general_battle_config.lock_team_enable == True: 
+                            logger.info(self._config)
+                            self.ui_click(self.I_E_UNLOCK, stop=self.I_E_LOCK, interval=2)
+                        else:
+                            self.ui_click(self.I_E_LOCK, stop=self.I_E_UNLOCK, interval=2)  
                     explore_init = True
                     continue
                 # 小纸人
@@ -89,6 +94,14 @@ class SoloExploration(BaseExploration):
                     if self.fire(fight_button):
                         logger.info(f'Fight, minions cnt {self.minions_cnt}')
                     continue
+                #弹窗
+                if self.appear_then_click(self.I_E_CLICK_ANY):
+                    continue
+                #体力不够
+                if self.appear(self.I_E_MAIN_SUSHI):
+                    self.ui_click_until_disappear(self.I_UI_BACK_RED)
+                    self.quit_explore()
+                    raise Exception('Insufficient AP')
                 # 向后拉,寻找怪
                 if search_fail_cnt >= 4:
                     search_fail_cnt = 0

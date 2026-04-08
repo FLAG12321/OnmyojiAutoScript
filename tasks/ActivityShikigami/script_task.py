@@ -707,7 +707,7 @@ if __name__ == "__main__":
     from module.device.device import Device
     from module.base.utils import load_image
     img_array = load_image(r"C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\temp_path\2026-04-01 12-30-01.png")
-    c = Config('OAS1')
+    c = Config('QMUMU2')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()

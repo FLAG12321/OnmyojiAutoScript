@@ -219,7 +219,7 @@
     "itemName": "e_unlock",
     "imageName": "res_e_unlock.png",
     "roiFront": "891,650,33,33",
-    "roiBack": "891,650,33,33",
+    "roiBack": "818,628,431,85",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -228,9 +228,36 @@
     "itemName": "e_lock",
     "imageName": "res_e_lock.png",
     "roiFront": "891,652,34,31",
-    "roiBack": "891,652,34,31",
+    "roiBack": "842,634,402,75",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "e_click_any",
+    "roiFront": "540,508,213,27",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "e_click_any.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "e_main_flag",
+    "roiFront": "992,599,181,23",
+    "roiBack": "747,545,527,95",
+    "description": "description",
+    "imageName": "e_main_flag.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "e_main_sushi",
+    "roiFront": "567,204,150,34",
+    "roiBack": "256,94,797,494",
+    "description": "description",
+    "imageName": "e_main_sushi.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

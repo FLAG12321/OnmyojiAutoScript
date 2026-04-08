@@ -120,9 +120,15 @@ class ExplorationAssets:
 	# 创建确认 
 	I_EXP_CREATE_ENSURE = RuleImage(roi_front=(534,486,218,59), roi_back=(516,475,244,85), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_create_ensure.png")
 	# description 
-	I_E_UNLOCK = RuleImage(roi_front=(891,650,33,33), roi_back=(891,650,33,33), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_unlock.png")
+	I_E_UNLOCK = RuleImage(roi_front=(891,650,33,33), roi_back=(818,628,431,85), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_unlock.png")
 	# description 
-	I_E_LOCK = RuleImage(roi_front=(891,652,34,31), roi_back=(891,652,34,31), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_lock.png")
+	I_E_LOCK = RuleImage(roi_front=(891,652,34,31), roi_back=(842,634,402,75), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_lock.png")
+	# description 
+	I_E_CLICK_ANY = RuleImage(roi_front=(540,508,213,27), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/e_click_any.png")
+	# description 
+	I_E_MAIN_FLAG = RuleImage(roi_front=(992,599,181,23), roi_back=(747,545,527,95), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/e_main_flag.png")
+	# description 
+	I_E_MAIN_SUSHI = RuleImage(roi_front=(567,204,150,34), roi_back=(256,94,797,494), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/e_main_sushi.png")
 
 
 	# Long Click Rule Assets

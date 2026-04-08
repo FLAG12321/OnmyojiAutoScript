@@ -863,6 +863,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         返回:
         - 如果目标颜色与图像颜色匹配，则返回True，否则返回False。
         """
+        self.screenshot()
         # 如果未提供图像，则使用设备捕获的图像
         # logger.info(f"target [{target}], image [{image}]")
         if not self.appear(target):
@@ -890,7 +891,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         # 比较目标图像和目标区域的颜色差异
         for i in range(3):
             if abs(average_color[i] - color[i]) > difference:
-                logger.warning(f" [{target.name}] 颜色匹配失败")
+                #logger.warning(f" [{target.name}] 颜色匹配失败")
                 return False
 
         logger.info(f"[{target.name}] 颜色匹配成功")

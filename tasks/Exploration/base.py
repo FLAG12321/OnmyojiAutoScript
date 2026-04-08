@@ -62,16 +62,22 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.screenshot()
 
         if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
+            logger.info("In world")
             return Scene.WORLD
         elif self.appear(self.I_UI_BACK_RED) and self.appear(self.I_E_EXPLORATION_CLICK):
+            logger.info("In entrance")
             return Scene.ENTRANCE
-        elif self.appear(self.I_E_SETTINGS_BUTTON) or self.appear(self.I_E_AUTO_ROTATE_ON) or self.appear(self.I_E_AUTO_ROTATE_OFF):
+        elif self.appear(self.I_E_SETTINGS_BUTTON) or self.appear(self.I_E_AUTO_ROTATE_ON) or self.appear(self.I_E_AUTO_ROTATE_OFF) or self.appear(self.I_E_MAIN_FLAG):
+            logger.info("In main scene")
             return Scene.MAIN
         elif self.is_in_prepare():
+            logger.info("In battle prepare")
             return Scene.BATTLE_PREPARE
         elif self.is_in_battle():
+            logger.info("In battle fighting")
             return Scene.BATTLE_FIGHTING
         elif self.is_in_room() or self.appear(self.I_CREATE_ENSURE):
+            logger.info("In room")
             return Scene.TEAM
 
         logger.info("Unknown scene")
@@ -419,6 +425,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.screenshot()
         if (self.appear(self.I_E_SETTINGS_BUTTON) or
                 self.appear(self.I_E_AUTO_ROTATE_ON) or
+                self.appear(self.I_E_MAIN_FLAG) or
                 self.appear(self.I_E_AUTO_ROTATE_OFF)):
             # 如果还在探索说明，这个是显示滑动导致挑战按钮不在范围内
             logger.warning('Fire button disappear, but still in exploration')
