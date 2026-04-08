@@ -129,10 +129,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 start_time=time.time()
                 continue
         self.screenshot()
-        if self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1):
-            logger.info("点击自动按钮")
-            self.click_dialogue()
-            return
+        self.click_dialogue()
 
 
     def handle_exploration_scene(self) -> None:
@@ -439,7 +436,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                         self.click(self.C_CLICK_CHANGE)
                         sleep(2)
                         continue
-                    t.swipe(t.S_SWIPE_SHIKIGAMI,2)
+                    self.swipe(self.S_SWIPE_SHIKIGAMI,2)
                     continue
                 if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                     continue
