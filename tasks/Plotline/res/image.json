@@ -155,7 +155,7 @@
   {
     "itemName": "click_to_exploration",
     "roiFront": "609,460,61,35",
-    "roiBack": "450,374,402,172",
+    "roiBack": "449,370,232,172",
     "description": "description",
     "imageName": "click_to_exploration.png",
     "method": "Template matching",

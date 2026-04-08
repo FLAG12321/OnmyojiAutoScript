@@ -61,7 +61,7 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_LV = RuleImage(roi_front=(854,244,25,22), roi_back=(704,134,387,374), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_lv.png")
 	# description 
-	I_CLICK_TO_EXPLORATION = RuleImage(roi_front=(609,460,61,35), roi_back=(450,374,402,172), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_to_exploration.png")
+	I_CLICK_TO_EXPLORATION = RuleImage(roi_front=(609,460,61,35), roi_back=(449,370,232,172), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_to_exploration.png")
 	# description 
 	I_PAGE_MAIN = RuleImage(roi_front=(370,37,19,39), roi_back=(18,19,507,94), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_main.png")
 	# description 
