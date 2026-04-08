@@ -84,6 +84,8 @@ class PlotlineAssets:
 	I_CLICK_CV = RuleImage(roi_front=(1057,646,31,27), roi_back=(0,0,1280,720), threshold=0.65, method="Template matching", file="./tasks/Plotline/res/click_cv.png")
 	# description 
 	I_CLICK_EYE_2 = RuleImage(roi_front=(599,108,87,35), roi_back=(0,0,1278,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/click_eye_2.png")
+	# description 
+	I_PAGE_SUMMON_2 = RuleImage(roi_front=(645,571,180,35), roi_back=(321,519,666,187), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_summon_2.png")
 
 
 	# Swipe Rule Assets

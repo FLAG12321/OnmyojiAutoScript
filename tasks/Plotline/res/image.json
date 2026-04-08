@@ -259,5 +259,14 @@
     "imageName": "click_eye_2.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "page_summon_2",
+    "roiFront": "645,571,180,35",
+    "roiBack": "321,519,666,187",
+    "description": "description",
+    "imageName": "page_summon_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

@@ -60,7 +60,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             
             # 检查各个场景，按优先级排序
             self.screenshot()
-            if self.appear_rgb(self.I_PAGE_SUMMON):
+            if self.appear_rgb(self.I_PAGE_SUMMON) or self.appear(self.I_PAGE_SUMMON_2):
                 return PlotlineScene.PLOTLINE_SCENE_SUMMON
             elif self.appear_then_click(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or self.appear_then_click(ExplorationAssets.I_BOSS_BATTLE_BUTTON, interval=1) or self.appear(self.I_CLICK_TO_AUTO, interval=1) or self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                 return PlotlineScene.PLOTLINE_SCENE_BATTLE
@@ -579,7 +579,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('QMUMU2')
+    c = Config('OAS2')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
