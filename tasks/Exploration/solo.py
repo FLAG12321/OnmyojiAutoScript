@@ -79,6 +79,11 @@ class SoloExploration(BaseExploration):
                             self.ui_click(self.I_E_LOCK, stop=self.I_E_UNLOCK, interval=2)  
                     explore_init = True
                     continue
+                #体力不够
+                if self.appear(self.I_E_MAIN_SUSHI):
+                    self.ui_click_until_disappear(self.I_UI_BACK_RED)
+                    self.quit_explore()
+                    raise Exception('Insufficient AP')
                 # 小纸人
                 if self.appear(self.I_BATTLE_REWARD):
                     if self.ui_get_reward(self.I_BATTLE_REWARD):
@@ -97,11 +102,7 @@ class SoloExploration(BaseExploration):
                 #弹窗
                 if self.appear_then_click(self.I_E_CLICK_ANY):
                     continue
-                #体力不够
-                if self.appear(self.I_E_MAIN_SUSHI):
-                    self.ui_click_until_disappear(self.I_UI_BACK_RED)
-                    self.quit_explore()
-                    raise Exception('Insufficient AP')
+                
                 # 向后拉,寻找怪
                 if search_fail_cnt >= 4:
                     search_fail_cnt = 0

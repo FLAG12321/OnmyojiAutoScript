@@ -268,5 +268,23 @@
     "imageName": "page_summon_2.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "page_privileges_2",
+    "roiFront": "951,337,31,32",
+    "roiBack": "919,288,79,112",
+    "description": "description",
+    "imageName": "page_privileges_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "click_privileges_subpage_2",
+    "roiFront": "58,353,92,30",
+    "roiBack": "19,115,193,468",
+    "description": "description",
+    "imageName": "click_privileges_subpage_2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

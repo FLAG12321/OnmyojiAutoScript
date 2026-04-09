@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import os
 import time
 import random
-from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError
+from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError, GameStuckError
 from module.logger import logger
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Plotline.assets import PlotlineAssets
@@ -37,7 +37,7 @@ class PlotlineScene(Enum):
 class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     plotline_conf: Plotline = None
     privileges_flag: bool = False
-    plotlinehelp_flag: bool = False
+    level_low: bool = False
     exploration_flag: bool = False
     def run(self):
         self.plotline_conf = self.config.plotline 
@@ -47,9 +47,24 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             #self.run_page_summon() """
             
         while 1:
-            self.screenshot()
-            current_scene = self.get_current_scene()
-            self.handle_scene(current_scene)
+            try:
+                self.screenshot()
+                current_scene = self.get_current_scene()
+                self.handle_scene(current_scene)
+            except TaskEnd:
+                self.set_next_run(task='Plotline',success=True)
+                logger.info("任务结束")
+            except GameStuckError as e:
+                logger.error(f"等待超时: {e}")
+                # 一分钟后再重启
+                self.custom_next_run(task='Plotline', custom_time=(datetime.now() + timedelta(minutes=1)), time_delta=0)
+                self.config.task_call('Restart')
+                raise e
+            except Exception as e:
+                self.set_next_run(task='Plotline',success=False)
+                raise e
+            
+                
 
     def get_current_scene(self) -> PlotlineScene:
         """ 获取当前场景，轮询最多10秒后如果仍未识别到有效场景则返回UNKNOWN """
@@ -62,7 +77,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             self.screenshot()
             if self.appear_rgb(self.I_PAGE_SUMMON) or self.appear(self.I_PAGE_SUMMON_2):
                 return PlotlineScene.PLOTLINE_SCENE_SUMMON
-            elif self.appear_then_click(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or self.appear_then_click(ExplorationAssets.I_BOSS_BATTLE_BUTTON, interval=1) or self.appear(self.I_CLICK_TO_AUTO, interval=1) or self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
+            elif self.appear(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or self.appear(ExplorationAssets.I_BOSS_BATTLE_BUTTON, interval=1) or self.appear(self.I_CLICK_TO_AUTO, interval=1) or self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                 return PlotlineScene.PLOTLINE_SCENE_BATTLE
             elif self.appear(self.I_PAGE_MAIN, interval=1):
                 return PlotlineScene.PLOTLINE_SCENE_MAIN
@@ -105,10 +120,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if self.appear(self.I_PAGE_PRIVILEGES):
                 return
             if not self.privileges_flag and self.appear_rgb(self.I_CLICK_TO_PRIVILEGES):
-                self.appear_then_click(self.I_CLICK_TO_PRIVILEGES,interval=1)
-                logger.info("前往新手特权")
-                start_time = time.time()
-                continue
+                if self.level_low == False:
+                    self.appear_then_click(self.I_CLICK_TO_PRIVILEGES,interval=1)
+                    logger.info("前往新手特权")
+                    start_time = time.time()
+                    continue
             if self.appear_rgb(self.I_CLICK_LV):
                 if self.appear_then_click(self.I_CLICK_LV,interval=1):
                     self.exploration_flag =True
@@ -128,6 +144,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     self.click(self.C_CLICK_CURSOR)
                 start_time=time.time()
                 continue
+        self.level_low = False
         self.screenshot()
         self.click_dialogue()
 
@@ -151,6 +168,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         solo_exploration._config.general_battle_config.lock_team_enable = False
         solo_exploration._config.exploration_config.minions_cnt=15
         solo_exploration._config.exploration_config.up_type=UpType.ALL
+        solo_exploration._config.scrolls.scrolls_enable=False
         logger.info("已取消探索任务中的队伍锁定")
         
         # 临时替换battle_wait和battle_before方法为当前类的实现
@@ -299,6 +317,13 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     def handle_battle_scene(self) -> None:
         """ 处理战斗场景 """
         logger.info("当前在战斗场景")
+        start_time = time.time()
+        while time.time()-start_time<5:
+            self.screenshot()
+            if self.appear(self.I_CLICK_TO_AUTO, interval=1) or self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
+                break
+            if self.appear_then_click(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or self.appear_then_click(ExplorationAssets.I_BOSS_BATTLE_BUTTON,interval=1):
+                start_time=time.time()
         self.screenshot()
         self.run_general_battle()
 
@@ -308,11 +333,26 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         start_time=time.time()
         while time.time()-start_time<5:
             self.screenshot()
-            if self.privileges_flag == True and self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
+            if (self.privileges_flag == True or self.level_low ==True) and self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
                 logger.info("点击黄色返回按钮")
                 break
             if self.appear(self.I_FLAG_LEASE):
                 self.privileges_flag = True
+                continue
+            
+            if self.appear(self.I_PAGE_PRIVILEGES_2):
+                self.level_low = True
+                while time.time()-start_time<5:
+                    self.screenshot()
+                    if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE_2, interval=1):
+                        logger.info("点击式神借用按钮")
+                        self.level_low = False
+                        start_time=time.time()
+                        break
+                start_time=time.time()
+                continue    
+            if self.appear_then_click(self.I_PAGE_CLICK_ANY, interval=1) or self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                start_time=time.time()
                 continue
             if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE, interval=1) :
                 logger.info("点击特权按钮")
@@ -485,6 +525,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.click(self.C_CLICK_RANDOM_3)
                 self.click(self.C_CLICK_RANDOM_2)
                 self.click(self.C_CLICK_RANDOM_1)
+                self.swipe(self.S_SWIPE_SUMMON,2)
             if attack_flag and self.appear_then_click(self.I_CLICK_ATTACK, interval=0.3):
                 click_cnt+=1
                 continue
