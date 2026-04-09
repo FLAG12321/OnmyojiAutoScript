@@ -1,6 +1,9 @@
 import importlib
 from datetime import datetime, timedelta
 import os
+import threading
+import json
+from pathlib import Path
 
 from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError
 from module.logger import logger
@@ -15,55 +18,168 @@ from script import Script
 
 class ScriptTask(GameUi, DailyAssets):
     daily_conf: Daily = None
+    # 添加一个类级别的锁，用于同步关机操作
+    _shutdown_lock = threading.Lock()
 
     def run(self):
-        self.daily_conf = self.config.daily 
-        sup_account_list = self._get_sorted_accounts()
+        import os
+        pid = os.getpid()
+        logger.info(f"Starting script task with PID {pid}")
+        # 开始执行任务时，在进度文件中标记当前进程
+        self._mark_task_start(pid)
         
-        login_time = self.daily_conf.daily_config.need_login_time
-        
-        for accountInfo in sup_account_list:
-            if not self._should_process_account(accountInfo, login_time):
-                continue
-                
-            max_retries = 3
-            retry_count = 0
+        try:
+            self.daily_conf = self.config.daily 
+            sup_account_list = self._get_sorted_accounts()
             
-            while retry_count < max_retries:
-                try:
-                    if self._process_single_account(accountInfo):
-                        # 成功处理账号，跳出重试循环
-                        break
-                    else:
-                        retry_count += 1
-                        if retry_count < max_retries:
-                            logger.info(f"Account {accountInfo.character} failed, retrying ({retry_count}/{max_retries})...")
+            login_time = self.daily_conf.daily_config.need_login_time
+            
+            for accountInfo in sup_account_list:
+                if not self._should_process_account(accountInfo, login_time):
+                    continue
+                    
+                max_retries = 3
+                retry_count = 0
+                
+                while retry_count < max_retries:
+                    try:
+                        if self._process_single_account(accountInfo):
+                            # 成功处理账号，跳出重试循环
+                            break
                         else:
-                            logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")            
-                except GameNotRunningError:
-                    raise   GameNotRunningError("Game Not Running")
-                except Exception as e:
-                    logger.error(f"Error processing account {accountInfo.character}: {e}")
-                    self.config.notifier.push(
-                        content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",  
-                        title="ERROR"
-                    )
-                    self.daily_conf.daily_config.need_login = False
-                    self.daily_conf.daily_config.need_login_time = login_time
-                    self.save_config()
-                    self.next_run("Daily", success=False)
-                    Script.save_error_log(self)
-                            
-        self._notify_daily_completion()
-        # 检查是否需要关机
-        if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_tongxin_battle_enable:
-            self._shutdown_system()
-        self.next_run("Daily", success=True)
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                logger.info(f"Account {accountInfo.character} failed, retrying ({retry_count}/{max_retries})...")
+                            else:
+                                logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")            
+                    except GameNotRunningError:
+                        raise   GameNotRunningError("Game Not Running")
+                    except Exception as e:
+                        logger.error(f"Error processing account {accountInfo.character}: {e}")
+                        self.config.notifier.push(
+                            content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",  
+                            title="ERROR"
+                        )
+                        self.daily_conf.daily_config.need_login = False
+                        self.daily_conf.daily_config.need_login_time = login_time
+                        self.save_config()
+                        self.next_run("Daily", success=False)
+                        Script.save_error_log(self)
+                                
+            self._notify_daily_completion()
+            # 检查是否需要关机
+            if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_tongxin_battle_enable:
+                self._coordinated_shutdown_system()
+            self.next_run("Daily", success=True)
+        finally:
+            # 无论任务是否成功完成，都要标记为完成
+            self._mark_task_completed(pid)
         
         raise TaskEnd("Daily")
 
-    def _shutdown_system(self):
-        """执行系统关机操作"""
+    def _mark_task_start(self, pid):
+        """
+        标记进程开始执行任务
+        """
+        progress_file = Path('./logs/daily_progress.json')
+        progress_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with self._shutdown_lock:
+            # 读取现有进度信息
+            progress_data = {}
+            if progress_file.exists():
+                try:
+                    with open(progress_file, 'r', encoding='utf-8') as f:
+                        progress_data = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    progress_data = {}
+            
+            # 标记当前进程为运行中
+            progress_data[f'process_{pid}'] = {
+                'status': 'running',
+                'start_time': datetime.now().isoformat(),
+                'completed': False
+            }
+            
+            # 保存更新后的进度
+            with open(progress_file, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+    
+    def _mark_task_completed(self, pid):
+        """
+        标记进程任务已完成
+        """
+        progress_file = Path('./logs/daily_progress.json')
+        
+        with self._shutdown_lock:
+            # 读取现有进度信息
+            progress_data = {}
+            if progress_file.exists():
+                try:
+                    with open(progress_file, 'r', encoding='utf-8') as f:
+                        progress_data = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    progress_data = {}
+                    
+            # 标记当前进程为已完成
+            if f'process_{pid}' in progress_data:
+                progress_data[f'process_{pid}'].update({
+                    'status': 'completed',
+                    'completed': True,
+                    'completed_time': datetime.now().isoformat()
+                })
+            
+            # 保存更新后的进度
+            with open(progress_file, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+
+    def _coordinated_shutdown_system(self):
+        """
+        协调多个进程的关机操作
+        使用文件标记来跟踪完成的进程数
+        """
+        import os
+        import time
+        
+        pid = os.getpid()
+        progress_file = Path('./logs/daily_progress.json')
+        
+        # 标记当前进程已完成
+        self._mark_task_completed(pid)
+        
+        # 等待一小段时间，让其他进程也有机会更新状态
+        time.sleep(5)
+        
+        # 检查是否所有进程都完成了
+        with self._shutdown_lock:
+            # 重新读取进度信息
+            if progress_file.exists():
+                try:
+                    with open(progress_file, 'r', encoding='utf-8') as f:
+                        progress_data = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    progress_data = {}
+                    
+                # 检查是否所有标记的进程都完成了
+                all_completed = all(
+                    v.get('completed', False) for v in progress_data.values()
+                )
+                
+                if all_completed and len(progress_data) > 0:
+                    logger.info(f"All {len(progress_data)} processes completed, executing shutdown")
+                    self._execute_shutdown()
+                    
+                    # 清理进度文件
+                    try:
+                        progress_file.unlink()
+                    except:
+                        pass
+                else:
+                    remaining = sum(1 for v in progress_data.values() if not v.get('completed', False))
+                    logger.info(f"Not all processes completed yet, {remaining} remaining")
+    
+    def _execute_shutdown(self):
+        """实际执行系统关机操作"""
         import platform
         import subprocess
         
@@ -96,19 +212,55 @@ class ScriptTask(GameUi, DailyAssets):
         except Exception as e:
             logger.error(f"执行关机时发生错误: {e}")
 
+    def _shutdown_system(self):
+        """执行系统关机操作（旧版本，保持向后兼容）"""
+        self._execute_shutdown()
+
     def _get_sorted_accounts(self):
-        """获取按最后完成时间排序的账号列表，按时间从大到小排序（最新完成的在前）"""
+        """获取按最后完成时间排序的账号列表，先按账号分组使同账号角色连续，再按账号整体完成时间排序"""
         if not self.daily_conf.sup_account_list:
             return []
         
-        # 按照 last_complete_time 从大到小排序（时间最新的在前）
-        sorted_list = sorted(
-            self.daily_conf.sup_account_list, 
-            key=lambda account: account.last_complete_time, 
+        from collections import defaultdict
+        from datetime import datetime
+        
+        # 按账号（account）分组
+        account_groups = defaultdict(list)
+        for account_info in self.daily_conf.sup_account_list:
+            account_groups[account_info.account].append(account_info)
+        
+        # 计算每个账号的最后完成时间的最大值（即最晚完成的那个），用于排序整个账号组
+        account_times = {}
+        for account, account_list in account_groups.items():
+            # 计算该账号下所有角色的最后完成时间的最大值（最晚完成的那个）
+            latest_completion_time = max([acc.last_complete_time for acc in account_list])
+            account_times[account] = latest_completion_time
+        
+        # 按账号的最晚完成时间排序（从大到小，即最晚完成的账号在前）
+        sorted_accounts_by_time = sorted(
+            account_groups.keys(),
+            key=lambda acc: account_times[acc],
             reverse=True  # 从大到小排序
         )
-        return sorted_list
-        #return self.daily_conf.sup_account_list
+        
+        # 按账号排序后，对每个账号内的角色也进行排序
+        result = []
+        for account in sorted_accounts_by_time:
+            # 对同一账号内的角色按最后完成时间排序（最新完成的在前）
+            sorted_account_chars = sorted(
+                account_groups[account],
+                key=lambda x: x.last_complete_time,
+                reverse=True
+            )
+            result.extend(sorted_account_chars)
+        
+        # 打印排序后的结果
+        logger.info("_get_sorted_accounts result: account character last_complete_time")
+        for account_info in result:
+            logger.info(f"{account_info.account} {account_info.character} {account_info.last_complete_time}")
+        
+        return result
+
     def _should_process_account(self, account_info, login_time):
         """判断是否应该处理该账号"""
         logger.info(f"Checking if account {account_info.character} should be processed")
@@ -168,6 +320,8 @@ class ScriptTask(GameUi, DailyAssets):
 
     def _switch_to_account(self, account_info):
         """切换到指定账号"""
+        # 在切换账号前，重置检测记录，避免影响后续账号
+        self.device.stuck_record_clear()
         success = SwitchAccount(self.config, self.device, account_info).switchAccount()
         if not success:
             logger.warning("Switch to %s-%s Failed", account_info.character, account_info.svr)
@@ -292,6 +446,7 @@ class ScriptTask(GameUi, DailyAssets):
         @param item: 账号信息
         @param last_complete_time: 需要比较的时间
         """
+        logger.info(f"Account: {item.character}, Last completion time: {last_complete_time}")
         last_time = item.last_complete_time
         return last_complete_time > last_time
 
@@ -352,6 +507,7 @@ class ScriptTask(GameUi, DailyAssets):
             self.daily_conf.daily_config.total_tingyuan_enable = False
             self.daily_conf.daily_config.total_mail_enable = True
             self.daily_conf.daily_config.total_xiezuo_enable = True
+            self.daily_conf.daily_config.need_login = True
             self.config.model.daily = self.daily_conf
             
             self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
@@ -392,8 +548,9 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('oas1')
+    c = Config('QMUMU2')
     d = Device(c)
     t = ScriptTask(c, d)
-
-    t.run()
+    t.daily_conf = t.config.daily 
+    sup_account_list = t._get_sorted_accounts()
+    #t.run()

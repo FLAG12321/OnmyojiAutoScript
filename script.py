@@ -47,7 +47,8 @@ class Script:
         'ActivityShikigami',
         'AbyssShadows',
         'EternitySea',
-        'BondlingFairyland'
+        'BondlingFairyland',
+        'Daily',
     ]
 
     def __init__(self, config_name: str ='oas') -> None:
@@ -426,7 +427,7 @@ class Script:
             if self._should_notify_task_end(task_name):
                 self.config.notifier.push(
                     title=f'任务提醒',
-                    content=f"{I18n.trans_zh_cn(command)}{command} 任务执行完毕"
+                    content=f"{I18n.trans_zh_cn(command)}{command} 任务执行完毕，完成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 )
             return True
         except GameNotRunningError as e:
