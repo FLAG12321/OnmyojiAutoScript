@@ -59,5 +59,7 @@ class Dokan(ConfigBase):
     dokan_config: DokanConfig = Field(default_factory=DokanConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,description='正常寮预设')
     general_battle_config2: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,description='福利寮预设')
+    general_battle_config_master: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,description='馆主战阵容预设')
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig,description='正常寮切换御魂')
     switch_soul_config2: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig,description='福利寮切换御魂')
+    switch_soul_config_master: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig,description='馆主战切换御魂')

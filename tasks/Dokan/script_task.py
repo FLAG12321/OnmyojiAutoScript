@@ -4,6 +4,7 @@
 # @note     draft version without full test
 # github    https://github.com/roarhill/oas
 import time
+import os
 from time import sleep
 
 import cv2
@@ -322,7 +323,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     continue
             # 场景状态：馆主第一阵容 且战斗未开始
             elif current_scene == DokanScene.RYOU_DOKAN_SCENE_BATTLE_MASTER_FIRST:
-                battle_success = self.dokan_battle(cfg)
+                battle_success = self.dokan_battle(cfg, is_master_battle=True)
                 if  battle_success:
                     # TEST 只打一次 应该是还在战斗界面 处于未准备界面(RYOU_DOKAN_SCENE_BATTLE_MASTER_SECOND)
                     self.first_master_killed = True
@@ -352,6 +353,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         # 状态：是否完成馆员战斗
         if self.boss_battles == False and self.appear(self.I_RYOU_DOKAN_MASTER_BATTLE):
             self.boss_battles = True
+            # 在等待馆主战时进行馆主阵容御魂切换
+            self.dokan_switch_soul(mode='master')
         # 再战道馆
         if self.appear(self.I_CONTINUE_DOKAN):
             current_scene = DokanScene.RYOU_DOKAN_SCENE_FAILED_VOTE_NO
@@ -417,7 +420,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         # 状态：战斗结算，可能是打完小朋友了，也可能是失败了。
         if self.appear(self.I_RYOU_DOKAN_BATTLE_OVER, threshold=0.85):
             logger.info(f"打完看到魂奖励中")
-            self.save_image()
+            self.dokan_save_image()
             self.appear_then_click(self.I_RYOU_DOKAN_BATTLE_OVER)
             return True, DokanScene.RYOU_DOKAN_SCENE_BATTLE_OVER
         # 如果出现失败 就点击
@@ -441,22 +444,38 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         
 
         return True, DokanScene.RYOU_DOKAN_SCENE_UNKNOWN
-
-    def dokan_battle(self, cfg: Dokan):
+    def dokan_save_image(self):
+        sleep(1)
+        self.screenshot()
+        from module.base.utils import save_image
+        now=datetime.now()
+        folder_name = f'screenshots'
+        if not os.path.exists( f'./{folder_name}'):
+            os.mkdir(f'./{folder_name}')
+        folder = f'./{folder_name}'
+        save_image(self.screenshot(), f'{folder}/道馆_{now.year}-{now.month:02d}-{now.day:02d}     {now.hour:02d}-{now.minute:02d}-{now.second:02d}.png')
+        
+        
+    def dokan_battle(self, cfg: Dokan, is_master_battle=False):
         """ 道馆战斗
         道馆集结结束后会自动进入战斗，打完一个也会自动进入下一个，因此直接点击右下角的开始
         :return: 战斗成功(True) or 战斗失败(False) or 区域不可用（False）
         """
-        # 更换队伍
-        if self.open_welfare == False:
+        # 根据是否为馆主战选择对应的配置
+        if is_master_battle:
+            config: GeneralBattleConfig = cfg.general_battle_config_master
+        elif self.open_welfare == False:
             config: GeneralBattleConfig = cfg.general_battle_config
         else:
             config: GeneralBattleConfig = cfg.general_battle_config2
-        if not self.team_switched:
-            logger.info(f"switch team preset: enable={config.preset_enable}, preset_group={config.preset_group}, preset_team={config.preset_team}")
-            self.switch_preset_team(config.preset_enable, config.preset_group, config.preset_team)
-            self.team_switched = True
-            # 切完队伍后有时候会卡顿，先睡一觉，防止快速跳到绿标流程，导致未能成功绿标
+            
+        # 统一处理队伍切换逻辑，无论是普通战斗还是馆主战
+        logger.info(f"switch team preset: enable={config.preset_enable}, preset_group={config.preset_group}, preset_team={config.preset_team}")
+        self.switch_preset_team(config.preset_enable, config.preset_group, config.preset_team)
+        self.team_switched = True
+        # 切完队伍后有时候会卡顿，先睡一觉，防止快速跳到绿标流程，导致未能成功绿标
+        time.sleep(0.5)
+
 
         while 1:
             self.screenshot()
@@ -505,13 +524,14 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             # 如果领奖励
             if self.appear(self.I_RYOU_DOKAN_BATTLE_OVER, threshold=0.6):
                 logger.info("领奖励,那个魂")
-                self.save_image()
+                self.dokan_save_image()
                 self.ui_click_until_disappear(self.I_RYOU_DOKAN_BATTLE_OVER)
                 break
 
             # 如果领奖励出现金币
             if self.appear(GeneralBattle.I_REWARD_GOLD, threshold=0.8):
                 logger.info("领奖励,那个金币")
+                self.dokan_save_image()
                 self.ui_click_until_disappear(GeneralBattle.I_REWARD_GOLD)
                 break
 
@@ -949,6 +969,44 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         # 切换御魂
         self.dokan_switch_soul()
 
+    def dokan_switch_soul(self, mode='normal'):
+        """
+        统一的切换御魂方法
+        :param mode: 切换模式，'normal'为普通寮战（馆员），'master'为馆主战
+        """
+        # 更改式神录跳转
+        ipages.page_shikigami_records.links.clear()
+        if ipages.page_shikigami_records in ipages.page_main.links:
+            del ipages.page_main.links[ipages.page_shikigami_records]
+        ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_dokan)
+        ipages.page_dokan.link(button=self.I_PAGE_DOKAN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
+        self.ui_goto(ipages.page_dokan)
+        self.ui_goto_page(ipages.page_shikigami_records)
+        
+        cfg = self.config.dokan
+
+        if mode == 'master':
+            # 馆主战阵容御魂切换
+            if cfg.switch_soul_config_master.enable:
+                self.run_switch_soul(cfg.switch_soul_config_master.switch_group_team)
+            if cfg.switch_soul_config_master.enable_switch_by_name:
+                self.run_switch_soul_by_name(cfg.switch_soul_config_master.group_name, cfg.switch_soul_config_master.team_name)
+        else:
+            # 普通寮战阵容御魂切换
+            if self.open_welfare:
+                # 自动换御魂 福利寮
+                if cfg.switch_soul_config2.enable:
+                    self.run_switch_soul(cfg.switch_soul_config2.switch_group_team)
+                if cfg.switch_soul_config2.enable_switch_by_name:
+                    self.run_switch_soul_by_name(cfg.switch_soul_config2.group_name, cfg.switch_soul_config2.team_name)
+            else:
+                # 自动换御魂
+                if cfg.switch_soul_config.enable:
+                    self.run_switch_soul(cfg.switch_soul_config.switch_group_team)
+                if cfg.switch_soul_config.enable_switch_by_name:
+                    self.run_switch_soul_by_name(cfg.switch_soul_config.group_name, cfg.switch_soul_config.team_name)
+
+        self.ui_goto(ipages.page_dokan)
     def appear_rgb(self, target, image=None, difference: int = 10):
         """
         判断目标的平均颜色是否与图像中的颜色匹配。
@@ -1048,32 +1106,6 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
     def position_offset(self, src, offset: tuple):
         return (src[0] + offset[0], src[1] + offset[1]
                 , src[2] + offset[2], src[3] + offset[3])
-
-    def dokan_switch_soul(self):
-        # 更改式神录跳转
-        ipages.page_shikigami_records.links.clear()
-        if ipages.page_shikigami_records in ipages.page_main.links:
-            del ipages.page_main.links[ipages.page_shikigami_records]
-        ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_dokan)
-        ipages.page_dokan.link(button=self.I_PAGE_DOKAN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
-        self.ui_goto(ipages.page_dokan)
-        self.ui_goto_page(ipages.page_shikigami_records)
-        cfg = self.config.dokan
-
-        if self.open_welfare:
-            # 自动换御魂 福利寮
-            if cfg.switch_soul_config2.enable:
-                self.run_switch_soul(cfg.switch_soul_config2.switch_group_team)
-            if cfg.switch_soul_config2.enable_switch_by_name:
-                self.run_switch_soul_by_name(cfg.switch_soul_config2.group_name, cfg.switch_soul_config2.team_name)
-        else:
-            # 自动换御魂
-            if cfg.switch_soul_config.enable:
-                self.run_switch_soul(cfg.switch_soul_config.switch_group_team)
-            if cfg.switch_soul_config.enable_switch_by_name:
-                self.run_switch_soul_by_name(cfg.switch_soul_config.group_name, cfg.switch_soul_config.team_name)
-
-        self.ui_goto_page(page_dokan)
 
     def finish_task(self):
         # 恢复式神录跳转
