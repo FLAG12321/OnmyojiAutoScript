@@ -3,6 +3,8 @@ from module.device.device import Device
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main,page_friends
 from tasks.SearchId.assets import SearchIdAssets
+from module.exception import TaskEnd, RequestHumanTakeover
+from datetime import datetime, timedelta
 import time
 import csv
 import os
@@ -16,9 +18,17 @@ class ScriptTask(GameUi,SearchIdAssets):
         super().__init__(config, device)
 
     def run(self):
-        self.prepare_run()
-        csv_file_path = str(Path(__file__).parent / 'data.csv')
-        self.batch_search_from_csv(csv_file_path)
+        
+        try: 
+            self.prepare_run()
+            csv_file_path = str(Path(__file__).parent / 'data.csv')
+            self.batch_search_from_csv(csv_file_path)
+            self.set_next_run(task='SearchId', success=True, finish=True)
+        except RequestHumanTakeover:
+            self.set_next_run(task='SearchId', success=False, finish=True)
+            raise TaskEnd ("SearchId任务失败")
+        
+        raise TaskEnd ("SearchId任务完成")
         """ # 检查是否启用了批量搜索模式
         if hasattr(self.config.search_id, 'batch_mode_enabled') and self.config.search_id.batch_mode_enabled:
             csv_file_path = str(Path(__file__).parent / 'data.csv')
@@ -87,6 +97,9 @@ class ScriptTask(GameUi,SearchIdAssets):
             logger.error(f"CSV文件不存在: {csv_file_path}")
         except Exception as e:
             logger.error(f"批量搜索过程中发生错误: {str(e)}")
+            self.custom_next_run(task='SearchId', custom_time=(datetime.now() + timedelta(minutes=1)), time_delta=0)
+            raise e
+            
 
     def safe_character_search_with_retry(self, id_value:int, max_retries=5):
         """
