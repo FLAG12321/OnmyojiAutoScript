@@ -39,4 +39,5 @@ oashya
 oas-checkin-biggod
 
 # For dev
+pyperclip==1.11.0
 #

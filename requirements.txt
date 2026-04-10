@@ -93,6 +93,7 @@ zope-event==5.0           # via gevent
 zope-interface==6.1       # via gevent
 
 av==14.2.0
-onnxocr==2025.5
+onnxocr==2025.5 
+pyperclip==1.11.0
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

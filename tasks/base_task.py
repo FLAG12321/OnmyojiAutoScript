@@ -15,6 +15,7 @@ from module.atom.list import RuleList
 from module.atom.long_click import RuleLongClick
 from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
+from module.atom.input import RuleInput  # 新增导入
 from module.base.timer import Timer
 from module.config.config import Config
 from module.device.device import Device
@@ -29,6 +30,7 @@ from typing import Union
 from enum import Enum
 from pydantic import Field
 from tasks.Component.config_base import ConfigBase
+
 
 
 class Week(str, Enum):
@@ -63,6 +65,9 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         """
         self.config = config
         self.device = device
+
+        # 初始化RuleInput实例
+        self.rule_input = RuleInput(device)
 
         self.interval_timer = {}  # 这个是用来记录每个匹配的运行间隔的，用于控制运行频率
         self.animates = {}  # 保存缓存
@@ -895,3 +900,32 @@ class BaseTask(GlobalGameAssets, CostumeBase):
 
         logger.info(f"[{target.name}] 颜色匹配成功")
         return True
+    def input_text(self, text: str):
+        """
+        在设备上输入文本（包括字符和数字）
+        注意：这要求设备上有一个可以接收输入的文本框处于焦点状态
+        
+        Args:
+            text (str): 要输入的文本
+        """
+        # 使用设备的输入方法直接输入
+        return self.rule_input.input_text(text)
+
+    def input_text_alternative(self, text: str):
+        """
+        使用替代方法输入文本（逐字符输入）
+        对于某些特殊字符或语言，这种方法可能更有效
+        
+        Args:
+            text (str): 蟊要输入的文本
+        """
+        return self.rule_input.input_text_alternative(text)
+
+    def input_number(self, number: Union[int, float, str]):
+        """
+        输入数字
+        
+        Args:
+            number (int/float/str): 要输入的数字
+        """
+        return self.rule_input.input_number(number)

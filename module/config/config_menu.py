@@ -36,7 +36,8 @@ class ConfigMenu:
             "MemoryScrolls",
             "Daily",
             "ReturnGift",
-            "Plotline"
+            "Plotline",
+            "SearchId"
         ]
         # 阴阳寮
         self.menu["Guild"] = ['KekkaiUtilize', 'KekkaiActivation', 'RealmRaid', 'RyouToppa', 'Dokan', 'CollectiveMissions',

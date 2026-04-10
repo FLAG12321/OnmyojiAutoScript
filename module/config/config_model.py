@@ -72,6 +72,7 @@ from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
 from tasks.Daily.config import Daily
 from tasks.Plotline.config import Plotline
+from tasks.SearchId.config import SearchId
 # ----------------------------------------------------------------------------------------------------------------------
 
 # 每周任务---------------------------------------------------------------------------------------------------------------
@@ -138,6 +139,7 @@ class ConfigModel(ConfigBase):
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
     daily: Daily = Field(default_factory=Daily)
     plotline: Plotline = Field(default_factory=Plotline)
+    search_id: SearchId = Field(default_factory=SearchId)
     return_gift: ReturnGift = Field(default_factory=ReturnGift)
     # 这些是每周任务
     true_orochi: TrueOrochi = Field(default_factory=TrueOrochi)
