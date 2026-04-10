@@ -51,9 +51,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.screenshot()
                 current_scene = self.get_current_scene()
                 self.handle_scene(current_scene)
-            except TaskEnd:
+            except TaskEnd as e:
                 self.set_next_run(task='Plotline',success=True)
                 logger.info("任务结束")
+                raise  e
             except GameStuckError as e:
                 logger.error(f"等待超时: {e}")
                 # 一分钟后再重启
@@ -425,6 +426,17 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if self.appear_then_click(self.I_CLICK_CV, interval=1):
                 start_time=time.time()
                 continue
+            if self.appear(self.I_PAGE_SKIP, interval=1):
+                start_time=time.time()
+                while time.time()-start_time<3:
+                    self.screenshot()
+                    if self.appear(self.I_CHECK_TICK, interval=1)and self.appear_then_click(self.I_PAGE_SKIP, interval=1):
+                        self.config.notifier.push(content=f'已跳过剧情', title='Plotline')
+                        raise TaskEnd
+                    if self.appear_then_click(self.I_CHECK_UNTICK, interval=1):
+                        start_time=time.time()
+                        continue
+                continue
             # 绑定手机号弹窗
             if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE, interval=1):
                 while 1:
@@ -613,13 +625,16 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
+    
     # from mypatch import SimplePatch
 
     # SimplePatch.patch()
 
-    c = Config('OAS2')
+    c = Config('OAS3')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
     t.run()
     t.swipe(t.S_SWIPE_SHIKIGAMI,2)
+    
+     

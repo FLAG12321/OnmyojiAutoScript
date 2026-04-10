@@ -286,5 +286,32 @@
     "imageName": "click_privileges_subpage_2.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "page_skip",
+    "roiFront": "729,468,127,42",
+    "roiBack": "685,446,231,98",
+    "description": "description",
+    "imageName": "page_skip.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "check_untick",
+    "roiFront": "425,402,27,34",
+    "roiBack": "344,374,196,77",
+    "description": "description",
+    "imageName": "check_untick.png",
+    "method": "Template matching",
+    "threshold": "0.8"
+  },
+  {
+    "itemName": "check_tick",
+    "roiFront": "425,402,27,34",
+    "roiBack": "344,374,196,77",
+    "description": "description",
+    "imageName": "check_tick.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

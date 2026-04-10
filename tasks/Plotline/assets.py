@@ -90,6 +90,12 @@ class PlotlineAssets:
 	I_PAGE_PRIVILEGES_2 = RuleImage(roi_front=(951,337,31,32), roi_back=(919,288,79,112), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_privileges_2.png")
 	# description 
 	I_CLICK_PRIVILEGES_SUBPAGE_2 = RuleImage(roi_front=(58,353,92,30), roi_back=(19,115,193,468), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_privileges_subpage_2.png")
+	# description 
+	I_PAGE_SKIP = RuleImage(roi_front=(729,468,127,42), roi_back=(685,446,231,98), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_skip.png")
+	# description 
+	I_CHECK_UNTICK = RuleImage(roi_front=(425,402,27,34), roi_back=(344,374,196,77), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/check_untick.png")
+	# description 
+	I_CHECK_TICK = RuleImage(roi_front=(425,402,27,34), roi_back=(344,374,196,77), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/check_tick.png")
 
 
 	# Swipe Rule Assets
