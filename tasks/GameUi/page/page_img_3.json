@@ -205,5 +205,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "退出战斗按钮"
+  },
+  {
+    "itemName": "dlc_exit",
+    "roiFront": "450,455,67,31",
+    "roiBack": "438,449,99,89",
+    "description": "description",
+    "imageName": "dlc_exit.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

@@ -39,6 +39,8 @@ class GameUiAssets:
 	I_AD_DISAPPEAR = RuleImage(roi_front=(412,405,37,40), roi_back=(412,405,37,40), threshold=0.75, method="Template matching", file="./tasks/GameUi/additional/additional_ad_disappear.png")
 	# description 
 	I_RECORDS_CLOSE = RuleImage(roi_front=(914,143,30,30), roi_back=(914,143,30,30), threshold=0.7, method="Template matching", file="./tasks/GameUi/additional/additional_records_close.png")
+	# description 
+	I_AD_DISAPPEAR_2 = RuleImage(roi_front=(414,397,41,42), roi_back=(383,378,91,73), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/ad_disappear_2.png")
 
 
 	# Image Rule Assets
@@ -195,6 +197,8 @@ class GameUiAssets:
 	I_DLC_CLOSE = RuleImage(roi_front=(916,147,24,25), roi_back=(916,147,24,25), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/store_dlc_close.png")
 	# 退出战斗按钮 
 	I_BACK_BATTLE = RuleImage(roi_front=(24,19,40,38), roi_back=(0,0,90,85), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_back_battle.png")
+	# description 
+	I_DLC_EXIT = RuleImage(roi_front=(450,455,67,31), roi_back=(438,449,99,89), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/dlc_exit.png")
 
 
 	# Image Rule Assets

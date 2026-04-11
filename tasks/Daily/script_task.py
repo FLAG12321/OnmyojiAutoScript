@@ -24,9 +24,10 @@ class ScriptTask(GameUi, DailyAssets):
     def run(self):
         import os
         pid = os.getpid()
-        logger.info(f"Starting script task with PID {pid}")
+        config_name = self.config.config_name  # 获取配置名称，例如oas1, oas2等
+        logger.info(f"Starting script task with PID {pid} for config {config_name}")
         # 开始执行任务时，在进度文件中标记当前进程
-        self._mark_task_start(pid)
+        self._mark_task_start(config_name, pid)
         
         try:
             self.daily_conf = self.config.daily 
@@ -73,13 +74,13 @@ class ScriptTask(GameUi, DailyAssets):
             self.next_run("Daily", success=True)
         finally:
             # 无论任务是否成功完成，都要标记为完成
-            self._mark_task_completed(pid)
+            self._mark_task_completed(config_name)
         
         raise TaskEnd("Daily")
 
-    def _mark_task_start(self, pid):
+    def _mark_task_start(self, config_name, pid):
         """
-        标记进程开始执行任务
+        标记进程开始执行任务，基于配置名称而非PID
         """
         progress_file = Path('./logs/daily_progress.json')
         progress_file.parent.mkdir(parents=True, exist_ok=True)
@@ -94,20 +95,21 @@ class ScriptTask(GameUi, DailyAssets):
                 except (json.JSONDecodeError, FileNotFoundError):
                     progress_data = {}
             
-            # 标记当前进程为运行中
-            progress_data[f'process_{pid}'] = {
+            # 使用配置名称标记当前进程为运行中，同时记录PID以便追踪
+            progress_data[f'config_{config_name}'] = {
                 'status': 'running',
                 'start_time': datetime.now().isoformat(),
-                'completed': False
+                'completed': False,
+                'pid': pid  # 记录当前PID
             }
             
             # 保存更新后的进度
             with open(progress_file, 'w', encoding='utf-8') as f:
                 json.dump(progress_data, f, ensure_ascii=False, indent=2)
     
-    def _mark_task_completed(self, pid):
+    def _mark_task_completed(self, config_name):
         """
-        标记进程任务已完成
+        标记进程任务已完成，基于配置名称而非PID
         """
         progress_file = Path('./logs/daily_progress.json')
         
@@ -121,9 +123,9 @@ class ScriptTask(GameUi, DailyAssets):
                 except (json.JSONDecodeError, FileNotFoundError):
                     progress_data = {}
                     
-            # 标记当前进程为已完成
-            if f'process_{pid}' in progress_data:
-                progress_data[f'process_{pid}'].update({
+            # 标记当前配置为已完成
+            if f'config_{config_name}' in progress_data:
+                progress_data[f'config_{config_name}'].update({
                     'status': 'completed',
                     'completed': True,
                     'completed_time': datetime.now().isoformat()
@@ -142,10 +144,11 @@ class ScriptTask(GameUi, DailyAssets):
         import time
         
         pid = os.getpid()
+        config_name = self.config.name  # 获取当前配置名称
         progress_file = Path('./logs/daily_progress.json')
         
         # 标记当前进程已完成
-        self._mark_task_completed(pid)
+        self._mark_task_completed(config_name)
         
         # 等待一小段时间，让其他进程也有机会更新状态
         time.sleep(5)
@@ -438,7 +441,7 @@ class ScriptTask(GameUi, DailyAssets):
         for info in self.daily_conf.sup_account_list:
             logger.info(f"Account: {info.character}, Last completion time: {info.last_complete_time}")
             
-        self.config.notifier.push(content="Daily任务执行完毕", title="任务提醒")
+        #self.config.notifier.push(content="Daily任务执行完毕", title="任务提醒")
 
     def is_need_login(self, item: AccountInfo, last_complete_time: datetime):
         """
@@ -548,9 +551,9 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('QMUMU2')
+    c = Config('QMUMU4')
     d = Device(c)
     t = ScriptTask(c, d)
-    t.daily_conf = t.config.daily 
-    sup_account_list = t._get_sorted_accounts()
-    #t.run()
+    """ t.daily_conf = t.config.daily 
+    sup_account_list = t._get_sorted_accounts() """
+    t.run()

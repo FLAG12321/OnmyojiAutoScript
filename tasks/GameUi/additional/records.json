@@ -16,5 +16,14 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
+  },
+  {
+    "itemName": "ad_disappear_2",
+    "roiFront": "414,397,41,42",
+    "roiBack": "383,378,91,73",
+    "description": "description",
+    "imageName": "ad_disappear_2.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]
