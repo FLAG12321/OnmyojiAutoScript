@@ -35,7 +35,7 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_CURSOR = RuleImage(roi_front=(1141,273,41,27), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_cursor.png")
 	# description 
-	I_PAGE_SUMMON = RuleImage(roi_front=(381,91,89,92), roi_back=(255,66,834,556), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_summon.png")
+	I_PAGE_SUMMON = RuleImage(roi_front=(381,91,89,92), roi_back=(255,66,834,556), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_summon.png")
 	# description 
 	I_CLICK_SUMMON = RuleImage(roi_front=(454,629,103,35), roi_back=(269,575,731,135), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_summon.png")
 	# description 
@@ -98,10 +98,17 @@ class PlotlineAssets:
 	I_CHECK_TICK = RuleImage(roi_front=(425,402,27,34), roi_back=(344,374,196,77), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/check_tick.png")
 
 
+	# Ocr Rule Assets
+	# description 
+	O_CHARACTER_LEVEL = RuleOcr(roi=(13,25,23,23), area=(0,0,100,100), mode="DIGIT", method="Default", keyword="", name="character_level")
+
+
 	# Swipe Rule Assets
 	# description 
 	S_SWIPE_SUMMON = RuleSwipe(roi_front=(494,158,326,71), roi_back=(484,422,333,89), mode="default", name="swipe_summon")
 	# description 
-	S_SWIPE_SHIKIGAMI = RuleSwipe(roi_front=(292,603,27,37), roi_back=(1001,431,22,50), mode="default", name="swipe_shikigami")
+	S_SWIPE_SHIKIGAMI = RuleSwipe(roi_front=(302,589,39,62), roi_back=(623,306,42,107), mode="default", name="swipe_shikigami")
+	# description 
+	S_SWIPE_BATTLE = RuleSwipe(roi_front=(458,171,69,22), roi_back=(697,164,63,19), mode="default", name="swipe_battle")
 
 

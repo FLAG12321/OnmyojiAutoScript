@@ -42,7 +42,7 @@
     "description": "description",
     "imageName": "page_summon.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": "0.8"
   },
   {
     "itemName": "click_summon",

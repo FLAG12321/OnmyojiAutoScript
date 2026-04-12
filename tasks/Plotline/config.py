@@ -9,7 +9,11 @@ from tasks.Component.config_base import ConfigBase, DateTime
 from tasks.Component.config_scheduler import Scheduler
 from tasks.WantedQuests.config import CooperationSelectMaskDescription, CooperationSelectMask, CooperationType
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+
 class PlotlineConfig(ConfigBase):
+    switch_system_shikigami: bool = Field(default=True)
+    experience_youkai_battle: bool = Field(default=True)
+    exploration_battle_lock: bool = Field(default=False)
     pass
 
 class Plotline(ConfigBase):

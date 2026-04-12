@@ -8,8 +8,15 @@
   },
   {
     "itemName": "swipe_shikigami",
-    "roiFront": "292,603,27,37",
-    "roiBack": "1001,431,22,50",
+    "roiFront": "302,589,39,62",
+    "roiBack": "623,306,42,107",
+    "description": "description",
+    "mode": "default"
+  },
+  {
+    "itemName": "swipe_battle",
+    "roiFront": "458,171,69,22",
+    "roiBack": "697,164,63,19",
     "description": "description",
     "mode": "default"
   }
