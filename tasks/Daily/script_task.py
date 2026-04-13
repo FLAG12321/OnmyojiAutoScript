@@ -70,7 +70,7 @@ class ScriptTask(GameUi, DailyAssets):
             self._notify_daily_completion()
             # 检查是否需要关机
             if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_tongxin_battle_enable:
-                self._coordinated_shutdown_system()
+                self._coordinated_shutdown_system(config_name)
             self.next_run("Daily", success=True)
         finally:
             # 无论任务是否成功完成，都要标记为完成
@@ -135,7 +135,7 @@ class ScriptTask(GameUi, DailyAssets):
             with open(progress_file, 'w', encoding='utf-8') as f:
                 json.dump(progress_data, f, ensure_ascii=False, indent=2)
 
-    def _coordinated_shutdown_system(self):
+    def _coordinated_shutdown_system(self,config_name):
         """
         协调多个进程的关机操作
         使用文件标记来跟踪完成的进程数
@@ -144,7 +144,6 @@ class ScriptTask(GameUi, DailyAssets):
         import time
         
         pid = os.getpid()
-        config_name = self.config.name  # 获取当前配置名称
         progress_file = Path('./logs/daily_progress.json')
         
         # 标记当前进程已完成

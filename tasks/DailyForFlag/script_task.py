@@ -291,16 +291,17 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
                 break
             retry_count+=1
-        self.screenshot()
-        if self.ui_get_current_page() != page_main:
-            self.ui_goto(page_main)
                 
         return True
     def run_mail(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
-        return self.harvest_mail()
+        result=self.harvest_mail()
+        self.screenshot()
+        if self.ui_get_current_page() != page_main:
+            self.ui_goto(page_main)
+        return result
 
     def run_tongxing(self, battle_enable, ap_enable):
         self.screenshot()
