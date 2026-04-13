@@ -17,6 +17,11 @@ class GameUiAssets:
 	I_ACT_LIST_EXPAND = RuleImage(roi_front=(1191,508,30,25), roi_back=(1160,456,92,103), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/additional_act_list_expand.png")
 
 
+	# Image Rule Assets
+	# description 
+	I_DLC_TICK = RuleImage(roi_front=(527,415,42,34), roi_back=(498,397,95,69), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/dlc_tick.png")
+
+
 	# Ocr Rule Assets
 	# 点击空白处关闭此界面 
 	O_CLICK_CLOSE_1 = RuleOcr(roi=(521,659,232,32), area=(521,659,232,32), mode="Single", method="Default", keyword="点击空白处关闭此界面", name="click_close_1")

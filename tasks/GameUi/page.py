@@ -186,6 +186,7 @@ page_team.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_TEAM, destination=page_team)
 # 收集 collection
 page_collection = Page(G.I_CHECK_COLLECTION)
+page_collection.additional =[G.I_DLC_TICK,G.I_DLC_EXIT]
 page_collection.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_COLLECTION, destination=page_collection)
 # 珍旅居
