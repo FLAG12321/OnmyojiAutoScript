@@ -19,9 +19,12 @@ from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
 from module.device.screenshot import Screenshot
+from module.device.screenshot import Screenshot
+
 
 class NoTicket(Exception):
     pass
+
 
 class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
 
@@ -169,11 +172,6 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
         self.answer_cnt += 1
         logger.info(f'Question count: {self.answer_cnt}')
 
-        # questions = self.O_QUESTION.detect_and_ocr(self.device.image)
-        # question = ''.join([q.ocr_text for q in questions])
-        # question = question.replace('?', '').replace('？', '').replace(' ', '').replace(',', '，')
-        # question = remove_symbols(question)
-
         index = self.anwser.answer_one(question=question,  options=[answer_1, answer_2, answer_3, answer_4])
         if index is None:
             logger.error('Now question has no answer, please check')
@@ -222,9 +220,6 @@ class ScriptTask(GameUi, QuizAssets, ActivityShikigamiAssets, Debugger):
                 question += text
         logger.info(f'answer_1: {answer_1}, answer_2: {answer_2}, answer_3: {answer_3}, answer_4: {answer_4}')    
         return question, answer_1, answer_2, answer_3, answer_4
-
-
-
 
 
 if __name__ == '__main__':

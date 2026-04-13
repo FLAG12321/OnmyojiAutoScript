@@ -203,7 +203,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 break
             if self.appear_then_click(self.I_WQ_SEAL, interval=1):
                 continue
-            if self.appear_then_click(self.I_WQ_DONE, interval=1):
+            if self.appear_then_click_multi_scale(self.I_WQ_DONE,scale_range=(0.8, 1.2) ,interval=1):
                 continue
             if self.appear_then_click(self.I_TRACE_ENABLE, interval=1):
                 continue
@@ -242,7 +242,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 break
             if self.appear_then_click(self.I_WQ_SEAL, interval=1):
                 continue
-            if self.appear_then_click(self.I_WQ_DONE, interval=1):
+            if self.appear_then_click_multi_scale(self.I_WQ_DONE,scale_range=(0.8, 1.2), interval=1):
                 continue
             if self.special_main and self.click(self.C_SPECIAL_MAIN, interval=3):
                 logger.info('Click special main left to find wanted quests')
@@ -325,11 +325,18 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             (类型, 地点层级，可以打败的数量，前往按钮, func)
             类型： 挑战0, 秘闻1， 探索2
             """
-            layer_limit = {
-                # 低层不限制
-                # "壹", "贰", "叁", "肆", "伍", "陆",
-                "柒", "捌", "玖", "拾", "番外"
-            }
+            # 获取用户设置的值
+            user_limit = self.config.model.wanted_quests.wanted_quests_config.layer_limit.value            
+            # 定义完整的层数后缀顺序
+            all_layers = ["壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖", "拾", "番外"]
+            # 根据用户选择进行截取，生成 layer_limit 集合
+            if user_limit == "无限制":
+                layer_limit = set()
+            else:
+                start_idx = all_layers.index(user_limit) if user_limit in all_layers else 6
+                # 截取该层及之后的所有层
+                layer_limit = set(all_layers[start_idx:])
+
             # ,荒川之怒·壹，4，前往按钮，function
             result = [-1, '', -1, GOTO_BUTTON[index], self.challenge, '']
             type_wq = OCR_WQ_TYPE[index].ocr(self.device.image)
