@@ -18,7 +18,8 @@ from module.exception import (GameNotRunningError,
                               GameStuckError,
                               GameTooManyClickError,
                               RequestHumanTakeover,
-                              EmulatorNotRunningError)
+                              EmulatorNotRunningError,
+                              EmulatorRunningError)
 from module.logger import logger
 import time
 
@@ -40,14 +41,18 @@ class Device(Platform, Screenshot, Control, AppControl):
                     logger.critical('Failed to start emulator after 3 trial')
                     raise RequestHumanTakeover
                 # Try to start emulator
+                logger.critical('Starting emulator...')
                 if self.emulator_instance is not None:
-                    self.emulator_start()
+                    self.emulator_start() 
                 else:
                     logger.critical(
                         f'No emulator with serial "{self.config.Emulator_Serial}" found, '
                         f'please set a correct serial'
                     )
                     raise RequestHumanTakeover
+            except EmulatorRunningError:
+                self.emulator_stop()
+
 
         # Auto-fill emulator info
         if IS_WINDOWS and self.config.script.device.emulatorinfo_type == 'auto':

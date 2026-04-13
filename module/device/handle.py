@@ -18,7 +18,7 @@ from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE)
 from module.config.config import Config
 from module.logger import logger
-
+from module.exception import *
 
 def handle_title2num(title: str) -> int:
     """
@@ -174,11 +174,12 @@ class Handle:
         if self.config.script.device.handle == '':
             logger.info('Handle is empty. oas not use handle')
             return
-
+    
         # 获取根的句柄
         self.root_handle_title = ''
         self.root_handle_num = 0
         self.root_handle = self.config.script.device.handle
+        logger.info(f'Handle is {self.root_handle}')
         if self.root_handle == "auto":
             logger.info('Handle is auto. oas will find window emulator')
             window_list = Handle.all_windows()
@@ -196,6 +197,9 @@ class Handle:
                 if handle_title2num(self.root_handle) != 0:
                     self.root_handle_num = handle_title2num(self.root_handle)
                     self.root_handle_title = self.root_handle
+                else:
+                    logger.info('Handle is None EmulatorRunningError')
+                    raise EmulatorRunningError
         logger.info(f'The root handle title is {self.root_handle_title} and num is {self.root_handle_num}')
 
         # 获取句柄树
@@ -203,9 +207,11 @@ class Handle:
         Handle.handle_tree(self.root_handle_num, self.root_node)
         logger.info('Emulator handle structure:')
         for pre, fill, node in RenderTree(self.root_node):
-            logger.info("%s%s" % (pre, node.name))
+            pass
+            #logger.info("%s%s" % (pre, node.name))
         for pre, fill, node in RenderTree(self.root_node):
-            logger.info("%s%s" % (pre, node.num))
+            pass
+            #logger.info("%s%s" % (pre, node.num))
 
         # 判断是哪一个模拟器 通过句柄树结构
         logger.info(f'Emulator family: {self.emulator_family}')

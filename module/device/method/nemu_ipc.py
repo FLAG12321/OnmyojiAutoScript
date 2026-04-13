@@ -44,34 +44,64 @@ class CaptureStd:
         self.stderr = b''
 
     def _redirect_stdout(self, to):
-        sys.stdout.close()
-        os.dup2(to, self.fdout)
-        sys.stdout = os.fdopen(self.fdout, 'w')
+        if sys.stdout is not None:
+            sys.stdout.close()
+            os.dup2(to, self.fdout)
+            sys.stdout = os.fdopen(self.fdout, 'w')
 
     def _redirect_stderr(self, to):
-        sys.stderr.close()
-        os.dup2(to, self.fderr)
-        sys.stderr = os.fdopen(self.fderr, 'w')
+        if sys.stderr is not None:
+            sys.stderr.close()
+            os.dup2(to, self.fderr)
+            sys.stderr = os.fdopen(self.fderr, 'w')
 
     def __enter__(self):
-        self.fdout = sys.stdout.fileno()
-        self.fderr = sys.stderr.fileno()
+        # Handle cases where stdout or stderr could be None
+        sys.stdout = None
+        sys.stderr = None
+        if sys.stdout is None:
+            self.fdout = None
+        else:
+            self.fdout = sys.stdout.fileno()
+            
+        if sys.stderr is None:
+            self.fderr = None
+        else:
+            self.fderr = sys.stderr.fileno()
+            
         self.reader_out, self.writer_out = os.pipe()
         self.reader_err, self.writer_err = os.pipe()
-        self.old_stdout = os.dup(self.fdout)
-        self.old_stderr = os.dup(self.fderr)
+        
+        # Store old file descriptors if they exist
+        if self.fdout is not None:
+            self.old_stdout = os.dup(self.fdout)
+        else:
+            self.old_stdout = None
+            
+        if self.fderr is not None:
+            self.old_stderr = os.dup(self.fderr)
+        else:
+            self.old_stderr = None
 
         file_out = os.fdopen(self.writer_out, 'w')
         file_err = os.fdopen(self.writer_err, 'w')
-        self._redirect_stdout(to=file_out.fileno())
-        self._redirect_stderr(to=file_err.fileno())
+        
+        if sys.stdout is not None:
+            self._redirect_stdout(to=file_out.fileno())
+        if sys.stderr is not None:
+            self._redirect_stderr(to=file_err.fileno())
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._redirect_stdout(to=self.old_stdout)
-        self._redirect_stderr(to=self.old_stderr)
-        os.close(self.old_stdout)
-        os.close(self.old_stderr)
+        if sys.stdout is not None and self.old_stdout is not None:
+            self._redirect_stdout(to=self.old_stdout)
+        if sys.stderr is not None and self.old_stderr is not None:
+            self._redirect_stderr(to=self.old_stderr)
+            
+        if self.old_stdout is not None:
+            os.close(self.old_stdout)
+        if self.old_stderr is not None:
+            os.close(self.old_stderr)
 
         self.stdout = self.recvall(self.reader_out)
         self.stderr = self.recvall(self.reader_err)

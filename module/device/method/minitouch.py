@@ -582,19 +582,81 @@ class Minitouch(Connection):
         self.minitouch_send()
 
     @retry
-    def swipe_minitouch(self, p1, p2):
-        points = insert_swipe(p0=p1, p3=p2)
+    def swipe_minitouch(self, p1, p2, duration=None):
+        """
+        Swipe from one point to another with specified duration if provided
+        
+        Args:
+            p1: Starting point (x, y)
+            p2: Ending point (x, y)
+            duration: Duration of the swipe in seconds, if None use default behavior (each step 10ms)
+        """
+        if duration is not None:
+            # Calculate number of points based on duration, with 10ms per step
+            # So if duration is 1.0s (1000ms), and each step is 10ms, we need 100 points
+            num_points = max(int(duration * 100), 5)  # At least 5 points to ensure smoothness
+            points = self._generate_bezier_points(p1, p2, num_points)
+        else:
+            # Use default algorithm when no duration specified
+            points = insert_swipe(p0=p1, p3=p2)
+        
         builder = self.minitouch_builder
 
         builder.down(*points[0]).commit()
         self.minitouch_send()
 
         for point in points[1:]:
-            builder.move(*point).commit().wait(10)
+            builder.move(*point).commit().wait(10)  # Each step still takes 10ms as required
         self.minitouch_send()
 
         builder.up().commit()
         self.minitouch_send()
+    
+    def _generate_bezier_points(self, p1, p2, num_points):
+        """
+        Generate swipe points between two points using a simple quadratic Bézier curve
+        
+        Args:
+            p1: Starting point (x, y)
+            p2: Ending point (x, y)
+            num_points: Number of points to generate along the path
+        """
+        import numpy as np
+        
+        x1, y1 = p1
+        x2, y2 = p2
+        
+        # Calculate a control point that creates a slight curve
+        # The control point is offset from the midpoint perpendicular to the direction
+        mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+        
+        # Vector from p1 to p2
+        vec_x, vec_y = x2 - x1, y2 - y1
+        # Perpendicular vector (rotated 90 degrees)
+        perp_x, perp_y = -vec_y, vec_x
+        
+        # Normalize and scale the perpendicular vector
+        length = np.sqrt(perp_x**2 + perp_y**2)
+        if length > 0:
+            perp_x, perp_y = perp_x / length, perp_y / length
+        
+        # Create control point with some offset (creating a slight curve)
+        curve_strength = min(abs(x2-x1), abs(y2-y1)) * 0.2  # Adjust strength based on distance
+        ctrl_x = mid_x + perp_x * curve_strength
+        ctrl_y = mid_y + perp_y * curve_strength
+        
+        points = []
+        for i in range(num_points):
+            t = i / (num_points - 1) if num_points > 1 else 0
+            
+            # Quadratic Bézier formula: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+            # Where P0 is start point, P1 is control point, P2 is end point
+            x = (1 - t)**2 * x1 + 2 * (1 - t) * t * ctrl_x + t**2 * x2
+            y = (1 - t)**2 * y1 + 2 * (1 - t) * t * ctrl_y + t**2 * y2
+            
+            points.append((int(x), int(y)))
+        
+        return points
 
     @retry
     def drag_minitouch(self, p1, p2, point_random=(-10, -10, 10, 10)):

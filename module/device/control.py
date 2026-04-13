@@ -156,7 +156,7 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         duration = ensure_time(duration)
         method = self.config.script.device.control_method
         if method == 'minitouch':
-            logger.info('Swipe %s -> %s' % (point2str(*p1), point2str(*p2)))
+            logger.info('minitouch Swipe %s -> %s, %s ' % (point2str(*p1), point2str(*p2), duration))
         elif method == 'window_message':
             logger.info('Swipe %s -> %s' % (point2str(*p1), point2str(*p2)))
         elif method == 'uiautomator2':
@@ -185,7 +185,7 @@ class Control(Minitouch, Adb, Scrcpy, Window):
                 return
 
         if method == 'minitouch':
-            self.swipe_minitouch(p1, p2)
+            self.swipe_minitouch(p1, p2, duration=duration)
         elif method == 'window_message':
             self.swipe_window_message(p1, p2)
         elif method == 'uiautomator2':
