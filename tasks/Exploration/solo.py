@@ -6,7 +6,7 @@ from cached_property import cached_property
 
 from module.logger import logger
 from module.base.timer import Timer
-
+from script import Script 
 from tasks.Component.GeneralInvite.config_invite import InviteConfig, InviteNumber, FindMode
 from tasks.Exploration.base import BaseExploration, UpType, Scene
 from tasks.Exploration.config import ChooseRarity, AutoRotate, UserStatus, ExplorationLevel
@@ -454,35 +454,40 @@ class SoloExploration(BaseExploration):
 
 class ScriptTask(SoloExploration):
     def run(self):
-        logger.hr('exploration')
-        random_click_cnt = 0
-        while 1:
-            self.screenshot()
-            scene = self.get_current_scene()
-            if random_click_cnt >= 2:
-                break
+        try : 
+            logger.hr('exploration')
+            random_click_cnt = 0
+            while 1:
+                self.screenshot()
+                scene = self.get_current_scene()
+                if random_click_cnt >= 2:
+                    break
+                if scene == Scene.UNKNOWN:
+                    logger.warning('Unknown scene, random click')
+                    if self.click(self.C_SAFE_RANDOM, interval=1.5):
+                        random_click_cnt += 1
+                    continue
+                else:
+                    break
+
             if scene == Scene.UNKNOWN:
-                logger.warning('Unknown scene, random click')
-                if self.click(self.C_SAFE_RANDOM, interval=1.5):
-                    random_click_cnt += 1
-                continue
-            else:
-                break
+                self.pre_process()
 
-        if scene == Scene.UNKNOWN:
-            self.pre_process()
+            match self._config.exploration_config.user_status:
+                case UserStatus.ALONE:
+                    self.run_solo()
+                case UserStatus.LEADER:
+                    self.run_leader()
+                case UserStatus.MEMBER:
+                    self.run_member()
+                case _:
+                    self.run_solo()
 
-        match self._config.exploration_config.user_status:
-            case UserStatus.ALONE:
-                self.run_solo()
-            case UserStatus.LEADER:
-                self.run_leader()
-            case UserStatus.MEMBER:
-                self.run_member()
-            case _:
-                self.run_solo()
-
-        self.post_process()
+            self.post_process()
+        except Exception as e:
+            Script.save_error_log(self)
+            logger.error(e)
+            raise e
 
 
 if __name__ == "__main__":

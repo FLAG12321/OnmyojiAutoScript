@@ -34,5 +34,11 @@
     "roiFront": "1203,642,27,46",
     "roiBack": "1202,641,30,49",
     "description": "description"
+  },
+  {
+    "itemName": "click_timeout",
+    "roiFront": "957,573,15,19",
+    "roiBack": "956,572,18,22",
+    "description": "description"
   }
 ]

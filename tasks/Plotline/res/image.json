@@ -313,5 +313,41 @@
     "imageName": "check_tick.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "page_click_any2",
+    "roiFront": "162,415,34,37",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "page_click_any2.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "page_exp_battle",
+    "roiFront": "1127,103,47,62",
+    "roiBack": "1056,61,180,164",
+    "description": "description",
+    "imageName": "page_exp_battle.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "flag_help2",
+    "roiFront": "607,539,29,30",
+    "roiBack": "135,484,972,216",
+    "description": "description",
+    "imageName": "flag_help2.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "flag_on_field",
+    "roiFront": "650,515,26,23",
+    "roiBack": "628,488,79,154",
+    "description": "description",
+    "imageName": "flag_on_field.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

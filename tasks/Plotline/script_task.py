@@ -16,11 +16,14 @@ from tasks.Plotline.config import  Plotline
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.assets import GameUiAssets 
 from tasks.Restart.assets import RestartAssets
+from tasks.ExperienceYoukai.assets import ExperienceYoukaiAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
-from tasks.GameUi.page import page_main
+from tasks.GameUi.page import page_main,page_team,page_exploration
 from module.base.timer import Timer
 from module.atom.ocr import RuleOcr
+from module.atom.swipe import RuleSwipe
+
 from time import sleep
 from enum import Enum
 
@@ -31,7 +34,7 @@ class PlotlineScene(Enum):
     PLOTLINE_SCENE_MAIN = 0
     PLOTLINE_SCENE_EXPLORATION = 1
     PLOTLINE_SCENE_SUMMON = 2
-    PLOTLINE_SCENE_MAP = 3
+    PLOTLINE_SCENE_TEAM = 3
     PLOTLINE_SCENE_BATTLE = 4
     PLOTLINE_SCENE_PRIVILEGES = 5
     PLOTLINE_SCENE_UNKNOWN = 99
@@ -42,6 +45,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     level_low: bool = False
     exploration_flag: bool = False
     experience_youkai_battle : bool = False
+    system_shikigami_detect: bool = True
+    mail_flag: bool = True
+    page_main_timeout: int = 0
     def run(self):
         self.plotline_conf = self.config.plotline 
         self.privileges_flag=not self.plotline_conf.plotline_config.switch_system_shikigami
@@ -50,7 +56,6 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         """ while True:
             self.click_dialogue()
             #self.run_page_summon() """
-            
         while 1:
             try:
                 self.screenshot()
@@ -85,13 +90,15 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 continue
             elif self.appear(self.I_PAGE_MAIN, interval=1):
                 return PlotlineScene.PLOTLINE_SCENE_MAIN
+            elif self.appear(self.I_PAGE_EXP_BATTLE, interval=1):
+                return PlotlineScene.PLOTLINE_SCENE_TEAM
             elif  self.appear(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or\
                   self.appear(ExplorationAssets.I_BOSS_BATTLE_BUTTON, interval=1) or \
                   self.appear(self.I_CLICK_TO_AUTO, interval=1) or \
                   self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                 return PlotlineScene.PLOTLINE_SCENE_BATTLE
-            elif  self.exploration_flag and (self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK, interval=1) or\
-                 self.appear(GameUiAssets.I_CHECK_EXPLORATION, interval=1)):
+            elif  self.exploration_flag and ((self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK) or\
+                 self.appear(self.I_CHECK_EXPLORATION))):
                 return PlotlineScene.PLOTLINE_SCENE_EXPLORATION
             elif self.appear(self.I_PAGE_PRIVILEGES, interval=1):
                 return PlotlineScene.PLOTLINE_SCENE_PRIVILEGES
@@ -109,7 +116,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             PlotlineScene.PLOTLINE_SCENE_MAIN: self.handle_main_scene,
             PlotlineScene.PLOTLINE_SCENE_EXPLORATION: self.handle_exploration_scene,
             PlotlineScene.PLOTLINE_SCENE_SUMMON: self.handle_summon_scene,
-            PlotlineScene.PLOTLINE_SCENE_MAP: self.handle_map_scene,
+            PlotlineScene.PLOTLINE_SCENE_TEAM: self.handle_team_scene,
             PlotlineScene.PLOTLINE_SCENE_BATTLE: self.handle_battle_scene,
             PlotlineScene.PLOTLINE_SCENE_PRIVILEGES: self.handle_privileges_scene,
             PlotlineScene.PLOTLINE_SCENE_UNKNOWN: self.handle_unknown_scene
@@ -124,23 +131,46 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         import time
         start_time = time.time()
         if not self.privileges_flag and self.get_character_level_with_multiple_attempts() >= 7:
+            self.level_low=False
             while time.time()-start_time<3:
                 self.screenshot()
                 if self.appear_then_click(self.I_CLICK_TO_PRIVILEGES,interval=0.7):
                     return
-        if self.experience_youkai_battle and self.get_character_level_with_multiple_attempts() >= 13:
+        if self.experience_youkai_battle and self.get_character_level_with_multiple_attempts() >= 15:
             self.screenshot()
-            if self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2):
+            if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
+                self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
+                self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
                 if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                     logger.info('Click scroll close area because courtyard appears')
-                    sleep(1.5)
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
+                    return
+            if self.mail_flag:
+                from tasks.DailyForFlag.script_task import ScriptTask as DailyForFlagScriptTask
+                daily_for_flag_task=DailyForFlagScriptTask(self.config, self.device)
+                if  daily_for_flag_task.harvest_mail():
+                    self.mail_flag=False
+            if self.ui_get_current_page()!=page_main:
+                self.ui_goto(page_main)
+            else :
+                self.ui_goto(page_exploration)
+                self.ui_get_current_page()
+                self.ui_goto(page_team)
+            self.screenshot()
+            start_time = time.time()
+            while time.time()-start_time<3:
+                self.screenshot()
+                if self.appear(self.I_PAGE_CLICK_ANY2,interval=0.7) or \
+                    self.appear(self.I_CLICK_CURSOR,interval=0.7):
+                    return
             # 调用经验妖怪任务
             from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiScriptTask
             experience_youkai_task = ExperienceYoukaiScriptTask(self.config, self.device)
             try:
-                experience_youkai_task.run()
+                experience_youkai_task.run()                
+            except TaskEnd as e:
                 self.experience_youkai_battle=False
+                logger.info("任务结束")
             except Exception as e:
                 logger.error(f"经验妖怪任务执行异常: {e}")
                 # 继续执行剧情任务
@@ -149,22 +179,33 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             #logger.info(f"{start_time}")
             self.screenshot()
             self.device.click_record_clear()
-            if self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2):
+            if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
+                self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
+                self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
                 if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                     logger.info('Click scroll close area because courtyard appears')
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
+                    self.page_main_timeout=0
                     return
             if self.appear_then_click(self.I_CLICK_LV,interval=1):
                 self.exploration_flag =True
                 logger.info("等级不够")
                 start_time = time.time()
+                self.page_main_timeout=0
                 continue
             if self.appear(self.I_PAGE_MAIN) and self.appear_then_click(self.I_CLICK_DIALOGUE_1,interval=1):
+                self.page_main_timeout=0
                 return 
             if self.appear_then_click(self.I_CLICK_TO_EXPLORATION, interval=1):
                 logger.info("点击前往探索按钮")
-                start_time = time.time()
+                self.page_main_timeout=0
                 return
+        self.page_main_timeout+=1
+        if self.page_main_timeout>5:
+            self.page_main_timeout=0
+            self.click(self.C_CLICK_TIMEOUT)
+            sleep(1)
+
             
     def get_character_level_with_multiple_attempts(self) -> int:
         """ 对角色等级进行多次识别并返回最大值 """
@@ -209,7 +250,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             logger.info(f"设置探索章节为: {max_available_chapter}")
         
         solo_exploration._config.general_battle_config.lock_team_enable = self.plotline_conf.plotline_config.exploration_battle_lock
-        solo_exploration._config.exploration_config.minions_cnt=15
+        solo_exploration._config.exploration_config.minions_cnt=3
         solo_exploration._config.exploration_config.up_type=UpType.ALL
         solo_exploration._config.scrolls.scrolls_enable=False
         logger.info("已取消探索任务中的队伍锁定")
@@ -235,7 +276,16 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=2):
                     start_time = time.time()
                     continue
-            raise TaskEnd
+            logger.info(f'探索任务异常{e.args[0]}')
+            if e.args[0] == 'Insufficient AP' and self.mail_flag:
+                self.screenshot()
+                if self.appear(self.I_PAGE_MAIN):
+                    from tasks.DailyForFlag.script_task import ScriptTask as DailyForFlagScriptTask
+                    daily_for_flag_task=DailyForFlagScriptTask(self.config, self.device)
+                    daily_for_flag_task.harvest_mail()
+                    self.mail_flag=False
+            else:
+                raise TaskEnd
         finally:
             # 恢复原始的battle_wait和battle_before方法
             solo_exploration.battle_wait = original_battle_wait
@@ -353,10 +403,39 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         logger.info("当前在召唤场景")
         self.run_page_summon()
 
-    def handle_map_scene(self) -> None:
-        """ 处理地图场景 """
-        logger.info("当前在地图场景")
+    def handle_team_scene(self) -> None:
+        """ 处理组队场景 """
+        logger.info("当前在组队场景")
         self.screenshot()
+        start_time = time.time()
+        while time.time()-start_time<5:
+            self.screenshot()
+            if self.appear(self.I_CLICK_CURSOR, interval=1):
+                current_image=self.device.image
+                click_cursor=self.I_CLICK_CURSOR.match_all_any(current_image)
+                if len(click_cursor) ==1:
+                    self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
+                    self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
+                    self.click(self.C_CLICK_CURSOR)
+                start_time=time.time()
+                continue
+            if self.appear_then_click(self.I_PAGE_CLICK_ANY2, interval=1):
+                start_time=time.time()
+                continue
+            if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
+                start_time=time.time()
+                continue
+            if self.appear_then_click(self.I_PAGE_EXP_BATTLE, interval=1):
+                start_time=time.time()
+                continue
+            if self.appear_then_click(ExperienceYoukaiAssets.I_EXP_WIN, interval=1):
+                start_time=time.time()
+                continue
+            if self.appear(self.I_PAGE_EXP_BATTLE):
+                start_time=time.time()
+                continue
+            if self.ui_get_current_page==page_main:
+                break
 
     def handle_battle_scene(self) -> None:
         """ 处理战斗场景 """
@@ -380,32 +459,33 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if (self.privileges_flag == True or self.level_low ==True) and self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
                 logger.info("点击黄色返回按钮")
                 break
-            if self.appear(self.I_FLAG_LEASE):
-                self.privileges_flag = True
-                continue
+            if not self.privileges_flag:
+                if self.appear(self.I_FLAG_LEASE):
+                    self.privileges_flag = True
+                    continue
+                if self.appear(self.I_PAGE_PRIVILEGES_2):
+                    self.level_low = True
+                    while time.time()-start_time<5:
+                        self.screenshot()
+                        if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE_2, interval=1):
+                            logger.info("点击式神借用按钮")
+                            self.level_low = False
+                            start_time=time.time()
+                            break
+                    start_time=time.time()
+                    continue    
+                if self.appear_then_click(self.I_PAGE_CLICK_ANY, interval=1) or self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                    start_time=time.time()
+                    continue
+                if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE, interval=1) :
+                    logger.info("点击特权按钮")
+                    start_time=time.time()
+                    continue
+                if self.appear_then_click(self.I_SUBPAGE_PRIVILEGES, action=self.C_CLICK_LEASE, interval=1):
+                    logger.info("点击租借按钮")
+                    start_time=time.time()
+                    continue
             
-            if self.appear(self.I_PAGE_PRIVILEGES_2):
-                self.level_low = True
-                while time.time()-start_time<5:
-                    self.screenshot()
-                    if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE_2, interval=1):
-                        logger.info("点击式神借用按钮")
-                        self.level_low = False
-                        start_time=time.time()
-                        break
-                start_time=time.time()
-                continue    
-            if self.appear_then_click(self.I_PAGE_CLICK_ANY, interval=1) or self.appear_then_click(self.I_UI_BACK_RED, interval=1):
-                start_time=time.time()
-                continue
-            if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE, interval=1) :
-                logger.info("点击特权按钮")
-                start_time=time.time()
-                continue
-            if self.appear_then_click(self.I_SUBPAGE_PRIVILEGES, action=self.C_CLICK_LEASE, interval=1):
-                logger.info("点击租借按钮")
-                start_time=time.time()
-                continue
     def handle_unknown_scene(self) -> None:
         """ 处理未知场景 """
         logger.info("当前场景未知，尝试返回主界面")
@@ -445,7 +525,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             pass    
         elif self.appear_then_click(self.I_CLICK_LV,interval=1):    
             self.exploration_flag =True   
-        elif self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
+        elif not self.appear(GameUiAssets.I_CHECK_TEAM) \
+                and not self.appear(self.I_CHECK_EXPLORATION) \
+                and self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
             pass
         else:
             return False
@@ -466,7 +548,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
                 self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
                 self.click(self.C_CLICK_CURSOR)
-
+        elif self.appear_then_click(self.I_PAGE_CLICK_ANY2, interval=1):
+            pass
+        elif self.appear_then_click(ExperienceYoukaiAssets.I_EXP_WIN, interval=1):
+            pass
         elif self.appear_then_click(self.I_CLICK_EYE, interval=1) or \
             self.appear_then_click(self.I_CLICK_EYE_2, interval=1):
             pass
@@ -514,28 +599,47 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         confed = False
         while not timeout_timer.reached():
             self.screenshot()
-            if self.is_in_real_battle(False):  # 战斗阶段
+            if self.is_in_real_battle(False) or self.appear_rgb(self.I_CLICK_ATTACK) or self.appear_rgb(self.I_CLICK_SKILL):  # 战斗阶段
                 return True
             if self.appear_then_click(self.I_DISABLE_7DAYS_DIFF_SOUL, interval=0.6):  # 关闭御魂不一致提示
                 continue
             if self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL, interval=0.6):  # 确认关闭御魂不一致提示
                 continue
             if self.is_in_prepare(False):  # 战斗准备阶段
+                timeout_timer.reset()
                 if not getattr(config, 'lock_team_enable', False):  # 没有锁定阵容
                     if self.current_count == 1 and not confed:  # 第一次战斗且是本次第一次配置
                         self.switch_preset_team(config.preset_enable, config.preset_group, config.preset_team)
                         self.check_and_open_buff(buff)
                         confed = True
                 # 点击准备(锁定阵容自动点准备,不锁定阵容前面也已经配置完毕需要点准备)
-                if self.privileges_flag == True and not self.appear(self.I_FLAG_HELP, interval=0.8) :
-                    if not self.appear(self.I_FLAG_CHANGE, interval=0.8):
+                if self.appear(self.I_PAGE_EXP_BATTLE, interval=0.8):
+                    pass
+                elif self.system_shikigami_detect and self.privileges_flag : 
+                    if not self.appear(self.I_FLAG_CHANGE) :
                         self.click(self.C_CLICK_CHANGE)
                         sleep(2)
                         continue
-                    self.swipe(self.S_SWIPE_SHIKIGAMI,4)
-                    sleep(2)
-                    continue
+                    else:
+
+                        raw_matches =self.I_FLAG_HELP2.match_all_any(self.device.image)
+                        # 直接从匹配结果中提取坐标信息并按y坐标排序
+                        logger.info(f"raw_matches{raw_matches}")
+                        bounty_list = sorted(
+                            [[x, y, w, h] for (sc, x, y, w, h) in raw_matches],
+                            key=lambda item: item[1]  # 按y坐标排序
+                        )
+                        logger.info(f"bounty_list{bounty_list}len(bounty_list){len(bounty_list)}")
+                        if len(bounty_list)>0:
+                            self.I_FLAG_ON_FIELD.roi_back=(bounty_list[0][0]+43,bounty_list[0][1]-24,79,154)
+                            if not self.appear(self.I_FLAG_ON_FIELD):
+                                self.S_SWIPE_SHIKIGAMI.roi_front=(bounty_list[0][0],bounty_list[0][1],bounty_list[0][2],bounty_list[0][3])
+                                self.swipe(self.S_SWIPE_SHIKIGAMI,4)
+                                sleep(2)
+                                continue
+                
                 if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
+                    self.system_shikigami_detect = False
                     continue
                 continue
             # 未知界面, 既不是准备界面也不是战斗界面
@@ -573,27 +677,33 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 retry_cnt +=1
                 continue
             
-        click_cnt = 0   
+        click_timer = Timer(5)
+        swipe_timer = Timer(10)
         while 1:
             self.screenshot()
             self.device.click_record_clear()
-            if click_cnt > 10:
-                click_cnt = 0
-                self.click(self.C_CLICK_RANDOM_3)
-                self.click(self.C_CLICK_RANDOM_2)
-                self.click(self.C_CLICK_RANDOM_1)
-                self.swipe(self.S_SWIPE_BATTLE,2)
-            if attack_flag and self.appear_then_click(self.I_CLICK_ATTACK, interval=0.3):
-                click_cnt+=1
-                continue
-            if attack_flag and self.appear_then_click(self.I_CLICK_SKILL, interval=1):
-                click_cnt+=1
-                continue
+            if attack_flag :
+                if  click_timer.reached():
+                    click_timer.reset()
+                    self.click(self.C_CLICK_RANDOM_3)
+                    self.click(self.C_CLICK_RANDOM_2)
+                    self.click(self.C_CLICK_RANDOM_1)
+                    sleep(0.5)
+                if  swipe_timer.reached():
+                    swipe_timer.reset()
+                    swipe_list = [self.S_SWIPE_BATTLE,\
+                                self.S_SWIPE_BATTLE2,\
+                                RuleSwipe(roi_front=self.S_SWIPE_BATTLE.roi_back, roi_back=self.S_SWIPE_BATTLE.roi_front, mode="default"),\
+                                RuleSwipe(roi_front=self.S_SWIPE_BATTLE2.roi_back, roi_back=self.S_SWIPE_BATTLE2.roi_front, mode="default")]            
+                    self.swipe(random.choice(list(swipe_list)),interval=5, duration=1.0) 
+                    sleep(1.5)
+                if  self.appear_then_click(self.I_CLICK_ATTACK, interval=0.3):
+                    continue
+                if  self.appear_then_click(self.I_CLICK_SKILL, interval=1):
+                    continue
             # 如果出现赢 就点击, 第二个是针对封魔的图片
             if self.appear(self.I_WIN, threshold=0.8) or self.appear(self.I_DE_WIN):
                 logger.info("Battle result is win")
-                if self.appear(self.I_DE_WIN):
-                    self.ui_click_until_disappear(self.I_DE_WIN)
                 win = True
                 break
 
@@ -663,7 +773,38 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 break
 
         return win            
-    
+    def swipe(self, swipe: RuleSwipe, interval: float = None, duration: float = 0.1) -> None:
+        """
+
+        :param interval:
+        :param swipe:
+        :param  duration
+        :param  wait_up_time
+        :return:
+        """
+        if not isinstance(swipe, RuleSwipe):
+            return
+
+        if interval:
+            if swipe.name in self.interval_timer:
+                # 如果传入的限制时间不一样，则替换限制新的传入的时间
+                if self.interval_timer[swipe.name].limit != interval:
+                    self.interval_timer[swipe.name] = Timer(interval)
+            else:
+                # 如果没有限制时间，则创建限制时间
+                self.interval_timer[swipe.name] = Timer(interval)
+            # 如果时间还没到达，则不执行
+            if not self.interval_timer[swipe.name].reached():
+                return
+
+        x1, y1, x2, y2 = swipe.coord()
+        self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name, duration=(duration, duration + 0.1))
+
+        # 执行后，如果有限制时间，则重置限制时间
+        if interval:
+            # logger.info(f'Swipe {swipe.name}')
+            self.interval_timer[swipe.name].reset()   
+
     
 
 
@@ -677,11 +818,17 @@ if __name__ == '__main__':
 
     c = Config('OAS3')
     d = Device(c)
-    t = ScriptTask(c, d)
-    t.screenshot()
-    t.O_CHARACTER_LEVEL.ocr(t.device.image)
-    """  logger.info(t.config.config_name)
-    t.run()
-    t.swipe(t.S_SWIPE_SHIKIGAMI,2) """
+    self = ScriptTask(c, d)
+    self.screenshot()
+    #Script.save_error_log(t)
+    #t.O_CHARACTER_LEVEL.ocr(t.device.image)
+    #t.swipe(t.S_SWIPE_BATTLE, duration = 1 , interval=1)
+    logger.info(self.config.config_name)
+    """  if self.appear(self.I_FLAG_ON_FIELD):
+        logger.info('flag on field')
+    else:
+        logger.info('flag not on field') """
+    self.run()
+    #t.swipe(t.S_SWIPE_SHIKIGAMI,2)
     
      

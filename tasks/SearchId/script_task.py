@@ -169,15 +169,85 @@ class ScriptTask(GameUi,SearchIdAssets):
             time.sleep(1)
             start_time = time.time()
         return False
-    def search_save_image(self,name):
+    def search_save_image(self, name):
+        import cv2
+        import numpy as np
+        import os
+        from datetime import datetime
+        from PIL import Image, ImageDraw, ImageFont
+        from module.base.utils import save_image
+        
         sleep(1)
         self.screenshot()
-        from module.base.utils import save_image
+        
+        # 将OpenCV图像（BGR）转换为PIL图像（RGB）
+        image_rgb = cv2.cvtColor(self.device.image, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(image_rgb)
+        
+        # 创建绘制对象
+        draw = ImageDraw.Draw(pil_image)
+        
+        # 尝试使用系统中文字体，按优先级排序
+        fonts_to_try = [
+            "C:/Windows/Fonts/msyh.ttc",      # 微软雅黑
+            "C:/Windows/Fonts/msyhbd.ttc",    # 微软雅黑粗体
+            "C:/Windows/Fonts/simhei.ttf",    # SimHei 黑体
+            "C:/Windows/Fonts/simsun.ttc",    # 宋体
+            "C:/Windows/Fonts/mingliu.ttc",   # 细明体
+            "/System/Library/Fonts/PingFang.ttc",  # macOS 苹方
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux DejaVu 字体
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",  # Linux 文泉驿微米黑
+        ]
+        
+        font = None
+        for font_path in fonts_to_try:
+            try:
+                font = ImageFont.truetype(font_path, 25)
+                break
+            except OSError:
+                continue
+        
+        # 如果系统字体都不可用，使用默认字体
+        if font is None:
+            try:
+                font = ImageFont.load_default()
+            except:
+                # 如果连默认字体都无法加载，使用最基本的字体
+                font = ImageFont.load_default()
+        
+        # 根据'-'号分割name，最多分割成三段
+        parts = name.split('-', 2)  # 最多分割成3部分
+        
+        # 确保总是有三个部分（如果没有足够的'-'，则将不足的部分设为空字符串）
+        while len(parts) < 3:
+            parts.append('')
+        
+        # 从第三段中移除'.png'（不区分大小写），保留其他内容
+        parts[2] = parts[2].replace('.png', '').replace('.PNG', '')
+        
+        # 绘制文本，位置在左上角区域
+        text_color = (255, 0, 0)  # 红色 (RGB)
+        
+        # 第一段在左上角
+        draw.text((220, 420), parts[0], font=font, fill=text_color)
+        # 第二段在中间偏上
+        draw.text((220, 360), parts[1], font=font, fill=text_color)
+        # 第三段在下方
+        draw.text((220, 480), parts[2], font=font, fill=text_color)
+        
+        # 将PIL图像转换回OpenCV格式（BGR）
+        image_with_text = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+        
         folder_name = f'screenshots'
-        if not os.path.exists( f'./{folder_name}'):
+        if not os.path.exists(f'./{folder_name}'):
             os.mkdir(f'./{folder_name}')
         folder = f'./{folder_name}'
-        save_image(self.screenshot(), f'{folder}/{name}')
+        save_path = os.path.join(folder, f"{name}")
+        
+        # 由于save_image函数期望numpy数组，所以保存转换后的OpenCV格式图像
+        save_image(image_with_text, save_path)
+        logger.info(f"截图已保存至: {save_path}")
+
     def is_exist_character(self):
         return self.O_LEVEL.ocr(self.device.image)>0
     def prepare_run(self):
@@ -203,7 +273,7 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
 
-    config = Config('QMUMU1')  
+    config = Config('OAS3')  
     device = Device(config)
     task = ScriptTask(config, device)
     task.run()

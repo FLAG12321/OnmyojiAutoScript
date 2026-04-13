@@ -421,11 +421,12 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 continue
 
     def fire(self, button) -> bool:
-        self.ui_click_until_disappear(button, interval=3)
+        self.appear_then_click(button, interval=3)
         self.screenshot()
         if (self.appear(self.I_E_SETTINGS_BUTTON) or
                 self.appear(self.I_E_AUTO_ROTATE_ON) or
                 self.appear(self.I_E_MAIN_FLAG) or
+                self.appear(self.I_E_MAIN_SUSHI) or
                 self.appear(self.I_E_AUTO_ROTATE_OFF)):
             # 如果还在探索说明，这个是显示滑动导致挑战按钮不在范围内
             logger.warning('Fire button disappear, but still in exploration')
