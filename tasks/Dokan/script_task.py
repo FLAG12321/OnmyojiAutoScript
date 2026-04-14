@@ -674,9 +674,17 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             self.screenshot()
 
             if self.is_in_dokan():
+                self.dokan_switch_soul()
                 break
             if self.appear(GeneralInviteAssets.I_I_ACCEPT):
                 continue
+            if not self.open_welfare:
+                pos = self.O_DOKAN_MAP_2.ocr_full(self.device.image)
+                if pos == (0, 0, 0, 0):
+                    logger.info(f"failed to find {self.O_DOKAN_MAP_2.keyword}")
+                else:
+                    self.open_welfare = True
+                    logger.info(f" find {self.O_DOKAN_MAP_2.keyword}")
 
             pos = self.O_DOKAN_MAP.ocr_full(self.device.image)
             if pos == (0, 0, 0, 0):
@@ -688,7 +696,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 y = pos[1] - 20
                 # logger.info(f"ocr detect result pos={pos}, try click pos, x={x}, y={y}")
                 self.device.click(x=x, y=y)
-
+            
     def is_in_dokan(self):
         """
           判断是否在道馆里面

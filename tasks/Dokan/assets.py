@@ -193,6 +193,8 @@ class DokanAssets:
 	O_DOKAN_RIGHTPAD_TAG = RuleOcr(roi=(0,0,0,0), area=(0,0,0,0), mode="Single", method="Default", keyword="", name="dokan_rightpad_tag")
 	# 查找道馆时,中间卡片上防守人数 
 	O_DOKAN_CENTER_PEOPLE_NUMBER = RuleOcr(roi=(0,0,0,0), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="dokan_center_people_number")
+	# 道馆地图里找文字：鑫 
+	O_DOKAN_MAP_2 = RuleOcr(roi=(270,130,740,460), area=(0,0,100,100), mode="Full", method="Default", keyword="鑫", name="dokan_map_2")
 
 
 	# Swipe Rule Assets

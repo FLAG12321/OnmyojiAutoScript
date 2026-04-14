@@ -124,5 +124,14 @@
     "method": "Default",
     "keyword": "",
     "description": "查找道馆时,中间卡片上防守人数"
+  },
+  {
+    "itemName": "dokan_map_2",
+    "roiFront": "270,130,740,460",
+    "roiBack": "0,0,100,100",
+    "description": "道馆地图里找文字：鑫",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "鑫"
   }
 ]
