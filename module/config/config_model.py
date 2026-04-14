@@ -38,7 +38,7 @@ from tasks.WantedQuests.config import WantedQuests
 from tasks.Tako.config import Tako
 from tasks.AutoCheckinBigGod.config import AutoCheckinBigGod
 from tasks.DailyForFlag.config import DailyForFlag
-from tasks.ReturnGift.config import ReturnGift
+from tasks.MultiAccExp.config import MultiAccExp
 # ----------------------------------------------------------------------------------------------------------------------
 from tasks.Orochi.config import Orochi
 from tasks.OrochiMoans.config import OrochiMoans
@@ -73,6 +73,7 @@ from tasks.HeroTest.config import HeroTest
 from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
 from tasks.Daily.config import Daily
+from tasks.ReturnGift.config import ReturnGift
 from tasks.Plotline.config import Plotline
 from tasks.SearchId.config import SearchId
 # ----------------------------------------------------------------------------------------------------------------------
@@ -113,6 +114,7 @@ class ConfigModel(ConfigBase):
     tako: Tako = Field(default_factory=Tako)
     auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
     daily_for_flag: DailyForFlag = Field(default_factory=DailyForFlag)
+    multi_acc_exp: MultiAccExp = Field(default_factory=MultiAccExp)
     
     # 这些是刷御魂的
     orochi: Orochi = Field(default_factory=Orochi)

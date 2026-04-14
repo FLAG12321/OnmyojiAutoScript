@@ -16,7 +16,7 @@ from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.ExperienceYoukai.assets import ExperienceYoukaiAssets
 from tasks.ExperienceYoukai.config import ExperienceYoukaiConfig
-
+from tasks.Restart.assets import RestartAssets
 
 class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, ExperienceYoukaiAssets):
 
@@ -46,6 +46,27 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
             self.close_buff()
         count = 0
         while count < 2:
+            time=Timer(5).start()
+            while time.reached:
+                self.screenshot()
+                if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE, interval=1):
+                    time.reset()
+                    while time.reached:
+                        self.screenshot()
+                        if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
+                            logger.info("Close bind phone")
+                            break
+            while 1:
+                self.screenshot()   
+                if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
+                    self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
+                    self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
+                    if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
+                        logger.info('Click scroll close area because courtyard appears')
+                        self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
+                    continue
+                if self.appear(RestartAssets.I_LOGIN_SCROOLL_OPEN, interval=0.2):
+                    break
             self.ui_get_current_page()
             self.ui_goto(page_team)
             self.check_zones('经验妖怪')
