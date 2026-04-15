@@ -1,0 +1,24 @@
+{
+  "api_host": "127.0.0.1",
+  "api_port": 22288,
+
+  "server_auto_start": true,
+  "server_startup_timeout": 60,
+  "server_restart_on_crash": true,
+
+  "monitor_interval": 30,
+  "restart_cooldown": 60,
+
+  "reboot_time": "02:00",
+  "reboot_weekday": null,
+
+  "instances": [
+    {
+      "name": "OAS2",
+      "enabled": true,
+      "auto_restart": true,
+      "max_restart_attempts": 5,
+      "restart_cooldown": 60
+    }
+  ]
+}

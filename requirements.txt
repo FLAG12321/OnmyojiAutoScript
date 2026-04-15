@@ -35,6 +35,8 @@ h11==0.14.0               # via uvicorn
 humanfriendly==10.0       # via coloredlogs
 idna==3.6                 # via anyio, requests
 inflection==0.5.1         # via -r requirements-in.txt
+nest-asyncio==1.6.0       # via -r requirements-in.txt
+schedule==1.2.2           # via -r requirements-in.txt
 logzero==1.7.0            # via uiautomator2
 lxml==5.0.0               # via uiautomator2
 markdown-it-py==2.2.0     # via rich
