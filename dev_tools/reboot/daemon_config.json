@@ -14,7 +14,7 @@
 
   "instances": [
     {
-      "name": "OAS2",
+      "name": "oas1",
       "enabled": true,
       "auto_restart": true,
       "max_restart_attempts": 5,

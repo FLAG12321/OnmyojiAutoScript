@@ -80,7 +80,7 @@ class RebootDaemon:
     """
 
     def __init__(self, config_path: str = None,
-                 api_host: str = '127.0.0.1', api_port: int = 22288):
+                 api_host: str = '127.0.0.1', api_port: int = 22267):
         self.api_host = api_host
         self.api_port = api_port
         self.api_url = f"http://{api_host}:{api_port}"
@@ -243,6 +243,23 @@ class RebootDaemon:
         except requests.exceptions.RequestException:
             return False
 
+    def _get_server_port(self) -> int:
+        """从deploy配置中读取WebuiPort，读取失败则回退到self.api_port"""
+        try:
+            deploy_yaml = PROJECT_ROOT / "config" / "deploy.yaml"
+            if deploy_yaml.exists():
+                with open(deploy_yaml, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith('WebuiPort:'):
+                            port_str = line.split(':', 1)[1].strip()
+                            port = int(port_str)
+                            self.logger.info(f"从deploy.yaml读取到WebuiPort: {port}")
+                            return port
+        except Exception as e:
+            self.logger.warning(f"读取deploy.yaml中的WebuiPort失败: {e}，使用配置端口 {self.api_port}")
+        return self.api_port
+
     def _start_oas_server(self) -> bool:
         """启动OAS Server子进程"""
         if self.oas_process and self.oas_process.poll() is None:
@@ -250,18 +267,42 @@ class RebootDaemon:
             return True
 
         try:
+            server_port = self._get_server_port()
             cmd = [
                 sys.executable, str(PROJECT_ROOT / "server.py"),
                 "--host", self.api_host,
-                "--port", str(self.api_port)
+                "--port", str(server_port)
             ]
+            # 确保log目录存在
+            log_dir = PROJECT_ROOT / "log"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            # 将server的stderr输出到日志文件，方便排查启动失败问题
+            server_log = open(log_dir / "server_subprocess.log", 'a', encoding='utf-8')
+            # Windows下使用CREATE_NO_WINDOW避免弹出子进程窗口
+            startupinfo = None
+            creationflags = 0
+            if sys.platform.startswith('win'):
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
+
             self.oas_process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=str(PROJECT_ROOT)
+                stdout=server_log,
+                stderr=server_log,
+                cwd=str(PROJECT_ROOT),
+                startupinfo=startupinfo,
+                creationflags=creationflags
             )
-            self.logger.info(f"OAS Server启动中，PID: {self.oas_process.pid}")
+            # 如果daemon配置的端口与server实际端口不同，更新api_url
+            if server_port != self.api_port:
+                self.logger.warning(
+                    f"daemon配置端口 {self.api_port} 与deploy.yaml中的WebuiPort {server_port} 不一致，"
+                    f"自动切换到 {server_port}")
+                self.api_port = server_port
+                self.api_url = f"http://{self.api_host}:{self.api_port}"
+            self.logger.info(f"OAS Server启动中，PID: {self.oas_process.pid}，端口: {server_port}")
 
             timeout = self.server_startup_timeout
             start_time = time.time()
@@ -342,7 +383,8 @@ class RebootDaemon:
         ws_url = f"ws://{self.api_host}:{self.api_port}/ws/{instance_name}"
 
         try:
-            ws = await websockets.connect(ws_url, timeout=10)
+            ws = await websockets.connect(ws_url, timeout=10,
+                                          ping_interval=30, ping_timeout=20)
             self.ws_connections[instance_name] = ws
             self.ws_connected[instance_name] = True
             self.logger.info(f"实例 {instance_name} WebSocket 长连接已建立")
@@ -366,6 +408,11 @@ class RebootDaemon:
             self.logger.error(f"实例 {instance_name} WebSocket 连接失败: {e}")
             self.ws_connected[instance_name] = False
             if instance_name in self.ws_connections:
+                try:
+                    if not self.ws_connections[instance_name].closed:
+                        await self.ws_connections[instance_name].close()
+                except Exception:
+                    pass
                 del self.ws_connections[instance_name]
             return None
 
@@ -755,7 +802,7 @@ def main():
 
     config_path = Path(args.config_file)
     if not config_path.is_absolute():
-        config_path = Path(__file__).parent / config_path
+        config_path = Path.cwd() / config_path
 
     daemon = RebootDaemon(
         config_path=str(config_path),
