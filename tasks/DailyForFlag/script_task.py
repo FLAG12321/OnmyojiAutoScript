@@ -941,7 +941,6 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                         self.I_TO_BUY_DISABLE.roi_back=(buy_flower_image[0][1],buy_flower_image[0][2],652,108)
                         if self.appear_rgb(self.I_TO_BUY):
                             self.appear_then_click(self.I_TO_BUY)
-                            buy_count+=1
                             continue
                         elif self.appear_rgb(self.I_TO_BUY_DISABLE):
                             break
@@ -952,6 +951,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                     time.sleep(1)
                     self.screenshot()
                     if self.appear_then_click(self.I_CLICK_BUY, interval=1):
+                        buy_count+=1
                         start_time = time.time()
                         continue
                 if self.appear_then_click(self.I_FLOWER, interval=1):
