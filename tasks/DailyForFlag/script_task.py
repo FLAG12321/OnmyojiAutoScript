@@ -969,7 +969,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 if self.appear_rgb(self.I_TO_TREE):
                     start_time = time.time()
                     break
-            
+            return buy_count
         if self.ui_get_current_page() != page_guild:
             self.ui_goto(page_guild)
         start_time = time.time()
@@ -980,7 +980,8 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 break
             if self.appear(self.I_BUY_FLOWER):
                 logger.info("没有花,直接买")
-                buy_flower()
+                if buy_flower()>=4:
+                    return
                 start_time = time.time()
                 continue
             if self.appear_then_click(self.I_TO_TREE):
@@ -1029,7 +1030,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas3')
+    c = Config('QMUMU2')
     d = Device(c)
     self = ScriptTask(c, d)
     #t.run_mysteryshop()
