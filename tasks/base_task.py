@@ -613,7 +613,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             logger.info(f'Trying to OCR target.area{target.area} area{area}')
         return True
 
-    def list_find(self, target: RuleList, name: str | list[str], max_swipe: int = 10) -> bool | tuple:
+    def list_find(self, target: RuleList, name: str | list[str], max_swipe: int = 15) -> bool | tuple:
         """
         会一致在列表寻找目标，找到了就退出。
         如果是图片列表会一直往下找

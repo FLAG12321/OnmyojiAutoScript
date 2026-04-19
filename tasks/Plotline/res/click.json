@@ -40,5 +40,12 @@
     "roiFront": "957,573,15,19",
     "roiBack": "956,572,18,22",
     "description": "description"
+  },
+  {
+    "itemName": "click_find_flag",
+    "roiFront": "51,545,76,56",
+    "roiBack": "50,544,79,59",
+    "description": "description",
+    "mode": "default"
   }
 ]

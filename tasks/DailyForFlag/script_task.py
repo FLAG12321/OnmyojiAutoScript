@@ -19,6 +19,7 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
 from tasks.DailyForFlag.config import GoodsType,CoinType,MSGType
 from tasks.GameUi.page import page_main, page_guild , page_team,page_mall,page_friends
+from tasks.GameUi.assets import GameUiAssets
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.login import LoginHandler
 from tasks.WantedQuests.config import CooperationType
@@ -35,8 +36,9 @@ from tasks.KekkaiUtilize.script_task import ScriptTask as KekkaiUtilize
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiActivation.config import CardType
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
-
-class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets,):
+from tasks.Plotline.assets import PlotlineAssets
+from tasks.Component.GeneralRoom.general_room import GeneralRoom
+class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,WantedQuestsAssets,GlobalGameAssets,DailyForFlagAssets,):
     account_info: dict= None
     msg: list = []
     
@@ -76,7 +78,19 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.ui_goto(page_main)
 
         if con.daily_for_flag_config.tingyuan_enable:
-            self.run_tingyuan()
+            if not self.run_tingyuan():
+                while 1:
+                    self.screenshot()
+                    if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
+                        break
+                    if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
+                        time.sleep(1)
+                        continue
+                time.sleep(1)
+                self.screenshot()
+                if self.ui_get_current_page() != page_main:
+                    self.ui_goto(page_main)
+                
             delay_time += 10
         if con.daily_for_flag_config.mail_enable:
             self.run_mail()
@@ -211,93 +225,95 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
-        retry_count = 0
-        cycle_count = 0
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            self.screenshot()
+            if self.appear_rgb(self.I_FINISH):
+                self.appear_then_click(self.I_FINISH, interval=1)
+                start_time = time.time()
+                break
+            if self.appear_then_click(self.I_MIAN_TO_TASK, interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_T_SPECIAL_FLAG,action=self.C_T_TONORMAL, interval=1):
+                start_time = time.time()
+                continue
+        if time.time() - start_time>=5:
+            return False
+        click_count = 0
         while 1:
             self.screenshot()
-            if retry_count >= 4:
+            if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
+                break
+            if click_count >= 3:
                 if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
                     time.sleep(1)
-                    break
-            if self.appear_then_click(self.I_MIAN_TO_TASK, interval=1):
-                cycle_count = 0
+                    continue
+            if self.get_award_daliy():
+                click_count = 0
+                continue
+            if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
+                click_count = 0
                 continue
             if self.appear_rgb(self.I_FINISH):
                 if self.appear_then_click(self.I_FINISH, interval=1):
-                    retry_count += 1
-                    cycle_count = 0
+                    click_count += 1
                     continue
-            if self.appear_then_click(self.I_T_SPECIAL_FLAG,action=self.C_T_TONORMAL, interval=1):
-                cycle_count = 0
-                continue
-            if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
-                cycle_count = 0
-                continue
-            if cycle_count <= 5:
-                cycle_count +=1
-                logger.info(f'Cycle count: {cycle_count}')
-                continue
-            cycle_count = 0
-            self.get_award_daliy(self.I_SUCCESS)
-            """ if self.ui_reward_appear_click():
-                continue
-            # 获得奖励
-             if self.appear_then_click(self.I_UI_AWARD, interval=0.2):
-                continue
-            if self.appear(self.I_LOGIN_RED_CLOSE):
-                self.click(self.I_LOGIN_RED_CLOSE, interval=2)
-                continue
-            if self.appear_then_click(self.I_CORD_EXIT, interval=2):
-                continue
-            if self.appear_then_click(self.I_CORD_BACK_RED, interval=2):
-                continue """
+        time.sleep(1)
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
     def harvest_mail(self) -> bool:
         logger.info('Harvest mail')
-        retry_count = 0
-        while 1:
-            if retry_count >= 3:
-                break
+
+        start_time = time.time()
+        while time.time()-start_time < 3:
             self.screenshot()
             if self.appear(self.I_M_PAGE_MAIL):
+                start_time = time.time()
                 break
             if self.appear_then_click(self.I_M_MAIN_TO_MAIL, interval=1.5):
-                retry_count += 1
+                start_time = time.time()
                 continue
+        if time.time()-start_time >= 5:
+            return False
 
         logger.info('Exec harvest mail')
-        retry_count = 0
-        while 1:
-            if retry_count >= 3:
-                break
+        start_time = time.time()
+        while time.time()-start_time < 3:
             self.screenshot()
             if self.appear_then_click(self.I_M_ENSURE_GET, interval=0.8):
+                time.sleep(1)
+                start_time = time.time()
                 logger.info('I_M_ENSURE_GET success')
-                self.get_award_daliy(self.I_M_PAGE_MAIL)
                 break
             if self.appear_rgb(self.I_HARVEST_MAIL_ALL):
                 if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=1.5):
                     logger.info('I_HARVEST_MAIL_ALL success')
+                start_time = time.time()
                 continue
-            if self.appear(self.I_M_PAGE_MAIL,interval=0.8):
-                retry_count += 1   
-        retry_count = 0 
+        if time.time()-start_time >= 3:
+            self.screenshot()
+            self.appear_then_click(self.I_M_BACK_RED, interval=1.5)
+            return True
+        logger.info('harvest mail get award')
         while 1:
             self.screenshot()
-            if retry_count>=3: 
+            if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
                 break
+            if self.get_award_daliy():
+                continue
+            if self.appear_then_click(self.I_M_ENSURE_GET, interval=1):
+                continue
             if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
-                break
-            retry_count+=1
-                
+                continue 
         return True
     def run_mail(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         result=self.harvest_mail()
+        time.sleep(1)
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -312,47 +328,93 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             self.run_tongxing_ap()
         if battle_enable:
             self.run_tongxing_battle()
+            self.return_to_main()
     def run_tongxing_ap(self):    
         logger.info('开始执行补体力任务')
-        retry_count = 0
-        while 1:
+        start_time = time.time()
+        while time.time()-start_time < 5:
             self.screenshot()
             if self.appear_then_click(self.I_TO_TEAM, interval=1):
+                start_time = time.time()
                 continue
             if self.appear_then_click(self.I_TO_AP, interval=1):
+                start_time = time.time()
                 continue
             if self.appear(self.I_ENSURE_AP):
                 self.ui_click_until_disappear(self.I_ENSURE_AP, interval=1)
+                start_time = time.time()
                 break
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                start_time = time.time()
                 continue
             if self.appear_then_click(self.I_LIST_MEMBER, interval=1):
+                start_time = time.time()
                 continue
             if self.appear_then_click(self.I_SAVE_ALL, interval=1):
+                start_time = time.time()
                 continue
+    
         while 1:
             self.screenshot()
+            if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
+                break
             if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
                 continue
             if self.appear_then_click(self.I_BACK_BLACK, interval=1):
                 continue
-            if self.ui_get_current_page() == page_main:
-                break
-            else:
-                self.ui_goto(page_main)
+    def is_select_level(self):
+        if not self.O_SELECT_LEVEL.ocr(self.device.image)=="觉醒业火轮壹层":
+            if not self.check_zones('觉醒业火轮'):
+                return False
+            while 1:
+                self.screenshot()
+                if self.O_SELECT_LEVEL.ocr(self.device.image)=="觉醒业火轮壹层":
+                    break
+                logger.info(f"当前选择关卡:{list(self.O_FLAG_LEVEL.ocr(self.device.image))}")
+                if not list(self.O_FLAG_LEVEL.ocr(self.device.image))==[0,0,0,0]:
+                    logger.info(f"当前选择关卡:{self.O_SELECT_LEVEL.ocr(self.device.image)}")
+                else :
+                    self.appear_then_click(self.I_CLICK_EVOZONE, interval=1)
+                    continue
+                if self.appear_then_click(self.I_CLICK_LEVEL, interval=1):
+                    continue
+                self.swipe(self.S_SELECT_LEVEL,3)
+        return True           
     def run_tongxing_battle(self):    
         logger.info('开始执行战斗任务')
-        while 1:
+        if not self.is_select_level():
+            return False
+        start_time = time.time()
+        while time.time()-start_time < 5:
             self.screenshot()
-            if self.appear(self.I_FORM_OVER):
+            if self.appear(self.I_PAGE_INVITE, interval=1):
+                start_time = time.time()
                 break
             if self.appear_then_click(self.I_TO_TEAM, interval=1):
-                continue
-            if self.appear_then_click(self.I_FORM, interval=1):
-                continue
-            if self.appear_then_click(self.I_INVITE, interval=1):
+                start_time = time.time()
                 continue
             
+            if self.appear_then_click(self.I_INVITE, interval=1):
+                start_time = time.time()
+                continue
+        if time.time()-start_time >= 5:
+            return False
+        while time.time()-start_time < 5:
+            self.screenshot()
+            if self.appear(self.I_FORM_OVER):
+                start_time = time.time()
+                logger.info("邀请完成")
+                break
+            if len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image))<2:
+                if self.appear_then_click(self.I_INVITE_FRIEND, interval=1):
+                    time.sleep(1)
+                start_time = time.time()
+                continue
+                
+            if self.appear_then_click(self.I_FORM, interval=1):
+                start_time = time.time()
+                continue
+                   
         while 1:
             self.screenshot()
             if self.appear(self.I_BATTLE, interval=1):  
@@ -364,29 +426,24 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
             if self.appear_then_click(self.I_SELECT_LEVEL, interval=1):
                     continue
         self.run_alone()
-        run_time=Timer(5).start()
+        return True
+    def return_to_main(self):   
         while 1:
             self.screenshot()
+            if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
+                    break
             if self.appear_then_click(self.I_EXIT_2, interval=1):
-                run_time.reset()
                 continue
             if self.appear_then_click(self.I_ENSURE_EXIT, interval=1):
-                run_time.reset()
                 continue
             if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
-                run_time.reset()
                 continue
             if self.appear_then_click(self.I_BACK_BLACK,interval=1):
-                run_time.reset()
                 continue
             if self.appear_then_click(self.I_EXIT3, interval=1):
-                run_time.reset()
                 continue
-            if run_time.reached():
-                if self.ui_get_current_page() == page_main:
-                    break
-                else:
-                    self.ui_goto(page_main)
+            if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                continue    
         self.ui_goto(page_main)
         if self.get_config().daily_for_flag_config.tongxin_limit_count == 13:
             self.screenshot()
@@ -802,73 +859,119 @@ class ScriptTask(GeneralBattle,Guild,WeeklyTrifles,Mall,GameUi,LoginHandler,Want
                         self.msg.append([MSGType.mshop,f"发现{info[2]}勾黑碎"])
                         self.push_notify(content=f" 发现{info[2]}勾黑碎", title="协作任务提醒")
         return flag
-    def get_award_daliy(self,image:RuleImage=None):
+    def get_award_daliy (self):
+        self.screenshot() 
+        if self.appear_then_click(self.I_M_FRAME_BACK_RED, interval=1):
+            return True
+        elif self.appear_then_click(self.I_M_AWARD,action=self.C_MS_REFRESH_ACTION ,interval=1):
+            return True
+        elif self.appear_then_click(target=self.I_M_PICTURE,action=self.C_MS_REFRESH_ACTION, interval=1):
+            return True
+        elif self.appear_then_click(self.I_M_PICTURE_REFUSE, interval=1):
+            return True
+        elif self.appear_then_click(self.I_CORD_EXIT, interval=1):
+            return True
+        elif self.appear_then_click(self.I_CORD_BACK_RED, interval=1):
+            return True
+        elif self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1):
+            return True
+        elif self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1) or self.appear_then_click(self.I_T_SIGN_FLAG2,action=self.C_T_EXIT_SIGN, interval=1):
+            return True
+        elif self.appear_then_click(PlotlineAssets.I_CLICK_CURSOR,action=self.C_MS_REFRESH_ACTION, interval=1):
+            return True
+        elif self.appear_then_click(PlotlineAssets.I_PAGE_CLICK_ANY,action=self.C_MS_REFRESH_ACTION, interval=1):
+            return True
+        else:
+            return False
+    def get_award_daliy_2(self):
         retry_count = 0
-        image_status = False
         while 1:
             self.screenshot() 
             if retry_count>=6:
                 break
             if self.appear_then_click(self.I_M_FRAME_BACK_RED, interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_M_AWARD,action=self.C_MS_REFRESH_ACTION ,interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(target=self.I_M_PICTURE,action=self.C_MS_REFRESH_ACTION, interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_M_PICTURE_REFUSE, interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_CORD_EXIT, interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_CORD_BACK_RED, interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1):
-                image_status = False
                 retry_count=0
                 continue
             if self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1) or self.appear_then_click(self.I_T_SIGN_FLAG2,action=self.C_T_EXIT_SIGN, interval=1):
-                image_status = False
                 retry_count=0
                 continue
-            """ if image and self.appear_rgb(image):
-                if image_status:
-                    retry_count+=1
-                else:
-                    image_status = True
-                logger.info('get_award_daliy: 找到图片')
-                #retry_count+=1
-                time.sleep(0.1)
-                continue """
             time.sleep(0.5)
             retry_count+=1
             #logger.info('get_award_daliy: 找到图片222')
         pass
     def get_config(self):
         return self.config.daily_for_flag
-
-
+    
+    
 
 
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('QMUMU2')
+    c = Config('oas2')
     d = Device(c)
     self = ScriptTask(c, d)
     #t.run_mysteryshop()
     self.screenshot()
-    self.screenshot()
+    start_time = time.time()
+    #logger.info(f"开始执行{len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image))}")
+    while time.time()-start_time < 5:
+        self.screenshot()
+        if self.appear(self.I_FORM_OVER):
+            start_time = time.time()
+            logger.info("任务完成")
+            break
+        if len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image))<2:
+            if self.appear_then_click(self.I_INVITE_FRIEND, interval=1):
+                time.sleep(1)
+            start_time = time.time()
+            continue
+            
+        if self.appear_then_click(self.I_FORM, interval=1):
+            start_time = time.time()
+            continue
+    start_time = time.time()
+    """ if not self.O_SELECT_LEVEL.ocr(self.device.image)=="觉醒业火轮壹层":
+        self.check_zones('觉醒业火轮')
+        while 1:
+            self.screenshot()
+            if self.O_SELECT_LEVEL.ocr(self.device.image)=="觉醒业火轮壹层":
+                break
+            logger.info(f"当前选择关卡:{list(self.O_FLAG_LEVEL.ocr(self.device.image))}")
+            if not list(self.O_FLAG_LEVEL.ocr(self.device.image))==[0,0,0,0]:
+                logger.info(f"当前选择关卡:{self.O_SELECT_LEVEL.ocr(self.device.image)}")
+            else :
+                self.appear_then_click(self.I_CLICK_EVOZONE, interval=1)
+                continue
+            if self.appear_then_click(self.I_CLICK_LEVEL, interval=1):
+                continue
+            self.swipe(self.S_SELECT_LEVEL,3) """
+    """ if self.O_SELECT_LEVEL.ocr(self.device.image)=="觉醒业火轮壹层":
+        logger.info(f"当前选择关卡:{self.O_SELECT_LEVEL.ocr(self.device.image)}")
+    logger.info(f"当前副本:{self.check_zones('觉醒业火轮')}")
+    if self.O_SELECT_NAME.ocr(self.device.image):
+        logger.info(f"当前选择副本:{self.O_SELECT_NAME.ocr(self.device.image)}")
+    if self.O_LIST_FIND.ocr(self.device.image):
+        logger.info(f"当前副本列表:{self.O_LIST_FIND.ocr(self.device.image)}") """
+    """ self.screenshot()
     self.ui_goto(page_friends)
     while 1:    
         self.screenshot()
@@ -894,4 +997,4 @@ if __name__ == "__main__":
             break
     self.screenshot()
     if self.ui_get_current_page() != page_main:
-        self.ui_goto(page_main)
+        self.ui_goto(page_main) """

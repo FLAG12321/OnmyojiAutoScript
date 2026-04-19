@@ -9,3 +9,4 @@ from module.atom.list import RuleList
 # Don't modify it manually.
 class MultiAccExpAssets: 
 	pass
+

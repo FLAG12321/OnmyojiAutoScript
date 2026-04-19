@@ -154,11 +154,11 @@
   },
   {
     "itemName": "invite_ensure",
-    "imageName": "gi_invite_ensure.png",
-    "roiFront": "710,544,132,60",
+    "imageName": "invite_ensure.png",
+    "roiFront": "738,554,72,39",
     "roiBack": "710,544,132,60",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.7",
     "description": "点击邀请"
   },
   {
@@ -376,5 +376,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "识别到寄养邀请"
+  },
+  {
+    "itemName": "add_2_1",
+    "roiFront": "328,211,121,96",
+    "roiBack": "243,153,288,215",
+    "description": "师徒的加号",
+    "imageName": "add_2_1.png",
+    "method": "Template matching",
+    "threshold": "0.8"
   }
 ]

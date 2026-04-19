@@ -2,11 +2,11 @@
 # @author runhey
 # github https://github.com/runhey
 from cached_property import cached_property
-
+import time
 from module.exception import TaskEnd
 from module.logger import logger
 from module.base.timer import Timer
-
+from tasks.Plotline.assets import PlotlineAssets
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_team, page_shikigami_records
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
@@ -17,7 +17,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.ExperienceYoukai.assets import ExperienceYoukaiAssets
 from tasks.ExperienceYoukai.config import ExperienceYoukaiConfig
 from tasks.Restart.assets import RestartAssets
-
+from tasks.GameUi.assets import GameUiAssets 
 class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, ExperienceYoukaiAssets):
 
     def run(self):
@@ -46,16 +46,21 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
             self.close_buff()
         count = 0
         while count < 2:
-            time=Timer(5).start()
-            while time.reached:
+            start_time = time.time()
+            while time.time() - start_time < 5:
                 self.screenshot()
+                if self.appear_then_click(PlotlineAssets.I_PAGE_CLICK_ANY, interval=1):
+                    start_time = time.time()
+                    continue
                 if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE, interval=1):
-                    time.reset()
-                    while time.reached:
+                    start_time = time.time()
+                    while time.time() - start_time < 5:
                         self.screenshot()
                         if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
                             logger.info("Close bind phone")
                             break
+                    start_time = time.time()
+            logger.info('Click I_MAIN_GOTO_SHIKIGAMI_RECORDS')
             while 1:
                 self.screenshot()   
                 if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
@@ -65,7 +70,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                         logger.info('Click scroll close area because courtyard appears')
                         self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
                     continue
-                if self.appear(RestartAssets.I_LOGIN_SCROOLL_OPEN, interval=0.2):
+                if self.appear(GameUiAssets.I_MAIN_GOTO_SHIKIGAMI_RECORDS, interval=0.2):
                     break
             self.ui_get_current_page()
             self.ui_goto(page_team)
@@ -125,6 +130,17 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 return False
 
     def experience_exit(self, con):
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            self.screenshot()
+            if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE, interval=1):
+                start_time = time.time()
+                while time.time() - start_time < 5:
+                    self.screenshot()
+                    if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
+                        logger.info("Close bind phone")
+                        break
+                start_time = time.time()
         self.ui_get_current_page()
         self.ui_goto(page_main)
         if con.buff_exp_50_click or con.buff_exp_100_click:
@@ -142,9 +158,9 @@ if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('oas1')
+    c = Config('oas3')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
-
-    t.run()
+    t.experience_exit(c)
+    #t.run()

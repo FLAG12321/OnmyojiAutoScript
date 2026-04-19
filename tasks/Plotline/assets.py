@@ -25,6 +25,8 @@ class PlotlineAssets:
 	C_CLICK_RANDOM_3 = RuleClick(roi_front=(1203,642,27,46), roi_back=(1202,641,30,49), name="click_random_3")
 	# description 
 	C_CLICK_TIMEOUT = RuleClick(roi_front=(957,573,15,19), roi_back=(956,572,18,22), name="click_timeout")
+	# description 
+	C_CLICK_FIND_FLAG = RuleClick(roi_front=(51,545,76,56), roi_back=(50,544,79,59), name="click_find_flag")
 
 
 	# Image Rule Assets
@@ -106,6 +108,8 @@ class PlotlineAssets:
 	I_FLAG_HELP2 = RuleImage(roi_front=(607,539,29,30), roi_back=(135,484,972,216), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/flag_help2.png")
 	# description 
 	I_FLAG_ON_FIELD = RuleImage(roi_front=(650,515,26,23), roi_back=(628,488,79,154), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/flag_on_field.png")
+	# description 
+	I_CLICK_BATTLE = RuleImage(roi_front=(599,108,87,35), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_battle.png")
 
 
 	# Ocr Rule Assets
@@ -122,5 +126,7 @@ class PlotlineAssets:
 	S_SWIPE_BATTLE = RuleSwipe(roi_front=(547,6,38,7), roi_back=(638,7,42,7), mode="default", name="swipe_battle")
 	# description 
 	S_SWIPE_BATTLE2 = RuleSwipe(roi_front=(1065,532,38,9), roi_back=(1137,531,45,9), mode="default", name="swipe_battle2")
+	# description 
+	S_SWIPE_FIND_FLAG = RuleSwipe(roi_front=(1067,618,141,47), roi_back=(104,616,178,52), mode="default", name="swipe_find_flag")
 
 

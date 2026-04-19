@@ -1,5 +1,5 @@
 import importlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 import os
 import time
 import random
@@ -48,6 +48,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     system_shikigami_detect: bool = True
     mail_flag: bool = True
     page_main_timeout: int = 0
+    unknow_cnt: int = 0
     def run(self):
         self.plotline_conf = self.config.plotline 
         self.privileges_flag=not self.plotline_conf.plotline_config.switch_system_shikigami
@@ -60,6 +61,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             try:
                 self.screenshot()
                 current_scene = self.get_current_scene()
+                if current_scene == PlotlineScene.PLOTLINE_SCENE_UNKNOWN:
+                   self.unknow_cnt+=1
+                else:
+                    self.unknow_cnt=0
                 self.handle_scene(current_scene)
             except TaskEnd as e:
                 self.set_next_run(task='Plotline',success=True)
@@ -94,6 +99,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 return PlotlineScene.PLOTLINE_SCENE_TEAM
             elif  self.appear(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or\
                   self.appear(ExplorationAssets.I_BOSS_BATTLE_BUTTON, interval=1) or \
+                  self.appear(self.I_CLICK_BATTLE, interval=1) or \
                   self.appear(self.I_CLICK_TO_AUTO, interval=1) or \
                   self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                 return PlotlineScene.PLOTLINE_SCENE_BATTLE
@@ -201,10 +207,12 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.page_main_timeout=0
                 return
         self.page_main_timeout+=1
-        if self.page_main_timeout>5:
-            self.page_main_timeout=0
+        if self.page_main_timeout/5==0:
             self.click(self.C_CLICK_TIMEOUT)
             sleep(1)
+            if self.page_main_timeout >15:
+                raise TaskEnd(Plotline)
+
 
             
     def get_character_level_with_multiple_attempts(self) -> int:
@@ -251,6 +259,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         
         solo_exploration._config.general_battle_config.lock_team_enable = self.plotline_conf.plotline_config.exploration_battle_lock
         solo_exploration._config.exploration_config.minions_cnt=3
+        solo_exploration._config.exploration_config.limit_time = dtime(0, 10, 0)  # 10分钟上限兜底
         solo_exploration._config.exploration_config.up_type=UpType.ALL
         solo_exploration._config.scrolls.scrolls_enable=False
         logger.info("已取消探索任务中的队伍锁定")
@@ -445,8 +454,12 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             self.screenshot()
             if self.appear(self.I_CLICK_TO_AUTO, interval=1) or self.appear(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                 break
-            if self.appear_then_click(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) or self.appear_then_click(ExplorationAssets.I_BOSS_BATTLE_BUTTON,interval=1):
+            if self.appear_then_click(ExplorationAssets.I_NORMAL_BATTLE_BUTTON, interval=1) \
+                or self.appear_then_click(ExplorationAssets.I_BOSS_BATTLE_BUTTON,interval=1)\
+                or self.appear_then_click(self.I_CLICK_BATTLE,interval=1):
                 start_time=time.time()
+        if time.time()-start_time>=5:
+            return
         self.screenshot()
         self.run_general_battle()
 
@@ -496,8 +509,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
             logger.info("点击黄色返回按钮")
         if self.appear(self.I_BACK_BATTLE, interval=3):
-            self.swipe(ExplorationAssets.S_SWIPE_BACKGROUND_LEFT)
-            logger.info("滑动")
+            if self.unknow_cnt>=5 :
+                self.appear_then_click(self.I_BACK_BATTLE, interval=3)
+            else :
+                self.click(self.C_CLICK_FIND_FLAG)
+                sleep(3)
 
 
     def run_page_summon(self):
@@ -816,7 +832,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('OAS3')
+    c = Config('OAS2')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
@@ -824,6 +840,7 @@ if __name__ == '__main__':
     #t.O_CHARACTER_LEVEL.ocr(t.device.image)
     #t.swipe(t.S_SWIPE_BATTLE, duration = 1 , interval=1)
     logger.info(self.config.config_name)
+    #self.swipe(self.S_SWIPE_FIND_FLAG,duration=1)
     """  if self.appear(self.I_FLAG_ON_FIELD):
         logger.info('flag on field')
     else:

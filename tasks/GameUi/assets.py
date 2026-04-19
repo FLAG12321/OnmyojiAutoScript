@@ -17,6 +17,11 @@ class GameUiAssets:
 	I_ACT_LIST_EXPAND = RuleImage(roi_front=(1191,508,30,25), roi_back=(1160,456,92,103), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/additional_act_list_expand.png")
 
 
+	# Click Rule Assets
+	# description 
+	C_FAVORABILITY_UP = RuleClick(roi_front=(1147,83,31,29), roi_back=(1146,82,34,31), name="favorability_up")
+
+
 	# Image Rule Assets
 	# description 
 	I_DLC_TICK = RuleImage(roi_front=(527,415,42,34), roi_back=(498,397,95,69), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/dlc_tick.png")
@@ -53,6 +58,8 @@ class GameUiAssets:
 	I_SUMMON_BACK_R = RuleImage(roi_front=(912,91,34,31), roi_back=(873,67,110,98), threshold=0.7, method="Template matching", file="./tasks/GameUi/additional/summon_back_r.png")
 	# description 
 	I_SUMMON_BACK_TICKET = RuleImage(roi_front=(562,327,126,65), roi_back=(412,170,508,360), threshold=0.7, method="Template matching", file="./tasks/GameUi/additional/summon_back_ticket.png")
+	# description 
+	I_FAVORABILITY_UP = RuleImage(roi_front=(460,127,356,38), roi_back=(265,86,688,154), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/favorability_up.png")
 
 
 	# Image Rule Assets

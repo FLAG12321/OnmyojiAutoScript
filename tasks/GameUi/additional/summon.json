@@ -16,5 +16,14 @@
     "imageName": "summon_back_ticket.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "favorability_up",
+    "roiFront": "460,127,356,38",
+    "roiBack": "265,86,688,154",
+    "description": "description",
+    "imageName": "favorability_up.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

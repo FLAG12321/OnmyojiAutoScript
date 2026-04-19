@@ -41,17 +41,13 @@ class ScriptTask(GameUi, MultiAccExpAssets):
                 self.set_next_run("MultiAccExp", success=False)
                 return
 
-            sup_account_list = self._get_sorted_accounts()
-            
             login_time = self.multi_acc_conf.multi_acc_exp_config.need_login_time
+            sup_account_list = self._get_sorted_accounts(login_time)
             
             for accountInfo in sup_account_list:
                 # 检查accountInfo是否为None
                 if accountInfo is None:
                     logger.warning("Skipping None account in account list")
-                    continue
-                    
-                if not self._should_process_account(accountInfo, login_time):
                     continue
                     
                 max_retries = 3
@@ -159,32 +155,66 @@ class ScriptTask(GameUi, MultiAccExpAssets):
         """判断是否应该处理该账号"""
         # 检查是否需要登录
         if not self.multi_acc_conf.multi_acc_exp_config.need_login:
-            # 检查上次登录时间
-            if account_info.last_complete_time < login_time:
-                logger.warning(f"{account_info.character} Skipped last Login Time:{account_info.last_complete_time}")
+            # 检查上次登录时间：last_complete_time >= login_time 表示已经完成过，不需要处理
+            if account_info.last_complete_time >= login_time:
+                logger.warning(f"{account_info.character} Skipped, last_complete_time:{account_info.last_complete_time} >= login_time:{login_time}")
                 return False
         return True
 
-    def _get_sorted_accounts(self):
-        """获取按最后完成时间排序的账号列表"""
+    def _get_sorted_accounts(self, login_time):
+        """获取按最后完成时间排序的账号列表，先剔除不需要处理的账号，再按账号分组排序"""
         if not self.multi_acc_conf.sup_account_list:
             return []
         
+        from collections import defaultdict
         from datetime import datetime
         
-        # 按最后完成时间排序（从大到小，即最晚完成的在前）
-        sorted_accounts = sorted(
-            self.multi_acc_conf.sup_account_list,
-            key=lambda x: x.last_complete_time,
+        # 第一步：剔除不需要处理的账号（need_login为False时，已完成的不需要再登录）
+        filtered_accounts = []
+        for account_info in self.multi_acc_conf.sup_account_list:
+            if not self._should_process_account(account_info, login_time):
+                logger.info(f"Filtering out account {account_info.character} (already completed)")
+                continue
+            filtered_accounts.append(account_info)
+        
+        if not filtered_accounts:
+            logger.info("No accounts need to be processed after filtering")
+            return []
+        
+        # 第二步：按账号（account）分组，使同一邮箱下的角色连续排列
+        account_groups = defaultdict(list)
+        for account_info in filtered_accounts:
+            account_groups[account_info.account].append(account_info)
+        
+        # 计算每个账号分组的最晚完成时间，用于排序整个账号组
+        account_times = {}
+        for account, account_list in account_groups.items():
+            latest_completion_time = max([acc.last_complete_time for acc in account_list])
+            account_times[account] = latest_completion_time
+        
+        # 按账号的最晚完成时间排序（从大到小，即最晚完成的账号在前）
+        sorted_accounts_by_time = sorted(
+            account_groups.keys(),
+            key=lambda acc: account_times[acc],
             reverse=True
         )
         
+        # 按账号排序后，对每个账号内的角色也进行排序
+        result = []
+        for account in sorted_accounts_by_time:
+            sorted_account_chars = sorted(
+                account_groups[account],
+                key=lambda x: x.last_complete_time,
+                reverse=True
+            )
+            result.extend(sorted_account_chars)
+        
         # 打印排序后的结果
         logger.info("_get_sorted_accounts result: account character last_complete_time")
-        for account_info in sorted_accounts:
+        for account_info in result:
             logger.info(f"{account_info.account} {account_info.character} {account_info.last_complete_time}")
         
-        return sorted_accounts
+        return result
 
     def _process_single_account(self, account_info):
         """处理单个账号的经验妖怪任务"""
@@ -234,6 +264,11 @@ class ScriptTask(GameUi, MultiAccExpAssets):
     def _execute_experience_youkai_task(self, account_info, config):
         """执行经验妖怪任务"""
         try:
+            # 将MultiAccExp的加成配置写入experience_youkai配置，确保经验加成能被正确应用
+            self.config.experience_youkai.experience_youkai.buff_exp_50_click = config.buff_exp_50_click
+            self.config.experience_youkai.experience_youkai.buff_exp_100_click = config.buff_exp_100_click
+            logger.info(f"Buff config for {account_info.character}: 50%={config.buff_exp_50_click}, 100%={config.buff_exp_100_click}")
+
             # 导入ExperienceYoukai任务
             from tasks.ExperienceYoukai.script_task import ScriptTask as ExpScriptTask
             
@@ -264,7 +299,7 @@ class ScriptTask(GameUi, MultiAccExpAssets):
 
     def save_config(self):
         """保存配置"""
-        self.config.multi_acc_exp = self.multi_acc_conf
+        self.config.model.multi_acc_exp = self.multi_acc_conf
         self.config.save()
 
 

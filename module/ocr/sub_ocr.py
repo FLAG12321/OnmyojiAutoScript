@@ -5,6 +5,7 @@
 import cv2
 import re
 import cn2an
+import itertools
 
 from datetime import timedelta
 
@@ -34,6 +35,7 @@ class Full(BaseCor):
             keyword = self.keyword
 
         boxed_results = self.detect_and_ocr(image)
+        
         if not boxed_results:
             return 0, 0, 0, 0
 
@@ -185,8 +187,44 @@ class Duration(Single):
         result = result.replace('I', '1').replace('D', '0').replace('S', '5')
         result = result.replace('o', '0').replace('l', '1').replace('O', '0')
         result = result.replace('B', '8').replace('：', ':').replace(' ', '').replace('.', ':')
+        # OCR 常见误识别：冒号:被识别为8
+        # 时间格式应为 H:MM:SS 或 HH:MM:SS，包含2个冒号
+        # 如果冒号数不足2个，尝试将特定位置的8还原为冒号
+        colon_count = result.count(':')
+        if colon_count < 2:
+            fixed = self._fix_colon_as_eight(result)
+            if fixed != result:
+                logger.info(f'OCR {self.name}: Duration fix "8"->":" in "{result}" -> "{fixed}"')
+                result = fixed
         result = super().after_process(result)
         return result
+
+    @staticmethod
+    def _fix_colon_as_eight(string):
+        """
+        修复OCR将冒号:误识别为8的情况
+        时间格式 H:MM:SS 或 HH:MM:SS
+        """
+        # 找出所有可能是误识别冒号的8的位置
+        eight_positions = [i for i, c in enumerate(string) if c == '8']
+
+        # 最多替换2个8（时间格式有2个冒号）
+        max_replace = min(len(eight_positions), 2)
+
+        for num_replace in range(1, max_replace + 1):
+            for positions in itertools.combinations(eight_positions, num_replace):
+                candidate = list(string)
+                for pos in positions:
+                    candidate[pos] = ':'
+                candidate = ''.join(candidate)
+                # 验证替换后是否包含合法的时间格式
+                match = re.search(r'(\d{1,2}):(\d{2}):(\d{2})', candidate)
+                if match:
+                    h, m, s = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                    # 分钟和秒数必须 < 60
+                    if m < 60 and s < 60:
+                        return match.group(0)
+        return string
 
     @staticmethod
     def parse_time(string):

@@ -349,5 +349,14 @@
     "imageName": "flag_on_field.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "click_battle",
+    "roiFront": "599,108,87,35",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "click_battle.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

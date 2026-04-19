@@ -13,6 +13,7 @@ import time
 
 class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     character: str
+    skip_onmyoji_genie: bool = False
 
     def __init__(self, *wargs, **kwargs):
         super().__init__(*wargs, **kwargs)
@@ -110,7 +111,7 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 logger.info("reject invites")
                 continue
             # 关闭阴阳师精灵提示
-            if self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
+            if not self.skip_onmyoji_genie and self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
                 logger.info("click onmyoji genie")
                 continue
             # 当账号未登录时点击登录

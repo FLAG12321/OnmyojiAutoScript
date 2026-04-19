@@ -1,0 +1,65 @@
+[
+  {
+    "itemName": "to_task",
+    "roiFront": "272,301,26,153",
+    "roiBack": "173,215,268,377",
+    "description": "description",
+    "imageName": "to_task.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "to_battle_guard",
+    "roiFront": "1152,339,54,26",
+    "roiBack": "784,322,439,60",
+    "description": "description",
+    "imageName": "to_battle_guard.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "page_task",
+    "roiFront": "883,26,97,38",
+    "roiBack": "775,18,383,80",
+    "description": "description",
+    "imageName": "page_task.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "page_battle_guard",
+    "roiFront": "166,19,122,39",
+    "roiBack": "117,9,241,92",
+    "description": "description",
+    "imageName": "page_battle_guard.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "to_team",
+    "roiFront": "959,158,59,190",
+    "roiBack": "31,92,1225,619",
+    "description": "description",
+    "imageName": "to_team.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "page_team",
+    "roiFront": "93,27,128,36",
+    "roiBack": "64,10,211,87",
+    "description": "description",
+    "imageName": "page_team.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "click_invite_add",
+    "roiFront": "1143,253,55,54",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "click_invite_add.png",
+    "method": "Template matching",
+    "threshold": 0.85
+  }
+]

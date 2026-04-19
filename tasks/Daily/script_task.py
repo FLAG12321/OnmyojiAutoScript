@@ -31,13 +31,10 @@ class ScriptTask(GameUi, DailyAssets):
         
         try:
             self.daily_conf = self.config.daily 
-            sup_account_list = self._get_sorted_accounts()
-            
             login_time = self.daily_conf.daily_config.need_login_time
+            sup_account_list = self._get_sorted_accounts(login_time)
             
             for accountInfo in sup_account_list:
-                if not self._should_process_account(accountInfo, login_time):
-                    continue
                     
                 max_retries = 3
                 retry_count = 0
@@ -62,11 +59,13 @@ class ScriptTask(GameUi, DailyAssets):
                             title="ERROR"
                         )
                         self.daily_conf.daily_config.need_login = False
-                        self.daily_conf.daily_config.need_login_time = login_time
+                        if not self.daily_conf.daily_config.need_login_time == self.start_time:   
+                            self.daily_conf.daily_config.need_login_time = login_time
                         self.save_config()
                         self.next_run("Daily", success=False)
-                        Script.save_error_log(self)
-                                
+                        Script.save_error_log(self) 
+                        if e.__class__.__name__ == "RequestHumanTakeover": 
+                            raise RequestHumanTakeover("RequestHumanTakeover")
             self._notify_daily_completion()
             # 检查是否需要关机
             if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_tongxin_battle_enable:
@@ -218,17 +217,29 @@ class ScriptTask(GameUi, DailyAssets):
         """执行系统关机操作（旧版本，保持向后兼容）"""
         self._execute_shutdown()
 
-    def _get_sorted_accounts(self):
-        """获取按最后完成时间排序的账号列表，先按账号分组使同账号角色连续，再按账号整体完成时间排序"""
+    def _get_sorted_accounts(self, login_time):
+        """获取按最后完成时间排序的账号列表，先剔除不需要处理的账号，再按账号分组排序"""
         if not self.daily_conf.sup_account_list:
             return []
         
         from collections import defaultdict
         from datetime import datetime
         
-        # 按账号（account）分组
-        account_groups = defaultdict(list)
+        # 第一步：剔除不需要处理的账号（need_login为False时，已完成的不需要再登录）
+        filtered_accounts = []
         for account_info in self.daily_conf.sup_account_list:
+            if not self._should_process_account(account_info, login_time):
+                logger.info(f"Filtering out account {account_info.character} (already completed)")
+                continue
+            filtered_accounts.append(account_info)
+        
+        if not filtered_accounts:
+            logger.info("No accounts need to be processed after filtering")
+            return []
+        
+        # 第二步：按账号（account）分组，使同一邮箱下的角色连续排列
+        account_groups = defaultdict(list)
+        for account_info in filtered_accounts:
             account_groups[account_info.account].append(account_info)
         
         # 计算每个账号的最后完成时间的最大值（即最晚完成的那个），用于排序整个账号组
@@ -345,7 +356,7 @@ class ScriptTask(GameUi, DailyAssets):
             return self._handle_task_end(msg, account_info)
         except RequestHumanTakeover:
             Script.save_error_log(self)
-            raise
+            raise RequestHumanTakeover
         except Exception as e:
             logger.error(f"Error in daily tasks for {account_info.character}: {e}")
             Script.save_error_log(self)
@@ -448,7 +459,7 @@ class ScriptTask(GameUi, DailyAssets):
         @param item: 账号信息
         @param last_complete_time: 需要比较的时间
         """
-        logger.info(f"Account: {item.character}, Last completion time: {last_complete_time}")
+        logger.info(f"Account: {item.character}, Last completion time: {item.last_complete_time}, Login time: {last_complete_time}")
         last_time = item.last_complete_time
         return last_complete_time > last_time
 

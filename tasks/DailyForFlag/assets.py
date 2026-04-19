@@ -291,6 +291,28 @@ class DailyForFlagAssets:
 	I_FRIEND_HELP = RuleImage(roi_front=(1205,541,38,71), roi_back=(1187,512,71,118), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help.png")
 	# description 
 	I_FRIEND_HELP_FLAG = RuleImage(roi_front=(803,107,167,34), roi_back=(782,93,210,63), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help_flag.png")
+	# description 
+	I_CLICK_EVOZONE = RuleImage(roi_front=(168,354,169,42), roi_back=(121,114,256,556), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/click_evozone.png")
+	# description 
+	I_CLICK_LEVEL = RuleImage(roi_front=(459,269,61,32), roi_back=(392,185,200,386), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/click_level.png")
+	# description 
+	I_INVITE_FRIEND = RuleImage(roi_front=(694,250,26,27), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend.png")
+	# description 
+	I_INVITE_FRIEND_OVER = RuleImage(roi_front=(694,250,26,27), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend_over.png")
+	# description 
+	I_PAGE_INVITE = RuleImage(roi_front=(552,114,183,41), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/page_invite.png")
+
+
+	# Ocr Rule Assets
+	# description 
+	O_SELECT_LEVEL = RuleOcr(roi=(413,130,221,46), area=(0,0,100,100), mode="Single", method="Default", keyword="觉醒业火轮壹层", name="select_level")
+	# description 
+	O_FLAG_LEVEL = RuleOcr(roi=(393,186,200,383), area=(0,0,100,100), mode="Full", method="Default", keyword="层", name="flag_level")
+
+
+	# Swipe Rule Assets
+	# description 
+	S_SELECT_LEVEL = RuleSwipe(roi_front=(471,239,46,22), roi_back=(475,494,40,26), mode="default", name="select_level")
 
 
 	# Click Rule Assets

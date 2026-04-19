@@ -53,7 +53,9 @@ page_login = Page(G.I_CHECK_LOGIN_FORM)
 # Main Home 主页
 page_main = Page(G.I_CHECK_MAIN)
 page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
-                        [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
+                        [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
+                        [RestartAssets.I_LOGIN_COURTYARD2, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
+                        [RestartAssets.I_LOGIN_SCROOLL_CLOSE, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
 page_summon.additional = [G.O_SUMMON_BACK_Y, G.I_SUMMON_BACK_R,G.I_SUMMON_BACK_TICKET]
@@ -161,6 +163,7 @@ page_onmyodo.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_ONMYODO, destination=page_onmyodo)
 # 好友 friends
 page_friends = Page(G.I_CHECK_FRIENDS)
+page_shikigami_records.additional = [[G.I_FAVORABILITY_UP, G.C_FAVORABILITY_UP]]
 page_friends.link(button=G.I_BACK_FRIENDS, destination=page_main)
 page_main.link(button=G.O_PAGE_FRIENDS, destination=page_friends)
 # 花合战 daily

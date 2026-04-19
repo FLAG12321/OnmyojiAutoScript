@@ -422,6 +422,8 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
     def fire(self, button) -> bool:
         self.appear_then_click(button, interval=3)
+        # 短暂等待场景切换，避免截图过早导致误判仍在探索场景
+        time.sleep(1.0)
         self.screenshot()
         if (self.appear(self.I_E_SETTINGS_BUTTON) or
                 self.appear(self.I_E_AUTO_ROTATE_ON) or

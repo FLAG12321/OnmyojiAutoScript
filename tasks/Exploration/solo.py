@@ -79,6 +79,10 @@ class SoloExploration(BaseExploration):
                             self.ui_click(self.I_E_LOCK, stop=self.I_E_UNLOCK, interval=2)  
                     explore_init = True
                     continue
+                # 兜底检查：每次循环都检查是否达到退出条件
+                if self.check_exit():
+                    self.quit_explore()
+                    break
                 #体力不够
                 if self.appear(self.I_E_MAIN_SUSHI):
                     self.ui_click_until_disappear(self.I_UI_BACK_RED)
@@ -92,12 +96,18 @@ class SoloExploration(BaseExploration):
                 if self.appear(self.I_BOSS_BATTLE_BUTTON):
                     if self.fire(self.I_BOSS_BATTLE_BUTTON):
                         logger.info(f'Boss battle, minions cnt {self.minions_cnt}')
+                        if self.check_exit():
+                            self.quit_explore()
+                            break
                     continue
                 # 小怪
                 fight_button = self.search_up_fight()
                 if fight_button is not None:
                     if self.fire(fight_button):
                         logger.info(f'Fight, minions cnt {self.minions_cnt}')
+                        if self.check_exit():
+                            self.quit_explore()
+                            break
                     continue
                 #弹窗
                 if self.appear_then_click(self.I_E_CLICK_ANY):
@@ -206,6 +216,10 @@ class SoloExploration(BaseExploration):
                     friend_leave_timer = Timer(10)
                     explore_init = True
                     continue
+                # 兜底检查：每次循环都检查是否达到退出条件
+                if self.check_exit():
+                    self.quit_explore()
+                    break
                 # 小纸人
                 if self.appear(self.I_BATTLE_REWARD):
                     if self.ui_get_reward(self.I_BATTLE_REWARD):
@@ -228,12 +242,18 @@ class SoloExploration(BaseExploration):
                 if self.appear(self.I_BOSS_BATTLE_BUTTON):
                     if self.fire(self.I_BOSS_BATTLE_BUTTON):
                         logger.info(f'Boss battle, minions cnt {self.minions_cnt}')
+                        if self.check_exit():
+                            self.quit_explore()
+                            break
                     continue
                 # 小怪
                 fight_button = self.search_up_fight()
                 if fight_button is not None:
                     if self.fire(fight_button):
                         logger.info(f'Fight, minions cnt {self.minions_cnt}')
+                        if self.check_exit():
+                            self.quit_explore()
+                            break
                     continue
                 # 向后拉,寻找怪
                 if search_fail_cnt >= 4:
