@@ -27,6 +27,7 @@ class DailyForFlagConfig(BaseModel):
   isflower: bool = Field(default=False, description='是否二花')
   kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
   KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
+  tree_planting_enable: bool = Field(default=False, description='是否开启种树')
 class DailyForFlag(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     daily_for_flag_config: DailyForFlagConfig  = Field(default_factory=DailyForFlagConfig)

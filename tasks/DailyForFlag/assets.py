@@ -301,6 +301,8 @@ class DailyForFlagAssets:
 	I_INVITE_FRIEND_OVER = RuleImage(roi_front=(694,250,26,27), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend_over.png")
 	# description 
 	I_PAGE_INVITE = RuleImage(roi_front=(552,114,183,41), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/page_invite.png")
+	# description 
+	I_TREE_AWARD = RuleImage(roi_front=(479,216,328,59), roi_back=(352,136,588,225), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tree_award.png")
 
 
 	# Ocr Rule Assets
@@ -313,6 +315,33 @@ class DailyForFlagAssets:
 	# Swipe Rule Assets
 	# description 
 	S_SELECT_LEVEL = RuleSwipe(roi_front=(471,239,46,22), roi_back=(475,494,40,26), mode="default", name="select_level")
+
+
+	# Image Rule Assets
+	# description 
+	I_TO_TREE = RuleImage(roi_front=(22,251,103,31), roi_back=(9,2,251,637), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/to_tree.png")
+	# description 
+	I_TO_PLANTING = RuleImage(roi_front=(1176,627,53,62), roi_back=(1046,567,208,148), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/to_planting.png")
+	# description 
+	I_PLANTING = RuleImage(roi_front=(548,637,35,50), roi_back=(458,587,665,123), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/planting.png")
+	# description 
+	I_DONATE = RuleImage(roi_front=(563,512,95,34), roi_back=(462,482,366,108), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/donate.png")
+	# description 
+	I_GET_FLOWER = RuleImage(roi_front=(313,633,53,33), roi_back=(270,612,167,92), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/get_flower.png")
+	# description 
+	I_BUY_FLOWER = RuleImage(roi_front=(341,281,116,33), roi_back=(292,118,264,479), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/buy_flower.png")
+	# description 
+	I_TO_BUY = RuleImage(roi_front=(843,470,131,45), roi_back=(342,282,652,108), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/to_buy.png")
+	# description 
+	I_FLOWER = RuleImage(roi_front=(766,446,39,47), roi_back=(209,92,766,325), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/flower.png")
+	# description 
+	I_CLICK_MAX = RuleImage(roi_front=(765,447,42,39), roi_back=(386,338,503,286), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/click_max.png")
+	# description 
+	I_CLICK_BUY = RuleImage(roi_front=(613,544,41,39), roi_back=(522,518,259,90), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/click_buy.png")
+	# description 
+	I_TREE_BACK_Y = RuleImage(roi_front=(1021,73,34,42), roi_back=(947,47,174,154), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/tree_back_y.png")
+	# description 
+	I_TO_BUY_DISABLE = RuleImage(roi_front=(840,340,134,38), roi_back=(342,282,644,112), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/to_buy_disable.png")
 
 
 	# Click Rule Assets

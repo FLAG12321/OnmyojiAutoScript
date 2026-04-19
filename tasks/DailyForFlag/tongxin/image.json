@@ -232,5 +232,14 @@
     "imageName": "page_invite.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "tree_award",
+    "roiFront": "479,216,328,59",
+    "roiBack": "352,136,588,225",
+    "description": "description",
+    "imageName": "tree_award.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

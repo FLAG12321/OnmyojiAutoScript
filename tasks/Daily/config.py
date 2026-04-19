@@ -20,10 +20,11 @@ class ExtendedAccountInfo(AccountInfo):
     xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
     huili_enable: bool = Field(default=True, description='是否开启回礼')
     weekaward_enable: bool = Field(default=True, description='是否领取每周奖励')
-    mysteryshop_enable: bool = Field(default=False, description='是否开启神秘商店')
+    mysteryshop_enable: bool = Field(default=True, description='是否开启神秘商店')
     isflower: bool = Field(default=False, description='是否二花')
-    kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
-    KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
+    kekkaiActivation_enable: bool = Field(default=True, description='是否挂卡')
+    KekkaiUtilize_enable: bool = Field(default=True, description='是否蹭卡')
+    tree_planting_enable: bool = Field(default=True, description='是否开启种树')
 class DailyConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
@@ -40,6 +41,7 @@ class DailyConfig(ConfigBase):
     need_login_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"),description='需要登录时间点')
     total_kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
     total_KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
+    total_tree_planting_enable: bool = Field(default=False, description='是否开启种树')
     shutdown_after_finish: bool = Field(default=False, description='日常任务完成后是否关机')
 
 class Daily(ConfigBase):

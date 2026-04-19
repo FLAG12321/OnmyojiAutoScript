@@ -294,7 +294,7 @@ class ScriptTask(GameUi, DailyAssets):
             config.tingyuan_enable or config.xiezuo_enable or   \
             config.huili_enable or config.weekaward_enable or   \
             config.mysteryshop_enable or config.kekkaiActivation_enable or  \
-            config.KekkaiUtilize_enable \
+            config.KekkaiUtilize_enable or config.tree_planting_enable \
             ):
             logger.info(f"Skipping account {account_info.character} - No tasks enabled")
             return True
@@ -325,6 +325,7 @@ class ScriptTask(GameUi, DailyAssets):
         config.mysteryshop_enable = base_config.total_mysteryshop_enable and account_info.mysteryshop_enable
         config.kekkaiActivation_enable = base_config.total_kekkaiActivation_enable and account_info.kekkaiActivation_enable
         config.KekkaiUtilize_enable = base_config.total_KekkaiUtilize_enable and account_info.KekkaiUtilize_enable
+        config.tree_planting_enable = base_config.total_tree_planting_enable and account_info.tree_planting_enable
         # 账号特定配置
         config.isflower = account_info.isflower
         config.tongxin_limit_count = account_info.tongxin_limit_count
