@@ -973,6 +973,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         if self.ui_get_current_page() != page_guild:
             self.ui_goto(page_guild)
         start_time = time.time()
+        retry_count = 0
         while time.time()-start_time < 5:
             self.screenshot()
             if self.appear(self.I_GET_FLOWER, interval=1):
@@ -980,11 +981,14 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 break
             if self.appear(self.I_BUY_FLOWER):
                 logger.info("没有花,直接买")
-                if buy_flower()>=4:
+                retry_count+=1
+                if buy_flower()>=4 or retry_count>=3:
+                    self.appear_then_click(self.I_BACK_Y, interval=1)
+                    self.ui_goto(page_main)
                     return
                 start_time = time.time()
                 continue
-            if self.appear_then_click(self.I_TO_TREE):
+            if self.appear_then_click(self.I_TO_TREE, interval=2):
                 start_time = time.time()
                 continue
         logger.info("开始买花")
