@@ -113,7 +113,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         if con.daily_for_flag_config.mysteryshop_enable:
             self.run_mysteryshop()
             # 执行挂卡（只执行核心逻辑，避免TaskEnd）
-        if con.daily_for_flag_config.tree_planting_enable:
+        if con.daily_for_flag_config.tree_planting_enable > 0:
             self.run_tree_planting()
 
         if con.daily_for_flag_config.kekkaiActivation_enable:
@@ -925,9 +925,12 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
     def run_tree_planting(self):
         def buy_flower():
             logger.info("买花") 
+            buy_count=0
             start_time = time.time()
             while time.time()-start_time<5:
                 self.screenshot()
+                if buy_count>=4:
+                    break
                 if self.appear_then_click(self.I_TREE_AWARD,interval=1):
                     start_time = time.time()
                     break
@@ -938,6 +941,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                         self.I_TO_BUY_DISABLE.roi_back=(buy_flower_image[0][1],buy_flower_image[0][2],652,108)
                         if self.appear_rgb(self.I_TO_BUY):
                             self.appear_then_click(self.I_TO_BUY)
+                            buy_count+=1
                             continue
                         elif self.appear_rgb(self.I_TO_BUY_DISABLE):
                             break
@@ -993,6 +997,11 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 continue
              
         logger.info("开始捐赠") 
+        if self.get_config().daily_for_flag_config.tree_planting_enable < 2:
+            logger.info("种树配置为仅买花，跳过捐赠")
+            self.appear_then_click(self.I_BACK_Y, interval=1)
+            self.ui_goto(page_main)
+            return
         start_time = time.time()
         while time.time()-start_time < 5:
             self.screenshot()
