@@ -28,22 +28,8 @@ class MoonSeaMap(MoonSeaSkills):
             for i in range(6):
                 if self.appear_then_click(self.island_list[self.priority_queue[1][i]], interval=1):
                     return True
-        '''
-        if self.appear_then_click(self.I_UI_CANCEL, interval=1):
-            return True
-        if self.appear_then_click(self.I_SHENMI, interval=1):
-            return True
-        if self.appear_then_click(self.I_HUNDUN, interval=1):
-            return True
-        if self.appear_then_click(self.I_ZHAN, interval=1):
-            return True
-        if self.appear_then_click(self.I_XING, interval=1):
-            return True
-        if self.appear_then_click(self.I_NINGXI, interval=1):
-            return True
-        '''
         logger.info('Entering island')
-        return None
+        return False
 
     def activate_store(self) -> bool:
         """

@@ -441,6 +441,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             if self.appear(self.I_SA_LOGIN_FORM_APPLE):
                 btn = self.I_SA_LOGIN_FORM_ANDROID if accountInfo.apple_or_android else self.I_SA_LOGIN_FORM_APPLE
                 self.ui_click_until_disappear(btn)
+                time.sleep(1)
                 isAccountLogon = True
                 continue
             # 处于选择账号界面

@@ -4,7 +4,7 @@ from tasks.SixRealms.moon_sea.skills import MoonSeaSkills
 
 
 class MoonSeaL103(MoonSeaSkills):
-    def run_103(self):
+    def run_l103(self):
         # 宝箱还是精英
         logger.hr('Island 103')
         is_box: bool = self.appear(self.I_L103_EXIT)
@@ -12,14 +12,13 @@ class MoonSeaL103(MoonSeaSkills):
             logger.info('Access to Box')
             while 1:
                 self.screenshot()
-                if self.appear(self.I_M_STORE) or self.appear(self.I_BOSS_FIRE):
-                    logger.info('Not punched the treasure  box')
+                if self.in_main():
                     return
                 if self.appear_then_click(self.I_UI_UNCHECK, interval=0.5):
                     continue
                 if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                     continue
-                if self.appear_then_click(self.I_L103_EXIT, interval=4):
+                if self.appear_then_click(self.I_L103_EXIT, interval=1.5):
                     continue
         self.battle_l103()
         logger.info('Island 103 Finished')
@@ -31,7 +30,7 @@ class MoonSeaL103(MoonSeaSkills):
             self.screenshot()
             if self.appear(self.I_NPC_FIRE):
                 break
-            if self.click(self.C_NPC_FIRE_CENTER, interval=4):
+            if self.click(self.C_NPC_FIRE_CENTER, interval=2):
                 continue
         self.battle_lock_team()
         self.island_battle()

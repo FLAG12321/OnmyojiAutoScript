@@ -124,5 +124,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "技巧强化"
+  },
+  {
+    "itemName": "battle_skill101",
+    "roiFront": "86,90,30,41",
+    "roiBack": "5,83,235,51",
+    "description": "description",
+    "imageName": "battle_skill101.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

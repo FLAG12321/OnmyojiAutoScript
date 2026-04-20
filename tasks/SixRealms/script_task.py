@@ -47,9 +47,12 @@ class ScriptTask(SwitchSoul, MoonSea, GameUi):
 
 if __name__ == '__main__':
     from module.config.config import Config
+    from module.device.device import Device
 
-    c = Config('du')
-    t = ScriptTask(c)
-    # t.screenshot()
+    c = Config('oas1')
+    d = Device(c)
 
-    t.run()
+    self = ScriptTask(c, d)
+    #self._run_moon_sea()
+    self.run()
+

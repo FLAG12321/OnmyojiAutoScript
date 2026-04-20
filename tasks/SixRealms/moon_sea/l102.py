@@ -10,9 +10,10 @@ class MoonSeaL102(MoonSeaSkills):
         ##is_imitation = None
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_BACK_EXIT, interval=1):
+            if self.in_main():
                 break
-                ''' 
+            self.appear_then_click(self.I_BACK_EXIT, interval=1)
+        ''' 
             if self.appear(self.I_COIN_RIGHT_TOP):
                 is_imitation = False
                 break

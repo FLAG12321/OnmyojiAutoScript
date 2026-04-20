@@ -13,7 +13,7 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
 
     cnt_skill101 = 0
     cnt_skillpower = 1
-
+    get_skill101 = False
     def in_main(self, screenshot: bool = False):
         if screenshot:
             self.screenshot()
@@ -34,6 +34,8 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
         self.screenshot()
         while 1:
             self.screenshot()
+            if self.get_skill101 and self.cnt_skill101 < 1 and self.appear(self.I_BATTLE_SKILL101):
+                self.cnt_skill101 += 1
             if self.appear(self.I_SKILL_REFRESH):
                 break
             if self.appear(self.I_COIN):
@@ -42,6 +44,7 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
                 self.device.stuck_record_clear()
                 self.device.stuck_record_add('BATTLE_STATUS_S')
                 continue
+        self.get_skill101 = False
         self.device.stuck_record_clear()
 
     @cached_property
@@ -109,7 +112,15 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
         if self.appear(self.I_UI_CONFIRM):
             self.ui_click_until_disappear(self.I_UI_CONFIRM)
             return True
-
+        if self.appear(self.I_PEACOCK_SKILL1):
+            self.ui_click_until_disappear(self.I_PEACOCK_SKILL1,interval=1)
+            self.cnt_skillpower+=1
+            logger.info(f'Skill power level: {self.cnt_skillpower}')
+            return True
+        if self.appear(self.I_PEACOCK_SKILL2):
+            self.ui_click_until_disappear(self.I_PEACOCK_SKILL2,interval=1)
+            logger.info(f'Skill level +1 ')
+            return True
         if self.appear(self.I_SKILL_REFRESH) and self.appear(self.I_SELECT_3) and not self.appear(self.I_COIN):
             # 战斗结束后选技能
             logger.info('Start select skill')
@@ -118,33 +129,17 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
             while   self.cnt_skill101 < 1 and self.cnt_skillpower>=4 and refresh and select == 3 and check_coin_skill() and check_refresh() :
                 logger.info('Refresh skill')
                 self.appear_then_click(self.I_SKILL_REFRESH)
-                #self.wait_until_stable(self.I_UI_CONFIRM, timeout=Timer(2))
-                #self.appear_then_click(self.I_UI_CONFIRM)
-                self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=1)
                 select = self._select_skill()
-            '''
-            if self.cnt_skill101 < 1 and self.cnt_skillpower>=4 and refresh and select == 3 and check_coin_skill() and check_refresh() :
-                logger.info('Refresh skill')
-                self.appear_then_click(self.I_SKILL_REFRESH)
-                self.wait_until_stable(self.I_UI_CONFIRM, timeout=Timer(2))
-                self.appear_then_click(self.I_UI_CONFIRM)
-                self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=1)
-                return True
-            '''
-            if self.appear_then_click(self.selects_button[select],interval=1):
-                if select==3:
-                    self.wait_until_stable(self.I_PEACOCK_SKILL1, timeout=Timer(3))
-                    if self.appear_then_click(self.I_PEACOCK_SKILL1,interval=1):
-                        self.cnt_skillpower+=1
-                        logger.info(f'Skill power level: {self.cnt_skillpower}')
-                    if self.appear_then_click(self.I_PEACOCK_SKILL2,interval=1):
-                        logger.info(f'Skill level +1 ')
-                self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=2)
-
+            if self.appear(self.selects_button[select]):
+                while self.appear_rgb(self.selects_button[select]):
+                    self.screenshot()
+                    self.appear_then_click(self.selects_button[select], interval=1)
+                if not select==3:
+                    self.cnt_skill101 +=1
             return True
 
         if self.appear_then_click(self.I_COIN, action=self.C_UI_REWARD, interval=1.5):
             return True
-        return None
+        return False
 
 

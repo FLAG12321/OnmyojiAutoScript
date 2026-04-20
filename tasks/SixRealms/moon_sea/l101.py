@@ -66,7 +66,6 @@ class MoonSeaL101(MoonSeaSkills):
         logger.hr('Start l101')
         logger.info('Keep buying skills until you run out of money')
         self.wait_until_appear(self.I_STORE_EXIT)
-        self.wait_animate_stable(self.C_STORE_ANIMATE_KEEP, timeout=2)
         if self.appear(self.I_UI_CANCEL):
             # 有时候点击进入商店太快了，就进入会选随机的一个
             self.ui_click_until_disappear(self.I_UI_CANCEL, interval=1)

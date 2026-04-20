@@ -48,6 +48,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
     def one(self):
         self.cnt_skill101 = 0
         self.cnt_skillpower = 1
+        self.get_skill101 = False
         if not self._start():
             return False
         while 1:
@@ -55,7 +56,6 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 
             if self.select_skill(refresh=True):
                 continue
-
             if self.enter_island():
                 continue
             isl_type = self.island_name()
@@ -64,7 +64,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
             match isl_type:
                 case MoonSeaType.island101: self.run_l101()
                 case MoonSeaType.island102: self.run_l102()
-                case MoonSeaType.island103: self.run_103()
+                case MoonSeaType.island103: self.run_l103()
                 case MoonSeaType.island104: self.run_l104()
                 case MoonSeaType.island105: self.run_l105()
                 case MoonSeaType.island106:
@@ -74,8 +74,6 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                         return True
                     else:
                         continue
-            self.wait_animate_stable(self.C_MAIN_ANIMATE_KEEP, timeout=3)
-            continue
 
     def _continue(self):
         logger.warning('Moon Sea Continue')
@@ -102,6 +100,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 continue
             if self.appear(self.I_MCONINUE):
                 # 继续上一把的
+                self.get_skill101 = True
                 self.ui_click_until_disappear(self.I_MCONINUE)
                 return True
         logger.info("Ensure select ShouZu")
@@ -109,7 +108,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
             self.screenshot()
             if self.appear(self.I_MSHOUZU):
                 break
-            if self.appear_then_click(self.I_MSHUTEN, interval=3):
+            if self.appear_then_click(self.I_MSHUTEN, interval=1):
                 continue
             if self.appear_then_click(self.I_MSHOUZU_SELECT, interval=1):
                 continue
@@ -126,15 +125,15 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 continue
             if self.appear_then_click(self.I_MSKIP, interval=1.5):
                 continue
-            if self.appear_then_click(self.I_MSTART, interval=3):
+            if self.appear_then_click(self.I_MSTART, interval=1):
                 continue
-            if self.appear_then_click(self.I_MSTART_CONFIRM, interval=3):
+            if self.appear_then_click(self.I_MSTART_CONFIRM, interval=1):
                 continue
-            if self.appear_then_click(self.I_MSTART_CONFIRM2, interval=3):
+            if self.appear_then_click(self.I_MSTART_CONFIRM2, interval=1):
                 continue
-            if self.appear_then_click(self.I_MCONINUE, interval=3):
+            if self.appear_then_click(self.I_MCONINUE, interval=1):
                 continue
-            if self.appear_then_click(self.I_MPEACOCK_SKILL, interval=3):
+            if self.appear_then_click(self.I_MPEACOCK_SKILL, interval=1):
                 continue
         logger.info("Start Roguelike")
         while 1:
@@ -171,7 +170,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
             self.screenshot()
             if self.appear(self.I_BOSS_TEAM_LOCK):
                 break
-            if self.appear_then_click(self.I_BOSS_TEAM_UNLOCK, interval=2):
+            if self.appear_then_click(self.I_BOSS_TEAM_UNLOCK, interval=1):
                 logger.info('Click lock Boss Team')
                 continue
 
@@ -210,7 +209,7 @@ class MoonSea(MoonSeaMap, MoonSeaL101, MoonSeaL102, MoonSeaL103, MoonSeaL104, Mo
                 self.device.stuck_record_add('BATTLE_STATUS_S')
                 continue
         logger.info('Boss battle end')
-        self.save_image()
+        #self.save_image()
         if self.wait_until_appear(self.I_BOSS_SHUTU, wait_time=20):
             self.ui_click(self.I_BOSS_SHUTU, stop=self.I_MSTART)
         return True
