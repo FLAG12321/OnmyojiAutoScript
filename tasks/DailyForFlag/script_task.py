@@ -409,7 +409,11 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 logger.info("邀请完成")
                 break
             if len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image))<2:
-                if self.appear_then_click(self.I_INVITE_FRIEND, interval=1):
+                logger.info("邀请好友")
+                if self.appear(self.I_INVITE_FRIEND, interval=1):
+                    self.I_INVITE_FRIEND.roi_front[2]=13
+                    self.I_INVITE_FRIEND.roi_front[3]=12
+                    self.click(self.I_INVITE_FRIEND)
                     time.sleep(1)
                 start_time = time.time()
                 continue
@@ -511,12 +515,11 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         self.check_lock(True)
         while 1:
             self.screenshot()
-
-            if not is_in_evozone():
-                continue
             if self.current_count >= tongxin_limit_count:
                 logger.info('Orochi count limit out')
                 break
+            if not is_in_evozone():
+                continue
             # 点击挑战
             while 1:
                 self.screenshot()
@@ -1034,14 +1037,19 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
+    from module.base.utils import load_image
     c = Config('QMUMU2')
     d = Device(c)
     self = ScriptTask(c, d)
     #t.run_mysteryshop()
     self.screenshot()
+    self.device.image = load_image(r'C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\log\error\1776649303195\2026-04-20_09-41-43-080161.png')
+    if self.appear(GameUiAssets.I_CHECK_FRIENDS):
+        logger.info("I_CHECK_FRIENDS found ")
+    self.ui_goto(page_friends)
     """ buy_flower_image = self.I_BUY_FLOWER.match_all_any(self.device.image)
     logger.info(buy_flower_image) """
-    self.run_tree_planting()
+    #self.run_tree_planting()
     """ start_time = time.time()
     #logger.info(f"开始执行{len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image))}")
     while time.time()-start_time < 5:
@@ -1109,3 +1117,7 @@ if __name__ == "__main__":
     self.screenshot()
     if self.ui_get_current_page() != page_main:
         self.ui_goto(page_main) """
+    # match = re.search(r'\d{1,2}', '<17回合后迎战月读')
+    # if match:
+    #     isl_num = int(match.group())
+    #     print(isl_num)     

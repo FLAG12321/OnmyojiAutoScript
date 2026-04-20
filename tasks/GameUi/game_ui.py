@@ -316,38 +316,42 @@ class GameUi(BaseTask, GameUiAssets):
         if not page.additional:
             return
         for btn in page.additional:
-            # Support delayed click: [target, delay_seconds]
-            # Keep checking target within 1 second instead of a single detection.
-            if isinstance(btn, (list, tuple)) and len(btn) == 2 and isinstance(btn[1], (int, float)):
-                target, delay_seconds = btn
-                detected = False
-                detect_timer = Timer(1.5).start()
-                while not detect_timer.reached():
-                    self.screenshot()
-                    if self.appear(target):
-                        detected = True
-                        break
-                    sleep(0.1)
-                skip_first_screenshot = False
-                if detected:
-                    if delay_seconds > 0:
-                        sleep(delay_seconds)
-                    if self.appear_then_operate(target, interval=interval, skip_first_screenshot=False):
-                        logger.info(f'Page {page} additional delayed {target} clicked after {delay_seconds}s')
-                        skip_first_screenshot = False
-                continue
-            # 支持复合条件操作: [条件元素, 操作元素]。出现条件图片时点击另一个区域。
-            if isinstance(btn, list) and len(btn) == 2:
-                condition, action = btn
-                self.maybe_screenshot(skip_first_screenshot)
-                if self.appear(condition):
-                    if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
-                        logger.info(f'Page {page} additional conditional {condition} -> {action} executed')
-                        skip_first_screenshot = False
-            elif self.appear_then_operate(btn, interval=interval, skip_first_screenshot=skip_first_screenshot):
-                logger.info(f'Page {page} additional {btn} clicked')
-                skip_first_screenshot = False
+            # 统一解析: condition, action, delay_seconds
+            # 格式: btn                          -> condition=btn, action=btn, delay=0 (普通点击)
+            #       [target, delay]               -> condition=target, action=target, delay=delay (延时点击)
+            #       [condition, action]           -> condition=condition, action=action, delay=0 (复合条件)
+            #       [condition, action, delay]    -> condition=condition, action=action, delay=delay (延时复合条件)
+            condition = btn
+            action = btn
+            delay_seconds = 0
+            if isinstance(btn, (list, tuple)):
+                if len(btn) == 3 and isinstance(btn[2], (int, float)):
+                    condition, action, delay_seconds = btn
+                elif len(btn) == 2 and isinstance(btn[1], (int, float)):
+                    condition, action, delay_seconds = btn[0], btn[0], btn[1]
+                elif len(btn) == 2:
+                    condition, action = btn
 
+            # 反复检测1.5秒确认条件是否满足
+            detected = False
+            detect_timer = Timer(1.5).start()
+            while not detect_timer.reached():
+                self.screenshot()
+                if self.appear(condition):
+                    detected = True
+                    break
+                sleep(0.1)
+            skip_first_screenshot = False
+
+            # 执行操作
+            if detected:
+                
+                if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
+                    logger.info(f'Page {page} additional {condition} -> {action} executed'
+                                f'{f" after {delay_seconds}s" if delay_seconds > 0 else ""}')
+                    skip_first_screenshot = False
+                if delay_seconds > 0:
+                    sleep(delay_seconds)
     def appear_then_operate(self, target: RuleList | RuleImage | RuleGif | RuleOcr | RuleClick,
                             interval: float = None, skip_first_screenshot: bool = True):
         """

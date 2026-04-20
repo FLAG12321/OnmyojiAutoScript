@@ -296,9 +296,9 @@ class DailyForFlagAssets:
 	# description 
 	I_CLICK_LEVEL = RuleImage(roi_front=(459,269,61,32), roi_back=(392,185,200,386), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/click_level.png")
 	# description 
-	I_INVITE_FRIEND = RuleImage(roi_front=(694,250,26,27), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend.png")
+	I_INVITE_FRIEND = RuleImage(roi_front=(609,257,21,19), roi_back=(363,246,546,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend.png")
 	# description 
-	I_INVITE_FRIEND_OVER = RuleImage(roi_front=(694,250,26,27), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend_over.png")
+	I_INVITE_FRIEND_OVER = RuleImage(roi_front=(605,256,19,20), roi_back=(363,246,546,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend_over.png")
 	# description 
 	I_PAGE_INVITE = RuleImage(roi_front=(552,114,183,41), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/page_invite.png")
 	# description 

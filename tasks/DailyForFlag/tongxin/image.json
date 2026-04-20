@@ -208,8 +208,8 @@
   },
   {
     "itemName": "invite_friend",
-    "roiFront": "694,250,26,27",
-    "roiBack": "367,99,543,206",
+    "roiFront": "609,257,21,19",
+    "roiBack": "363,246,546,37",
     "description": "description",
     "imageName": "invite_friend.png",
     "method": "Template matching",
@@ -217,8 +217,8 @@
   },
   {
     "itemName": "invite_friend_over",
-    "roiFront": "694,250,26,27",
-    "roiBack": "367,99,543,206",
+    "roiFront": "605,256,19,20",
+    "roiBack": "363,246,546,37",
     "description": "description",
     "imageName": "invite_friend_over.png",
     "method": "Template matching",
