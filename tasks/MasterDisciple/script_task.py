@@ -217,6 +217,28 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             若为None，则使用默认流程：ui_goto(page_team) → check_zones(task_name) → create_room → ensure_private → create_ensure
         :return: True 师父已进入房间，False 邀请失败或超时
         """
+        def reject_invite():
+            from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
+            while 1:
+                self.screenshot()
+                if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2) or self.appear(gia.I_I_REJECT_3)or self.appear(gia.I_I_REJECT_4)):
+                    break
+                if self.appear(gia.I_I_REJECT_4):
+                    self.click(gia.I_I_REJECT_4, 6)
+                    continue
+                if self.appear(gia.I_I_REJECT_1):
+                    self.click(gia.I_I_REJECT_1, 6)
+                    continue
+                if self.appear(gia.I_I_REJECT_3):
+                    self.click(gia.I_I_REJECT_3, 6)
+                    continue
+                if self.appear(gia.I_I_REJECT_2):
+                    self.click(gia.I_I_REJECT_2, 6)
+                    continue
+                if self.appear(gia.I_I_REJECT_1):
+                    self.click(gia.I_I_REJECT_1, 6)
+                    continue
+            return True
         master_name = self.config.master_disciple.master_disciple_config.master_name
         invite_timeout = self.config.master_disciple.master_disciple_config.invite_timeout
 
@@ -227,7 +249,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 return False
         else:
             # 默认流程：导航到组队页面 → 创建私人房间
-            self.ui_get_current_page()
+            time.sleep(1)
             self.ui_goto(page_team)
             self.check_zones(task_name)
 
@@ -251,7 +273,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         # 根据房间类型选择需要检测的加号图标数量
         add_num = self._get_add_icons(room_type)
-        
+        if add_num == 4:
+            add_other=True
+        else:
+            add_other=False
 
         # 等待师父进入房间，每15秒重新邀请一次
         wait_timer = Timer(invite_timeout)
@@ -276,8 +301,23 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.exit_room()
                 return False
             # 检查是否有人进入（某个加号从有变为无，表示有人进了该位置）
-            self.reject_invite()
-            if  add_num>self._get_add_count():
+            
+            if  reject_invite() and add_num>self._get_add_count():
+                if add_other:
+                    while 1:
+                        self.screenshot()
+                        if  self.appear(self.I_ENSURE_SWITCH):
+                            break
+                        self.appear_then_click(self.I_TO_SWITCH, interval=1)
+                    while 1:
+                        self.screenshot()
+                        if "所有人"in self.O_ADD_ALL.ocr(self.device.image):
+                            break
+                        if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
+                            if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
+                                continue
+                    add_num-=1
+                    continue
                 return True
 
             # 每15秒重新邀请师父
@@ -1155,9 +1195,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.ui_goto(page_main)
 
             # 进入被动等待循环
-            success = self.master_battle_flow()
+            self.master_battle_flow()
 
-            return success
         except GameNotRunningError:
             raise
         except RequestHumanTakeover:
@@ -1206,91 +1245,143 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         参照Orochi的run_member模式实现
         配置不暴露给用户，在代码中初始化
         """
-        logger.info("Master battle flow started, waiting in courtyard for invitations")
-
-        # 在代码中初始化邀请配置和战斗配置，不暴露给用户
-        invite_config = InviteConfig(
-            invite_number=InviteNumber.ONE,
-            friend_1=self.config.master_disciple.master_disciple_config.master_name,
-            friend_2='',
-            find_mode=FindMode.AUTO_FIND,
-            wait_time=Time(minute=2),
-            default_invite=False
-        )
-        general_battle_config = GeneralBattleConfig(
-            lock_team_enable=True
-        )
-
-        self.device.stuck_record_add('BATTLE_STATUS_S')
-
-        while 1:
+        def check_then_accept() -> int :
+            """
+            队员接受邀请
+            :return:
+            """
+            battle_type = 0
+            if not self.appear(self.I_I_ACCEPT):
+                return battle_type
+            logger.info('Click accept')
+            start_time = time.time()
+            while time.time()-start_time < 30:
+                self.screenshot()
+                if self.is_in_room():
+                    return battle_type
+                # 被秒开
+                # https://github.com/runhey/OnmyojiAutoScript/issues/230
+                if self.appear(self.I_EXIT):
+                    return battle_type
+                if self.appear(self.I_I_ACCEPT, interval=1):
+                    self.O_ACCEPT_NAME.roi=[self.I_I_ACCEPT.roi_front[0]+167,self.I_I_ACCEPT.roi_front[1]+25,180,47]
+                    text=self.O_ACCEPT_NAME.ocr(self.device.image)
+                    if "金币"in text:
+                        battle_type= 5
+                    elif "经验"in text:
+                        battle_type= 6
+                    elif "石距"in text:
+                        battle_type= 7
+                    elif "守护"in text:
+                        battle_type= 8
+                    else:
+                        continue
+                    self.click(self.I_I_ACCEPT,interval=2)
+            return battle_type 
+                    
+        logger.info("Master battle flow started, waiting in courtyard for invitations")        
+        wait_out=Timer(60).start()
+        while not wait_out.reached():
             self.screenshot()
-
-            if self.current_count >= self.limit_count:
-                logger.info(f'Master count limit reached: {self.current_count}/{self.limit_count}')
-                break
-            if datetime.now() - self.start_time >= self.limit_time:
-                logger.info('Master time limit reached')
-                break
-
+            battle_type = check_then_accept()
             # 1. 检查并接受邀请
-            if self.check_then_accept():
+            if battle_type ==0:
                 logger.info('Master accepted invitation')
                 continue
-
+            self.device.stuck_record_add('BATTLE_STATUS_S')
             # 2. 如果已经在房间内，等待队长（徒弟）开战
             if self.is_in_room():
                 self.device.stuck_record_clear()
-                if self.wait_battle(wait_time=invite_config.wait_time):
+                if self.wait_battle(wait_time=dtime(minute=2)):
+                      
                     # 进入战斗，run_general_battle内部已自增current_count
-                    self.run_general_battle(config=general_battle_config)
-                    logger.info(f'Master completed battle {self.current_count}/{self.limit_count}')
-                else:
-                    # 等待超时或队长跑路，回到庭院继续等
-                    logger.warning('Master wait battle failed, returning to wait')
-                    self.ui_get_current_page()
-                    self.ui_goto(page_main)
+                    if battle_type == 8:
+                        self.run_general_battle(config=GeneralBattleConfig())
+                    else:
+                        self.master_run_battle_back(config=GeneralBattleConfig())
+                    wait_out.reset()
+                    sleep(2)
+                    self.screenshot()
+
+            # 3. 如果不在房间也不在战斗，确保回到庭院
+            if self.ui_get_current_page() != page_main:
+                self.ui_get_current_page()
+                self.ui_goto(page_main) 
+                continue
+        raise TaskEnd
+    def master_run_battle_back(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
+        """
+        进入挑战然后直接返回
+        :param config:
+        :return:
+        """
+        # 如果没有锁定队伍那么在点击准备后才退出的,退四的话就直接退出
+        if not config.lock_team_enable and not exit_four:
+            # 点击准备按钮
+            self.wait_until_appear(self.I_PREPARE_HIGHLIGHT)
+            while 1:
+                self.screenshot()
+                if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1.5):
                     continue
+                if not (self.appear(self.I_PRESET) or self.appear(self.I_PRESET_WIT_NUMBER)):
+                    break
+            logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
 
-            # 3. 队长秒开时接管战斗
-            # check_take_over_battle内部调用run_general_battle，已自增current_count
-            elif self.check_take_over_battle(False, config=general_battle_config):
-                logger.info(f'Master took over battle {self.current_count}/{self.limit_count}')
-                continue
-
-            # 4. 如果不在房间也不在战斗，确保回到庭院
-            if self.appear(self.I_GI_HOME) or self.appear(self.I_GI_EXPLORE):
-                continue
-
-        # 清理：退出可能残留的房间或战斗
-        self._master_cleanup()
-
-        logger.info(f'Master battle flow completed. Total battles: {self.current_count}')
-        return True
-
-    def _master_cleanup(self):
-        """
-        师父模式结束后的清理：退出房间、退出战斗
-        """
-        logger.info('Master cleanup')
+        # 点击返回
         while 1:
-            if self.appear(self.I_GI_HOME) or self.appear(self.I_GI_EXPLORE):
+            self.screenshot()
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
+            if self.appear(self.I_EXIT_ENSURE):
                 break
-            if self.exit_room():
-                pass
-            if self.exit_battle():
-                pass
+        logger.info(f"Click {self.I_EXIT.name}")
+
+        # 点击返回确认
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_MAIN):
+                return True
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
+            if self.appear(self.I_FALSE):
+                break
+        logger.info(f"Click {self.I_EXIT_ENSURE.name}")
+
+        # 点击失败确认
+        self.wait_until_appear(self.I_FALSE)
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_FALSE, interval=1.5):
+                continue
+            if not self.appear(self.I_FALSE):
+                break
+        logger.info(f"Click {self.I_FALSE.name}")
+
+        return True
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('oas1')
+    c = Config('oas2')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
-    click_add=self.I_CLICK_INVITE_ADD.match_all_any(self.device.image)
+    while 1:
+        self.screenshot()
+        if  self.appear(self.I_ENSURE_SWITCH):
+            break
+        self.appear_then_click(self.I_TO_SWITCH, interval=1)
+    while 1:
+        self.screenshot()
+        if "所有人"in self.O_ADD_ALL.ocr(self.device.image):
+            break
+        if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
+            if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
+                continue
+        
+    """ click_add=self.I_CLICK_INVITE_ADD.match_all_any(self.device.image)
     logger.info (f"len(click_add{len(click_add)})") 
-    self._goto_invite()
+    self._goto_invite() """
     """ self.ui_goto(page_main)
     self.run() """
     """ roi=list(self.O_FIND_SHIKIGAMI_HELP.ocr(self.device.image))

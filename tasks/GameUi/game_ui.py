@@ -332,26 +332,35 @@ class GameUi(BaseTask, GameUiAssets):
                 elif len(btn) == 2:
                     condition, action = btn
 
-            # 反复检测1.5秒确认条件是否满足
-            detected = False
-            detect_timer = Timer(1.5).start()
-            while not detect_timer.reached():
-                self.screenshot()
-                if self.appear(condition):
-                    detected = True
-                    break
-                sleep(0.1)
-            skip_first_screenshot = False
-
-            # 执行操作
-            if detected:
-                
-                if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
-                    logger.info(f'Page {page} additional {condition} -> {action} executed'
-                                f'{f" after {delay_seconds}s" if delay_seconds > 0 else ""}')
-                    skip_first_screenshot = False
-                if delay_seconds > 0:
+            # 有延时时: 反复检测1.5秒确认条件是否满足，再延时再操作
+            if delay_seconds > 0:
+                detected = False
+                detect_timer = Timer(1.5).start()
+                while not detect_timer.reached():
+                    self.screenshot()
+                    if self.appear(condition):
+                        detected = True
+                        break
+                    sleep(0.1)
+                skip_first_screenshot = False
+                if detected:
                     sleep(delay_seconds)
+                    if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
+                        logger.info(f'Page {page} additional {condition} -> {action} executed after {delay_seconds}s')
+                        skip_first_screenshot = False
+                continue
+
+            # 无延时时: 原有逻辑
+            if condition is not action:
+                # 复合条件操作: 出现条件图片时点击另一个区域
+                self.maybe_screenshot(skip_first_screenshot)
+                if self.appear(condition):
+                    if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
+                        logger.info(f'Page {page} additional conditional {condition} -> {action} executed')
+                        skip_first_screenshot = False
+            elif self.appear_then_operate(btn, interval=interval, skip_first_screenshot=skip_first_screenshot):
+                logger.info(f'Page {page} additional {btn} clicked')
+                skip_first_screenshot = False
     def appear_then_operate(self, target: RuleList | RuleImage | RuleGif | RuleOcr | RuleClick,
                             interval: float = None, skip_first_screenshot: bool = True):
         """

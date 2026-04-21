@@ -308,7 +308,8 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 continue
             if self.appear_then_click(self.I_M_ENSURE_GET, interval=1):
                 continue
-            if self.appear_then_click(self.I_M_BACK_RED, interval=1.5):
+            if self.appear_rgb(self.I_M_BACK_RED):
+                self.appear_then_click(self.I_M_BACK_RED, interval=1.5)
                 continue 
         return True
     def run_mail(self):
@@ -867,19 +868,22 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         return flag
     def get_award_daliy (self):
         self.screenshot() 
-        if self.appear_then_click(self.I_M_FRAME_BACK_RED, interval=1):
-            return True
-        elif self.appear_then_click(self.I_M_AWARD,action=self.C_MS_REFRESH_ACTION ,interval=1):
-            return True
-        elif self.appear_then_click(target=self.I_M_PICTURE,action=self.C_MS_REFRESH_ACTION, interval=1):
+        if self.appear_then_click(self.I_M_AWARD,action=self.C_MS_REFRESH_ACTION ,interval=1):
             return True
         elif self.appear_then_click(self.I_M_PICTURE_REFUSE, interval=1):
             return True
+        elif self.appear_then_click(self.I_M_PICTURE,self.C_MS_REFRESH_ACTION, interval=1):
+            return True
         elif self.appear_then_click(self.I_CORD_EXIT, interval=1):
             return True
-        elif self.appear_then_click(self.I_CORD_BACK_RED, interval=1):
+        elif self.appear_rgb(self.I_CORD_BACK_RED):
+            self.appear_then_click(self.I_CORD_BACK_RED, interval=1)
             return True
-        elif self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1):
+        elif self.appear_rgb(self.I_M_FRAME_BACK_RED):
+            self.appear_then_click(self.I_M_FRAME_BACK_RED, interval=1)
+            return True
+        elif self.appear_rgb(self.I_T_BACK_RED_SIGN): 
+            self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1)
             return True
         elif self.appear_then_click(self.I_T_SIGN_FLAG,action=self.C_T_EXIT_SIGN, interval=1) or self.appear_then_click(self.I_T_SIGN_FLAG2,action=self.C_T_EXIT_SIGN, interval=1):
             return True

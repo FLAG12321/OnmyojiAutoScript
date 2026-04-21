@@ -16,5 +16,23 @@
     "mode": "Full",
     "method": "Default",
     "keyword": "15"
+  },
+  {
+    "itemName": "accept_name",
+    "roiFront": "115,256,300,47",
+    "roiBack": "0,0,100,100",
+    "description": "description",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": ""
+  },
+  {
+    "itemName": "add_all",
+    "roiFront": "609,640,167,35",
+    "roiBack": "0,0,100,100",
+    "description": "description",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "所有人"
   }
 ]

@@ -385,5 +385,14 @@
     "imageName": "add_2_1.png",
     "method": "Template matching",
     "threshold": "0.8"
+  },
+  {
+    "itemName": "i_reject_4",
+    "roiFront": "12,226,64,61",
+    "roiBack": "12,150,200,300",
+    "description": "description",
+    "imageName": "i_reject_4.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

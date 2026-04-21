@@ -25,6 +25,14 @@ class MasterDiscipleAssets:
 	I_PAGE_TEAM = RuleImage(roi_front=(93,27,128,36), roi_back=(64,10,211,87), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/page_team.png")
 	# description 
 	I_CLICK_INVITE_ADD = RuleImage(roi_front=(1143,253,55,54), roi_back=(0,0,1280,720), threshold=0.85, method="Template matching", file="./tasks/MasterDisciple/res/click_invite_add.png")
+	# description 
+	I_SWITCH_ALL = RuleImage(roi_front=(507,294,39,46), roi_back=(466,268,344,87), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/switch_all.png")
+	# description 
+	I_ENSURE_SWITCH = RuleImage(roi_front=(607,495,65,42), roi_back=(466,475,333,91), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/ensure_switch.png")
+	# description 
+	I_SWITCH_ALL_OVER = RuleImage(roi_front=(507,294,39,46), roi_back=(466,268,344,87), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/switch_all_over.png")
+	# description 
+	I_TO_SWITCH = RuleImage(roi_front=(826,641,30,33), roi_back=(556,616,430,79), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/to_switch.png")
 
 
 	# Ocr Rule Assets
@@ -32,6 +40,10 @@ class MasterDiscipleAssets:
 	O_FLAG_TASK_GUARD = RuleOcr(roi=(799,183,253,505), area=(797,182,256,508), mode="full", method="Default", keyword="守护历练", name="flag_task_guard")
 	# description 
 	O_FIND_SHIKIGAMI_HELP = RuleOcr(roi=(228,605,874,87), area=(0,0,100,100), mode="Full", method="Default", keyword="15", name="find_shikigami_help")
+	# description 
+	O_ACCEPT_NAME = RuleOcr(roi=(115,256,300,47), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="accept_name")
+	# description 
+	O_ADD_ALL = RuleOcr(roi=(609,640,167,35), area=(0,0,100,100), mode="Single", method="Default", keyword="所有人", name="add_all")
 
 
 	# Swipe Rule Assets

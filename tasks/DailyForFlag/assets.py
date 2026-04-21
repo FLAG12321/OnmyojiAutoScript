@@ -62,7 +62,7 @@ class DailyForFlagAssets:
 	# description 
 	I_M_ENSURE_GET = RuleImage(roi_front=(737,553,76,40), roi_back=(698,550,151,52), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_ensure_get.png")
 	# 奖励 
-	I_M_AWARD = RuleImage(roi_front=(478,131,325,100), roi_back=(427,125,416,114), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_award.png")
+	I_M_AWARD = RuleImage(roi_front=(476,193,328,42), roi_back=(381,100,551,178), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_award.png")
 	# description 
 	I_M_BACK_RED = RuleImage(roi_front=(1152,91,49,47), roi_back=(1131,74,91,82), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/mail/mail_m_back_red.png")
 	# description 

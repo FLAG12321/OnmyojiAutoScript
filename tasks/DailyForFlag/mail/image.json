@@ -38,10 +38,10 @@
   {
     "itemName": "m_award",
     "imageName": "mail_m_award.png",
-    "roiFront": "478,131,325,100",
-    "roiBack": "427,125,416,114",
+    "roiFront": "476,193,328,42",
+    "roiBack": "381,100,551,178",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": "0.7",
     "description": "奖励"
   },
   {

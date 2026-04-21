@@ -138,6 +138,13 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         """
         logger.info("start switch_character")
         self.ui_click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, self.I_SA_CHECK_SELECT_SVR_1)
+        while 1:
+            self.screenshot()
+            self.device.click_record_clear()
+            self.device.stuck_record_clear()
+            if self.appear(self.I_SA_CHECK_SELECT_SVR_1):
+                break
+            self.click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, interval=1.5)
         # 展开底部角色列表,显示角色所属服务器
         self.screenshot()
         while (not self.appear(self.I_SA_CHECK_SELECT_SVR_2)) and self.appear(self.I_SA_CHECK_SELECT_SVR_1):

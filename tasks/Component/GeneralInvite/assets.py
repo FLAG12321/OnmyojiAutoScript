@@ -97,6 +97,8 @@ class GeneralInviteAssets:
 	I_I_ACCEPT_JY = RuleImage(roi_front=(248,258,46,25), roi_back=(231,205,75,326), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_accept_jy.png")
 	# 师徒的加号 
 	I_ADD_2_1 = RuleImage(roi_front=(328,211,121,96), roi_back=(243,153,288,215), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/add_2_1.png")
+	# description 
+	I_I_REJECT_4 = RuleImage(roi_front=(12,226,64,61), roi_back=(12,150,200,300), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/i_reject_4.png")
 
 
 	# Image Rule Assets

@@ -61,5 +61,41 @@
     "imageName": "click_invite_add.png",
     "method": "Template matching",
     "threshold": 0.85
+  },
+  {
+    "itemName": "switch_all",
+    "roiFront": "507,294,39,46",
+    "roiBack": "466,268,344,87",
+    "description": "description",
+    "imageName": "switch_all.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "ensure_switch",
+    "roiFront": "607,495,65,42",
+    "roiBack": "466,475,333,91",
+    "description": "description",
+    "imageName": "ensure_switch.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "switch_all_over",
+    "roiFront": "507,294,39,46",
+    "roiBack": "466,268,344,87",
+    "description": "description",
+    "imageName": "switch_all_over.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "to_switch",
+    "roiFront": "826,641,30,33",
+    "roiBack": "556,616,430,79",
+    "description": "description",
+    "imageName": "to_switch.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]
