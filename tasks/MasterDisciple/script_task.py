@@ -143,6 +143,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             if not self.switch_to_disciple_account():
                 return False
 
+        
+        # 执行守护历练任务
+        if self.config.master_disciple.master_disciple_config.run_guard:
+            self._run_task_with_retry(self.run_guard_as_disciple, "守护历练")
+        # 执行石距任务
+        if self.config.master_disciple.master_disciple_config.run_stone_ju:
+            self._run_task_with_retry(self.run_stone_ju_as_disciple, "石距")
         # 执行金币妖怪任务
         if self.config.master_disciple.master_disciple_config.run_coin_monster:
             self._run_task_with_retry(self.run_coin_monster_as_disciple, "金币妖怪")
@@ -150,15 +157,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 执行经验妖怪任务
         if self.config.master_disciple.master_disciple_config.run_exp_monster:
             self._run_task_with_retry(self.run_exp_monster_as_disciple, "经验妖怪")
-
-        # 执行石距任务
-        if self.config.master_disciple.master_disciple_config.run_stone_ju:
-            self._run_task_with_retry(self.run_stone_ju_as_disciple, "石距")
-
-        # 执行守护历练任务
-        if self.config.master_disciple.master_disciple_config.run_guard:
-            self._run_task_with_retry(self.run_guard_as_disciple, "守护历练")
-
+        
         # 执行探索任务
         if self.config.master_disciple.master_disciple_config.run_exploration:
             self._run_task_with_retry(self.run_exploration_as_disciple, "探索")
@@ -194,17 +193,42 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         return success
     def _get_add_count(self)->int:  
-            list_add_count=[99,99,99]
-            index=0
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        def reject_invite():
+            from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
             while 1:
                 self.screenshot()
-                if list_add_count[0]==list_add_count[1]==list_add_count[2] and list_add_count[0]!=99:
-                    return list_add_count[0]
-                if index>=3:
-                    index=0
-                list_add_count[index]=len(self.I_CLICK_INVITE_ADD.match_all_any(self.device.image))
-                index+=1
-                time.sleep(0.5)
+                if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2) or self.appear(gia.I_I_REJECT_3)or self.appear(gia.I_I_REJECT_4)):
+                    break
+                if self.appear(gia.I_I_REJECT_4):
+                    self.click(gia.I_I_REJECT_4, 1)
+                    continue
+                if self.appear(gia.I_I_REJECT_1):
+                    self.click(gia.I_I_REJECT_1, 1)
+                    continue
+                if self.appear(gia.I_I_REJECT_3):
+                    self.click(gia.I_I_REJECT_3, 1)
+                    continue
+                if self.appear(gia.I_I_REJECT_2):
+                    self.click(gia.I_I_REJECT_2, 1)
+                    continue
+                if self.appear(gia.I_I_REJECT_1):
+                    self.click(gia.I_I_REJECT_1, 1)
+                    continue
+            return True
+        list_add_count=[99,99,99]
+        index=0
+        while 1:
+            self.screenshot()
+            if list_add_count[0]==list_add_count[1]==list_add_count[2] and list_add_count[0]!=99:
+                logger.info(f'获取加号数量:[{list_add_count[0]}]')
+                return list_add_count[0]
+            if index>=3:
+                index=0
+            reject_invite()
+            list_add_count[index]=len(self.I_CLICK_INVITE_ADD.match_all_any(self.device.image))
+            index+=1
+            time.sleep(0.5)
     def _create_room_and_invite(self, task_name: str, room_type: RoomType = RoomType.NORMAL_5,
                                  navigate_and_create_func=None) -> bool:
         """
@@ -217,28 +241,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             若为None，则使用默认流程：ui_goto(page_team) → check_zones(task_name) → create_room → ensure_private → create_ensure
         :return: True 师父已进入房间，False 邀请失败或超时
         """
-        def reject_invite():
-            from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
-            while 1:
-                self.screenshot()
-                if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2) or self.appear(gia.I_I_REJECT_3)or self.appear(gia.I_I_REJECT_4)):
-                    break
-                if self.appear(gia.I_I_REJECT_4):
-                    self.click(gia.I_I_REJECT_4, 6)
-                    continue
-                if self.appear(gia.I_I_REJECT_1):
-                    self.click(gia.I_I_REJECT_1, 6)
-                    continue
-                if self.appear(gia.I_I_REJECT_3):
-                    self.click(gia.I_I_REJECT_3, 6)
-                    continue
-                if self.appear(gia.I_I_REJECT_2):
-                    self.click(gia.I_I_REJECT_2, 6)
-                    continue
-                if self.appear(gia.I_I_REJECT_1):
-                    self.click(gia.I_I_REJECT_1, 6)
-                    continue
-            return True
         master_name = self.config.master_disciple.master_disciple_config.master_name
         invite_timeout = self.config.master_disciple.master_disciple_config.invite_timeout
 
@@ -249,7 +251,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 return False
         else:
             # 默认流程：导航到组队页面 → 创建私人房间
-            time.sleep(1)
+            time.sleep(3)
+            self.ui_get_current_page()
             self.ui_goto(page_team)
             self.check_zones(task_name)
 
@@ -279,6 +282,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             add_other=False
 
         # 等待师父进入房间，每15秒重新邀请一次
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('BATTLE_STATUS_S')
         wait_timer = Timer(invite_timeout)
         wait_timer.start()
         reinvite_timer = Timer(15)
@@ -301,8 +306,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.exit_room()
                 return False
             # 检查是否有人进入（某个加号从有变为无，表示有人进了该位置）
-            
-            if  reject_invite() and add_num>self._get_add_count():
+            logger.info(f"add_num:[{add_num}]")
+            if  add_num>self._get_add_count():
                 if add_other:
                     while 1:
                         self.screenshot()
@@ -316,10 +321,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
                             if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
                                 continue
-                    add_num-=1
+                    add_num-=2
+                    add_other=False
                     continue
+                logger.info(f"return True")
                 return True
-
+            if add_num!=self._get_add_icons(room_type):
+                reinvite_timer.reset()
             # 每15秒重新邀请师父
             if reinvite_timer.reached():
                 logger.info(f"[{task_name}] Re-inviting master: {master_name}")
@@ -468,12 +476,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         count = 0
         while count < battle_count:
+            self.device.stuck_record_clear()
             # 创建私人房间并邀请师父
             if not self._create_room_and_invite(zones_name, room_type=room_type):
                 # 邀请失败，跳过该任务
                 logger.warning(f"Skip {zones_name} due to invite failure")
                 break
-
+            logger.info(f"click_fire")
             # 师父已进入房间，点击挑战
             self.click_fire()
             count += 1
@@ -491,6 +500,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self._handle_post_battle_popup()
 
             # 战斗结束后检查是否需要再次邀请（默认邀请）
+            self.device.stuck_record_add('BATTLE_STATUS_S')
             self.check_and_invite(default_invite=True)
 
         # 关闭加成
@@ -950,9 +960,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         count = 0
 
         while count < guard_count:
-            self.screenshot()
-
             # 等待师父进入房间（I_ADD_2_1消失表示有人进入）
+            self.device.stuck_record_clear()
+            self.device.stuck_record_add('BATTLE_STATUS_S')
+            self.screenshot()
             wait_timer = Timer(invite_timeout)
             wait_timer.start()
             reinvite_timer = Timer(15)
@@ -1251,7 +1262,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             :return:
             """
             battle_type = 0
-            if not self.appear(self.I_I_ACCEPT):
+            if not self.appear(self.I_ACCEPT):
                 return battle_type
             logger.info('Click accept')
             start_time = time.time()
@@ -1263,9 +1274,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 # https://github.com/runhey/OnmyojiAutoScript/issues/230
                 if self.appear(self.I_EXIT):
                     return battle_type
-                if self.appear(self.I_I_ACCEPT, interval=1):
-                    self.O_ACCEPT_NAME.roi=[self.I_I_ACCEPT.roi_front[0]+167,self.I_I_ACCEPT.roi_front[1]+25,180,47]
+                if self.appear(self.I_ACCEPT, interval=1):
+                    self.O_ACCEPT_NAME.roi=[self.I_ACCEPT.roi_front[0]+167,self.I_ACCEPT.roi_front[1]+25,180,47]
                     text=self.O_ACCEPT_NAME.ocr(self.device.image)
+                    logger.info(f"text={text}")
                     if "金币"in text:
                         battle_type= 5
                     elif "经验"in text:
@@ -1279,8 +1291,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.click(self.I_I_ACCEPT,interval=2)
             return battle_type 
                     
-        logger.info("Master battle flow started, waiting in courtyard for invitations")        
-        wait_out=Timer(60).start()
+        logger.info("Master battle flow started, waiting in courtyard for invitations")
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        wait_out=Timer(180).start()
         while not wait_out.reached():
             self.screenshot()
             battle_type = check_then_accept()
@@ -1292,6 +1306,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # 2. 如果已经在房间内，等待队长（徒弟）开战
             if self.is_in_room():
                 self.device.stuck_record_clear()
+                self.device.stuck_record_add('BATTLE_STATUS_S')
                 if self.wait_battle(wait_time=dtime(minute=2)):
                       
                     # 进入战斗，run_general_battle内部已自增current_count
@@ -1300,6 +1315,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     else:
                         self.master_run_battle_back(config=GeneralBattleConfig())
                     wait_out.reset()
+                    self.device.stuck_record_clear()
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
                     sleep(2)
                     self.screenshot()
 
@@ -1361,12 +1378,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-
-    c = Config('oas2')
+    from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
+    c = Config('oas3')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
-    while 1:
+    
+    """ while 1:
         self.screenshot()
         if  self.appear(self.I_ENSURE_SWITCH):
             break
@@ -1377,7 +1395,7 @@ if __name__ == "__main__":
             break
         if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
             if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
-                continue
+                continue """
         
     """ click_add=self.I_CLICK_INVITE_ADD.match_all_any(self.device.image)
     logger.info (f"len(click_add{len(click_add)})") 

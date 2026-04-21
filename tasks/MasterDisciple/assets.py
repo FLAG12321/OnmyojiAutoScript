@@ -33,6 +33,8 @@ class MasterDiscipleAssets:
 	I_SWITCH_ALL_OVER = RuleImage(roi_front=(507,294,39,46), roi_back=(466,268,344,87), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/switch_all_over.png")
 	# description 
 	I_TO_SWITCH = RuleImage(roi_front=(826,641,30,33), roi_back=(556,616,430,79), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/to_switch.png")
+	# description 
+	I_ACCEPT = RuleImage(roi_front=(116,229,53,47), roi_back=(0,205,290,374), threshold=0.7, method="Template matching", file="./tasks/MasterDisciple/res/accept.png")
 
 
 	# Ocr Rule Assets

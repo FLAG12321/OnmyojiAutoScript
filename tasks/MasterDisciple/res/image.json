@@ -97,5 +97,14 @@
     "imageName": "to_switch.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "accept",
+    "roiFront": "116,229,53,47",
+    "roiBack": "0,205,290,374",
+    "description": "description",
+    "imageName": "accept.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]
