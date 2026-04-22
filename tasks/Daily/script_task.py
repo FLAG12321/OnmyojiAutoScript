@@ -276,8 +276,8 @@ class ScriptTask(GameUi, DailyAssets):
 
     def _should_process_account(self, account_info, login_time):
         """判断是否应该处理该账号"""
-        logger.info(f"Checking if account {account_info.character} should be processed")
-        logger.info(f"need_login: {self.daily_conf.daily_config.need_login}")
+        logger.info(f"account {account_info.character} need_login: {self.daily_conf.daily_config.need_login}")
+        #logger.info(f"need_login: {self.daily_conf.daily_config.need_login}")
         if not self.daily_conf.daily_config.need_login and not self.is_need_login(account_info, login_time):
             logger.warning(f"{account_info.character} Skipped last Login Time: {account_info.last_complete_time}")
             return False
@@ -450,7 +450,7 @@ class ScriptTask(GameUi, DailyAssets):
     def _notify_daily_completion(self):
         """通知日常任务完成"""
         for info in self.daily_conf.sup_account_list:
-            logger.info(f"Account: {info.character}, Last completion time: {info.last_complete_time}")
+            logger.info(f"Account: {info.character}, Last time: {info.last_complete_time}")
             
         #self.config.notifier.push(content="Daily任务执行完毕", title="任务提醒")
 
@@ -460,7 +460,7 @@ class ScriptTask(GameUi, DailyAssets):
         @param item: 账号信息
         @param last_complete_time: 需要比较的时间
         """
-        logger.info(f"Account: {item.character}, Last completion time: {item.last_complete_time}, Login time: {last_complete_time}")
+        #logger.info(f"Account: {item.character}, Last completion time: {item.last_complete_time}, Login time: {last_complete_time}")
         last_time = item.last_complete_time
         return last_complete_time > last_time
 
