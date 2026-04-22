@@ -9,7 +9,7 @@
   {
     "itemName": "find_task_guard",
     "roiFront": "910,614,54,13",
-    "roiBack": "911,508,59,13",
+    "roiBack": "911,450,59,13",
     "description": "description",
     "mode": "default"
   }

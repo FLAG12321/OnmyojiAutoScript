@@ -164,6 +164,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             #logger.info(characterNameList)
             ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
             for index, item in enumerate(characterNameList):
+                item = item.replace('瑤', '瑶')
                 #logger.info(f"characterNameList[{index}]: {item}", )
                 #logger.info(f"characterName:{characterName}")
                 if item != characterName:

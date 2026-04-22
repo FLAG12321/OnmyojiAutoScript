@@ -52,6 +52,6 @@ class MasterDiscipleAssets:
 	# description 
 	S_TO_BATTLE_SWIPE = RuleSwipe(roi_front=(916,614,47,11), roi_back=(67,324,36,157), mode="default", name="to_battle_swipe")
 	# description 
-	S_FIND_TASK_GUARD = RuleSwipe(roi_front=(910,614,54,13), roi_back=(911,508,59,13), mode="default", name="find_task_guard")
+	S_FIND_TASK_GUARD = RuleSwipe(roi_front=(910,614,54,13), roi_back=(911,450,59,13), mode="default", name="find_task_guard")
 
 

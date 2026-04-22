@@ -112,7 +112,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             except RequestHumanTakeover:
                 raise
             except TaskEnd:
-                raise
+                pass
             except Exception as e:
                 logger.error(f"[{task_name}] 第{attempt}次执行异常: {e}")
                 if attempt < max_retries:
@@ -519,7 +519,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         if buff_open_func:
             self.ui_get_current_page()
             self.ui_goto(page_main)
-            buff_open_func()
+            #buff_open_func()
 
         count = 0
         while count < battle_count:
@@ -554,7 +554,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         if buff_close_func:
             self.ui_get_current_page()
             self.ui_goto(page_main)
-            buff_close_func()
+            #buff_close_func()
 
         return count > 0
 
@@ -802,7 +802,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 在任务列表中找到"守护历练"并点击
         start_time = time.time()
         swipe_count = 0
-        while time.time() - start_time < 15:
+        while time.time() - start_time < 30:
             self.screenshot()
             if self.appear(self.I_PAGE_BATTLE_GUARD):
                 break
@@ -816,6 +816,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     continue
             if time.time() - start_time > (5 + swipe_count * 2):
                 self.swipe(self.S_FIND_TASK_GUARD, 2)
+                sleep(1)
                 swipe_count += 1
 
         if not self.appear(self.I_PAGE_BATTLE_GUARD):
@@ -1342,6 +1343,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self.device.stuck_record_clear()
         self.device.stuck_record_add('BATTLE_STATUS_S')
         wait_out=Timer(180).start()
+        exp_battle_count = 0  # 经验妖怪战斗计数
         while not wait_out.reached():
             self.screenshot()
             battle_type = check_then_accept()
@@ -1361,6 +1363,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         self.run_general_battle(config=GeneralBattleConfig())
                     else:
                         self.master_run_battle_back(config=GeneralBattleConfig())
+                    # 经验妖怪(battle_type==6)退出后计数，达到2次则结束任务
+                    if battle_type == 6:
+                        exp_battle_count += 1
+                        logger.info(f'Exp battle count: {exp_battle_count}/2')
+                        if exp_battle_count >= 2:
+                            logger.info('Master has exited 2 exp battles, ending task')
+                            self.ui_get_current_page()
+                            self.ui_goto(page_main)
+                            raise TaskEnd
                     wait_out.reset()
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
