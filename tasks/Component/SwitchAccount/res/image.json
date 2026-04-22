@@ -100,9 +100,9 @@
   },
   {
     "itemName": "sa_check_select_svr_1",
-    "imageName": "sa_check_select_svr.png",
-    "roiFront": "240,530,120,40",
-    "roiBack": "240,530,120,40",
+    "imageName": "sa_check_select_svr_1.png",
+    "roiFront": "251,146,103,31",
+    "roiBack": "223,131,164,58",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "判断是否在 选择服务器 界面的标志物 角色的服务器图标还未显示时"

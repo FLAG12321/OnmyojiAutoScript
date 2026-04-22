@@ -105,15 +105,16 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
 
 
 if __name__ == '__main__':
-    config = Config('oas2')
+    config = Config('oas3')
     device=Device(config)
     toAccount=AccountInfo(account="email0@163.com", account_alias="emailO#emailo", apple_or_android=True, character="粘贴", svr="立秋夕烛")
     self=SwitchAccount(config,device,toAccount) 
     self.screenshot()
                     # 账号列表已打开状态
-    ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(self.device.image, asset=self.O_SA_ACCOUNT_ACCOUNT_LIST))
+    ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
+    #ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(self.device.image, asset=self.O_SA_ACCOUNT_ACCOUNT_LIST))
     
-    # 找到该账号
+    """ # 找到该账号
     for index, ocr_account in enumerate([ocrResItem.ocr_text for ocrResItem in ocrRes]):
         ocrResItem = ocrRes[index]
         logger.info(f"ocrResItem.box {ocrResItem.box}, ocrResItem.ocr_text {ocrResItem.ocr_text}")
@@ -132,7 +133,7 @@ if __name__ == '__main__':
             roi_height * 0.6          # 使用60%的高度
         ]
         logger.info(f"ocrResBoxList roi ({roi_x}, {roi_y}, {roi_width}, {roi_height})")
-        logger.info(f"click_roi {click_roi}")
+        logger.info(f"click_roi {click_roi}") """
     """     
     prepared_image=_prepare_image_for_ocr(sa.device.image, asset=sa.O_SA_ACCOUNT_ACCOUNT_LIST)
         prepared_image.save("prepared_image.png")

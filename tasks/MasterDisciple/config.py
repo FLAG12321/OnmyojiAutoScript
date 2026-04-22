@@ -46,6 +46,8 @@ class MasterDiscipleConfig(ConfigBase):
     guard_battle_count: int = Field(default=30, description='guard_battle_count_help')
     # 是否自动切换账号
     auto_switch_account: bool = Field(default=False, description='auto_switch_account_help')
+    # 是否轮询所有徒弟账号（False=只执行第一个账号，True=依次轮询所有账号）
+    cycle_all_disciples: bool = Field(default=False, description='cycle_all_disciples_help')
     # 邀请师父超时时间（秒）
     invite_timeout: int = Field(default=60, description='invite_timeout_help')
 

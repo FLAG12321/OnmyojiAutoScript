@@ -76,7 +76,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         self.O_SA_LOGIN_FORM_SVR_NAME.keyword = svrName
         if self.ocr_appear(self.O_SA_LOGIN_FORM_SVR_NAME):
             return True
-        self.ui_click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, self.I_SA_CHECK_SELECT_SVR_1, 1.5)
+        return self.switch_character(svrName)
+        """ self.ui_click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, self.I_SA_CHECK_SELECT_SVR_1, 1.5)
         # 展开底部角色列表,显示角色所属服务器
         self.screenshot()
         if self.appear(self.I_SA_CHECK_SELECT_SVR_1) and (not self.appear(self.I_SA_CHECK_SELECT_SVR_2)):
@@ -127,7 +128,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             return True
         # 没找到 点击空白区域关闭选择服务器界面
         self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT)
-        return False
+        return False """
 
     def switch_character(self, characterName: str):
         """
@@ -137,7 +138,6 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         @rtype:
         """
         logger.info("start switch_character")
-        self.ui_click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, self.I_SA_CHECK_SELECT_SVR_1)
         while 1:
             self.screenshot()
             self.device.click_record_clear()
@@ -146,13 +146,13 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 break
             self.click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, interval=1.5)
         # 展开底部角色列表,显示角色所属服务器
-        self.screenshot()
+        """ self.screenshot()
         while (not self.appear(self.I_SA_CHECK_SELECT_SVR_2)) and self.appear(self.I_SA_CHECK_SELECT_SVR_1):
             logger.info("open svr icon")
             self.click(self.C_SA_SELECT_SVR_CHARACTER_LIST, interval=1.5)
             self.wait_until_appear(self.I_SA_CHECK_SELECT_SVR_2, False, 1)
             # self.ui_click(self.C_SA_SELECT_SVR_CHARACTER_LIST, self.I_SA_CHECK_SELECT_SVR_2, 1.5)
-            self.screenshot()
+            self.screenshot() """
 
         self.O_SA_SELECT_SVR_CHARACTER_LIST.keyword = characterName
         lastCharacterNameList = []
@@ -160,10 +160,12 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             self.screenshot()
             ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
             # 去除角色等级数字
-            characterNameList = [ocrResItem.ocr_text.lstrip('1234567890 ([<>])【】（）《》') for ocrResItem in ocrRes]
-            logger.info(characterNameList)
+            characterNameList =[ocrResItem.ocr_text for ocrResItem in ocrRes]
+            #logger.info(characterNameList)
             ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
             for index, item in enumerate(characterNameList):
+                #logger.info(f"characterNameList[{index}]: {item}", )
+                #logger.info(f"characterName:{characterName}")
                 if item != characterName:
                     continue
                 tmp = self.O_SA_SELECT_SVR_CHARACTER_LIST
@@ -177,12 +179,14 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                         ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]],
                     name="tmpClick"
                 )
-
+                #logger.info(tmpClick.roi_front)
+                self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_1,
+                                              interval=3)
                 # 此时 tmp 内存储的时角色名位置,而点击角色名没有反应
                 # 所以需要获取到对应的服务器图标位置
-                tmpClick.roi_front[1] -= 30
-                self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_2,
-                                              interval=3)
+                """ tmpClick.roi_front[1] -= 30
+                self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_1,
+                                              interval=3) """
                 logger.info("character %s found,and clicked svr icon", characterName)
                 return True
             if lastCharacterNameList == characterNameList:
@@ -193,7 +197,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             # 等待滑动动画完成
             time.sleep(1.5)
 
-        self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT, 1.5)
+        self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT,stop=self.I_SA_CHECK_SELECT_SVR_1,interval=1.5)
         return False
 
     def jump2SelectAccount(self):
@@ -440,7 +444,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         while 1:
             self.screenshot()
             # 处于 选择服务器界面 直接点击空白区域退出该界面 进入切换账号流程
-            if self.appear(self.I_SA_CHECK_SELECT_SVR_1) or self.appear(self.I_SA_CHECK_SELECT_SVR_2):
+            if self.appear(self.I_SA_CHECK_SELECT_SVR_1):
                 self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT)
                 continue
 

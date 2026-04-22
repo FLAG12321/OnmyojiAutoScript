@@ -135,15 +135,63 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     def run_as_disciple(self):
         """
         以徒弟身份运行
+        支持 cycle_all_disciples 配置：
+        - False: 只切换到第一个徒弟账号执行任务
+        - True: 轮询所有徒弟账号，依次切换并执行任务
         """
         logger.info("Running as disciple")
 
-        # 如果需要自动切换账号
-        if self.config.master_disciple.master_disciple_config.auto_switch_account:
-            if not self.switch_to_disciple_account():
-                return False
+        account_list = self.config.master_disciple.disciple_account_list
+        cycle_all = self.config.master_disciple.master_disciple_config.cycle_all_disciples
+        auto_switch = self.config.master_disciple.master_disciple_config.auto_switch_account
 
-        
+        if not auto_switch or not account_list:
+            # 不切换账号或没有账号列表，直接在当前账号执行任务
+            self._execute_disciple_tasks()
+            return True
+
+        if not cycle_all:
+            # 只执行第一个徒弟账号
+            logger.info("Cycle all disciples is disabled, switching to first disciple account only")
+            if not self.switch_to_disciple_account(account_list[0]):
+                return False
+            self._execute_disciple_tasks()
+            return True
+
+        # 轮询所有徒弟账号
+        logger.info(f"Cycle all disciples enabled, total {len(account_list)} account(s) to process")
+        all_success = True
+        for index, account_info in enumerate(account_list):
+            logger.info(f"Processing disciple account {index + 1}/{len(account_list)}: {account_info.character}-{account_info.svr}")
+            if not self.switch_to_disciple_account(account_info):
+                logger.warning(f"Failed to switch to disciple account {account_info.character}-{account_info.svr}, skipping")
+                all_success = False
+                continue
+            try:
+                self._execute_disciple_tasks()
+            except TaskEnd:
+                raise
+            except RequestHumanTakeover:
+                raise
+            except GameNotRunningError:
+                raise
+            except Exception as e:
+                logger.error(f"Error executing tasks for disciple {account_info.character}-{account_info.svr}: {e}")
+                all_success = False
+                # 异常恢复：回到庭院
+                try:
+                    self.device.stuck_record_clear()
+                    self.ui_get_current_page()
+                    self.ui_goto(page_main)
+                except Exception:
+                    logger.warning("Failed to recover to main page after error")
+
+        return all_success
+
+    def _execute_disciple_tasks(self):
+        """
+        在当前徒弟账号上执行所有已启用的任务
+        """
         # 执行守护历练任务
         if self.config.master_disciple.master_disciple_config.run_guard:
             self._run_task_with_retry(self.run_guard_as_disciple, "守护历练")
@@ -162,21 +210,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         if self.config.master_disciple.master_disciple_config.run_exploration:
             self._run_task_with_retry(self.run_exploration_as_disciple, "探索")
 
-        return True
-
-    def switch_to_disciple_account(self):
+    def switch_to_disciple_account(self, account_info=None):
         """
-        切换到徒弟账号（从列表取第一个账号）
+        切换到徒弟账号
+
+        :param account_info: 要切换的账号信息，若为None则从列表取第一个账号
         """
         logger.info("Switching to disciple account")
 
-        account_list = self.config.master_disciple.disciple_account_list
-        if not account_list:
-            logger.warning("Disciple account list is empty, cannot switch")
-            return False
-
-        # 只取第一个账号
-        account_info = account_list[0]
+        if account_info is None:
+            account_list = self.config.master_disciple.disciple_account_list
+            if not account_list:
+                logger.warning("Disciple account list is empty, cannot switch")
+                return False
+            account_info = account_list[0]
 
         # 重置检测记录，避免影响后续操作
         self.device.stuck_record_clear()
@@ -1031,7 +1078,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         # 在代码中初始化探索配置，不暴露给用户
         solo_exploration._config.general_battle_config.lock_team_enable = False
-        solo_exploration._config.exploration_config.minions_cnt =15
+        solo_exploration._config.exploration_config.minions_cnt =14
         solo_exploration._config.exploration_config.limit_time = dtime(0, 15, 0)  # 15分钟上限兜底
         solo_exploration._config.exploration_config.up_type = UpType.ALL
         solo_exploration._config.scrolls.scrolls_enable = False

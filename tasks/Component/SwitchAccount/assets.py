@@ -24,7 +24,7 @@ class SwitchAccountAssets:
 	# 登录界面-选择服务器-底部账号信息展开后的区域 
 	C_SA_LOGIN_FORM_CHARACTER_AREA = RuleClick(roi_front=(260,450,760,160), roi_back=(260,450,760,160), name="sa_login_form_character_area")
 	# 登录界面-选择服务器-点击关闭选择服务器界面的空白区域 
-	C_SA_LOGIN_FORM_CANCEL_SVR_SELECT = RuleClick(roi_front=(50,70,60,360), roi_back=(50,70,60,360), name="sa_login_form_cancel_svr_select")
+	C_SA_LOGIN_FORM_CANCEL_SVR_SELECT = RuleClick(roi_front=(1074,95,29,31), roi_back=(1073,94,31,34), name="sa_login_form_cancel_svr_select")
 	# 登录界面-用户中心-右上角关闭按钮 
 	C_SA_LOGIN_FORM_USER_CENTER_CLOSE_BTN = RuleClick(roi_front=(1055,120,20,20), roi_back=(1055,120,20,20), name="sa_login_form_user_center_close_btn")
 	# 登录界面-账号选择界面-右上角关闭按钮 
@@ -41,7 +41,7 @@ class SwitchAccountAssets:
 	# 选择服务器界面 底部角色所属服务器名 列表 
 	O_SA_SELECT_SVR_SVR_LIST = RuleOcr(roi=(205,540,815,25), area=(205,540,815,25), mode="FULL", method="Default", keyword="", name="sa_select_svr_svr_list")
 	# 选择服务器界面 底部角色名 列表 
-	O_SA_SELECT_SVR_CHARACTER_LIST = RuleOcr(roi=(205,570,815,40), area=(205,570,815,40), mode="FULL", method="Default", keyword="", name="sa_select_svr_character_list")
+	O_SA_SELECT_SVR_CHARACTER_LIST = RuleOcr(roi=(407,130,668,487), area=(0,0,100,100), mode="FULL", method="Default", keyword="", name="sa_select_svr_character_list")
 	# 选择账号界面 账号列表 
 	O_SA_ACCOUNT_ACCOUNT_LIST = RuleOcr(roi=(460,280,440,330), area=(460,280,440,330), mode="FULL", method="Default", keyword="", name="sa_account_account_list")
 	# 选择账号界面 已选择的账号 
@@ -52,7 +52,7 @@ class SwitchAccountAssets:
 
 	# Swipe Rule Assets
 	# 登录界面 服务器列表的手指向左滑动 
-	S_SA_SVR_SWIPE_LEFT = RuleSwipe(roi_front=(730,460,30,21), roi_back=(470,410,26,21), mode="default", name="sa_svr_swipe_left")
+	S_SA_SVR_SWIPE_LEFT = RuleSwipe(roi_front=(595,576,57,23), roi_back=(587,369,54,26), mode="default", name="sa_svr_swipe_left")
 	# 登录界面 账号列表的手指向上滑动 
 	S_SA_ACCOUNT_LIST_UP = RuleSwipe(roi_front=(520,500,28,6), roi_back=(700,388,33,8), mode="default", name="sa_account_list_up")
 
@@ -81,7 +81,7 @@ class SwitchAccountAssets:
 	# 登录界面-选择手机类型为android 
 	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(691,373,61,62), roi_back=(642,324,162,163), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_login_form_android.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标还未显示时 
-	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(240,530,120,40), roi_back=(240,530,120,40), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr.png")
+	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(251,146,103,31), roi_back=(223,131,164,58), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr_1.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时 
 	I_SA_CHECK_SELECT_SVR_2 = RuleImage(roi_front=(240,410,120,40), roi_back=(240,410,120,40), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr.png")
 	# description 

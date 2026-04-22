@@ -1,8 +1,8 @@
 [
   {
     "itemName": "sa_svr_swipe_left",
-    "roiFront": "730,460,30,21",
-    "roiBack": "470,410,26,21",
+    "roiFront": "595,576,57,23",
+    "roiBack": "587,369,54,26",
     "mode": "default",
     "description": "登录界面 服务器列表的手指向左滑动"
   },

@@ -37,8 +37,8 @@
   },
   {
     "itemName": "sa_login_form_cancel_svr_select",
-    "roiFront": "50,70,60,360",
-    "roiBack": "50,70,60,360",
+    "roiFront": "1074,95,29,31",
+    "roiBack": "1073,94,31,34",
     "description": "登录界面-选择服务器-点击关闭选择服务器界面的空白区域"
   },
   {
