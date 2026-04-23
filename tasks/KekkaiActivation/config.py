@@ -28,7 +28,7 @@ class ActivationConfig(BaseModel):
     exchange_max: bool = Field(default=False, description='exchange_max_help')
     shikigami_class: ShikigamiClass = Field(default=ShikigamiClass.N, description='shikigami_class_help')
     card_not_found_count: int = Field(default=0, description='未发现卡次数')
-
+    pets_enable: bool = Field(default=False, description='pets_enable_help')           
 
 class KekkaiActivation(ConfigBase):
     scheduler: ActivationScheduler = Field(default_factory=ActivationScheduler)

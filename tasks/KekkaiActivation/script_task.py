@@ -25,6 +25,7 @@ from tasks.Utils.config_enum import ShikigamiClass
 from tasks.GameUi.page import page_main, page_guild
 from tasks.KekkaiActivation.config import CardType
 from tasks.KekkaiUtilize.config import UtilizeRule
+from tasks.Pets.script_task import ScriptTask as Pets
 
 """ 结界挂卡 """
 class ScriptTask(KU, KekkaiActivationAssets):
@@ -61,6 +62,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
         # self.back_guild()
         self.ui_get_current_page()
         self.ui_goto(page_main)
+        if con.pets_enable:
+            pets = Pets(self.config, self.device)
+            pets.run()
         raise TaskEnd('KekkaiActivation')
 
     @cached_property
