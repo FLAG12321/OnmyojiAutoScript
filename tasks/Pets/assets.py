@@ -12,7 +12,7 @@ class PetsAssets:
 
 	# Image Rule Assets
 	# 宠物小屋 
-	I_PET_HOUSE = RuleImage(roi_front=(1012,414,56,25), roi_back=(952,412,144,60), threshold=0.7, method="Template matching", file="./tasks/Pets/pet/pet_pet_house.png")
+	I_PET_HOUSE = RuleImage(roi_front=(1012,414,56,25), roi_back=(672,387,603,180), threshold=0.7, method="Template matching", file="./tasks/Pets/pet/pet_house.png")
 	# 爪印 
 	I_PET_CLAW = RuleImage(roi_front=(1171,625,55,56), roi_back=(1171,625,55,56), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_pet_claw.png")
 	# 其乐融融 
@@ -26,7 +26,23 @@ class PetsAssets:
 	# 跳过 
 	I_PET_SKIP = RuleImage(roi_front=(1089,119,72,41), roi_back=(999,42,242,147), threshold=0.65, method="Template matching", file="./tasks/Pets/pet/pet_pet_skip.png")
 	# 退出 
-	I_PET_EXIT = RuleImage(roi_front=(30,25,39,33), roi_back=(30,25,39,33), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_pet_exit.png")
+	I_PET_EXIT = RuleImage(roi_front=(37,22,43,43), roi_back=(7,6,102,82), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_pet_exit.png")
+	# description 
+	I_PET_TO_YARD = RuleImage(roi_front=(34,628,49,47), roi_back=(7,585,138,118), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_to_yard.png")
+	# description 
+	I_PET_YARD = RuleImage(roi_front=(17,633,65,77), roi_back=(3,560,144,151), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_yard.png")
+	# description 
+	I_PET_TO_FEED = RuleImage(roi_front=(807,241,59,67), roi_back=(83,159,997,484), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_to_feed.png")
+	# description 
+	I_PET_SORT = RuleImage(roi_front=(382,95,54,34), roi_back=(260,85,213,59), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_sort.png")
+	# description 
+	I_PET_SORT_REVERSE = RuleImage(roi_front=(382,95,54,34), roi_back=(260,85,213,59), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_sort_reverse.png")
+	# description 
+	I_PET_FIND_FOOD = RuleImage(roi_front=(383,192,46,37), roi_back=(181,148,361,140), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_find_food.png")
+	# description 
+	I_PET_SELECT_FOOD = RuleImage(roi_front=(383,192,46,37), roi_back=(682,249,356,120), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_select_food.png")
+	# description 
+	I_PET_ENSURE = RuleImage(roi_front=(799,569,128,37), roi_back=(757,539,219,96), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_ensure.png")
 
 
 	# Ocr Rule Assets

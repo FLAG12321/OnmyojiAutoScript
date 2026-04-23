@@ -8,7 +8,8 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main
 from tasks.Pets.assets import PetsAssets
 from tasks.Pets.config import PetsConfig
-
+import time
+from datetime import timedelta, datetime
 class ScriptTask(GameUi, PetsAssets):
 
     def run(self):
@@ -16,21 +17,46 @@ class ScriptTask(GameUi, PetsAssets):
         self.ui_goto(page_main)
         con: PetsConfig = self.config.pets.pets_config
         # 进入
-        while 1:
+        start_time = time.time()
+        while time.time() - start_time < 10:
             self.screenshot()
-            if self.appear(self.I_PET_FEAST):
+            if self.appear(self.I_PET_YARD):
                 break
             if self.appear_then_click(self.I_PET_HOUSE, interval=1):
+                start_time = time.time()
                 continue
-            if self.appear_then_click(self.I_PET_CLAW, interval=1):
+            if self.appear_then_click(self.I_PET_TO_YARD, interval=1):
+                start_time = time.time()
                 continue
+        if time.time()-start_time >= 5:
+            if self.ui_get_current_page() != page_main:
+                self.ui_goto(page_main)
+                self.set_next_run('Pets', target=datetime.now() + timedelta(minutes=5))
+            raise Exception ('Pets not found')
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            self.screenshot()
+            if self.appear_rgb(self.I_PET_YARD) and not self.appear(self.I_PET_TO_FEED):
+                start_time = time.time()
+                break
+            if self.appear(self.I_PET_SORT):
+                self.click(self.I_PET_SORT, interval=1)
+                start_time = time.time()
+                continue
+            if self.appear(self.I_PET_SELECT_FOOD):
+                start_time = time.time()
+                self.screenshot()
+                if self.appear_then_click(self.I_PET_ENSURE, interval=1):
+                    start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_PET_TO_FEED, interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_PET_FIND_FOOD, interval=1):
+                start_time = time.time()
+                continue
+        self.ui_click(self.I_PET_EXIT, stop=self.I_CHECK_MAIN,interval=2)
         logger.info('Enter Pets')
-        # if con.pets_happy:
-        #     self._play()
-        if con.pets_feast:
-            self._feed()
-        self.ui_click(self.I_PET_EXIT, self.I_CHECK_MAIN)
-
         self.set_next_run(task='Pets', success=True, finish=True)
         raise TaskEnd('Pets')
 
@@ -80,9 +106,10 @@ class ScriptTask(GameUi, PetsAssets):
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas1')
+    c = Config('oas2')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
-
+    #t.appear_then_click(t.I_PET_FIND_FOOD, interval=1)
     t.run()
+                

@@ -40,6 +40,7 @@ class UtilizeConfig(BaseModel):
     box_exp_enable: bool = Field(default=False, description='box_exp_enable_help')
     box_exp_waste: bool = Field(default=False, description='box_exp_waste_help')
     exchange_before: bool = Field(default=True, description='exchange_before_help')
+    pets_enable: bool = Field(default=False, description='pets_enable_help')
 class KekkaiUtilize(ConfigBase):
     scheduler: UtilizeScheduler = Field(default_factory=UtilizeScheduler)
     utilize_config: UtilizeConfig = Field(default_factory=UtilizeConfig)

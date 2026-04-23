@@ -1,9 +1,9 @@
 [
   {
     "itemName": "pet_house",
-    "imageName": "pet_pet_house.png",
+    "imageName": "pet_house.png",
     "roiFront": "1012,414,56,25",
-    "roiBack": "952,412,144,60",
+    "roiBack": "672,387,603,180",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "宠物小屋"
@@ -65,10 +65,82 @@
   {
     "itemName": "pet_exit",
     "imageName": "pet_pet_exit.png",
-    "roiFront": "30,25,39,33",
-    "roiBack": "30,25,39,33",
+    "roiFront": "37,22,43,43",
+    "roiBack": "7,6,102,82",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "退出"
+  },
+  {
+    "itemName": "pet_to_yard",
+    "roiFront": "34,628,49,47",
+    "roiBack": "7,585,138,118",
+    "description": "description",
+    "imageName": "pet_to_yard.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_yard",
+    "roiFront": "17,633,65,77",
+    "roiBack": "3,560,144,151",
+    "description": "description",
+    "imageName": "pet_yard.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_to_feed",
+    "roiFront": "807,241,59,67",
+    "roiBack": "83,159,997,484",
+    "description": "description",
+    "imageName": "pet_to_feed.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_sort",
+    "roiFront": "382,95,54,34",
+    "roiBack": "260,85,213,59",
+    "description": "description",
+    "imageName": "pet_sort.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_sort_reverse",
+    "roiFront": "382,95,54,34",
+    "roiBack": "260,85,213,59",
+    "description": "description",
+    "imageName": "pet_sort_reverse.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_find_food",
+    "roiFront": "383,192,46,37",
+    "roiBack": "181,148,361,140",
+    "description": "description",
+    "imageName": "pet_find_food.png",
+    "method": "Template matching",
+    "threshold": "0.8"
+  },
+  {
+    "itemName": "pet_select_food",
+    "roiFront": "383,192,46,37",
+    "roiBack": "682,249,356,120",
+    "description": "description",
+    "imageName": "pet_select_food.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_ensure",
+    "roiFront": "799,569,128,37",
+    "roiBack": "757,539,219,96",
+    "description": "description",
+    "imageName": "pet_ensure.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

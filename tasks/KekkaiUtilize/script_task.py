@@ -20,7 +20,7 @@ from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild
 from module.base.utils import point2str
 import random
-
+from tasks.Pets.script_task import ScriptTask as Pets
 """ 结界蹭卡 """
 
 
@@ -56,6 +56,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.recive_guild_ap_or_assets(con.harvest_guild_max_times)
         if not con.utilize_enable:
             self.set_next_run(task='KekkaiUtilize', finish=True, success=True)
+        if con.pets_enable:
+            pets = Pets(self.config, self.device)
+            pets.run()
         logger.info(self.msg)
         raise TaskEnd(self.msg)
 
