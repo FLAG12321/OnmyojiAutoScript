@@ -27,7 +27,7 @@
     "threshold": 0.8
   },
   {
-    "itemName": "donate",
+    "itemName": "donate_2",
     "roiFront": "563,512,95,34",
     "roiBack": "462,482,366,108",
     "description": "description",

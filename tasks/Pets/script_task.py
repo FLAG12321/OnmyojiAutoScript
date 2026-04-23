@@ -34,11 +34,23 @@ class ScriptTask(GameUi, PetsAssets):
                 self.set_next_run('Pets', target=datetime.now() + timedelta(minutes=5))
             raise Exception ('Pets not found')
         start_time = time.time()
+        click_group_flag1 = [#self.C_CLICK_PETS_6, 
+                            self.C_CLICK_PETS_5,
+                             self.C_CLICK_PETS_4]
+        click_group_flag2 = [self.C_CLICK_PETS_3, self.C_CLICK_PETS_2,
+                             self.C_CLICK_PETS_1]
+        click_idx_flag1 = 0
+        click_idx_flag2 = 0
         while time.time() - start_time < 5:
             self.screenshot()
-            if self.appear_rgb(self.I_PET_YARD) and not self.appear(self.I_PET_TO_FEED):
-                start_time = time.time()
+            if self.appear_rgb(self.I_PET_FLAG_1) and self.appear_rgb(self.I_PET_FLAG_2):
                 break
+            """ if self.appear_rgb(self.I_PET_YARD) and not self.appear(self.I_PET_TO_FEED):
+                start_time = time.time()
+                break """
+            if self.appear_then_click(self.I_PET_AWARD,action=self.C_CLICK_AWARD,interval=1):
+                start_time = time.time()
+                continue
             if self.appear(self.I_PET_SORT):
                 self.click(self.I_PET_SORT, interval=1)
                 start_time = time.time()
@@ -54,6 +66,20 @@ class ScriptTask(GameUi, PetsAssets):
                 continue
             if self.appear_then_click(self.I_PET_FIND_FOOD, interval=1):
                 start_time = time.time()
+                continue            
+            if self.appear_rgb(self.I_PET_YARD) and not self.appear_rgb(self.I_PET_FLAG_1):
+                # FLAG_1没出现，按 6,5,4 顺序依次点击，点完重置
+                if click_idx_flag1 >= len(click_group_flag1):
+                    click_idx_flag1 = 0
+                self.click(click_group_flag1[click_idx_flag1], interval=1)
+                click_idx_flag1 += 1
+                continue
+            if self.appear_rgb(self.I_PET_YARD) and not self.appear_rgb(self.I_PET_FLAG_2):
+                # FLAG_2没出现，按 3,2,1 顺序依次点击，点完重置
+                if click_idx_flag2 >= len(click_group_flag2):
+                    click_idx_flag2 = 0
+                self.click(click_group_flag2[click_idx_flag2], interval=1)
+                click_idx_flag2 += 1
                 continue
         self.ui_click(self.I_PET_EXIT, stop=self.I_CHECK_MAIN,interval=2)
         logger.info('Enter Pets')
@@ -106,10 +132,12 @@ class ScriptTask(GameUi, PetsAssets):
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas2')
+    c = Config('oas1')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
+    
+    
     #t.appear_then_click(t.I_PET_FIND_FOOD, interval=1)
     t.run()
                 

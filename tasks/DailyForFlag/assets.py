@@ -325,7 +325,7 @@ class DailyForFlagAssets:
 	# description 
 	I_PLANTING = RuleImage(roi_front=(548,637,35,50), roi_back=(458,587,665,123), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/planting.png")
 	# description 
-	I_DONATE = RuleImage(roi_front=(563,512,95,34), roi_back=(462,482,366,108), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/donate.png")
+	I_DONATE_2 = RuleImage(roi_front=(563,512,95,34), roi_back=(462,482,366,108), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/donate.png")
 	# description 
 	I_GET_FLOWER = RuleImage(roi_front=(313,633,53,33), roi_back=(270,612,167,92), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tree/get_flower.png")
 	# description 

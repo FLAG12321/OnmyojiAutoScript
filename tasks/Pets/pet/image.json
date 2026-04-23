@@ -142,5 +142,32 @@
     "imageName": "pet_ensure.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "pet_award",
+    "roiFront": "694,325,47,51",
+    "roiBack": "495,253,441,211",
+    "description": "description",
+    "imageName": "pet_award.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_flag_1",
+    "roiFront": "333,547,65,21",
+    "roiBack": "290,502,152,111",
+    "description": "description",
+    "imageName": "pet_flag_1.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "pet_flag_2",
+    "roiFront": "805,382,62,14",
+    "roiBack": "729,341,191,102",
+    "description": "description",
+    "imageName": "pet_flag_2.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

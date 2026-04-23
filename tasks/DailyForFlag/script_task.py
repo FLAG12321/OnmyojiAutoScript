@@ -1020,7 +1020,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
             if self.appear_then_click(self.I_TREE_AWARD, interval=1):
                 start_time = time.time()
                 break
-            if self.appear_then_click(self.I_DONATE, interval=1):
+            if self.appear_then_click(self.I_DONATE_2, interval=1):
                 start_time = time.time()
                 break
             if self.appear_then_click(self.I_PLANTING, interval=1):
@@ -1042,15 +1042,16 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
     from module.base.utils import load_image
-    c = Config('QMUMU2')
+    c = Config('oas2')
     d = Device(c)
     self = ScriptTask(c, d)
     #t.run_mysteryshop()
     self.screenshot()
-    self.device.image = load_image(r'C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\log\error\1776649303195\2026-04-20_09-41-43-080161.png')
-    if self.appear(GameUiAssets.I_CHECK_FRIENDS):
-        logger.info("I_CHECK_FRIENDS found ")
-    self.ui_goto(page_friends)
+    self.appear_then_click(self.I_DONATE)
+    #self.device.image = load_image(r'C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\log\error\1776649303195\2026-04-20_09-41-43-080161.png')
+    #if self.appear(GameUiAssets.I_CHECK_FRIENDS):
+    #    logger.info("I_CHECK_FRIENDS found ")
+    #self.ui_goto(page_friends)
     """ buy_flower_image = self.I_BUY_FLOWER.match_all_any(self.device.image)
     logger.info(buy_flower_image) """
     #self.run_tree_planting()

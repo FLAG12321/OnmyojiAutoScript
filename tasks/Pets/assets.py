@@ -10,6 +10,23 @@ from module.atom.list import RuleList
 class PetsAssets: 
 
 
+	# Click Rule Assets
+	# description 
+	C_CLICK_PETS_1 = RuleClick(roi_front=(761,383,17,13), roi_back=(759,382,19,15), name="click_pets_1")
+	# description 
+	C_CLICK_PETS_2 = RuleClick(roi_front=(846,398,13,18), roi_back=(844,397,15,21), name="click_pets_2")
+	# description 
+	C_CLICK_PETS_3 = RuleClick(roi_front=(899,403,15,9), roi_back=(898,402,18,11), name="click_pets_3")
+	# description 
+	C_CLICK_PETS_4 = RuleClick(roi_front=(252,577,15,25), roi_back=(251,576,18,27), name="click_pets_4")
+	# description 
+	C_CLICK_PETS_5 = RuleClick(roi_front=(401,597,18,18), roi_back=(399,596,21,21), name="click_pets_5")
+	# description 
+	C_CLICK_PETS_6 = RuleClick(roi_front=(0,0,100,100), roi_back=(0,0,100,100), name="click_pets_6")
+	# description 
+	C_CLICK_AWARD = RuleClick(roi_front=(692,520,150,62), roi_back=(690,519,152,65), name="click_award")
+
+
 	# Image Rule Assets
 	# 宠物小屋 
 	I_PET_HOUSE = RuleImage(roi_front=(1012,414,56,25), roi_back=(672,387,603,180), threshold=0.7, method="Template matching", file="./tasks/Pets/pet/pet_house.png")
@@ -43,6 +60,12 @@ class PetsAssets:
 	I_PET_SELECT_FOOD = RuleImage(roi_front=(383,192,46,37), roi_back=(682,249,356,120), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_select_food.png")
 	# description 
 	I_PET_ENSURE = RuleImage(roi_front=(799,569,128,37), roi_back=(757,539,219,96), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_ensure.png")
+	# description 
+	I_PET_AWARD = RuleImage(roi_front=(694,325,47,51), roi_back=(495,253,441,211), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_award.png")
+	# description 
+	I_PET_FLAG_1 = RuleImage(roi_front=(333,547,65,21), roi_back=(290,502,152,111), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_flag_1.png")
+	# description 
+	I_PET_FLAG_2 = RuleImage(roi_front=(805,382,62,14), roi_back=(729,341,191,102), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_flag_2.png")
 
 
 	# Ocr Rule Assets
