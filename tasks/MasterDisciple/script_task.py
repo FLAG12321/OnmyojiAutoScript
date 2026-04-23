@@ -53,7 +53,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             minutes=limit_time.minute,
             seconds=limit_time.second
         )
-
+        self.screenshot()
         self.ui_get_current_page()
         self.ui_goto(page_main)
 
@@ -120,6 +120,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     # 异常恢复：回到庭院，清理可能残留的状态
                     try:
                         self.device.stuck_record_clear()
+                        self.screenshot()
                         self.ui_get_current_page()
                         self.ui_goto(page_main)
                     except Exception:
@@ -181,6 +182,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 # 异常恢复：回到庭院
                 try:
                     self.device.stuck_record_clear()
+                    self.screenshot()
                     self.ui_get_current_page()
                     self.ui_goto(page_main)
                 except Exception:
@@ -298,7 +300,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 return False
         else:
             # 默认流程：导航到组队页面 → 创建私人房间
-            time.sleep(3)
+            sleep(2)
+            self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_team)
             self.check_zones(task_name)
@@ -517,6 +520,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         """
         # 开启加成
         if buff_open_func:
+            self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_main)
             #buff_open_func()
@@ -552,6 +556,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         # 关闭加成
         if buff_close_func:
+            self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_main)
             #buff_close_func()
@@ -787,6 +792,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         logger.info("Guard: navigating to team room")
 
         # 导航到旅途中
+        self.screenshot()
         self.ui_get_current_page()
         self.ui_goto(page_travel)
 
@@ -832,7 +838,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 return True
             if self.appear_then_click(self.I_TO_TEAM, interval=1):
                 to_team_click_cnt += 1
-                if to_team_click_cnt > 5:
+                if to_team_click_cnt >=5:
                     logger.warning('Guard: clicked I_TO_TEAM over 5 times, guard daily limit may be exhausted')
                     raise  TaskEnd('Guard daily limit may be exhausted')
                 start_time = time.time()
@@ -1042,6 +1048,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # 确认后师父会自动收到邀请，下一轮等师父进入即可
             win = self._guard_run_battle(battle_config)
             if  self.appear(self.I_PAGE_BATTLE_GUARD):
+                self.screenshot()
                 self.ui_get_current_page()
                 self.ui_goto(page_main) 
                 raise TaskEnd("Guard: returned to main page, ending task")
@@ -1055,7 +1062,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 退出组队界面
         if self.exit_team():
             pass
-
+        self.screenshot()
         self.ui_get_current_page()
         self.ui_goto(page_main)
         logger.info(f'Guard: completed {count} battles')
@@ -1250,6 +1257,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self._master_switch_presets()
 
             # 确保在庭院等待
+            self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_main)
 
@@ -1289,6 +1297,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         logger.info(f"Master switching {len(switch_targets)} preset(s) before battle")
 
         # 导航到式神录
+        self.screenshot()
         self.ui_get_current_page()
         self.ui_goto(page_shikigami_records)
 
@@ -1369,6 +1378,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         logger.info(f'Exp battle count: {exp_battle_count}/2')
                         if exp_battle_count >= 2:
                             logger.info('Master has exited 2 exp battles, ending task')
+                            self.screenshot()
                             self.ui_get_current_page()
                             self.ui_goto(page_main)
                             raise TaskEnd
