@@ -36,7 +36,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                  ExperienceYoukaiAssets, GoldYoukaiAssets, BondlingFairylandAssets):
     # 探索任务中切换援助式神相关标记
     help_shikigami_detect: bool = True
-
+    coin_buff: bool =False
     def run(self) -> bool:
         """
         师徒任务主入口
@@ -1335,7 +1335,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.O_ACCEPT_NAME.roi=[self.I_ACCEPT.roi_front[0]+167,self.I_ACCEPT.roi_front[1]+25,180,47]
                     text=self.O_ACCEPT_NAME.ocr(self.device.image)
                     logger.info(f"text={text}")
-                    if "金币"in text:
+                    if "金币"in text :
+                        if not self.coin_buff:
+                            self.open_buff()
+                            self.gold_50(True)
+                            self.gold_100(True)
+                            self.close_buff()
+                            self.coin_buff=True
+                            continue
                         battle_type= 5
                     elif "经验"in text:
                         battle_type= 6
@@ -1353,6 +1360,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self.device.stuck_record_add('BATTLE_STATUS_S')
         wait_out=Timer(180).start()
         exp_battle_count = 0  # 经验妖怪战斗计数
+        coin_battle_count =0
         while not wait_out.reached():
             self.screenshot()
             battle_type = check_then_accept()
@@ -1370,6 +1378,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     # 进入战斗，run_general_battle内部已自增current_count
                     if battle_type == 8:
                         self.run_general_battle(config=GeneralBattleConfig())
+                    elif battle_type == 5:
+                        # 使用通用battle_before处理准备阶段，再用自定义battle_wait处理结算
+                        battle_config = GeneralBattleConfig(lock_team_enable=True)
+                        self.battle_before(buff=None, config=battle_config)
+                        self._gold_youkai_battle_wait()
                     else:
                         self.master_run_battle_back(config=GeneralBattleConfig())
                     # 经验妖怪(battle_type==6)退出后计数，达到2次则结束任务
@@ -1382,6 +1395,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                             self.ui_get_current_page()
                             self.ui_goto(page_main)
                             raise TaskEnd
+                    if battle_type == 5:
+                        coin_battle_count += 1
+                        if coin_battle_count >= 2:
+                            self.screenshot()
+                            self.ui_get_current_page()
+                            self.ui_goto(page_main)
+                            if self.coin_buff:
+                                self.open_buff()
+                                self.gold_50(False)
+                                self.gold_100(False)
+                                self.close_buff()
+                                self.coin_buff=False
                     wait_out.reset()
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -1401,16 +1426,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :return:
         """
         # 如果没有锁定队伍那么在点击准备后才退出的,退四的话就直接退出
-        if not config.lock_team_enable and not exit_four:
-            # 点击准备按钮
-            self.wait_until_appear(self.I_PREPARE_HIGHLIGHT)
-            while 1:
-                self.screenshot()
-                if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1.5):
-                    continue
-                if not (self.appear(self.I_PRESET) or self.appear(self.I_PRESET_WIT_NUMBER)):
-                    break
-            logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
+        #if not config.lock_team_enable and not exit_four:
+        # 点击准备按钮
+        self.wait_until_appear(self.I_PREPARE_HIGHLIGHT)
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1.5):
+                continue
+            if not (self.appear(self.I_PRESET) or self.appear(self.I_PRESET_WIT_NUMBER)):
+                break
+        logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
 
         # 点击返回
         while 1:
@@ -1447,11 +1472,11 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
     from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
-    c = Config('oas3')
+    c = Config('oas1')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
-    
+    self.run()
     """ while 1:
         self.screenshot()
         if  self.appear(self.I_ENSURE_SWITCH):

@@ -22,7 +22,7 @@ class PetsAssets:
 	# description 
 	C_CLICK_PETS_5 = RuleClick(roi_front=(401,597,18,18), roi_back=(399,596,21,21), name="click_pets_5")
 	# description 
-	C_CLICK_PETS_6 = RuleClick(roi_front=(0,0,100,100), roi_back=(0,0,100,100), name="click_pets_6")
+	C_CLICK_PETS_6 = RuleClick(roi_front=(458,551,11,22), roi_back=(456,549,14,25), name="click_pets_6")
 	# description 
 	C_CLICK_AWARD = RuleClick(roi_front=(692,520,150,62), roi_back=(690,519,152,65), name="click_award")
 

@@ -34,11 +34,11 @@ class ScriptTask(GameUi, PetsAssets):
                 self.set_next_run('Pets', target=datetime.now() + timedelta(minutes=5))
             raise Exception ('Pets not found')
         start_time = time.time()
-        click_group_flag1 = [#self.C_CLICK_PETS_6, 
+        click_group_flag1 = [self.C_CLICK_PETS_4, 
                             self.C_CLICK_PETS_5,
-                             self.C_CLICK_PETS_4]
-        click_group_flag2 = [self.C_CLICK_PETS_3, self.C_CLICK_PETS_2,
-                             self.C_CLICK_PETS_1]
+                             self.C_CLICK_PETS_6]
+        click_group_flag2 = [self.C_CLICK_PETS_1, self.C_CLICK_PETS_2,
+                             self.C_CLICK_PETS_3]
         click_idx_flag1 = 0
         click_idx_flag2 = 0
         while time.time() - start_time < 5:
