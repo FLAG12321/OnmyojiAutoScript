@@ -8,6 +8,7 @@ from module.device.pkg_resources import get_distribution
 _ = get_distribution
 
 from module.device.env import IS_WINDOWS
+from module.base.decorator import del_cached_property
 from module.base.timer import Timer
 from module.config.utils import get_server_next_update
 from module.device.app_control import AppControl
@@ -18,8 +19,7 @@ from module.exception import (GameNotRunningError,
                               GameStuckError,
                               GameTooManyClickError,
                               RequestHumanTakeover,
-                              EmulatorNotRunningError,
-                              EmulatorRunningError)
+                              EmulatorNotRunningError)
 from module.logger import logger
 import time
 
@@ -38,20 +38,29 @@ class Device(Platform, Screenshot, Control, AppControl):
                 break
             except EmulatorNotRunningError:
                 if trial >= 3:
-                    logger.critical('Failed to start emulator after 3 trial')
+                    logger.critical('Failed to start emulator after 3 retries')
                     raise RequestHumanTakeover
-                # Try to start emulator
-                logger.critical('Starting emulator...')
+                # Stop then start emulator to handle stuck states
                 if self.emulator_instance is not None:
-                    self.emulator_start() 
+                    logger.warning(f'Emulator not running, stopping and restarting... (trial {trial + 1}/3)')
+                    self.emulator_stop()
+                    self.emulator_start()
                 else:
-                    logger.critical(
-                        f'No emulator with serial "{self.config.Emulator_Serial}" found, '
-                        f'please set a correct serial'
-                    )
-                    raise RequestHumanTakeover
-            except EmulatorRunningError:
-                self.emulator_stop()
+                    # emulator_instance is None, try to re-discover emulator
+                    logger.warning(f'Emulator instance not found, re-discovering... (trial {trial + 1}/3)')
+                    del_cached_property(self, 'emulator_instance')
+                    del_cached_property(self, 'emulator_info')
+                    del_cached_property(self, 'all_emulator_instances')
+                    if self.emulator_instance is not None:
+                        logger.info('Re-discovered emulator instance, stopping and restarting...')
+                        self.emulator_stop()
+                        self.emulator_start()
+                    else:
+                        logger.critical(
+                            f'No emulator with serial "{self.config.Emulator_Serial}" found, '
+                            f'please set a correct serial'
+                        )
+                        raise RequestHumanTakeover
 
 
         # Auto-fill emulator info

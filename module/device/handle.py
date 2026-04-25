@@ -184,6 +184,9 @@ class Handle:
             logger.info('Handle is auto. oas will find window emulator')
             window_list = Handle.all_windows()
             self.root_handle_title = self.auto_handle_title(window_list)
+            if not self.root_handle_title:
+                logger.error('Auto handle failed, no emulator window found')
+                raise EmulatorNotRunningError
             self.root_handle_num = handle_title2num(self.root_handle_title)
         if isinstance(self.root_handle, str):
             try:
@@ -198,8 +201,8 @@ class Handle:
                     self.root_handle_num = handle_title2num(self.root_handle)
                     self.root_handle_title = self.root_handle
                 else:
-                    logger.info('Handle is None EmulatorRunningError')
-                    raise EmulatorRunningError
+                    logger.error(f'Handle title "{self.root_handle}" not found, emulator may not be running')
+                    raise EmulatorNotRunningError
         logger.info(f'The root handle title is {self.root_handle_title} and num is {self.root_handle_num}')
 
         # 获取句柄树
