@@ -154,7 +154,7 @@ page_town.link(button=G.I_TOWN_GOTO_HYAKKIYAKOU, destination=page_hyakkiyakou)
 # ************************************* 庭院部分 *****************************************#
 # 式神录 shikigami_records
 page_shikigami_records = Page(G.I_CHECK_RECORDS)
-page_shikigami_records.additional = [G.I_DLC_EXIT,G.I_AD_DISAPPEAR_2, G.I_DLC_EXIT]
+page_shikigami_records.additional = [[G.I_DLC_EXIT, 1.5],[G.I_AD_DISAPPEAR_2, 1.5],[G.I_DLC_EXIT,1.5]]
 page_shikigami_records.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_SHIKIGAMI_RECORDS, destination=page_shikigami_records)
 # 阴阳术 onmyodo
@@ -163,7 +163,7 @@ page_onmyodo.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_ONMYODO, destination=page_onmyodo)
 # 好友 friends
 page_friends = Page(G.I_CHECK_FRIENDS)
-page_shikigami_records.additional = [[G.I_FAVORABILITY_UP, G.C_FAVORABILITY_UP]]
+page_friends.additional = [[G.I_FAVORABILITY_UP, G.C_FAVORABILITY_UP]]
 page_friends.link(button=G.I_BACK_FRIENDS, destination=page_main)
 page_main.link(button=G.O_PAGE_FRIENDS, destination=page_friends)
 # 花合战 daily
@@ -175,12 +175,13 @@ from tasks.DailyTrifles.assets import DailyTriflesAssets
 
 # 商店 mall
 page_mall = Page(check_button=[G.I_CHECK_MALL, DailyTriflesAssets.I_ROOM_GIFT])
-page_mall.additional = [[G.I_AD_CLOSE_RED, 1.0],G.I_DLC_EXIT, [G.I_BACK_Y, 1.0], G.I_DLC_CLOSE]
+page_mall.additional = [[G.I_AD_CLOSE_RED, 1.5],[G.I_DLC_EXIT, 1.5], [G.I_BACK_Y, 1.5], G.I_DLC_CLOSE]
 page_mall.link(button=G.I_BACK_MALL, destination=page_main)
 page_main.link(button=G.O_PAGE_MALL, destination=page_mall)
 # 阴阳寮 guild
 page_guild = Page(G.I_CHECK_GUILD)
-page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.0], [KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE2, 1.0],KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE]
+#page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.0], [KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE2, 1.0]]
+page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE, 1.5],[KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE_2,1.5]]
 page_guild.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_GUILD, destination=page_guild)
 # 组队 team

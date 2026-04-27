@@ -316,26 +316,26 @@ class GameUi(BaseTask, GameUiAssets):
         if not page.additional:
             return
         for btn in page.additional:
-            # 统一解析: condition, action, delay_seconds
-            # 格式: btn                          -> condition=btn, action=btn, delay=0 (普通点击)
-            #       [target, delay]               -> condition=target, action=target, delay=delay (延时点击)
-            #       [condition, action]           -> condition=condition, action=action, delay=0 (复合条件)
-            #       [condition, action, delay]    -> condition=condition, action=action, delay=delay (延时复合条件)
+            # 统一解析: condition, action, detect_seconds
+            # 格式: btn                          -> condition=btn, action=btn, detect=0 (普通点击)
+            #       [target, detect]             -> condition=target, action=target, detect=detect (限时检测点击)
+            #       [condition, action]           -> condition=condition, action=action, detect=0 (复合条件)
+            #       [condition, action, detect]   -> condition=condition, action=action, detect=detect (限时复合条件)
             condition = btn
             action = btn
-            delay_seconds = 0
+            detect_seconds = 0
             if isinstance(btn, (list, tuple)):
                 if len(btn) == 3 and isinstance(btn[2], (int, float)):
-                    condition, action, delay_seconds = btn
+                    condition, action, detect_seconds = btn
                 elif len(btn) == 2 and isinstance(btn[1], (int, float)):
-                    condition, action, delay_seconds = btn[0], btn[0], btn[1]
+                    condition, action, detect_seconds = btn[0], btn[0], btn[1]
                 elif len(btn) == 2:
                     condition, action = btn
 
-            # 有延时时: 反复检测1.5秒确认条件是否满足，再延时再操作
-            if delay_seconds > 0:
+            # 限时检测: 在指定秒数内反复检测，检测到则操作
+            if detect_seconds > 0:
                 detected = False
-                detect_timer = Timer(1.5).start()
+                detect_timer = Timer(detect_seconds).start()
                 while not detect_timer.reached():
                     self.screenshot()
                     if self.appear(condition):
@@ -344,9 +344,8 @@ class GameUi(BaseTask, GameUiAssets):
                     sleep(0.1)
                 skip_first_screenshot = False
                 if detected:
-                    sleep(delay_seconds)
                     if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
-                        logger.info(f'Page {page} additional {condition} -> {action} executed after {delay_seconds}s')
+                        logger.info(f'Page {page} additional {condition} -> {action} detected within {detect_seconds}s')
                         skip_first_screenshot = False
                 continue
 
@@ -388,13 +387,15 @@ if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('oas1')
+    c = Config('oas2')
     d = Device(c)
     game = GameUi(config=c, device=d)
+    game.screenshot()
+    #game.appear_then_click(game.I_DLC_EXIT)
     game.ui_get_current_page()
     game.ui_goto(page_main)
     game.ui_goto(page_shikigami_records)
-    game.ui_goto(page_onmyodo)
+    """ game.ui_goto(page_onmyodo)
     game.ui_goto(page_friends)
     game.ui_goto(page_guild)
     game.ui_goto(page_team)
@@ -402,4 +403,4 @@ if __name__ == '__main__':
     game.ui_goto(page_travel)
     game.ui_goto(page_daily)
     game.ui_goto(page_mall)
-    game.ui_goto(page_main)
+    game.ui_goto(page_main) """

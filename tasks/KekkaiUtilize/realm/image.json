@@ -124,5 +124,14 @@
     "imageName": "plant_flower_ensure2.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "plant_tree_close_2",
+    "roiFront": "1022,71,34,35",
+    "roiBack": "704,31,398,312",
+    "description": "description",
+    "imageName": "plant_tree_close_2.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

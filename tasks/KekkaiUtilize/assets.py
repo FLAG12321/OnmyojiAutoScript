@@ -65,6 +65,8 @@ class KekkaiUtilizeAssets:
 	I_PLANT_FLOWER_ENSURE = RuleImage(roi_front=(1167,576,46,55), roi_back=(951,391,325,317), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_flower_ensure.png")
 	# description 
 	I_PLANT_FLOWER_ENSURE2 = RuleImage(roi_front=(1085,171,31,31), roi_back=(939,55,318,253), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_flower_ensure2.png")
+	# description 
+	I_PLANT_TREE_CLOSE_2 = RuleImage(roi_front=(1022,71,34,35), roi_back=(704,31,398,312), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_tree_close_2.png")
 
 
 	# Click Rule Assets

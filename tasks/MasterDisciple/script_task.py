@@ -794,6 +794,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 导航到旅途中
         self.screenshot()
         self.ui_get_current_page()
+        self.ui_goto(page_main)
         self.ui_goto(page_travel)
 
         # 等待任务页面出现
@@ -1062,9 +1063,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 退出组队界面
         if self.exit_team():
             pass
+        start_time=time.time()
+        while time.time()>start_time-5:
+            self.screenshot()
+            if self.appear(self.I_CHECK_MAIN):
+                break
+            if self.appear_then_click(self.I_BACK_YELLOW, interval=1):
+                start_time = time.time()
+                continue
         self.screenshot()
-        self.ui_get_current_page()
-        self.ui_goto(page_main)
+        if self.ui_get_current_page()!=page_main:
+            self.ui_goto(page_main) 
         logger.info(f'Guard: completed {count} battles')
 
     def run_exploration_as_disciple(self):
@@ -1428,15 +1437,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 如果没有锁定队伍那么在点击准备后才退出的,退四的话就直接退出
         #if not config.lock_team_enable and not exit_four:
         # 点击准备按钮
+        sleep(5)
         self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1.5):
                 continue
-            if not (self.appear(self.I_PRESET) or self.appear(self.I_PRESET_WIT_NUMBER)):
+            if self.appear(self.I_BATTLE_INFO):
                 break
         logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
-
         # 点击返回
         while 1:
             self.screenshot()
