@@ -112,7 +112,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             except RequestHumanTakeover:
                 raise
             except TaskEnd:
-                pass
+                break
             except Exception as e:
                 logger.error(f"[{task_name}] 第{attempt}次执行异常: {e}")
                 if attempt < max_retries:
@@ -1052,7 +1052,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.screenshot()
                 self.ui_get_current_page()
                 self.ui_goto(page_main) 
-                raise TaskEnd("Guard: returned to main page, ending task")
+                raise TaskEnd ("Guard: returned to main page, ending task")
             if not win:
                 logger.warning('Guard: battle failed')
                 break
@@ -1075,6 +1075,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         if self.ui_get_current_page()!=page_main:
             self.ui_goto(page_main) 
         logger.info(f'Guard: completed {count} battles')
+        raise TaskEnd ("Guard: completed")
 
     def run_exploration_as_disciple(self):
         """
@@ -1392,6 +1393,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         battle_config = GeneralBattleConfig(lock_team_enable=True)
                         self.battle_before(buff=None, config=battle_config)
                         self._gold_youkai_battle_wait()
+                    elif battle_type == 7:
+                        self.run_general_battle_back(config=GeneralBattleConfig())
                     else:
                         self.master_run_battle_back(config=GeneralBattleConfig())
                     # 经验妖怪(battle_type==6)退出后计数，达到2次则结束任务
@@ -1439,12 +1442,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 点击准备按钮
         sleep(5)
         self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
-        while 1:
-            self.screenshot()
-            if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1.5):
-                continue
-            if self.appear(self.I_BATTLE_INFO):
-                break
+        self.click(self.I_PREPARE_HIGHLIGHT)
         logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
         # 点击返回
         while 1:
