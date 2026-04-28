@@ -346,6 +346,33 @@ class DailyForFlagAssets:
 
 	# Click Rule Assets
 	# description 
+	C_TRIALBATTLE_START = RuleClick(roi_front=(224,496,41,61), roi_back=(223,495,43,63), name="trialbattle_start")
+
+
+	# Image Rule Assets
+	# 试炼战斗停止标志 
+	I_TRIALBATTLE_STOP_FLAG = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/trialbattle_stop_flag.png")
+	# description 
+	I_TRIALBATTLE_START = RuleImage(roi_front=(280,443,49,35), roi_back=(118,389,259,241), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/trialbattle_start.png")
+	# description 
+	I_TO_TRIALBATTLE = RuleImage(roi_front=(625,543,26,29), roi_back=(341,456,585,196), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/to_trialbattle.png")
+	# description 
+	I_TRIALBATTLE_FIRE = RuleImage(roi_front=(1098,575,58,51), roi_back=(1026,492,197,180), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/trialbattle_fire.png")
+	# description 
+	I_TRIALBATTLE_END = RuleImage(roi_front=(1004,433,103,27), roi_back=(994,580,245,130), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/trialbattle_end.png")
+	# description 
+	I_TO_TRIALBATTLE_2 = RuleImage(roi_front=(1005,434,100,26), roi_back=(905,403,298,103), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/to_trialbattle_2.png")
+	# description 
+	I_TRIALBATTLE_BACK_RED = RuleImage(roi_front=(1036,220,41,39), roi_back=(975,185,130,123), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/trialbattle/trialbattle_back_red.png")
+
+
+	# Ocr Rule Assets
+	# description 
+	O_CLICK_SKILL = RuleOcr(roi=(998,617,251,26), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="click_skill")
+
+
+	# Click Rule Assets
+	# description 
 	C_TO_ACCOUNT = RuleClick(roi_front=(21,27,72,63), roi_back=(21,27,72,63), name="to_account")
 	# description 
 	C_NET_CLICK = RuleClick(roi_front=(191,219,187,296), roi_back=(190,218,190,299), name="net_click")

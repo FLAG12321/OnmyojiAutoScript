@@ -1049,6 +1049,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # 确认后师父会自动收到邀请，下一轮等师父进入即可
             win = self._guard_run_battle(battle_config)
             if  self.appear(self.I_PAGE_BATTLE_GUARD):
+                start_time = time.time()
+                while time.time()-start_time<5:
+                    self.screenshot()
+                    if self.appear(PlotlineAssets.I_PAGE_MAIN):
+                        raise TaskEnd ("Guard: returned to main page, ending task")
+                    if self.appear_then_click(self.I_BACK_YELLOW, interval=1):
+                        continue
                 self.screenshot()
                 self.ui_get_current_page()
                 self.ui_goto(page_main) 
@@ -1394,7 +1401,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         self.battle_before(buff=None, config=battle_config)
                         self._gold_youkai_battle_wait()
                     elif battle_type == 7:
-                        self.run_general_battle_back(config=GeneralBattleConfig())
+                        self.master_run_battle_back_stone(config=GeneralBattleConfig())
                     else:
                         self.master_run_battle_back(config=GeneralBattleConfig())
                     # 经验妖怪(battle_type==6)退出后计数，达到2次则结束任务
@@ -1431,6 +1438,47 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.ui_goto(page_main) 
                 continue
         raise TaskEnd
+    def master_run_battle_back_stone(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
+        """
+        进入挑战然后直接返回
+        :param config:
+        :return:
+        """
+        # 如果没有锁定队伍那么在点击准备后才退出的,退四的话就直接退出
+        #if not config.lock_team_enable and not exit_four:
+        # 点击准备按钮
+        self.wait_until_appear(self.I_PREPARE_HIGHLIGHT)
+        # 点击返回
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
+            if self.appear(self.I_EXIT_ENSURE):
+                break
+        logger.info(f"Click {self.I_EXIT.name}")
+
+        # 点击返回确认
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_MAIN):
+                return True
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
+            if self.appear(self.I_FALSE):
+                break
+        logger.info(f"Click {self.I_EXIT_ENSURE.name}")
+
+        # 点击失败确认
+        self.wait_until_appear(self.I_FALSE)
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_FALSE, interval=1.5):
+                continue
+            if not self.appear(self.I_FALSE):
+                break
+        logger.info(f"Click {self.I_FALSE.name}")
+
+        return True
     def master_run_battle_back(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
         """
         进入挑战然后直接返回

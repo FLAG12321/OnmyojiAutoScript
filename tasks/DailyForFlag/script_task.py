@@ -18,7 +18,7 @@ from module.atom.image import RuleImage
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyForFlag.assets import DailyForFlagAssets
 from tasks.DailyForFlag.config import GoodsType,CoinType,MSGType
-from tasks.GameUi.page import page_main, page_guild , page_team,page_mall,page_friends
+from tasks.GameUi.page import page_main, page_guild , page_team,page_mall,page_friends,page_summon
 from tasks.GameUi.assets import GameUiAssets
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.login import LoginHandler
@@ -157,6 +157,8 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
         if con.daily_for_flag_config.tongxin_battle_enable or con.daily_for_flag_config.tongxin_ap_enable:
             self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
+        if con.daily_for_flag_config.trialbattle_enable:
+            self.run_trialbattle()
 
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
         logger.info(self.msg)
@@ -244,11 +246,12 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         if time.time() - start_time>=5:
             return False
         click_count = 0
+        success_count = 0
         while 1:
             self.screenshot()
             if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
                 break
-            if click_count >= 3:
+            if click_count >= 3 or success_count >= 5:
                 if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
                     time.sleep(1)
                     continue
@@ -257,6 +260,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 continue
             if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
                 click_count = 0
+                success_count += 1
                 continue
             if self.appear_rgb(self.I_FINISH):
                 if self.appear_then_click(self.I_FINISH, interval=1):
@@ -1035,7 +1039,116 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         self.appear_then_click(self.I_BACK_Y, interval=1)
         self.ui_goto(page_main)
         
-        
+    def run_trialbattle(self):
+        """
+        试炼战斗主循环：导航到召唤页面，循环执行 fire -> battle_wait，
+        直到出现 I_TRIALBATTLE_STOP_FLAG 停止
+        """
+        self.screenshot()
+        if self.ui_get_current_page() != page_main:
+            self.ui_goto(page_main)
+        self.ui_goto(page_summon)
+        start_time = time.time()
+        while time.time()-start_time < 5:
+            self.screenshot()
+            if self.appear(self.I_TRIALBATTLE_FIRE):
+                start_time = time.time()
+                break
+            if self.appear_then_click(self.I_TO_TRIALBATTLE_2,interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_TO_TRIALBATTLE,interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_TRIALBATTLE_START,action=self.C_TRIALBATTLE_START,interval=1):
+                start_time = time.time()
+                logger.info('试炼战斗: 前往集结')
+                continue
+        if time.time()-start_time >= 5:
+            return 
+        while time.time()-start_time < 5:
+            self.screenshot()
+            if self.appear(self.I_TRIALBATTLE_END):
+                start_time = time.time()
+                logger.info('试炼战斗: 检测到结束标志')
+                break
+            if self.appear(self.I_TRIALBATTLE_FIRE):
+                logger.info('试炼战斗: 检测到FIRE')
+                if self.trial_fire():
+                    self.trial_battle_wait()
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_TO_TRIALBATTLE_2,interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_TO_TRIALBATTLE,interval=1):
+                start_time = time.time()
+                continue
+            
+        while time.time()-start_time < 3:
+            self.screenshot() 
+            if self.appear_then_click(PlotlineAssets.I_PAGE_CLICK_ANY, interval=1):
+                continue
+            if self.appear_then_click(self.I_TRIALBATTLE_BACK_RED,interval=2):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_BACK_Y,interval=2):
+                start_time = time.time()
+                logger.info('试炼战斗: 退出集结')
+                continue
+        self.screenshot()
+        if self.ui_get_current_page() != page_main:
+            self.ui_goto(page_main)
+
+    def trial_fire(self):
+        """开战逻辑"""
+        start_time = time.time()
+        while time.time()-start_time < 5:
+            self.screenshot()
+            if self.appear(self.I_TRIALBATTLE_END, interval=1):
+                return False
+            if self.appear(self.I_BATTLE_INFO, interval=1):
+                return True
+            if self.appear_then_click(self.I_TRIALBATTLE_FIRE,interval=1):
+                start_time = time.time()
+                continue
+        return False
+    def trial_battle_wait(self):
+        """
+        等待战斗结束：时刻检查 I_PAGE_CLICK_ANY 出现就点击，
+        胜利出现则点击消失或 fire 重新出现表示战斗结束
+        """
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        self.device.click_record_clear()
+        logger.info("试炼战斗: Start battle process")
+        click_timer = Timer(10).start()         
+        while 1:
+            self.screenshot()
+            self.device.click_record_clear()
+            
+            # 时刻检查 I_PAGE_CLICK_ANY，出现就点击
+            if self.appear_then_click(PlotlineAssets.I_PAGE_CLICK_ANY, interval=1):
+                continue
+            # 胜利出现，点击消失
+            if self.appear(self.I_WIN, threshold=0.8) or self.appear(self.I_DE_WIN):
+                logger.info("试炼战斗: Battle result is win")
+                if self.appear(self.I_DE_WIN):
+                    self.ui_click_until_disappear(self.I_DE_WIN)
+                else:
+                    self.ui_click_until_disappear(self.I_WIN)
+                break
+            # fire 重新出现表示战斗结束
+            if self.appear(self.I_TRIALBATTLE_FIRE):
+                logger.info("试炼战斗: Fire button reappeared, battle ended")
+                break
+            if  click_timer.reached() or "伤害" in self.O_CLICK_SKILL.ocr(self.device.image):
+                click_timer.reset()
+                self.click(PlotlineAssets.C_CLICK_RANDOM_3)
+                time.sleep(0.5)
+                self.click(PlotlineAssets.C_CLICK_RANDOM_2)
+                time.sleep(0.5)
+                self.click(PlotlineAssets.C_CLICK_RANDOM_1)
+                time.sleep(0.5)
 
 
 if __name__ == "__main__":
@@ -1047,7 +1160,7 @@ if __name__ == "__main__":
     self = ScriptTask(c, d)
     #t.run_mysteryshop()
     self.screenshot()
-    self.appear_then_click(self.I_DONATE)
+    self.run_trialbattle()
     #self.device.image = load_image(r'C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\log\error\1776649303195\2026-04-20_09-41-43-080161.png')
     #if self.appear(GameUiAssets.I_CHECK_FRIENDS):
     #    logger.info("I_CHECK_FRIENDS found ")

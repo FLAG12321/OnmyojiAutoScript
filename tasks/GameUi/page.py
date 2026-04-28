@@ -56,6 +56,10 @@ page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANC
                         [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
                         [RestartAssets.I_LOGIN_COURTYARD2, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
                         [RestartAssets.I_LOGIN_SCROOLL_CLOSE, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
+# 绑定手机号弹窗 bind phone（两步：先点击"前往绑定"弹出确认框，再点击"取消绑定"关闭）
+page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
+page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
+page_bind_phone.link(button=RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE, destination=page_main)
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
 page_summon.additional = [G.O_SUMMON_BACK_Y, G.I_SUMMON_BACK_R,G.I_SUMMON_BACK_TICKET]

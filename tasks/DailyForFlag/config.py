@@ -28,6 +28,7 @@ class DailyForFlagConfig(BaseModel):
   kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
   KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
   tree_planting_enable: int  = Field(default=2, description='0不运行 1买花 2买花捐树')
+  trialbattle_enable: bool = Field(default=True, description='是否开启试炼战斗')
 class DailyForFlag(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     daily_for_flag_config: DailyForFlagConfig  = Field(default_factory=DailyForFlagConfig)
