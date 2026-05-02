@@ -176,6 +176,16 @@ def test_messages():
             break
         message_seq = earliest_seq
 
+    # 按 message_id 去重（NapCat翻页时边界消息可能重复返回）
+    seen_ids = set()
+    unique_messages = []
+    for msg in all_messages:
+        mid = msg.get('message_id')
+        if mid not in seen_ids:
+            seen_ids.add(mid)
+            unique_messages.append(msg)
+    all_messages = unique_messages
+
     print(f"共获取 {len(all_messages)} 条消息 (翻页{page}次)")
 
     # 筛选并解析

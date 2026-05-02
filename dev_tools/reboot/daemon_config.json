@@ -9,7 +9,7 @@
   "monitor_interval": 30,
   "restart_cooldown": 60,
 
-  "reboot_time": "02:00",
+  "reboot_time": "03:00",
   "reboot_weekday": null,
 
   "instances": [
@@ -23,11 +23,11 @@
   ],
 
   "napcat": {
-    "enable": false,
-    "qq_account": "",
-    "endpoint": "http://127.0.0.1:3000",
-    "access_token": "",
-    "napcat_dir": "C:\\NapCat",
+    "enable": true,
+    "qq_account": "1281470353",
+    "endpoint": "http://192.168.1.8:3000",
+    "access_token": "Lu1122",
+    "napcat_dir": "C:\\Users\\lu\\Desktop\\NapCat.Shell",
     "start_cmd": "launcher-win10.bat {qq}",
     "check_interval": 30,
     "fail_count": 3,

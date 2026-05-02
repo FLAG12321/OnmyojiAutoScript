@@ -167,85 +167,105 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 return False
             nine_pm_timestamp = today_9pm.timestamp()
 
-            # 分页获取消息
-            # 策略: 记住上次最新消息ID，后续只获取增量消息
-            # - 首次(_qq_last_message_id==0): 全量获取21:00之后的所有消息
-            # - 后续: 从最新消息往前翻页，直到覆盖到上次的消息ID为止
+            # 获取消息
+            # 策略: 逐步增大拉取数量(100→200→300...), 直到获取到阈值时间之前的消息为止
+            #   message_seq=0 → 返回最新消息
+            #   count=N → 返回最近N条消息(包含更早的历史)
+            #   如果拉取的消息中最晚早于阈值时间,说明已经覆盖到目标时间段
             all_messages = []
-            message_seq = 0
-            max_pages = 10  # 最多翻页10次，防止无限循环
-            page_count = 0
             is_first_fetch = (self._qq_last_message_id == 0)
+            fetch_count = 50
+            max_count = 1000  # 单次最大拉取数量上限
+            last_msg_count = 0  # 上一次拉取到的消息数，用于判断是否还有更多历史
 
-            while page_count < max_pages:
+            for attempt in range(10):  # 最多尝试10次递增
                 body = {
                     'group_id': cfg_trigger.group_id,
-                    'message_seq': message_seq,
-                    'count': 20
+                    'message_seq': 0,
+                    'count': fetch_count
                 }
-
                 resp = requests.post(url, json=body, headers=headers, timeout=10)
                 if resp.status_code != 200:
                     logger.warning(f"QQ群消息请求失败，状态码: {resp.status_code}")
                     break
-
                 data = resp.json()
                 if data.get('status') != 'ok':
                     logger.warning(f"QQ群消息API返回错误: {data.get('wording', data)}")
                     break
+                all_messages = data.get('data', {}).get('messages', [])
 
-                page_messages = data.get('data', {}).get('messages', [])
-                if not page_messages:
+                # 按 message_id 去重
+                seen_ids = set()
+                unique_messages = []
+                for msg in all_messages:
+                    mid = msg.get('message_id')
+                    if mid not in seen_ids:
+                        seen_ids.add(mid)
+                        unique_messages.append(msg)
+                all_messages = unique_messages
+                current_count = len(all_messages)
+
+                # 检查是否已获取到阈值时间之前的消息(即最早有效消息的time < nine_pm_timestamp)
+                valid_times = [msg.get('time', 0) for msg in all_messages if msg.get('time', 0) > 0]
+                if not valid_times:
+                    break
+                earliest_time = min(valid_times)
+                if earliest_time < nine_pm_timestamp:
+                    # 已获取到阈值时间之前的消息，无需继续拉取
+                    logger.info(f"第{attempt + 1}次拉取count={fetch_count}条, "
+                                f"最早消息时间={datetime.fromtimestamp(earliest_time).strftime('%H:%M:%S')}, "
+                                f"已覆盖到阈值时间之前")
                     break
 
-                all_messages.extend(page_messages)
-                page_count += 1
-
-                # 检查是否已覆盖到上次的消息
-                if not is_first_fetch:
-                    # 非首次: 翻页直到找到已处理过的消息即可停止
-                    page_msg_ids = {msg.get('message_id', 0) for msg in page_messages}
-                    if self._qq_last_message_id in page_msg_ids:
-                        logger.info(f"已翻到上次消息ID({self._qq_last_message_id})，停止翻页")
-                        break
-
-                # 首次: 翻页直到21:00之前的消息
-                oldest_time = min(msg.get('time', 0) for msg in page_messages)
-                if oldest_time < nine_pm_timestamp:
+                # 如果增大count后消息数没有增加，说明已无更多历史
+                if attempt > 0 and current_count <= last_msg_count:
+                    logger.info(f"第{attempt + 1}次拉取count={fetch_count}条, "
+                                f"实际返回{current_count}条(与上次{last_msg_count}条相同), 已无更多历史消息")
                     break
 
-                # 获取下一页的起始序号(当前页最早消息的序号)
-                earliest_seq = min(msg.get('message_seq', 0) for msg in page_messages)
-                if earliest_seq <= 0 or (earliest_seq >= message_seq and message_seq != 0):
+                # 还没到阈值时间，增大拉取数量
+                logger.info(f"第{attempt + 1}次拉取count={fetch_count}条, "
+                            f"实际返回{current_count}条, "
+                            f"最早消息时间={datetime.fromtimestamp(earliest_time).strftime('%H:%M:%S')}, "
+                            f"尚未覆盖到阈值时间, 增大拉取数量至{fetch_count + 50}")
+                last_msg_count = current_count
+                fetch_count += 50
+                if fetch_count > max_count:
+                    logger.warning(f"拉取数量已达上限{max_count}, 停止递增")
                     break
-                message_seq = earliest_seq
+
+            # 按时间过滤: 只保留阈值时间之后的消息
+            filtered_messages = []
+            for msg in all_messages:
+                msg_time = msg.get('time', 0)
+                if msg_time > 0 and msg_time >= nine_pm_timestamp:
+                    filtered_messages.append(msg)
+
+            logger.info(f"获取到QQ群原始消息{len(all_messages)}条(count={fetch_count}), "
+                        f"时间范围内{len(filtered_messages)}条"
+                        f"({'首次全量获取' if is_first_fetch else '增量获取'})")
+
+            all_messages = filtered_messages
 
             if not all_messages:
-                logger.info("QQ群暂无消息")
+                logger.info("QQ群暂无时间范围内消息")
                 return False
-
-            logger.info(f"获取到QQ群消息共{len(all_messages)}条"
-                        f"({'首次全量获取' if is_first_fetch else '增量获取'})")
 
             create_keyword_found = False
             at_all_found = False
 
             for msg in all_messages:
                 msg_id = msg.get('message_id', 0)
-                msg_time = msg.get('time', 0)
                 sender_id = msg.get('sender', {}).get('user_id', 0)
 
                 # 跳过已处理过的消息
                 if msg_id <= self._qq_last_message_id:
                     continue
 
-                # 只检查今天21:00之后的消息
-                if msg_time < nine_pm_timestamp:
-                    continue
-
                 # 处理消息内容 (支持数组格式和CQ码字符串格式)
                 message_content = msg.get('message', '')
                 has_at_all = False
+                has_image = False
                 text_content = ''
 
                 if isinstance(message_content, list):
@@ -256,10 +276,14 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                                 has_at_all = True
                             elif seg.get('type') == 'text':
                                 text_content += seg.get('data', {}).get('text', '')
+                            elif seg.get('type') == 'image':
+                                has_image = True
                 elif isinstance(message_content, str):
                     # CQ码字符串格式
                     if '[CQ:at,qq=all]' in message_content:
                         has_at_all = True
+                    if '[CQ:image' in message_content:
+                        has_image = True
                     # 提取纯文本内容(去除CQ码)
                     text_content = re.sub(r'\[CQ:[^\]]+\]', '', message_content)
 
@@ -267,12 +291,17 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 if msg_id > self._qq_last_message_id:
                     self._qq_last_message_id = msg_id
 
-                # 检查道馆创建关键词(由特定成员发送)
+                # 检查道馆创建关键词(由特定成员发送): 文字关键词 or 图片消息
                 if cfg_trigger.create_keyword and cfg_trigger.create_keyword in text_content:
                     # 如果配置了指定发送者，则验证发送者
                     if cfg_trigger.create_sender_id == 0 or sender_id == cfg_trigger.create_sender_id:
                         create_keyword_found = True
                         logger.info(f"检测到道馆创建关键词消息，发送者QQ: {sender_id}")
+                elif has_image:
+                    # 图片消息也视为道馆创建信号
+                    if cfg_trigger.create_sender_id == 0 or sender_id == cfg_trigger.create_sender_id:
+                        create_keyword_found = True
+                        logger.info(f"检测到道馆创建图片消息，发送者QQ: {sender_id}")
 
                 # 检查@全体成员消息(独立消息，需验证发送者)
                 if has_at_all:
@@ -1407,7 +1436,7 @@ if __name__ == "__main__":
     IMAGE_FILE = '.\\temp_path\\2026-03-10 22-16-40.png'    
     from tasks.Dokan.assets import DokanAssets
     from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
-    jade = DokanAssets.I_RYOU_DOKAN_BATTLE_MASTER_FIRST
+    """ jade = DokanAssets.I_RYOU_DOKAN_BATTLE_MASTER_FIRST
     jade.method = "Template matching"
     sign = DokanAssets.I_RYOU_DOKAN_BATTLE_MASTER_SECOND
     sign.method = "Template matching"
@@ -1415,7 +1444,7 @@ if __name__ == "__main__":
     pre.method = "Template matching"
     detect_image(IMAGE_FILE, jade)
     detect_image(IMAGE_FILE, sign)
-    detect_image(IMAGE_FILE, pre)
+    detect_image(IMAGE_FILE, pre) """
     """
         查找当前列表状态(一般为4个)中符合条件的道馆,并点击使其显示挑战按钮
     @param ignore_score: 是否忽略道馆系数限制, - True:   那么选择当前列表状态系数最低的那个,点击显示挑战按钮
@@ -1464,3 +1493,162 @@ if __name__ == "__main__":
     # test_ocr_locate_dokan_target()
     # test_anti_detect_random_click()
     # test_goto_main()
+
+    # ===== 测试 NapCat 道馆触发流程 =====
+    from module.config.config import Config
+    from module.device.device import Device
+
+    print("=" * 60)
+    print("  NapCat 道馆触发测试 (配置: oas3)")
+    print("=" * 60)
+
+    c = Config('oas3')
+    d = Device(c)
+    self = ScriptTask(c, d)
+
+    test_cfg = c.dokan.qq_group_trigger
+
+    if not test_cfg.enable:
+        print("  [WARN] qq_group_trigger.enable = False，仍继续测试")
+
+    print(f"  endpoint: {test_cfg.endpoint}")
+    print(f"  group_id: {test_cfg.group_id}")
+    print(f"  create_keyword: '{test_cfg.create_keyword}'")
+    print(f"  create_sender_id: {test_cfg.create_sender_id}")
+    print(f"  at_all_sender_id: {test_cfg.at_all_sender_id}")
+    print(f"  require_at_all: {test_cfg.require_at_all}")
+    print()
+
+    # 1. 测试连通性
+    print("--- 1. 测试 NapCat 连通性 ---")
+    try:
+        _h = {'Content-Type': 'application/json'}
+        if test_cfg.access_token:
+            _h['Authorization'] = f'Bearer {test_cfg.access_token}'
+        _ep = test_cfg.endpoint if '//' in test_cfg.endpoint else f'http://{test_cfg.endpoint}'
+        _r = requests.post(f'{_ep}/get_login_info', json={}, headers=_h, timeout=5)
+        _d = _r.json()
+        if _d.get('status') == 'ok':
+            _info = _d.get('data', {})
+            print(f"  [OK] NapCat 在线! QQ: {_info.get('user_id')}, 昵称: {_info.get('nickname')}")
+        else:
+            print(f"  [FAIL] API返回: {_d}")
+    except Exception as e:
+        print(f"  [FAIL] 无法连接: {e}")
+
+    # 2. 拉取并打印群消息
+    print()
+    print("--- 2. 拉取群消息列表 ---")
+    try:
+        _ep = test_cfg.endpoint if '//' in test_cfg.endpoint else f'http://{test_cfg.endpoint}'
+        _url = f'{_ep}/get_group_msg_history'
+        _h = {'Content-Type': 'application/json'}
+        if test_cfg.access_token:
+            _h['Authorization'] = f'Bearer {test_cfg.access_token}'
+
+        # 逐步增大拉取数量，直到覆盖到阈值时间之前的消息
+        now = datetime.now()
+        today_9pm = datetime.combine(now.date(), datetime.min.time().replace(hour=21))
+        nine_pm_ts = today_9pm.timestamp()
+        fetch_count = 50
+        all_msgs = []
+        last_msg_count = 0
+
+        for attempt in range(10):
+            _body = {'group_id': test_cfg.group_id, 'message_seq': 0, 'count': fetch_count}
+            _r = requests.post(_url, json=_body, headers=_h, timeout=10)
+            _data = _r.json()
+            all_msgs = _data.get('data', {}).get('messages', [])
+
+            # 去重
+            _seen = set()
+            _unique = []
+            for m in all_msgs:
+                mid = m.get('message_id')
+                if mid not in _seen:
+                    _seen.add(mid)
+                    _unique.append(m)
+            all_msgs = _unique
+            current_count = len(all_msgs)
+
+            valid_times = [m.get('time', 0) for m in all_msgs if m.get('time', 0) > 0]
+            if not valid_times:
+                break
+            earliest = min(valid_times)
+
+            if earliest < nine_pm_ts:
+                print(f"  第{attempt+1}次拉取count={fetch_count}, "
+                      f"最早={datetime.fromtimestamp(earliest).strftime('%H:%M:%S')}, 已覆盖到阈值时间之前")
+                break
+            if attempt > 0 and current_count <= last_msg_count:
+                print(f"  第{attempt+1}次拉取count={fetch_count}, "
+                      f"实际返回{current_count}条(与上次{last_msg_count}条相同), 无更多历史")
+                break
+            print(f"  第{attempt+1}次拉取count={fetch_count}, "
+                  f"实际返回{current_count}条, "
+                  f"最早={datetime.fromtimestamp(earliest).strftime('%H:%M:%S')}, 增大至{fetch_count+50}")
+            last_msg_count = current_count
+            fetch_count += 50
+            if fetch_count > 1000:
+                break
+
+        print(f"  共获取 {len(all_msgs)} 条消息 (count={fetch_count})")
+        print()
+
+        # 打印每条消息的时间和内容
+        for i, m in enumerate(all_msgs):
+            t = m.get('time', 0)
+            mid = m.get('message_id', 0)
+            sender_id = m.get('sender', {}).get('user_id', 0)
+            sender_nick = m.get('sender', {}).get('nickname', '')
+            # 确保GBK终端可输出
+            try:
+                sender_nick.encode('gbk')
+            except UnicodeEncodeError:
+                sender_nick = sender_nick.encode('gbk', errors='replace').decode('gbk')
+            ts_str = datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S') if t > 0 else '(无时间)'
+
+            # 提取文本内容
+            content = m.get('message', '')
+            text = ''
+            has_at_all = False
+            if isinstance(content, list):
+                for seg in content:
+                    if isinstance(seg, dict):
+                        if seg.get('type') == 'text':
+                            text += seg.get('data', {}).get('text', '')
+                        elif seg.get('type') == 'at' and seg.get('data', {}).get('qq') == 'all':
+                            has_at_all = True
+                            text += '[CQ:at,qq=all]'
+                        elif seg.get('type') == 'image':
+                            text += '[图片]'
+            elif isinstance(content, str):
+                text = content
+                if '[CQ:at,qq=all]' in text:
+                    has_at_all = True
+
+            text = text.strip()[:80]  # 截断过长消息
+            # 确保文本在GBK终端可输出
+            try:
+                text.encode('gbk')
+            except UnicodeEncodeError:
+                text = text.encode('gbk', errors='replace').decode('gbk')
+            at_flag = ' @all' if has_at_all else ''
+            after_9pm = 'Y' if t >= nine_pm_ts else 'N'
+            print(f"  [{i+1:3d}] {after_9pm} {ts_str} | msg_id={mid} | {sender_nick}({sender_id}){at_flag}")
+            print(f"        {text}")
+    except Exception as e:
+        print(f"  [ERROR] {e}")
+
+    # 3. 使用 ScriptTask 实例调用 check_qq_group_message
+    print()
+    print("--- 3. 测试道馆触发检测 ---")
+    result = self.check_qq_group_message(test_cfg)
+
+    print()
+    print("=" * 60)
+    if result:
+        print("  >>> 结论: 满足道馆触发条件，应开启道馆任务!")
+    else:
+        print("  >>> 结论: 未满足触发条件，不开启道馆任务")
+    print("=" * 60)

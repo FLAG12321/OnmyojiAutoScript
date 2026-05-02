@@ -2,15 +2,19 @@
 chcp 65001 > nul
 echo Uninstalling OAS Daemon from Windows Startup...
 
-REM Remove startup entry from Windows registry
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "OASDaemon" /f
+REM Delete scheduled task
+schtasks /delete /tn "OASDaemon" /f >nul 2>&1
+if %errorLevel% equ 0 (
+    echo [OK] Scheduled task "OASDaemon" deleted
+) else (
+    echo Scheduled task not found, skipping
+)
 
-REM Check if temporary startup script exists and delete it
+REM Remove old startup method (registry + VBS)
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "OASDaemon" /f >nul 2>&1
 if exist "%TEMP%\oas_daemon_start.vbs" (
     del "%TEMP%\oas_daemon_start.vbs"
-    echo Temporary startup script removed from TEMP directory.
-) else (
-    echo Temporary startup script not found in TEMP directory.
+    echo [OK] Temp startup script deleted
 )
 
 echo.

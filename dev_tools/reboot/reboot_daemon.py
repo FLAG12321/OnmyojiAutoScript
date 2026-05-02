@@ -8,6 +8,7 @@ import sys
 import io
 import time
 import json
+import ctypes
 import logging
 import subprocess
 import asyncio
@@ -55,7 +56,7 @@ class NapCatConfig:
     def __init__(self, enable: bool = False, qq_account: str = '',
                  endpoint: str = 'http://127.0.0.1:3000',
                  access_token: str = '', napcat_dir: str = r'C:\NapCat',
-                 start_cmd: str = 'launcher.bat {qq}', check_interval: int = 30,
+                 start_cmd: str = 'launcher-win10.bat {qq}', check_interval: int = 30,
                  fail_count: int = 3, max_restart_attempts: int = 5,
                  restart_cooldown: int = 60):
         self.enable = enable
@@ -135,9 +136,9 @@ class NapCatManager:
             return True
 
         # 构建启动命令: 将 {qq} 占位符替换为 QQ 号
-        # 支持的 NapCat 启动方式:
-        #   Shell版:     launcher.bat {qq}          (Win11)
-        #                launcher-win10.bat {qq}     (Win10)
+        # 支持的 NapCat 启动方式（带 QQ 号参数自动登录）:
+        #   Shell版:     launcher.bat {qq}              (Win11)
+        #                launcher-win10.bat {qq}         (Win10)
         #   一键版:      NapCatWinBootMain.exe {qq}
         #   自定义:      napcat.bat {qq}
         cmd = self.config.start_cmd
@@ -146,8 +147,8 @@ class NapCatManager:
                 self.logger.error("start_cmd 包含 {qq} 占位符但未配置 qq_account")
                 return False
             cmd = cmd.replace('{qq}', self.config.qq_account)
-        elif self.config.qq_account:
-            # 兼容旧配置: 无占位符时追加 QQ 号
+        elif self.config.qq_account and self.config.qq_account not in cmd:
+            # 兼容旧配置: 无占位符且命令中未包含QQ号时追加
             cmd = f'{cmd} {self.config.qq_account}'
 
         self.logger.info(f"正在启动NapCat: cd /d {self.config.napcat_dir} && {cmd}")
@@ -213,12 +214,15 @@ class NapCatManager:
         # 方式2: 清理残留的QQ/NapCat进程
         if sys.platform.startswith('win'):
             try:
+                _subproc_flags = subprocess.CREATE_NO_WINDOW
                 # 按窗口标题关闭
                 subprocess.run('taskkill /fi "windowtitle eq NapCat*" /f',
-                               shell=True, capture_output=True, timeout=5)
+                               shell=True, capture_output=True, timeout=5,
+                               creationflags=_subproc_flags)
                 # 关闭QQ进程（NapCat依赖）
                 subprocess.run('taskkill /fi "imagename eq QQ.exe" /f',
-                               shell=True, capture_output=True, timeout=5)
+                               shell=True, capture_output=True, timeout=5,
+                               creationflags=_subproc_flags)
             except Exception as e:
                 self.logger.debug(f"清理残留进程时出错(可忽略): {e}")
 
@@ -318,11 +322,7 @@ class RebootDaemon:
     - 支持定时重启系统
     """
 
-    def __init__(self, config_path: str = None,
-                 api_host: str = '127.0.0.1', api_port: int = 22267):
-        self.api_host = api_host
-        self.api_port = api_port
-        self.api_url = f"http://{api_host}:{api_port}"
+    def __init__(self, config_path: str = None):
         self.running = False
 
         # OAS Server子进程引用
@@ -377,7 +377,12 @@ class RebootDaemon:
     # ──────────────── 配置加载 ────────────────
 
     def _load_config(self):
-        """从daemon_config.json加载配置"""
+        """从daemon_config.json加载配置（所有配置均从文件读取，无硬编码默认值）"""
+        # 设置默认值
+        self.api_host = '127.0.0.1'
+        self.api_port = 22288
+        self.api_url = f"http://{self.api_host}:{self.api_port}"
+
         if not self.config_path.exists():
             return
 
@@ -433,19 +438,23 @@ class RebootDaemon:
     def _setup_logging(self):
         log_dir = Path(__file__).parent
 
-        # 创建控制台Handler，强制UTF-8编码解决Windows乱码
-        console_handler = logging.StreamHandler(
-            io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-            if hasattr(sys.stdout, 'buffer') else sys.stdout
-        )
-        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        # 控台Handler：pythonw无控制台时跳过
+        handlers = []
+        if sys.stdout and hasattr(sys.stdout, 'buffer'):
+            console_handler = logging.StreamHandler(
+                io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            )
+            console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            handlers.append(console_handler)
 
-        file_handler = logging.FileHandler(log_dir / 'daemon.log', encoding='utf-8')
+        # 文件Handler：使用UTF-8 BOM编码，Windows记事本可自动识别
+        file_handler = logging.FileHandler(log_dir / 'daemon.log', encoding='utf-8-sig')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        handlers.append(file_handler)
 
         logging.basicConfig(
             level=logging.INFO,
-            handlers=[file_handler, console_handler]
+            handlers=handlers
         )
         self.logger = logging.getLogger('RebootDaemon')
 
@@ -458,8 +467,8 @@ class RebootDaemon:
                 qq_account=str(napcat_raw.get('qq_account', '')),
                 endpoint=napcat_raw.get('endpoint', 'http://127.0.0.1:3000'),
                 access_token=napcat_raw.get('access_token', ''),
-                napcat_dir=napcat_raw.get('napcat_dir', r'C:\NapCat'),
-                start_cmd=napcat_raw.get('start_cmd', 'launcher.bat {qq}'),
+                napcat_dir=napcat_raw.get('napcat_dir', r'C:\\NapCat'),
+                start_cmd=napcat_raw.get('start_cmd', 'launcher-win10.bat {qq}'),
                 check_interval=napcat_raw.get('check_interval', 30),
                 fail_count=napcat_raw.get('fail_count', 3),
                 max_restart_attempts=napcat_raw.get('max_restart_attempts', 5),
@@ -945,7 +954,9 @@ class RebootDaemon:
 
         try:
             if sys.platform.startswith('win'):
-                subprocess.run(['shutdown', '/r', '/t', '10'], check=True)
+                flags = subprocess.CREATE_NO_WINDOW
+                subprocess.run(['shutdown', '/r', '/t', '10'], check=True,
+                               creationflags=flags)
                 self.logger.info("系统将在10秒后重启")
             elif sys.platform.startswith('linux') or sys.platform.startswith('darwin'):
                 subprocess.run(['sudo', 'reboot'], check=True)
@@ -1062,16 +1073,81 @@ class RebootDaemon:
 
 # ──────────────────────── 入口 ────────────────────────
 
+def _is_admin() -> bool:
+    """检测当前进程是否以管理员权限运行"""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+
+def _run_via_scheduled_task() -> bool:
+    """通过已注册的计划任务（最高权限）启动自身，无需UAC确认"""
+    try:
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+        result = subprocess.run(
+            ['schtasks', '/run', '/tn', 'OASDaemon'],
+            capture_output=True, timeout=10, creationflags=flags
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _register_scheduled_task_and_run():
+    """注册计划任务（最高权限 + 登录时启动）并通过它启动，仅需一次UAC确认"""
+    try:
+        script = os.path.abspath(sys.argv[0])
+        # 直接用pythonw启动，不经过cmd，避免弹出cmd窗口
+        pythonw = sys.executable.replace('python.exe', 'pythonw.exe')
+        cmd = f'"{pythonw}" "{script}"'
+
+        # 创建计划任务：最高权限、登录时启动
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+        result = subprocess.run(
+            ['schtasks', '/create', '/tn', 'OASDaemon', '/tr', cmd,
+             '/sc', 'onlogon', '/rl', 'highest', '/f'],
+            capture_output=True, timeout=10, creationflags=flags
+        )
+        if result.returncode == 0:
+            # 通过计划任务启动（不弹UAC）
+            time.sleep(1)
+            if _run_via_scheduled_task():
+                sys.exit(0)
+
+        # 计划任务创建失败，回退到UAC提权
+        params = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in sys.argv[1:]])
+        # 使用pythonw + SW_HIDE避免控制台窗口
+        pythonw_fallback = sys.executable.replace('python.exe', 'pythonw.exe')
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", pythonw_fallback, f'"{script}" {params}', None, 0)  # 0 = SW_HIDE
+        sys.exit(0)
+    except Exception as e:
+        print(f"提权失败: {e}")
+        sys.exit(1)
+
+
 def main():
+    # 最先设置UTF-8编码环境，确保后续所有IO都使用UTF-8
+    if sys.platform.startswith('win'):
+        os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+        os.environ.setdefault('PYTHONUTF8', '1')
+
+    # Windows下检测管理员权限，非管理员则自动提权
+    if sys.platform.startswith('win') and not _is_admin():
+        # 优先通过计划任务启动（不弹UAC）
+        if _run_via_scheduled_task():
+            sys.exit(0)
+        # 计划任务不存在，创建它并通过它启动（仅首次需要UAC）
+        _register_scheduled_task_and_run()
+
     # Windows控制台UTF-8支持
     if sys.platform.startswith('win'):
         try:
-            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-        except Exception:
-            pass
-        try:
-            os.system('chcp 65001 > nul 2>&1')
+            if sys.stdout:
+                sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            if sys.stderr:
+                sys.stderr.reconfigure(encoding='utf-8', errors='replace')
         except Exception:
             pass
 
@@ -1081,10 +1157,10 @@ def main():
     parser.add_argument('--config-file', type=str,
                         default=str(Path(__file__).parent / 'daemon_config.json'),
                         help='配置文件路径 (默认: 同目录下daemon_config.json)')
-    parser.add_argument('--api-host', type=str, default='127.0.0.1',
-                        help='OAS Server地址')
-    parser.add_argument('--api-port', type=int, default=22288,
-                        help='OAS Server端口')
+    parser.add_argument('--api-host', type=str, default=None,
+                        help='覆盖配置文件中的OAS Server地址')
+    parser.add_argument('--api-port', type=int, default=None,
+                        help='覆盖配置文件中的OAS Server端口')
     parser.add_argument('--reboot-time', type=str,
                         help='自动重启时间 (HH:MM格式)，覆盖配置文件')
     parser.add_argument('--reboot-weekday', type=int, choices=range(0, 7),
@@ -1104,11 +1180,15 @@ def main():
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
 
-    daemon = RebootDaemon(
-        config_path=str(config_path),
-        api_host=args.api_host,
-        api_port=args.api_port,
-    )
+    daemon = RebootDaemon(config_path=str(config_path))
+
+    # 命令行参数覆盖配置文件
+    if args.api_host:
+        daemon.api_host = args.api_host
+        daemon.api_url = f"http://{daemon.api_host}:{daemon.api_port}"
+    if args.api_port:
+        daemon.api_port = args.api_port
+        daemon.api_url = f"http://{daemon.api_host}:{daemon.api_port}"
 
     if args.reboot_time:
         daemon.reboot_time = args.reboot_time
