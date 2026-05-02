@@ -102,8 +102,10 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
 
     boss_battles = False
 
-    # QQ群触发相关: 上次检查到的最后一条消息ID，避免重复触发
-    _qq_last_message_id: int = 0
+    # QQ群触发相关: 已处理过的消息ID集合，避免重复触发
+    _qq_processed_ids: set = set()
+    # 记录已处理过的最大message_seq，用于增量拉取时跳过旧消息
+    _qq_last_message_seq: int = 0
 
     def welfare_name_str(self):
         """
@@ -173,7 +175,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             #   count=N → 返回最近N条消息(包含更早的历史)
             #   如果拉取的消息中最晚早于阈值时间,说明已经覆盖到目标时间段
             all_messages = []
-            is_first_fetch = (self._qq_last_message_id == 0)
+            is_first_fetch = len(self._qq_processed_ids) == 0
             fetch_count = 50
             max_count = 1000  # 单次最大拉取数量上限
             last_msg_count = 0  # 上一次拉取到的消息数，用于判断是否还有更多历史
@@ -259,7 +261,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 sender_id = msg.get('sender', {}).get('user_id', 0)
 
                 # 跳过已处理过的消息
-                if msg_id <= self._qq_last_message_id:
+                if msg_id in self._qq_processed_ids:
                     continue
 
                 # 处理消息内容 (支持数组格式和CQ码字符串格式)
@@ -287,9 +289,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     # 提取纯文本内容(去除CQ码)
                     text_content = re.sub(r'\[CQ:[^\]]+\]', '', message_content)
 
-                # 更新最后处理的消息ID
-                if msg_id > self._qq_last_message_id:
-                    self._qq_last_message_id = msg_id
+                # 标记消息已处理
+                self._qq_processed_ids.add(msg_id)
 
                 # 检查道馆创建关键词(由特定成员发送): 文字关键词 or 图片消息
                 if cfg_trigger.create_keyword and cfg_trigger.create_keyword in text_content:
@@ -311,11 +312,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                         at_all_found = True
                         logger.info(f"检测到@全体成员消息，发送者QQ: {sender_id}")
 
-            # 更新最后消息ID为最新一条
-            if all_messages:
-                latest_id = max(msg.get('message_id', 0) for msg in all_messages)
-                if latest_id > self._qq_last_message_id:
-                    self._qq_last_message_id = latest_id
+            # 将所有消息ID标记为已处理
+            for msg in all_messages:
+                self._qq_processed_ids.add(msg.get('message_id', 0))
 
             # 判断是否满足触发条件
             if cfg_trigger.require_at_all:
@@ -1388,7 +1387,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 # 已过今天21点，设到明天21点
                 next_9pm = datetime.combine((now + timedelta(days=1)).date(), datetime.min.time().replace(hour=21))
             logger.info(f"QQ群触发模式: 下次道馆运行时间设到 {next_9pm.strftime('%Y-%m-%d %H:%M')}")
-            self.set_next_run(target=next_9pm)
+            self.set_next_run(task='Dokan', target=next_9pm)
 
         raise TaskEnd('Dokan')
     def quit_battle(self):
@@ -1502,7 +1501,7 @@ if __name__ == "__main__":
     print("  NapCat 道馆触发测试 (配置: oas3)")
     print("=" * 60)
 
-    c = Config('oas3')
+    c = Config('oas1')
     d = Device(c)
     self = ScriptTask(c, d)
 
