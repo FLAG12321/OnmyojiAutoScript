@@ -52,12 +52,14 @@ class InstanceConfig:
 
 class NapCatConfig:
     """NapCat守护进程配置"""
-    def __init__(self, enable: bool = False, endpoint: str = 'http://127.0.0.1:3000',
+    def __init__(self, enable: bool = False, qq_account: str = '',
+                 endpoint: str = 'http://127.0.0.1:3000',
                  access_token: str = '', napcat_dir: str = r'C:\NapCat',
-                 start_cmd: str = 'napcat.bat', check_interval: int = 30,
+                 start_cmd: str = 'launcher.bat {qq}', check_interval: int = 30,
                  fail_count: int = 3, max_restart_attempts: int = 5,
                  restart_cooldown: int = 60):
         self.enable = enable
+        self.qq_account = qq_account
         self.endpoint = endpoint
         self.access_token = access_token
         self.napcat_dir = napcat_dir
@@ -132,14 +134,28 @@ class NapCatManager:
             self.is_running_flag = True
             return True
 
-        self.logger.info(f"正在启动NapCat: cd /d {self.config.napcat_dir} && {self.config.start_cmd}")
+        # 构建启动命令: 将 {qq} 占位符替换为 QQ 号
+        # 支持的 NapCat 启动方式:
+        #   Shell版:     launcher.bat {qq}          (Win11)
+        #                launcher-win10.bat {qq}     (Win10)
+        #   一键版:      NapCatWinBootMain.exe {qq}
+        #   自定义:      napcat.bat {qq}
+        cmd = self.config.start_cmd
+        if '{qq}' in cmd:
+            if not self.config.qq_account:
+                self.logger.error("start_cmd 包含 {qq} 占位符但未配置 qq_account")
+                return False
+            cmd = cmd.replace('{qq}', self.config.qq_account)
+        elif self.config.qq_account:
+            # 兼容旧配置: 无占位符时追加 QQ 号
+            cmd = f'{cmd} {self.config.qq_account}'
+
+        self.logger.info(f"正在启动NapCat: cd /d {self.config.napcat_dir} && {cmd}")
         try:
             napcat_dir = Path(self.config.napcat_dir)
             if not napcat_dir.exists():
                 self.logger.error(f"NapCat目录不存在: {self.config.napcat_dir}")
                 return False
-
-            cmd = self.config.start_cmd
 
             # Windows下隐藏子进程窗口
             startupinfo = None
@@ -435,17 +451,18 @@ class RebootDaemon:
         if napcat_raw and napcat_raw.get('enable', False):
             nc_cfg = NapCatConfig(
                 enable=napcat_raw.get('enable', False),
+                qq_account=str(napcat_raw.get('qq_account', '')),
                 endpoint=napcat_raw.get('endpoint', 'http://127.0.0.1:3000'),
                 access_token=napcat_raw.get('access_token', ''),
                 napcat_dir=napcat_raw.get('napcat_dir', r'C:\NapCat'),
-                start_cmd=napcat_raw.get('start_cmd', 'napcat.bat'),
+                start_cmd=napcat_raw.get('start_cmd', 'launcher.bat {qq}'),
                 check_interval=napcat_raw.get('check_interval', 30),
                 fail_count=napcat_raw.get('fail_count', 3),
                 max_restart_attempts=napcat_raw.get('max_restart_attempts', 5),
                 restart_cooldown=napcat_raw.get('restart_cooldown', 60)
             )
             self.napcat_manager = NapCatManager(nc_cfg, self.logger)
-            self.logger.info(f"NapCat守护已启用: endpoint={nc_cfg.endpoint}, dir={nc_cfg.napcat_dir}")
+            self.logger.info(f"NapCat守护已启用: qq={nc_cfg.qq_account or '未配置'}, endpoint={nc_cfg.endpoint}, dir={nc_cfg.napcat_dir}")
         else:
             self.napcat_manager = None
 

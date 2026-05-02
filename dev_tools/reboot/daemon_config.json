@@ -24,10 +24,11 @@
 
   "napcat": {
     "enable": false,
+    "qq_account": "",
     "endpoint": "http://127.0.0.1:3000",
     "access_token": "",
     "napcat_dir": "C:\\NapCat",
-    "start_cmd": "napcat.bat",
+    "start_cmd": "launcher-win10.bat {qq}",
     "check_interval": 30,
     "fail_count": 3,
     "max_restart_attempts": 5,
