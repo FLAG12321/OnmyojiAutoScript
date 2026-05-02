@@ -29,7 +29,7 @@
   {
     "itemName": "climb_mode_ap",
     "imageName": "climb_mode_ap.png",
-    "roiFront": "1098,530,27,26",
+    "roiFront": "1115,668,29,30",
     "roiBack": "1062,516,200,193",
     "method": "Template matching",
     "threshold": 0.8,

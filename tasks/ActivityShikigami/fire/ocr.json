@@ -1,8 +1,8 @@
 [
   {
     "itemName": "fire",
-    "roiFront": "1130,599,92,53",
-    "roiBack": "1150,605,55,31",
+    "roiFront": "1106,569,148,102",
+    "roiBack": "1157,613,42,30",
     "mode": "Single",
     "method": "Default",
     "keyword": "挑战",
@@ -10,7 +10,7 @@
   },
   {
     "itemName": "remain_ap",
-    "roiFront": "810,25,83,33",
+    "roiFront": "730,23,99,35",
     "roiBack": "795,15,104,47",
     "mode": "DigitCounter",
     "method": "Default",

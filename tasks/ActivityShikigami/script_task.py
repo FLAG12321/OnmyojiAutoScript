@@ -187,7 +187,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         self.set_next_run(task="ActivityShikigami", success=True)
         raise TaskEnd('ActivityShikigami')
 
-    def _run_pass_2(self):
+    def _run_pass(self):
         """
             更新前请先看 ./README.md
         """
@@ -261,7 +261,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
 
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
 
-    def _run_pass(self):
+    def _run_pass_1(self):
         """
             更新前请先看 ./README.md
         """
@@ -706,13 +706,14 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
     from module.base.utils import load_image
-    img_array = load_image(r"C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\temp_path\2026-04-01 12-30-01.png")
-    c = Config('QMUMU2')
+    #img_array = load_image(r"C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\temp_path\2026-04-01 12-30-01.png")
+    c = Config('OAS1')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
-    t.device.image = img_array
-    t.handle_shop_scene()
+    t.run()
+    #t.device.image = img_array
+    #t.handle_shop_scene()
     """ t.handle_fire_scene()
     # 获取当前截图
     current_image = t.device.image
