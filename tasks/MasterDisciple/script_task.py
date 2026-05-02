@@ -518,6 +518,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :param room_type: 房间类型，5人房(NORMAL_5)或3人房(NORMAL_3)
         :return: 是否成功完成
         """
+        
+        start_time =time.time() 
+        while  time.time() - start_time< 5:
+            self.screenshot()
+            if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
+                start_time =time.time() 
+                continue
+            if self.appear(PlotlineAssets.I_PAGE_MAIN,interval=1):
+                start_time =time.time() 
+                break
         # 开启加成
         if buff_open_func:
             self.screenshot()

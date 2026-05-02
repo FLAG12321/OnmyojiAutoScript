@@ -178,5 +178,14 @@
     "imageName": "login_courtyard2.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "login_get_coupon",
+    "roiFront": "716,438,134,41",
+    "roiBack": "471,306,560,269",
+    "description": "领取抵扣券",
+    "imageName": "login_get_coupon.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

@@ -46,12 +46,18 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     exploration_flag: bool = False
     experience_youkai_battle : bool = False
     system_shikigami_detect: bool = True
+    plotline_shikigami_switch: bool = True
+    exploration_shikigami_switch: bool = True
+    _current_battle_type: str = 'plotline'  # 'plotline' or 'exploration'
+    _solo_exploration = None
     mail_flag: bool = True
     page_main_timeout: int = 0
     unknow_cnt: int = 0
     def run(self):
         self.plotline_conf = self.config.plotline 
         self.privileges_flag=not self.plotline_conf.plotline_config.switch_system_shikigami
+        self.plotline_shikigami_switch = not self.privileges_flag  # 需要借用时才需要切换
+        self.exploration_shikigami_switch = not self.privileges_flag
         self.experience_youkai_battle = self.plotline_conf.plotline_config.experience_youkai_battle
         logger.info(f'Start plotline{self.privileges_flag}')
         """ while True:
@@ -136,13 +142,13 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         logger.info("当前在主线剧情主界面场景")
         import time
         start_time = time.time()
-        if not self.privileges_flag and self.get_character_level_with_multiple_attempts() >= 7:
+        if not self.privileges_flag and (self.get_character_level_with_multiple_attempts() >= 7):
             self.level_low=False
             while time.time()-start_time<3:
                 self.screenshot()
                 if self.appear_then_click(self.I_CLICK_TO_PRIVILEGES,interval=0.7):
                     return
-        if self.experience_youkai_battle and self.get_character_level_with_multiple_attempts() >= 15:
+        if self.experience_youkai_battle and (self.get_character_level_with_multiple_attempts() >= 15):
             self.screenshot()
             if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
                 self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
@@ -160,6 +166,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.ui_goto(page_main)
             else :
                 self.ui_goto(page_exploration)
+                self.screenshot()
                 self.ui_get_current_page()
                 self.ui_goto(page_team)
             self.screenshot()
@@ -173,6 +180,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiScriptTask
             experience_youkai_task = ExperienceYoukaiScriptTask(self.config, self.device)
             try:
+                self.screenshot()
+                if self.ui_get_current_page()!=page_main:
+                    self.ui_goto(page_main)
                 experience_youkai_task.run()                
             except TaskEnd as e:
                 self.experience_youkai_battle=False
@@ -245,9 +255,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     def handle_exploration_scene(self) -> None:
         """ 处理探索场景 """
         logger.info("当前在探索场景，启动Exploration的run_solo方法")
-        
+        self._current_battle_type = 'exploration'
         # 创建SoloExploration实例
         solo_exploration = SoloExploration(self.config, self.device)
+        self._solo_exploration = solo_exploration
         
         # 获取当前最高的可探索章节
         max_available_chapter = self.find_max_available_chapter(solo_exploration)
@@ -258,7 +269,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             logger.info(f"设置探索章节为: {max_available_chapter}")
         
         solo_exploration._config.general_battle_config.lock_team_enable = self.plotline_conf.plotline_config.exploration_battle_lock
-        solo_exploration._config.exploration_config.minions_cnt=3
+        solo_exploration._config.exploration_config.minions_cnt=5
         solo_exploration._config.exploration_config.limit_time = dtime(0, 10, 0)  # 10分钟上限兜底
         solo_exploration._config.exploration_config.up_type=UpType.ALL
         solo_exploration._config.scrolls.scrolls_enable=False
@@ -300,6 +311,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             solo_exploration.battle_wait = original_battle_wait
             solo_exploration.battle_before = original_battle_before
             self.exploration_flag = False
+            self.exploration_shikigami_switch = False
+            self._solo_exploration = None
             start_time = time.time()
             while time.time()-start_time < 5:
                 self.screenshot()
@@ -434,21 +447,19 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
                 start_time=time.time()
                 continue
-            if self.appear_then_click(self.I_PAGE_EXP_BATTLE, interval=1):
-                start_time=time.time()
-                continue
             if self.appear_then_click(ExperienceYoukaiAssets.I_EXP_WIN, interval=1):
                 start_time=time.time()
                 continue
             if self.appear(self.I_PAGE_EXP_BATTLE):
                 start_time=time.time()
                 continue
-            if self.ui_get_current_page==page_main:
+            if self.appear(self.I_PAGE_MAIN):
                 break
 
     def handle_battle_scene(self) -> None:
         """ 处理战斗场景 """
         logger.info("当前在战斗场景")
+        self._current_battle_type = 'plotline'
         start_time = time.time()
         while time.time()-start_time<5:
             self.screenshot()
@@ -462,6 +473,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             return
         self.screenshot()
         self.run_general_battle()
+        self.plotline_shikigami_switch = False
 
     def handle_privileges_scene(self) -> None:
         """ 处理特权/选项场景 """
@@ -552,6 +564,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                       
     def click_dialogue_high(self):
         import time
+        action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
         start_time=time.time()
         self.screenshot()
         self.device.click_record_clear()
@@ -579,6 +592,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             pass
         elif self.appear_then_click(self.I_CLICK_DIALOGUE_2,interval=1.5):
             pass
+        elif self.privileges_flag and self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1):
+            pass    
+        elif self.privileges_flag and self.appear_then_click(self.I_CLICK_LV,interval=1):    
+            self.exploration_flag =True 
         elif self.appear_then_click(self.I_CLICK_CV, interval=1):
             pass
         elif not self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK) and self.appear_then_click(self.I_CLICK_BACK_RED, interval=3):
@@ -603,10 +620,37 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     break
         elif self.appear_then_click(self.I_CLICK_REFUSE, interval=5):
             pass
+        elif self.appear(self.I_WIN, threshold=0.8) or self.appear(self.I_DE_WIN):
+                logger.info("Battle result is win")
+        elif (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
+            self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)
+            ):
+            pass
         else:
             return False
         return True
+
     from tasks.Component.GeneralBuff.config_buff import BuffClass
+    def _need_switch_shikigami(self) -> bool:
+        """判断当前场景是否需要切换借用式神"""
+        if self._current_battle_type == 'plotline':
+            return self.plotline_shikigami_switch
+        elif self._current_battle_type == 'exploration':
+            return self.exploration_shikigami_switch
+        return False
+
+    def _mark_shikigami_switched(self):
+        """标记当前场景的借用式神切换已完成"""
+        if self._current_battle_type == 'plotline':
+            self.plotline_shikigami_switch = False
+        elif self._current_battle_type == 'exploration':
+            self.exploration_shikigami_switch = False
+            # 切换式神成功后锁定探索队伍，防止后续战斗替换借用式神
+            if self.privileges_flag and self._solo_exploration is not None:
+                self._solo_exploration._config.general_battle_config.lock_team_enable = True
+                logger.info("借用式神切换成功，锁定探索队伍")
+        self.system_shikigami_detect = False
+
     def battle_before(self, buff: BuffClass | list[BuffClass], config: GeneralBattleConfig, timeout: float = 10) -> bool:
         """战斗前设置
         :return: True:进入战斗或点击了准备按钮且识别不到准备按钮了 False:超过timeout s还没有进入战斗且没有点击过准备
@@ -631,7 +675,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 # 点击准备(锁定阵容自动点准备,不锁定阵容前面也已经配置完毕需要点准备)
                 if self.appear(self.I_PAGE_EXP_BATTLE, interval=0.8):
                     pass
-                elif self.system_shikigami_detect and self.privileges_flag : 
+                elif self._need_switch_shikigami() and self.privileges_flag : 
                     if not self.appear(self.I_FLAG_CHANGE) :
                         self.click(self.C_CLICK_CHANGE)
                         sleep(2)
@@ -655,7 +699,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                                 continue
                 
                 if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
-                    self.system_shikigami_detect = False
+                    self._mark_shikigami_switched()
                     continue
                 continue
             # 未知界面, 既不是准备界面也不是战斗界面
@@ -705,6 +749,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     self.click(self.C_CLICK_RANDOM_2)
                     self.click(self.C_CLICK_RANDOM_1)
                     sleep(0.5)
+                    continue
                 if  swipe_timer.reached():
                     swipe_timer.reset()
                     swipe_list = [self.S_SWIPE_BATTLE,\
@@ -713,6 +758,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                                 RuleSwipe(roi_front=self.S_SWIPE_BATTLE2.roi_back, roi_back=self.S_SWIPE_BATTLE2.roi_front, mode="default")]            
                     self.swipe(random.choice(list(swipe_list)),interval=5, duration=1.0) 
                     sleep(1.5)
+                    continue
                 if  self.appear_then_click(self.I_CLICK_ATTACK, interval=0.3):
                     continue
                 if  self.appear_then_click(self.I_CLICK_SKILL, interval=1):
@@ -739,11 +785,26 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 win = True
                 break
             # 如果开启战斗过程随机滑动
+            if self.appear(self.I_CLICK_DIALOGUE_2,interval=1.5)\
+                or self.appear(self.I_CLICK_DIALOGUE_1,interval=1.5)\
+                or self.appear(self.I_CLICK_DIALOGUE_1,interval=1.5)\
+                or self.appear(self.I_CLICK_EYE,interval=1.5)\
+                or self.appear(self.I_CLICK_EYE_2,interval=1.5):
+                win = True
+                return win
 
         # 再次确认战斗结果
         logger.info("Reconfirm the results of the battle")
         while 1:
             self.screenshot()
+            # 如果开启战斗过程随机滑动
+            if self.appear(self.I_CLICK_DIALOGUE_2,interval=1.5)\
+                or self.appear(self.I_CLICK_DIALOGUE_1,interval=1.5)\
+                or self.appear(self.I_CLICK_DIALOGUE_1,interval=1.5)\
+                or self.appear(self.I_CLICK_EYE,interval=1.5)\
+                or self.appear(self.I_CLICK_EYE_2,interval=1.5):
+                win = True
+                return win
             if win:
                 # 点击赢了
                 action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
@@ -766,26 +827,19 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         while 1:
             self.screenshot()
             # 如果出现领奖励
+            if self.appear(self.I_CLICK_DIALOGUE_2,interval=1.5)\
+                or self.appear(self.I_CLICK_DIALOGUE_1,interval=1.5)\
+                or self.appear(self.I_CLICK_DIALOGUE_1,interval=1.5)\
+                or self.appear(self.I_CLICK_EYE,interval=1.5)\
+                or self.appear(self.I_CLICK_EYE_2,interval=1.5):
+                win = True
+                return win
             action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
             if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
-                self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)#  or
-                # self.appear_then_click(self.I_REWARD_STATISTICS, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_PURPLE_SNAKE_SKIN, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_GOLD_SNAKE_SKIN, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_EXP_SOUL_4, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_SOUL_5, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_SOUL_6, action=action_click, interval=1.5)
+                self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)
                 ):
                 continue
-            if (not self.appear(self.I_REWARD) and
-                not self.appear(self.I_REWARD_GOLD)#  and
-                # not self.appear(self.I_REWARD_STATISTICS) and
-                # not self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) and
-                # not self.appear(self.I_REWARD_GOLD_SNAKE_SKIN) and
-                # not self.appear(self.I_REWARD_EXP_SOUL_4) and
-                # not self.appear(self.I_REWARD_SOUL_5) and
-                # not self.appear(self.I_REWARD_SOUL_6)
-                ):
+            if (not self.appear(self.I_REWARD) and not self.appear(self.I_REWARD_GOLD)):
                 break
 
         return win            

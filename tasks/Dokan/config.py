@@ -53,10 +53,32 @@ class DokanConfig(BaseModel):
     # anti_detect_click_fixed_random_area: bool = Field(default=False, description='anti_detect_click_fixed_random_area_help')
 
 
+class QQGroupTriggerConfig(BaseModel):
+    # 是否启用QQ群消息触发道馆
+    enable: bool = Field(default=False, description='是否启用QQ群消息触发道馆')
+    # OneBot HTTP API地址 (go-cqhttp / NapCat / Lagrange 等)
+    endpoint: str = Field(default='http://127.0.0.1:3000', description='OneBot HTTP API地址')
+    # access_token (可选)
+    access_token: str = Field(default='', description='OneBot access_token')
+    # 监听的QQ群号
+    group_id: int = Field(default=0, description='监听的QQ群号')
+    # 触发道馆创建关键词(由特定成员发送)
+    create_keyword: str = Field(default='道馆已经创建', description='道馆创建关键词，由指定成员发送')
+    # 发送道馆创建关键词的QQ号，为0则不限制发送者
+    create_sender_id: int = Field(default=0, description='发送道馆创建关键词的QQ号，0表示不限制发送者')
+    # 发送@全体成员的QQ号，为0则与create_sender_id一致
+    at_all_sender_id: int = Field(default=0, description='发送@全体成员的QQ号，0表示与create_sender_id一致')
+    # 是否要求同时检测到@全体成员消息才触发
+    require_at_all: bool = Field(default=True, description='是否要求同时检测到@全体成员消息才触发')
+    # 未检测到触发消息时，重试间隔(分钟)
+    retry_interval: int = Field(default=5, description='未检测到触发消息时重试间隔(分钟)')
+
+
 class Dokan(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     welfare_config: WelfareConfig = Field(default_factory=WelfareConfig)
     dokan_config: DokanConfig = Field(default_factory=DokanConfig)
+    qq_group_trigger: QQGroupTriggerConfig = Field(default_factory=QQGroupTriggerConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,description='正常寮预设')
     general_battle_config2: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,description='福利寮预设')
     general_battle_config_master: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,description='馆主战阵容预设')

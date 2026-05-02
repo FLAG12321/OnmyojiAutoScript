@@ -81,6 +81,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             # 跳过观看视频
             # if self.ocr_appear_click(self.O_LOGIN_SKIP_1, interval=1):
             #     continue
+            #领取抵扣券
+            if self.appear_then_click(self.I_LOGIN_GET_COUPON, interval=1):
+                continue
             # 下载插画
             if self.appear_then_click(self.I_LOGIN_LOAD_DOWN, interval=1):
                 logger.info('Download inbetweening')

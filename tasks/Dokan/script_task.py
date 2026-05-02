@@ -5,6 +5,7 @@
 # github    https://github.com/roarhill/oas
 import time
 import os
+import json
 from time import sleep
 
 import cv2
@@ -101,6 +102,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
 
     boss_battles = False
 
+    # QQ群触发相关: 上次检查到的最后一条消息ID，避免重复触发
+    _qq_last_message_id: int = 0
+
     def welfare_name_str(self):
         """
         从配置文件加载福利寮名单，只加载一次
@@ -130,6 +134,174 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         if current_weekday in [4,5,6] or (current_weekday == 3 and success):
             self.next_run_week(next_run_weekday)
             self.finish_task()
+
+    def check_qq_group_message(self, cfg_trigger) -> bool:
+        """
+        检查QQ群是否满足道馆触发条件:
+        1. 特定成员发送包含"道馆已经创建"的消息
+        2. 独立的一条@全体成员消息
+        两条消息都需要在有效时间窗口内才算触发
+
+        通过OneBot HTTP API (go-cqhttp/NapCat/Lagrange) 获取群消息历史
+
+        :param cfg_trigger: QQGroupTriggerConfig 配置对象
+        :return: 是否检测到触发消息
+        """
+        try:
+            # 构建请求
+            endpoint = cfg_trigger.endpoint
+            if '//' not in endpoint:
+                endpoint = f'http://{endpoint}'
+            url = f'{endpoint}/get_group_msg_history'
+
+            headers = {'Content-Type': 'application/json'}
+            if cfg_trigger.access_token:
+                headers['Authorization'] = f'Bearer {cfg_trigger.access_token}'
+
+            body = {
+                'group_id': cfg_trigger.group_id,
+                'message_seq': 0,
+                'count': 20
+            }
+
+            resp = requests.post(url, json=body, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                logger.warning(f"QQ群消息请求失败，状态码: {resp.status_code}")
+                return False
+
+            data = resp.json()
+            if data.get('status') != 'ok':
+                logger.warning(f"QQ群消息API返回错误: {data.get('wording', data)}")
+                return False
+
+            messages = data.get('data', {}).get('messages', [])
+            if not messages:
+                logger.info("QQ群暂无消息")
+                return False
+
+            # 只检查今天21:00之后的消息
+            now = datetime.now()
+            today_9pm = datetime.combine(now.date(), datetime.min.time().replace(hour=21))
+            # 如果当前还没到21点，说明还没到监控时间，直接返回
+            if now < today_9pm:
+                logger.info("当前未到21:00，跳过QQ群消息检查")
+                return False
+            nine_pm_timestamp = today_9pm.timestamp()
+            now_timestamp = time.time()
+
+            create_keyword_found = False
+            at_all_found = False
+
+            for msg in messages:
+                msg_id = msg.get('message_id', 0)
+                msg_time = msg.get('time', 0)
+                sender_id = msg.get('sender', {}).get('user_id', 0)
+
+                # 跳过已处理过的消息
+                if msg_id <= self._qq_last_message_id:
+                    continue
+
+                # 只检查今天21:00之后的消息
+                if msg_time < nine_pm_timestamp:
+                    continue
+
+                # 处理消息内容 (支持数组格式和CQ码字符串格式)
+                message_content = msg.get('message', '')
+                has_at_all = False
+                text_content = ''
+
+                if isinstance(message_content, list):
+                    # 数组格式 (OneBot v11 标准格式)
+                    for seg in message_content:
+                        if isinstance(seg, dict):
+                            if seg.get('type') == 'at' and seg.get('data', {}).get('qq') == 'all':
+                                has_at_all = True
+                            elif seg.get('type') == 'text':
+                                text_content += seg.get('data', {}).get('text', '')
+                elif isinstance(message_content, str):
+                    # CQ码字符串格式
+                    if '[CQ:at,qq=all]' in message_content:
+                        has_at_all = True
+                    # 提取纯文本内容(去除CQ码)
+                    text_content = re.sub(r'\[CQ:[^\]]+\]', '', message_content)
+
+                # 更新最后处理的消息ID
+                if msg_id > self._qq_last_message_id:
+                    self._qq_last_message_id = msg_id
+
+                # 检查道馆创建关键词(由特定成员发送)
+                if cfg_trigger.create_keyword and cfg_trigger.create_keyword in text_content:
+                    # 如果配置了指定发送者，则验证发送者
+                    if cfg_trigger.create_sender_id == 0 or sender_id == cfg_trigger.create_sender_id:
+                        create_keyword_found = True
+                        logger.info(f"检测到道馆创建关键词消息，发送者QQ: {sender_id}")
+
+                # 检查@全体成员消息(独立消息，需验证发送者)
+                if has_at_all:
+                    # at_all_sender_id为0时与create_sender_id一致
+                    at_sender = cfg_trigger.at_all_sender_id if cfg_trigger.at_all_sender_id != 0 else cfg_trigger.create_sender_id
+                    if at_sender == 0 or sender_id == at_sender:
+                        at_all_found = True
+                        logger.info(f"检测到@全体成员消息，发送者QQ: {sender_id}")
+
+            # 更新最后消息ID为最新一条
+            if messages:
+                latest_id = max(msg.get('message_id', 0) for msg in messages)
+                if latest_id > self._qq_last_message_id:
+                    self._qq_last_message_id = latest_id
+
+            # 判断是否满足触发条件
+            if cfg_trigger.require_at_all:
+                if create_keyword_found and at_all_found:
+                    logger.info("QQ群触发条件满足: 道馆创建关键词 + @全体成员")
+                    return True
+                else:
+                    if not create_keyword_found:
+                        logger.info("未检测到道馆创建关键词消息")
+                    if not at_all_found:
+                        logger.info("未检测到@全体成员消息")
+                    return False
+            else:
+                # 不要求@全体成员，只检测道馆创建关键词
+                if create_keyword_found:
+                    logger.info("QQ群触发条件满足: 道馆创建关键词")
+                    return True
+                else:
+                    logger.info("未检测到道馆创建关键词消息")
+                    return False
+
+        except requests.exceptions.ConnectionError:
+            logger.warning("无法连接到OneBot API，请检查NapCat是否运行")
+            return False
+        except requests.exceptions.Timeout:
+            logger.warning("OneBot API请求超时")
+            return False
+        except Exception as e:
+            logger.error(f"检查QQ群消息时出错: {e}")
+            return False
+
+    def _init_qq_last_message_id(self, cfg_trigger):
+        """
+        初始化QQ群最新消息ID，避免误触发历史消息
+        """
+        try:
+            endpoint = cfg_trigger.endpoint
+            if '//' not in endpoint:
+                endpoint = f'http://{endpoint}'
+            url = f'{endpoint}/get_group_msg_history'
+            headers = {'Content-Type': 'application/json'}
+            if cfg_trigger.access_token:
+                headers['Authorization'] = f'Bearer {cfg_trigger.access_token}'
+            body = {'group_id': cfg_trigger.group_id, 'message_seq': 0, 'count': 1}
+            resp = requests.post(url, json=body, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                messages = data.get('data', {}).get('messages', [])
+                if messages:
+                    self._qq_last_message_id = max(msg.get('message_id', 0) for msg in messages)
+                    logger.info(f"已记录当前QQ群最新消息ID: {self._qq_last_message_id}")
+        except Exception as e:
+            logger.warning(f"初始化QQ群消息ID失败: {e}")
     def get_requests(self, url):
         try:
             # 发送GET请求
@@ -182,6 +354,23 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         self.check_current_weekday()
 
         cfg: Dokan = self.config.dokan
+
+        # QQ群触发模式: 单次检查QQ群消息，没有触发消息则5分钟后重试
+        if cfg.qq_group_trigger.enable:
+            # 先初始化最新消息ID，避免误触发历史消息
+            self._init_qq_last_message_id(cfg.qq_group_trigger)
+            if not self.check_qq_group_message(cfg.qq_group_trigger):
+                # 未检测到触发消息，按配置间隔重试
+                retry_minutes = cfg.qq_group_trigger.retry_interval
+                next_run = datetime.now() + timedelta(minutes=retry_minutes)
+                logger.info(f"未检测到QQ群触发消息，{retry_minutes}分钟后重试，下次运行: {next_run.strftime('%H:%M:%S')}")
+                self.config.notifier.push(title='道馆', content=f'未检测到QQ群触发消息，{retry_minutes}分钟后重试')
+                self.set_next_run(target=next_run)
+                self.finish_task()
+            else:
+                logger.info("检测到QQ群触发消息，开始执行道馆任务")
+                self.push_notify(content="QQ群触发道馆，开始执行道馆任务")
+                self.config.notifier.push(title='道馆', content='QQ群触发道馆，开始执行道馆任务')
 
         # 发送请求检查福利寮开启情况
         if cfg.welfare_config.enable_get_requests:
@@ -783,7 +972,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     continue
 
                 
-                if dokan_name in self.welfare_names or "鑫鑫子" in dokan_name  and dokan_tag == "鑫":
+                if (dokan_name in self.welfare_names or "鑫鑫子" in dokan_name) and dokan_tag == "鑫":
                     self.dokan_quit = True
                     self.open_welfare = True
                 else:
@@ -1122,6 +1311,17 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             del ipages.page_shikigami_records.links[ipages.page_dokan]
         ipages.page_main.link(button=self.I_MAIN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
         ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_main)
+
+        # QQ群触发模式: 道馆完成后，下次运行设到21点
+        cfg: Dokan = self.config.dokan
+        if cfg.qq_group_trigger.enable:
+            now = datetime.now()
+            next_9pm = datetime.combine(now.date(), datetime.min.time().replace(hour=21))
+            if now >= next_9pm:
+                # 已过今天21点，设到明天21点
+                next_9pm = datetime.combine((now + timedelta(days=1)).date(), datetime.min.time().replace(hour=21))
+            logger.info(f"QQ群触发模式: 下次道馆运行时间设到 {next_9pm.strftime('%Y-%m-%d %H:%M')}")
+            self.set_next_run(target=next_9pm)
 
         raise TaskEnd('Dokan')
     def quit_battle(self):

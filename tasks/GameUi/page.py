@@ -50,15 +50,18 @@ class Page:
 
 #登录login
 page_login = Page(G.I_CHECK_LOGIN_FORM)
+# 探索exploration
+page_exploration = Page(G.I_CHECK_EXPLORATION)
+# 绑定手机号弹窗 bind phone（必须在page_main之前注册，优先识别弹窗而非底层庭院）
+# 两步操作：run_additional点击"前往绑定"弹出确认框，link点击"取消绑定"关闭
+page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
+page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
 # Main Home 主页
 page_main = Page(G.I_CHECK_MAIN)
 page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
                         [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
                         [RestartAssets.I_LOGIN_COURTYARD2, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
                         [RestartAssets.I_LOGIN_SCROOLL_CLOSE, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
-# 绑定手机号弹窗 bind phone（两步：先点击"前往绑定"弹出确认框，再点击"取消绑定"关闭）
-page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
-page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
 page_bind_phone.link(button=RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE, destination=page_main)
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
@@ -66,7 +69,7 @@ page_summon.additional = [G.O_SUMMON_BACK_Y, G.I_SUMMON_BACK_R,G.I_SUMMON_BACK_T
 page_summon.link(button=G.I_SUMMON_GOTO_MAIN, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_SUMMON, destination=page_summon)
 # 探索exploration
-page_exploration = Page(G.I_CHECK_EXPLORATION)
+#page_exploration = Page(G.I_CHECK_EXPLORATION)
 page_exploration.link(button=G.I_BACK_YOLLOW, destination=page_main)
 page_main.link(button=G.I_MAIN_GOTO_EXPLORATION, destination=page_exploration)
 # 町中town

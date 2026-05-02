@@ -136,6 +136,8 @@ class RestartAssets:
 	I_CANCEL_BATTLE = RuleImage(roi_front=(471,395,129,55), roi_back=(367,227,545,296), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_cancel_battle.png")
 	# description 
 	I_LOGIN_COURTYARD2 = RuleImage(roi_front=(1127,629,29,78), roi_back=(1066,585,128,131), threshold=0.7, method="Template matching", file="./tasks/Restart/login/login_courtyard2.png")
+	# 领取抵扣券 
+	I_LOGIN_GET_COUPON = RuleImage(roi_front=(716,438,134,41), roi_back=(471,306,560,269), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_get_coupon.png")
 
 
 	# Ocr Rule Assets
