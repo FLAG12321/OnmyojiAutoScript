@@ -358,6 +358,7 @@ class RebootDaemon:
 
         # NapCat管理器（在_load_config中初始化）
         self.napcat_manager: NapCatManager = None
+        self._raw_config: dict = {}  # 原始配置字典，供_init_napcat_manager使用
 
         # 加载配置
         self.config_path = Path(config_path) if config_path else Path(__file__).parent / 'daemon_config.json'
@@ -367,7 +368,7 @@ class RebootDaemon:
         self._setup_logging()
 
         # 初始化NapCat管理器（必须在日志初始化之后）
-        self._init_napcat_manager(config)
+        self._init_napcat_manager(self._raw_config)
 
         # 设置定时重启
         if self.reboot_time:
@@ -386,6 +387,9 @@ class RebootDaemon:
         except Exception as e:
             print(f"加载配置文件失败: {e}")
             return
+
+        # 保存原始配置字典，供_init_napcat_manager等使用
+        self._raw_config = config
 
         # API配置
         self.api_host = config.get('api_host', self.api_host)
