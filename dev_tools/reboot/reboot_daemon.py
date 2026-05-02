@@ -48,6 +48,229 @@ class InstanceConfig:
         self.restart_cooldown = restart_cooldown  # 重启冷却时间(秒)
 
 
+# ──────────────────────── NapCat 配置模型 ────────────────────────
+
+class NapCatConfig:
+    """NapCat守护进程配置"""
+    def __init__(self, enable: bool = False, endpoint: str = 'http://127.0.0.1:3000',
+                 access_token: str = '', napcat_dir: str = r'C:\NapCat',
+                 start_cmd: str = 'napcat.bat', check_interval: int = 30,
+                 fail_count: int = 3, max_restart_attempts: int = 5,
+                 restart_cooldown: int = 60):
+        self.enable = enable
+        self.endpoint = endpoint
+        self.access_token = access_token
+        self.napcat_dir = napcat_dir
+        self.start_cmd = start_cmd
+        self.check_interval = check_interval
+        self.fail_count = fail_count  # 连续健康检查失败多少次后重启
+        self.max_restart_attempts = max_restart_attempts
+        self.restart_cooldown = restart_cooldown
+
+
+# ──────────────────────── NapCat 管理器 ────────────────────────
+
+class NapCatManager:
+    """
+    NapCat进程管理器
+    - 通过OneBot HTTP API健康检查
+    - 崩溃自动重启
+    - 支持手动启停
+    """
+
+    def __init__(self, config: NapCatConfig, logger: logging.Logger):
+        self.config = config
+        self.logger = logger
+        self.process = None  # NapCat子进程引用
+        self.consecutive_failures = 0  # 连续健康检查失败次数
+        self.restart_count = 0  # 累计重启次数
+        self.last_restart_time = 0  # 上次重启时间
+        self.is_running_flag = False  # 内部状态标记
+
+    def health_check(self) -> bool:
+        """通过OneBot HTTP API检查NapCat是否健康"""
+        try:
+            headers = {'Content-Type': 'application/json'}
+            if self.config.access_token:
+                headers['Authorization'] = f'Bearer {self.config.access_token}'
+
+            resp = requests.post(
+                f"{self.config.endpoint}/get_login_info",
+                json={},
+                headers=headers,
+                timeout=5
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get('status') == 'ok':
+                    return True
+            self.logger.warning(f"NapCat健康检查异常: status={resp.status_code}")
+            return False
+        except requests.exceptions.ConnectionError:
+            self.logger.warning("NapCat无法连接，可能未运行")
+            return False
+        except requests.exceptions.Timeout:
+            self.logger.warning("NapCat健康检查超时")
+            return False
+        except Exception as e:
+            self.logger.error(f"NapCat健康检查出错: {e}")
+            return False
+
+    def is_alive(self) -> bool:
+        """检查NapCat进程是否存活（子进程+API双重检查）"""
+        # 子进程检查
+        if self.process and self.process.poll() is None:
+            # 进程在运行，再验证API
+            return self.health_check()
+        # 没有子进程引用，尝试API检查
+        return self.health_check()
+
+    def start(self) -> bool:
+        """启动NapCat"""
+        if self.is_alive():
+            self.logger.info("NapCat已在运行")
+            self.is_running_flag = True
+            return True
+
+        self.logger.info(f"正在启动NapCat: cd /d {self.config.napcat_dir} && {self.config.start_cmd}")
+        try:
+            napcat_dir = Path(self.config.napcat_dir)
+            if not napcat_dir.exists():
+                self.logger.error(f"NapCat目录不存在: {self.config.napcat_dir}")
+                return False
+
+            cmd = self.config.start_cmd
+
+            # Windows下隐藏子进程窗口
+            startupinfo = None
+            creationflags = 0
+            if sys.platform.startswith('win'):
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
+
+            self.process = subprocess.Popen(
+                cmd,
+                cwd=str(napcat_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=True,
+                startupinfo=startupinfo,
+                creationflags=creationflags
+            )
+
+            self.logger.info(f"NapCat进程已启动, PID: {self.process.pid}")
+
+            # 等待NapCat启动完成（最多60秒）
+            timeout = 60
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if self.health_check():
+                    self.logger.info("NapCat启动成功，API已就绪")
+                    self.is_running_flag = True
+                    self.consecutive_failures = 0
+                    return True
+                time.sleep(3)
+
+            self.logger.error("NapCat启动超时，API未就绪")
+            return False
+
+        except Exception as e:
+            self.logger.error(f"启动NapCat失败: {e}")
+            return False
+
+    def stop(self) -> bool:
+        """停止NapCat"""
+        self.logger.info("正在停止NapCat...")
+
+        # 方式1: 终止子进程
+        if self.process and self.process.poll() is None:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=10)
+                self.logger.info("NapCat进程已终止")
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.logger.info("NapCat进程已强制终止")
+
+        # 方式2: 清理残留的QQ/NapCat进程
+        if sys.platform.startswith('win'):
+            try:
+                # 按窗口标题关闭
+                subprocess.run('taskkill /fi "windowtitle eq NapCat*" /f',
+                               shell=True, capture_output=True, timeout=5)
+                # 关闭QQ进程（NapCat依赖）
+                subprocess.run('taskkill /fi "imagename eq QQ.exe" /f',
+                               shell=True, capture_output=True, timeout=5)
+            except Exception as e:
+                self.logger.debug(f"清理残留进程时出错(可忽略): {e}")
+
+        self.process = None
+        self.is_running_flag = False
+        return True
+
+    def restart(self) -> bool:
+        """重启NapCat"""
+        self.logger.info("正在重启NapCat...")
+        now = time.time()
+
+        # 冷却检查
+        if now - self.last_restart_time < self.config.restart_cooldown:
+            remaining = int(self.config.restart_cooldown - (now - self.last_restart_time))
+            self.logger.info(f"NapCat重启冷却中，剩余 {remaining} 秒")
+            return False
+
+        # 重启次数检查
+        if self.restart_count >= self.config.max_restart_attempts:
+            self.logger.warning(
+                f"NapCat累计重启 {self.restart_count} 次，已达上限 {self.config.max_restart_attempts}，暂停自动重启")
+            return False
+
+        self.last_restart_time = now
+        self.stop()
+        time.sleep(3)
+        success = self.start()
+        if success:
+            self.restart_count = 0
+            self.logger.info("NapCat重启成功")
+        else:
+            self.restart_count += 1
+            self.logger.error(f"NapCat重启失败 (累计第 {self.restart_count} 次)")
+        return success
+
+    def reset_restart_count(self):
+        """重置重启计数（NapCat稳定运行后调用）"""
+        if self.restart_count > 0 or self.consecutive_failures > 0:
+            self.restart_count = 0
+            self.consecutive_failures = 0
+
+    def monitor(self) -> bool:
+        """
+        单次监控检查，返回NapCat是否健康
+        如果连续失败次数达到阈值，触发自动重启
+        """
+        if not self.config.enable:
+            return True
+
+        if self.health_check():
+            self.consecutive_failures = 0
+            self.is_running_flag = True
+            self.reset_restart_count()
+            return True
+
+        self.consecutive_failures += 1
+        self.logger.warning(
+            f"NapCat健康检查失败 (连续第 {self.consecutive_failures}/{self.config.fail_count} 次)")
+
+        if self.consecutive_failures >= self.config.fail_count:
+            self.logger.warning("连续失败次数达到阈值，触发NapCat自动重启")
+            self.restart()
+            return False
+
+        return False
+
+
 # ──────────────────────── 状态枚举 ────────────────────────
 
 class ScriptState:
@@ -117,12 +340,18 @@ class RebootDaemon:
         self.monitor_interval = 30
         self.restart_cooldown = 60
 
+        # NapCat管理器（在_load_config中初始化）
+        self.napcat_manager: NapCatManager = None
+
         # 加载配置
         self.config_path = Path(config_path) if config_path else Path(__file__).parent / 'daemon_config.json'
         self._load_config()
 
         # 配置日志（必须在加载配置后，因为可能用到logger）
         self._setup_logging()
+
+        # 初始化NapCat管理器（必须在日志初始化之后）
+        self._init_napcat_manager(config)
 
         # 设置定时重启
         if self.reboot_time:
@@ -199,6 +428,26 @@ class RebootDaemon:
             handlers=[file_handler, console_handler]
         )
         self.logger = logging.getLogger('RebootDaemon')
+
+    def _init_napcat_manager(self, config: dict):
+        """从配置字典初始化NapCat管理器"""
+        napcat_raw = config.get('napcat', {})
+        if napcat_raw and napcat_raw.get('enable', False):
+            nc_cfg = NapCatConfig(
+                enable=napcat_raw.get('enable', False),
+                endpoint=napcat_raw.get('endpoint', 'http://127.0.0.1:3000'),
+                access_token=napcat_raw.get('access_token', ''),
+                napcat_dir=napcat_raw.get('napcat_dir', r'C:\NapCat'),
+                start_cmd=napcat_raw.get('start_cmd', 'napcat.bat'),
+                check_interval=napcat_raw.get('check_interval', 30),
+                fail_count=napcat_raw.get('fail_count', 3),
+                max_restart_attempts=napcat_raw.get('max_restart_attempts', 5),
+                restart_cooldown=napcat_raw.get('restart_cooldown', 60)
+            )
+            self.napcat_manager = NapCatManager(nc_cfg, self.logger)
+            self.logger.info(f"NapCat守护已启用: endpoint={nc_cfg.endpoint}, dir={nc_cfg.napcat_dir}")
+        else:
+            self.napcat_manager = None
 
     def _setup_reboot_schedule(self):
         if self.reboot_weekday is None:
@@ -646,7 +895,14 @@ class RebootDaemon:
                 f"{n}={self.instance_states.get(n, '?')}"
                 for n in self.instance_configs
             )
-            self.logger.info(f"实例状态: [{states_str}]")
+            napcat_status = ""
+            if self.napcat_manager:
+                napcat_status = f", NapCat={'运行中' if self.napcat_manager.is_running_flag else '异常'}"
+            self.logger.info(f"实例状态: [{states_str}]{napcat_status}")
+
+            # 5. NapCat健康监控
+            if self.napcat_manager:
+                self.napcat_manager.monitor()
 
             await asyncio.sleep(self.monitor_interval)
 
@@ -689,6 +945,10 @@ class RebootDaemon:
         self.logger.info(f"API地址: {self.api_url}")
         self.logger.info(f"监控实例: {list(self.instance_configs.keys())}")
         self.logger.info(f"监控间隔: {self.monitor_interval}秒")
+        if self.napcat_manager:
+            self.logger.info(f"NapCat守护: 已启用 ({self.napcat_manager.config.endpoint})")
+        else:
+            self.logger.info("NapCat守护: 未启用")
         self.logger.info("=" * 60)
 
         # 1. 启动OAS Server
@@ -718,7 +978,14 @@ class RebootDaemon:
                 self.logger.error(f"实例 {name} 启动失败")
             await asyncio.sleep(2)
 
-        # 3. 进入监控循环
+        # 3. 启动NapCat（如果启用）
+        if self.napcat_manager:
+            self.logger.info("正在启动NapCat...")
+            if not self.napcat_manager.start():
+                self.logger.error("NapCat启动失败")
+            await asyncio.sleep(3)
+
+        # 4. 进入监控循环
         await self._monitor_loop()
 
     def _run_async_loop(self):
@@ -764,6 +1031,10 @@ class RebootDaemon:
             except Exception:
                 pass
 
+        # 停止NapCat
+        if self.napcat_manager:
+            self.napcat_manager.stop()
+
         self._stop_oas_server()
         self.logger.info("OAS守护进程已停止")
 
@@ -797,6 +1068,14 @@ def main():
                         help='自动重启时间 (HH:MM格式)，覆盖配置文件')
     parser.add_argument('--reboot-weekday', type=int, choices=range(0, 7),
                         help='自动重启的星期几 (0:周一, 6:周日)')
+    parser.add_argument('--napcat-start', action='store_true',
+                        help='手动启动NapCat（需配置napcat段）')
+    parser.add_argument('--napcat-stop', action='store_true',
+                        help='手动停止NapCat')
+    parser.add_argument('--napcat-restart', action='store_true',
+                        help='手动重启NapCat')
+    parser.add_argument('--napcat-status', action='store_true',
+                        help='查看NapCat状态')
 
     args = parser.parse_args()
 
@@ -816,6 +1095,45 @@ def main():
     if args.reboot_weekday is not None:
         daemon.reboot_weekday = args.reboot_weekday
         daemon._setup_reboot_schedule()
+
+    # NapCat手动操作（不进入守护循环）
+    if args.napcat_start or args.napcat_stop or args.napcat_restart or args.napcat_status:
+        if not daemon.napcat_manager:
+            # 即使配置中未启用，也允许手动操作（临时创建）
+            napcat_raw = {}
+            if daemon.config_path.exists():
+                try:
+                    with open(daemon.config_path, 'r', encoding='utf-8') as f:
+                        napcat_raw = json.load(f).get('napcat', {})
+                except Exception:
+                    pass
+            if napcat_raw:
+                daemon._init_napcat_manager({'napcat': napcat_raw})
+            if not daemon.napcat_manager:
+                print("错误: 未找到NapCat配置，请在daemon_config.json中配置napcat段")
+                sys.exit(1)
+
+        if args.napcat_status:
+            healthy = daemon.napcat_manager.health_check()
+            print(f"NapCat状态: {'运行中 (API正常)' if healthy else '未运行或API异常'}")
+            print(f"  endpoint: {daemon.napcat_manager.config.endpoint}")
+            print(f"  napcat_dir: {daemon.napcat_manager.config.napcat_dir}")
+            sys.exit(0)
+
+        if args.napcat_start:
+            success = daemon.napcat_manager.start()
+            print(f"NapCat启动: {'成功' if success else '失败'}")
+            sys.exit(0 if success else 1)
+
+        if args.napcat_stop:
+            daemon.napcat_manager.stop()
+            print("NapCat已停止")
+            sys.exit(0)
+
+        if args.napcat_restart:
+            success = daemon.napcat_manager.restart()
+            print(f"NapCat重启: {'成功' if success else '失败'}")
+            sys.exit(0 if success else 1)
 
     try:
         daemon.run()

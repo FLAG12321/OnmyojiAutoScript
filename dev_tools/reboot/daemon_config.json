@@ -20,5 +20,17 @@
       "max_restart_attempts": 5,
       "restart_cooldown": 60
     }
-  ]
+  ],
+
+  "napcat": {
+    "enable": false,
+    "endpoint": "http://127.0.0.1:3000",
+    "access_token": "",
+    "napcat_dir": "C:\\NapCat",
+    "start_cmd": "napcat.bat",
+    "check_interval": 30,
+    "fail_count": 3,
+    "max_restart_attempts": 5,
+    "restart_cooldown": 60
+  }
 }
