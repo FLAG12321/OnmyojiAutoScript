@@ -158,27 +158,6 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             if cfg_trigger.access_token:
                 headers['Authorization'] = f'Bearer {cfg_trigger.access_token}'
 
-            body = {
-                'group_id': cfg_trigger.group_id,
-                'message_seq': 0,
-                'count': 20
-            }
-
-            resp = requests.post(url, json=body, headers=headers, timeout=10)
-            if resp.status_code != 200:
-                logger.warning(f"QQ群消息请求失败，状态码: {resp.status_code}")
-                return False
-
-            data = resp.json()
-            if data.get('status') != 'ok':
-                logger.warning(f"QQ群消息API返回错误: {data.get('wording', data)}")
-                return False
-
-            messages = data.get('data', {}).get('messages', [])
-            if not messages:
-                logger.info("QQ群暂无消息")
-                return False
-
             # 只检查今天21:00之后的消息
             now = datetime.now()
             today_9pm = datetime.combine(now.date(), datetime.min.time().replace(hour=21))
@@ -187,12 +166,71 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 logger.info("当前未到21:00，跳过QQ群消息检查")
                 return False
             nine_pm_timestamp = today_9pm.timestamp()
-            now_timestamp = time.time()
+
+            # 分页获取消息
+            # 策略: 记住上次最新消息ID，后续只获取增量消息
+            # - 首次(_qq_last_message_id==0): 全量获取21:00之后的所有消息
+            # - 后续: 从最新消息往前翻页，直到覆盖到上次的消息ID为止
+            all_messages = []
+            message_seq = 0
+            max_pages = 10  # 最多翻页10次，防止无限循环
+            page_count = 0
+            is_first_fetch = (self._qq_last_message_id == 0)
+
+            while page_count < max_pages:
+                body = {
+                    'group_id': cfg_trigger.group_id,
+                    'message_seq': message_seq,
+                    'count': 20
+                }
+
+                resp = requests.post(url, json=body, headers=headers, timeout=10)
+                if resp.status_code != 200:
+                    logger.warning(f"QQ群消息请求失败，状态码: {resp.status_code}")
+                    break
+
+                data = resp.json()
+                if data.get('status') != 'ok':
+                    logger.warning(f"QQ群消息API返回错误: {data.get('wording', data)}")
+                    break
+
+                page_messages = data.get('data', {}).get('messages', [])
+                if not page_messages:
+                    break
+
+                all_messages.extend(page_messages)
+                page_count += 1
+
+                # 检查是否已覆盖到上次的消息
+                if not is_first_fetch:
+                    # 非首次: 翻页直到找到已处理过的消息即可停止
+                    page_msg_ids = {msg.get('message_id', 0) for msg in page_messages}
+                    if self._qq_last_message_id in page_msg_ids:
+                        logger.info(f"已翻到上次消息ID({self._qq_last_message_id})，停止翻页")
+                        break
+
+                # 首次: 翻页直到21:00之前的消息
+                oldest_time = min(msg.get('time', 0) for msg in page_messages)
+                if oldest_time < nine_pm_timestamp:
+                    break
+
+                # 获取下一页的起始序号(当前页最早消息的序号)
+                earliest_seq = min(msg.get('message_seq', 0) for msg in page_messages)
+                if earliest_seq <= 0 or (earliest_seq >= message_seq and message_seq != 0):
+                    break
+                message_seq = earliest_seq
+
+            if not all_messages:
+                logger.info("QQ群暂无消息")
+                return False
+
+            logger.info(f"获取到QQ群消息共{len(all_messages)}条"
+                        f"({'首次全量获取' if is_first_fetch else '增量获取'})")
 
             create_keyword_found = False
             at_all_found = False
 
-            for msg in messages:
+            for msg in all_messages:
                 msg_id = msg.get('message_id', 0)
                 msg_time = msg.get('time', 0)
                 sender_id = msg.get('sender', {}).get('user_id', 0)
@@ -245,8 +283,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                         logger.info(f"检测到@全体成员消息，发送者QQ: {sender_id}")
 
             # 更新最后消息ID为最新一条
-            if messages:
-                latest_id = max(msg.get('message_id', 0) for msg in messages)
+            if all_messages:
+                latest_id = max(msg.get('message_id', 0) for msg in all_messages)
                 if latest_id > self._qq_last_message_id:
                     self._qq_last_message_id = latest_id
 
@@ -357,8 +395,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
 
         # QQ群触发模式: 单次检查QQ群消息，没有触发消息则5分钟后重试
         if cfg.qq_group_trigger.enable:
-            # 先初始化最新消息ID，避免误触发历史消息
-            self._init_qq_last_message_id(cfg.qq_group_trigger)
+            # _qq_last_message_id 为0时首次全量获取，非0时增量获取
+            # 不再预初始化，首次会全量获取21:00之后的所有消息
             if not self.check_qq_group_message(cfg.qq_group_trigger):
                 # 未检测到触发消息，按配置间隔重试
                 retry_minutes = cfg.qq_group_trigger.retry_interval
