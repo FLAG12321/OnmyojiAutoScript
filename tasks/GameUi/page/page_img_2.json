@@ -169,5 +169,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "back_main",
+    "roiFront": "106,13,43,43",
+    "roiBack": "11,1,204,135",
+    "description": "description",
+    "imageName": "back_main.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

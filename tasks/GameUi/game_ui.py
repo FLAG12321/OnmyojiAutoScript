@@ -130,8 +130,10 @@ class GameUi(BaseTask, GameUiAssets):
                     logger.attr("UI", page.name)
                     self.ui_current = page
                     return page
-            # Try to close unknown page
-            if self.try_close_unknown_page():
+            # Try to close unknown page: 优先尝试 I_BACK_MAIN 回主页
+            if self._try_back_main_shortcut(skip_first_screenshot=False):
+                timeout = Timer(10, count=20).start()
+            elif self.try_close_unknown_page():
                 timeout = Timer(10, count=20).start()
             else:
                 # entirely unknown page, click safe random area
@@ -198,6 +200,23 @@ class GameUi(BaseTask, GameUiAssets):
         self.ui_get_current_page()
         return self.ui_goto(dest_page, confirm_wait, skip_first_screenshot, timeout)
 
+    def _try_back_main_shortcut(self, skip_first_screenshot=True) -> bool:
+        """
+        尝试使用一键回主页按钮(I_BACK_MAIN)直接回到 page_main。
+        当页面未识别或目标是 page_main 时调用。
+        如果检测到并成功点击 I_BACK_MAIN，返回 True；否则返回 False。
+        """
+        self.maybe_screenshot(skip_first_screenshot)
+        if self.appear(self.I_BACK_MAIN):
+            logger.info(f"Found I_BACK_MAIN shortcut, clicking to go to page_main")
+            if self.appear_then_click(self.I_BACK_MAIN, interval=1.0):
+                # 等待 page_main 出现
+                if self.ui_wait_until_appear(page_main, timeout=5, skip_first_screenshot=False):
+                    logger.info("I_BACK_MAIN shortcut success, arrived at page_main")
+                    self.ui_current = page_main
+                    return True
+        return False
+
     def ui_goto(self, destination: Page, confirm_wait=0, skip_first_screenshot=True, timeout: int = 60) -> bool:
         """
         Args:
@@ -220,9 +239,19 @@ class GameUi(BaseTask, GameUiAssets):
                 confirm_timer.wait()
                 return True
             confirm_timer.reset()
+            # 如果目标是 page_main，先尝试一键回主页快捷方式
+            if destination == page_main and self.ui_current != page_main:
+                if self._try_back_main_shortcut(skip_first_screenshot=skip_first_screenshot):
+                    found = True
+                    continue
+                skip_first_screenshot = False
             path = path_dict.get(self.ui_current, None)
-            # 找不到路径则重新获取页面重试
+            # 找不到路径时，先尝试 I_BACK_MAIN 回到 page_main，再从 page_main 出发
             if not path:
+                if self.ui_current != page_main and self._try_back_main_shortcut(skip_first_screenshot=skip_first_screenshot):
+                    # 成功回到 page_main，重新构建路径继续导航
+                    skip_first_screenshot = False
+                    continue
                 self.ui_get_current_page(skip_first_screenshot)
                 continue
             skip_first_screenshot = False
