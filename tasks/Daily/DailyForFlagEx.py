@@ -17,6 +17,7 @@ def get_config(self):
     config.daily_for_flag_config.KekkaiUtilize_enable = self.account_info.KekkaiUtilize_enable
     config.daily_for_flag_config.tree_planting_enable = self.account_info.tree_planting_enable
     config.daily_for_flag_config.trialbattle_enable = self.account_info.trialbattle_enable
+    config.daily_for_flag_config.summon_up_enable = self.account_info.summon_up_enable
     return config
 def run_success(self):
     self.daily_conf.update_account_login_history

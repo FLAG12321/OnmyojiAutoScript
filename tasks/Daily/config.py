@@ -26,6 +26,7 @@ class ExtendedAccountInfo(AccountInfo):
     KekkaiUtilize_enable: bool = Field(default=True, description='是否蹭卡')
     tree_planting_enable: int = Field(default=2, description='种树:0不运行 1买花 2买花捐树')
     trialbattle_enable: bool = Field(default=True, description='是否开启试炼战斗')
+    summon_up_enable: bool = Field(default=True, description='是否开启UP召唤领取礼包')
 class DailyConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
@@ -44,6 +45,7 @@ class DailyConfig(ConfigBase):
     total_KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
     total_tree_planting_enable: int = Field(default=0, description='种树:0不运行 1买花 2买花捐树')
     total_trialbattle_enable: bool = Field(default=False, description='试炼战斗')
+    total_summon_up_enable: bool = Field(default=False, description='是否开启UP召唤领取礼包')
     shutdown_after_finish: bool = Field(default=False, description='日常任务完成后是否关机')
 
 class Daily(ConfigBase):

@@ -209,6 +209,50 @@ class DailyForFlagAssets:
 
 	# Click Rule Assets
 	# description 
+	C_SUMMON_UP_AWARD = RuleClick(roi_front=(35,301,45,85), roi_back=(34,300,47,87), name="summon_up_award")
+
+
+	# Image Rule Assets
+	# description 
+	I_TO_SUMMON = RuleImage(roi_front=(1118,168,23,22), roi_back=(661,127,600,245), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/to_summon.png")
+	# description 
+	I_SUMMON_UP_BACK_RED = RuleImage(roi_front=(1139,200,38,43), roi_back=(653,120,612,293), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_back_red.png")
+	# description 
+	I_SUMMON_UP_TO_SHARE = RuleImage(roi_front=(1137,532,124,47), roi_back=(746,361,534,332), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_to_share.png")
+	# description 
+	I_SUMMON_UP_TO_SHARE_2 = RuleImage(roi_front=(1187,617,45,39), roi_back=(1041,581,224,123), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_to_share_2.png")
+	# description 
+	I_SUMMON_UP_WECHAT_SHARE = RuleImage(roi_front=(328,645,49,47), roi_back=(217,623,872,91), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_wechat_share.png")
+	# description 
+	I_SUMMON_UP_WECHAT_SHARE_2 = RuleImage(roi_front=(573,494,102,33), roi_back=(273,108,742,491), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_wechat_share_2.png")
+	# description 
+	I_SUMMON_UP_BACK_SHARE = RuleImage(roi_front=(1198,33,49,47), roi_back=(1171,15,96,89), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_back_share.png")
+	# description 
+	I_SUMMON_UP_TO_GIFT = RuleImage(roi_front=(38,290,51,55), roi_back=(10,77,160,402), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_to_gift.png")
+	# description 
+	I_SUMMON_UP_BUY_GIFT = RuleImage(roi_front=(373,596,57,33), roi_back=(290,564,239,104), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_buy_gift.png")
+	# description 
+	I_SUMMON_UP_BUY_GIFT_2 = RuleImage(roi_front=(373,596,57,33), roi_back=(516,492,247,85), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_buy_gift_2.png")
+	# description 
+	I_SUMMON_UP_AWARD = RuleImage(roi_front=(480,187,329,43), roi_back=(389,134,571,223), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_award.png")
+	# description 
+	I_SUMMON_UP_GET_AWARD = RuleImage(roi_front=(421,474,16,19), roi_back=(290,462,228,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_get_award.png")
+	# description 
+	I_SUMMON_UP_AWARD_2 = RuleImage(roi_front=(480,187,329,43), roi_back=(389,134,571,223), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_award_2.png")
+	# description 
+	I_SUMMON_UP_SELECT_POOL = RuleImage(roi_front=(159,15,128,35), roi_back=(49,11,288,86), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_select_pool.png")
+	# description 
+	I_SUMMON_UP_ENSURE_POOL = RuleImage(roi_front=(612,603,59,35), roi_back=(499,560,313,107), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_ensure_pool.png")
+	# description 
+	I_SUMMON_UP_ENSURE_POOL_2 = RuleImage(roi_front=(713,409,65,35), roi_back=(460,369,360,99), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_ensure_pool_2.png")
+	# description 
+	I_SUMMON_UP_TO_SHARE = RuleImage(roi_front=(294,433,87,26), roi_back=(140,387,255,94), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_to_share.png")
+	# description 
+	I_SUMMON_UP_BUY_FLAG = RuleImage(roi_front=(358,596,85,42), roi_back=(318,571,160,79), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/summon_up/summon_up_buy_flag.png")
+
+
+	# Click Rule Assets
+	# description 
 	C_T_EXIT_SUCCESS = RuleClick(roi_front=(1187,361,63,119), roi_back=(1185,360,66,122), name="t_exit_success")
 	# description 
 	C_T_EXIT_SIGN = RuleClick(roi_front=(851,95,38,30), roi_back=(850,94,41,33), name="t_exit_sign")
