@@ -17,34 +17,34 @@ class DailyForFlagAssets:
 
 	# Image Rule Assets
 	# description 
-	I_QIYUAN = RuleImage(roi_front=(966,630,67,61), roi_back=(949,607,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_qiyuan.png")
+	I_QIYUAN = RuleImage(roi_front=(966,630,67,61), roi_back=(949,607,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_qiyuan.png")
 	# description 
-	I_BTN_THINK = RuleImage(roi_front=(928,613,38,35), roi_back=(916,596,70,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_btn_think.png")
+	I_BTN_THINK = RuleImage(roi_front=(928,613,38,35), roi_back=(916,596,70,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_btn_think.png")
 	# description 
-	I_H_BACK_RED = RuleImage(roi_front=(851,144,31,33), roi_back=(777,114,182,110), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_h_back_red.png")
+	I_H_BACK_RED = RuleImage(roi_front=(851,144,31,33), roi_back=(777,114,182,110), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_h_back_red.png")
 	# description 
-	I_BTN_ENSURE = RuleImage(roi_front=(693,405,134,49), roi_back=(639,376,244,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_btn_ensure.png")
+	I_BTN_ENSURE = RuleImage(roi_front=(693,405,134,49), roi_back=(639,376,244,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_btn_ensure.png")
 	# description 
-	I_TO_THINK = RuleImage(roi_front=(1060,602,58,53), roi_back=(1042,580,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_to_think.png")
+	I_TO_THINK = RuleImage(roi_front=(1060,602,58,53), roi_back=(1042,580,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_to_think.png")
 	# description 
-	I_FLAG_THINK = RuleImage(roi_front=(969,176,64,106), roi_back=(938,147,133,158), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_flag_think.png")
+	I_FLAG_THINK = RuleImage(roi_front=(969,176,64,106), roi_back=(938,147,133,158), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_flag_think.png")
 	# description 
-	I_H_BACK_RED2 = RuleImage(roi_front=(933,88,44,39), roi_back=(906,55,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/huili/huili_h_back_red2.png")
+	I_H_BACK_RED2 = RuleImage(roi_front=(933,88,44,39), roi_back=(906,55,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/returngift/returngift_h_back_red2.png")
 	# description 
-	I_SUDDEN = RuleImage(roi_front=(534,179,63,22), roi_back=(430,160,419,98), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/huili/sudden.png")
+	I_SUDDEN = RuleImage(roi_front=(534,179,63,22), roi_back=(430,160,419,98), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/returngift/sudden.png")
 
 
 	# Image Rule Assets
 	# description 
-	I_DONATE = RuleImage(roi_front=(270,494,27,26), roi_back=(243,465,80,87), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/juangou/juangou_donate.png")
+	I_DONATE = RuleImage(roi_front=(270,494,27,26), roi_back=(243,465,80,87), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/donatejade/donatejade_donate.png")
 	# description 
-	I_ADD = RuleImage(roi_front=(780,276,60,55), roi_back=(763,251,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/juangou/juangou_add.png")
+	I_ADD = RuleImage(roi_front=(780,276,60,55), roi_back=(763,251,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/donatejade/donatejade_add.png")
 	# description 
-	I_LIMIT = RuleImage(roi_front=(826,349,47,77), roi_back=(817,342,69,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/juangou/juangou_limit.png")
+	I_LIMIT = RuleImage(roi_front=(826,349,47,77), roi_back=(817,342,69,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/donatejade/donatejade_limit.png")
 	# description 
-	I_CLICK_DONATE = RuleImage(roi_front=(577,524,133,48), roi_back=(553,501,178,92), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/juangou/juangou_click_donate.png")
+	I_CLICK_DONATE = RuleImage(roi_front=(577,524,133,48), roi_back=(553,501,178,92), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/donatejade/donatejade_click_donate.png")
 	# description 
-	I_AWARD = RuleImage(roi_front=(476,178,327,100), roi_back=(438,160,399,133), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/juangou/juangou_award.png")
+	I_AWARD = RuleImage(roi_front=(476,178,327,100), roi_back=(438,160,399,133), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/donatejade/donatejade_award.png")
 
 
 	# Image Rule Assets
@@ -262,29 +262,29 @@ class DailyForFlagAssets:
 
 	# Image Rule Assets
 	# description 
-	I_MIAN_TO_TASK = RuleImage(roi_front=(788,451,22,23), roi_back=(583,303,418,270), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_mian_to_task.png")
+	I_MIAN_TO_TASK = RuleImage(roi_front=(788,451,22,23), roi_back=(583,303,418,270), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/courtyard_mian_to_task.png")
 	# description 
-	I_PAGE_TASK = RuleImage(roi_front=(264,41,187,51), roi_back=(257,23,201,84), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_page_task.png")
+	I_PAGE_TASK = RuleImage(roi_front=(264,41,187,51), roi_back=(257,23,201,84), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/courtyard_page_task.png")
 	# description 
-	I_FINISH = RuleImage(roi_front=(1120,594,88,87), roi_back=(1106,578,117,116), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_finish.png")
+	I_FINISH = RuleImage(roi_front=(1120,594,88,87), roi_back=(1106,578,117,116), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/courtyard_finish.png")
 	# description 
-	I_T_BACK_RED_SIGN = RuleImage(roi_front=(850,91,45,37), roi_back=(811,63,117,94), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_back_red_sign.png")
+	I_T_BACK_RED_SIGN = RuleImage(roi_front=(850,91,45,37), roi_back=(811,63,117,94), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/t_back_red_sign.png")
 	# description 
-	I_SUCCESS = RuleImage(roi_front=(307,27,176,54), roi_back=(300,13,193,90), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_success.png")
+	I_SUCCESS = RuleImage(roi_front=(307,27,176,54), roi_back=(300,13,193,90), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/courtyard/courtyard_success.png")
 	# description 
-	I_TASK_TO_MAIN = RuleImage(roi_front=(17,11,46,54), roi_back=(0,0,92,98), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_task_to_main.png")
+	I_TASK_TO_MAIN = RuleImage(roi_front=(17,11,46,54), roi_back=(0,0,92,98), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/courtyard_task_to_main.png")
 	# description 
-	I_NORMAL = RuleImage(roi_front=(1130,123,88,77), roi_back=(1099,91,149,132), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/tingyuan_normal.png")
+	I_NORMAL = RuleImage(roi_front=(1130,123,88,77), roi_back=(1099,91,149,132), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/courtyard_normal.png")
 	# description 
-	I_CORD_EXIT = RuleImage(roi_front=(1163,38,63,27), roi_back=(1111,15,158,131), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_exit.png")
+	I_CORD_EXIT = RuleImage(roi_front=(1163,38,63,27), roi_back=(1111,15,158,131), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/cord_exit.png")
 	# description 
-	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1128,19,110,97), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/tingyuan/cord_back_red.png")
+	I_CORD_BACK_RED = RuleImage(roi_front=(1159,42,45,43), roi_back=(1128,19,110,97), threshold=0.6, method="Template matching", file="./tasks/DailyForFlag/courtyard/cord_back_red.png")
 	# description 
-	I_T_SIGN_FLAG = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_sign_flag.png")
+	I_T_SIGN_FLAG = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/courtyard/t_sign_flag.png")
 	# description 
-	I_T_SPECIAL_FLAG = RuleImage(roi_front=(1140,629,47,67), roi_back=(1092,568,138,143), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_special_flag.png")
+	I_T_SPECIAL_FLAG = RuleImage(roi_front=(1140,629,47,67), roi_back=(1092,568,138,143), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/courtyard/t_special_flag.png")
 	# description 
-	I_T_SIGN_FLAG2 = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/tingyuan/t_sign_flag2.png")
+	I_T_SIGN_FLAG2 = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/courtyard/t_sign_flag2.png")
 
 
 	# Click Rule Assets
@@ -294,59 +294,59 @@ class DailyForFlagAssets:
 
 	# Image Rule Assets
 	# description 
-	I_INVITE = RuleImage(roi_front=(1094,619,89,77), roi_back=(1088,602,97,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_invite.png")
+	I_INVITE = RuleImage(roi_front=(1094,619,89,77), roi_back=(1088,602,97,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_invite.png")
 	# description 
-	I_FORM = RuleImage(roi_front=(530,482,61,42), roi_back=(469,470,324,72), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_form.png")
+	I_FORM = RuleImage(roi_front=(530,482,61,42), roi_back=(469,470,324,72), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_form.png")
 	# description 
-	I_FORM_OVER = RuleImage(roi_front=(736,25,51,54), roi_back=(716,10,83,81), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_form_over.png")
+	I_FORM_OVER = RuleImage(roi_front=(736,25,51,54), roi_back=(716,10,83,81), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_form_over.png")
 	# description 
-	I_SELECT_LEVEL = RuleImage(roi_front=(965,641,66,54), roi_back=(953,626,86,84), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_select_level.png")
+	I_SELECT_LEVEL = RuleImage(roi_front=(965,641,66,54), roi_back=(953,626,86,84), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_select_level.png")
 	# description 
-	I_CREATE_TEAM = RuleImage(roi_front=(1010,603,135,45), roi_back=(981,593,182,68), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_create_team.png")
+	I_CREATE_TEAM = RuleImage(roi_front=(1010,603,135,45), roi_back=(981,593,182,68), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_create_team.png")
 	# description 
-	I_CREATE_AGAIN = RuleImage(roi_front=(832,564,94,49), roi_back=(815,556,124,69), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_create_again.png")
+	I_CREATE_AGAIN = RuleImage(roi_front=(832,564,94,49), roi_back=(815,556,124,69), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_create_again.png")
 	# description 
-	I_LIST_MEMBER = RuleImage(roi_front=(77,199,44,124), roi_back=(65,188,70,142), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_list_member.png")
+	I_LIST_MEMBER = RuleImage(roi_front=(77,199,44,124), roi_back=(65,188,70,142), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_list_member.png")
 	# description 
-	I_TO_AP = RuleImage(roi_front=(926,265,46,45), roi_back=(924,263,54,52), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_to_ap.png")
+	I_TO_AP = RuleImage(roi_front=(926,265,46,45), roi_back=(924,263,54,52), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_to_ap.png")
 	# description 
-	I_SAVE_ALL = RuleImage(roi_front=(1199,497,37,83), roi_back=(1175,481,83,123), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_save_all.png")
+	I_SAVE_ALL = RuleImage(roi_front=(1199,497,37,83), roi_back=(1175,481,83,123), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_save_all.png")
 	# description 
-	I_ENSURE_AP = RuleImage(roi_front=(707,408,100,44), roi_back=(670,397,174,69), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_ensure_ap.png")
+	I_ENSURE_AP = RuleImage(roi_front=(707,408,100,44), roi_back=(670,397,174,69), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_ensure_ap.png")
 	# description 
-	I_BACK_YELLOW = RuleImage(roi_front=(28,19,47,44), roi_back=(16,8,71,71), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_back_yellow.png")
+	I_BACK_YELLOW = RuleImage(roi_front=(28,19,47,44), roi_back=(16,8,71,71), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_back_yellow.png")
 	# description 
-	I_BACK_BLACK = RuleImage(roi_front=(24,17,54,49), roi_back=(7,0,85,82), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_back_black.png")
+	I_BACK_BLACK = RuleImage(roi_front=(24,17,54,49), roi_back=(7,0,85,82), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_back_black.png")
 	# description 
-	I_TO_TEAM = RuleImage(roi_front=(65,600,62,74), roi_back=(21,572,113,112), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_to_team.png")
+	I_TO_TEAM = RuleImage(roi_front=(65,600,62,74), roi_back=(21,572,113,112), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_to_team.png")
 	# description 
-	I_BATTLE = RuleImage(roi_front=(1179,603,78,72), roi_back=(1162,580,114,126), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_battle.png")
+	I_BATTLE = RuleImage(roi_front=(1179,603,78,72), roi_back=(1162,580,114,126), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_battle.png")
 	# description 
-	I_ENSURE_EXIT = RuleImage(roi_front=(708,404,117,54), roi_back=(651,375,199,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_ensure_exit.png")
+	I_ENSURE_EXIT = RuleImage(roi_front=(708,404,117,54), roi_back=(651,375,199,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_ensure_exit.png")
 	# description 
-	I_EXIT_2 = RuleImage(roi_front=(353,568,102,44), roi_back=(332,541,157,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_exit_2.png")
+	I_EXIT_2 = RuleImage(roi_front=(353,568,102,44), roi_back=(332,541,157,100), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_exit_2.png")
 	# description 
-	I_UNLOCK = RuleImage(roi_front=(28,647,29,30), roi_back=(1,627,75,78), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_unlock.png")
+	I_UNLOCK = RuleImage(roi_front=(28,647,29,30), roi_back=(1,627,75,78), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_unlock.png")
 	# description 
-	I_LOCK = RuleImage(roi_front=(25,645,33,30), roi_back=(11,627,63,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tongxin_lock.png")
+	I_LOCK = RuleImage(roi_front=(25,645,33,30), roi_back=(11,627,63,70), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_lock.png")
 	# description 
-	I_EXIT3 = RuleImage(roi_front=(722,415,75,33), roi_back=(697,403,131,53), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/exit3.png")
+	I_EXIT3 = RuleImage(roi_front=(722,415,75,33), roi_back=(697,403,131,53), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/exit3.png")
 	# description 
-	I_FRIEND_HELP = RuleImage(roi_front=(1205,541,38,71), roi_back=(1187,512,71,118), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help.png")
+	I_FRIEND_HELP = RuleImage(roi_front=(1205,541,38,71), roi_back=(1187,512,71,118), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/friend_help.png")
 	# description 
-	I_FRIEND_HELP_FLAG = RuleImage(roi_front=(803,107,167,34), roi_back=(782,93,210,63), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/friend_help_flag.png")
+	I_FRIEND_HELP_FLAG = RuleImage(roi_front=(803,107,167,34), roi_back=(782,93,210,63), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/friend_help_flag.png")
 	# description 
-	I_CLICK_EVOZONE = RuleImage(roi_front=(168,354,169,42), roi_back=(121,114,256,556), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/click_evozone.png")
+	I_CLICK_EVOZONE = RuleImage(roi_front=(168,354,169,42), roi_back=(121,114,256,556), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/click_evozone.png")
 	# description 
-	I_CLICK_LEVEL = RuleImage(roi_front=(459,269,61,32), roi_back=(392,185,200,386), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/click_level.png")
+	I_CLICK_LEVEL = RuleImage(roi_front=(459,269,61,32), roi_back=(392,185,200,386), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/click_level.png")
 	# description 
-	I_INVITE_FRIEND = RuleImage(roi_front=(609,257,21,19), roi_back=(363,246,546,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend.png")
+	I_INVITE_FRIEND = RuleImage(roi_front=(609,257,21,19), roi_back=(363,246,546,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/invite_friend.png")
 	# description 
-	I_INVITE_FRIEND_OVER = RuleImage(roi_front=(605,256,19,20), roi_back=(363,246,546,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/invite_friend_over.png")
+	I_INVITE_FRIEND_OVER = RuleImage(roi_front=(605,256,19,20), roi_back=(363,246,546,37), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/invite_friend_over.png")
 	# description 
-	I_PAGE_INVITE = RuleImage(roi_front=(552,114,183,41), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/page_invite.png")
+	I_PAGE_INVITE = RuleImage(roi_front=(552,114,183,41), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/page_invite.png")
 	# description 
-	I_TREE_AWARD = RuleImage(roi_front=(479,216,328,59), roi_back=(352,136,588,225), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/tongxin/tree_award.png")
+	I_TREE_AWARD = RuleImage(roi_front=(479,216,328,59), roi_back=(352,136,588,225), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/tree_award.png")
 
 
 	# Ocr Rule Assets
@@ -424,17 +424,17 @@ class DailyForFlagAssets:
 
 	# Image Rule Assets
 	# description 
-	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_page_account.png")
+	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/cooperation/cooperation_page_account.png")
 	# description 
-	I_REAL_FLAG_1 = RuleImage(roi_front=(458,293,29,31), roi_back=(143,129,65,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
+	I_REAL_FLAG_1 = RuleImage(roi_front=(458,293,29,31), roi_back=(143,129,65,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/cooperation/cooperation_real_flag_1.png")
 	# description 
-	I_REAL_FLAG_2 = RuleImage(roi_front=(457,292,32,34), roi_back=(443,128,67,200), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
+	I_REAL_FLAG_2 = RuleImage(roi_front=(457,292,32,34), roi_back=(443,128,67,200), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/cooperation/cooperation_real_flag_1.png")
 	# description 
-	I_REAL_FLAG_3 = RuleImage(roi_front=(455,291,35,37), roi_back=(741,129,68,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/xiezuo_real_flag_1.png")
+	I_REAL_FLAG_3 = RuleImage(roi_front=(455,291,35,37), roi_back=(741,129,68,240), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/cooperation/cooperation_real_flag_1.png")
 	# description 
-	I_NET_CHECK = RuleImage(roi_front=(121,130,334,487), roi_back=(119,129,336,489), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/xiezuo/net_check.png")
+	I_NET_CHECK = RuleImage(roi_front=(121,130,334,487), roi_back=(119,129,336,489), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/cooperation/net_check.png")
 	# description 
-	I_NET_NORMAL_FLAG = RuleImage(roi_front=(1020,328,27,31), roi_back=(129,110,1022,507), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/xiezuo/net_normal_flag.png")
+	I_NET_NORMAL_FLAG = RuleImage(roi_front=(1020,328,27,31), roi_back=(129,110,1022,507), threshold=0.7, method="Template matching", file="./tasks/DailyForFlag/cooperation/net_normal_flag.png")
 
 
 	# Ocr Rule Assets

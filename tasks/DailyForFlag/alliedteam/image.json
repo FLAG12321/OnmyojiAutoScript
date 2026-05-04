@@ -1,7 +1,7 @@
 [
   {
     "itemName": "invite",
-    "imageName": "tongxin_invite.png",
+    "imageName": "alliedteam_invite.png",
     "roiFront": "1094,619,89,77",
     "roiBack": "1088,602,97,100",
     "method": "Template matching",
@@ -10,7 +10,7 @@
   },
   {
     "itemName": "form",
-    "imageName": "tongxin_form.png",
+    "imageName": "alliedteam_form.png",
     "roiFront": "530,482,61,42",
     "roiBack": "469,470,324,72",
     "method": "Template matching",
@@ -19,7 +19,7 @@
   },
   {
     "itemName": "form_over",
-    "imageName": "tongxin_form_over.png",
+    "imageName": "alliedteam_form_over.png",
     "roiFront": "736,25,51,54",
     "roiBack": "716,10,83,81",
     "method": "Template matching",
@@ -28,7 +28,7 @@
   },
   {
     "itemName": "select_level",
-    "imageName": "tongxin_select_level.png",
+    "imageName": "alliedteam_select_level.png",
     "roiFront": "965,641,66,54",
     "roiBack": "953,626,86,84",
     "method": "Template matching",
@@ -37,7 +37,7 @@
   },
   {
     "itemName": "create_team",
-    "imageName": "tongxin_create_team.png",
+    "imageName": "alliedteam_create_team.png",
     "roiFront": "1010,603,135,45",
     "roiBack": "981,593,182,68",
     "method": "Template matching",
@@ -46,7 +46,7 @@
   },
   {
     "itemName": "create_again",
-    "imageName": "tongxin_create_again.png",
+    "imageName": "alliedteam_create_again.png",
     "roiFront": "832,564,94,49",
     "roiBack": "815,556,124,69",
     "method": "Template matching",
@@ -55,7 +55,7 @@
   },
   {
     "itemName": "list_member",
-    "imageName": "tongxin_list_member.png",
+    "imageName": "alliedteam_list_member.png",
     "roiFront": "77,199,44,124",
     "roiBack": "65,188,70,142",
     "method": "Template matching",
@@ -64,7 +64,7 @@
   },
   {
     "itemName": "to_ap",
-    "imageName": "tongxin_to_ap.png",
+    "imageName": "alliedteam_to_ap.png",
     "roiFront": "926,265,46,45",
     "roiBack": "924,263,54,52",
     "method": "Template matching",
@@ -73,7 +73,7 @@
   },
   {
     "itemName": "save_all",
-    "imageName": "tongxin_save_all.png",
+    "imageName": "alliedteam_save_all.png",
     "roiFront": "1199,497,37,83",
     "roiBack": "1175,481,83,123",
     "method": "Template matching",
@@ -82,7 +82,7 @@
   },
   {
     "itemName": "ensure_ap",
-    "imageName": "tongxin_ensure_ap.png",
+    "imageName": "alliedteam_ensure_ap.png",
     "roiFront": "707,408,100,44",
     "roiBack": "670,397,174,69",
     "method": "Template matching",
@@ -91,7 +91,7 @@
   },
   {
     "itemName": "back_yellow",
-    "imageName": "tongxin_back_yellow.png",
+    "imageName": "alliedteam_back_yellow.png",
     "roiFront": "28,19,47,44",
     "roiBack": "16,8,71,71",
     "method": "Template matching",
@@ -100,7 +100,7 @@
   },
   {
     "itemName": "back_black",
-    "imageName": "tongxin_back_black.png",
+    "imageName": "alliedteam_back_black.png",
     "roiFront": "24,17,54,49",
     "roiBack": "7,0,85,82",
     "method": "Template matching",
@@ -109,7 +109,7 @@
   },
   {
     "itemName": "to_team",
-    "imageName": "tongxin_to_team.png",
+    "imageName": "alliedteam_to_team.png",
     "roiFront": "65,600,62,74",
     "roiBack": "21,572,113,112",
     "method": "Template matching",
@@ -118,7 +118,7 @@
   },
   {
     "itemName": "battle",
-    "imageName": "tongxin_battle.png",
+    "imageName": "alliedteam_battle.png",
     "roiFront": "1179,603,78,72",
     "roiBack": "1162,580,114,126",
     "method": "Template matching",
@@ -127,7 +127,7 @@
   },
   {
     "itemName": "ensure_exit",
-    "imageName": "tongxin_ensure_exit.png",
+    "imageName": "alliedteam_ensure_exit.png",
     "roiFront": "708,404,117,54",
     "roiBack": "651,375,199,100",
     "method": "Template matching",
@@ -136,7 +136,7 @@
   },
   {
     "itemName": "exit_2",
-    "imageName": "tongxin_exit_2.png",
+    "imageName": "alliedteam_exit_2.png",
     "roiFront": "353,568,102,44",
     "roiBack": "332,541,157,100",
     "method": "Template matching",
@@ -145,7 +145,7 @@
   },
   {
     "itemName": "unlock",
-    "imageName": "tongxin_unlock.png",
+    "imageName": "alliedteam_unlock.png",
     "roiFront": "28,647,29,30",
     "roiBack": "1,627,75,78",
     "method": "Template matching",
@@ -154,7 +154,7 @@
   },
   {
     "itemName": "lock",
-    "imageName": "tongxin_lock.png",
+    "imageName": "alliedteam_lock.png",
     "roiFront": "25,645,33,30",
     "roiBack": "11,627,63,70",
     "method": "Template matching",

@@ -2,14 +2,14 @@ from tasks.DailyForFlag.config import  DailyForFlagConfig,GeneralBattleConfig,Da
 from module.logger import logger
 def get_config(self):
     config=DailyForFlag()
-    config.daily_for_flag_config.tongxin_battle_enable = self.account_info.tongxin_battle_enable
-    config.daily_for_flag_config.tongxin_ap_enable = self.account_info.tongxin_ap_enable
+    config.daily_for_flag_config.alliedteam_battle_enable = self.account_info.alliedteam_battle_enable
+    config.daily_for_flag_config.alliedteam_ap_enable = self.account_info.alliedteam_ap_enable
     config.daily_for_flag_config.mail_enable = self.account_info.mail_enable
-    config.daily_for_flag_config.juangou_enable = self.account_info.juangou_enable
-    config.daily_for_flag_config.tingyuan_enable = self.account_info.tingyuan_enable
-    config.daily_for_flag_config.tongxin_limit_count = self.account_info.tongxin_limit_count
-    config.daily_for_flag_config.xiezuo_enable = self.account_info.xiezuo_enable
-    config.daily_for_flag_config.huili_enable = self.account_info.huili_enable
+    config.daily_for_flag_config.donatejade_enable = self.account_info.donatejade_enable
+    config.daily_for_flag_config.courtyard_enable = self.account_info.courtyard_enable
+    config.daily_for_flag_config.alliedteam_limit_count = self.account_info.alliedteam_limit_count
+    config.daily_for_flag_config.cooperation_enable = self.account_info.cooperation_enable
+    config.daily_for_flag_config.returngift_enable = self.account_info.returngift_enable
     config.daily_for_flag_config.weekaward_enable = self.account_info.weekaward_enable
     config.daily_for_flag_config.mysteryshop_enable = self.account_info.mysteryshop_enable
     config.daily_for_flag_config.isflower = self.account_info.isflower

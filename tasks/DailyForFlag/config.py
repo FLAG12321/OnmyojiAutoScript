@@ -14,14 +14,14 @@ from tasks.KekkaiActivation.config import KekkaiActivation as KekkaiActivationCo
 from tasks.KekkaiUtilize.config import KekkaiUtilize as KekkaiUtilizeConfig
 class DailyForFlagConfig(BaseModel):
 
-  tongxin_battle_enable: bool = Field(default=False, description='是否开启同心队战斗')
-  tongxin_limit_count: int = Field(default=30, description='战斗次数')
-  tongxin_ap_enable: bool = Field(default=False, description='是否开启补充体力')
-  juangou_enable: bool = Field(default=True, description='是否开启捐勾')
-  tingyuan_enable: bool = Field(default=True, description='是否开启庭院事务')
+  alliedteam_battle_enable: bool = Field(default=False, description='是否开启同心队战斗')
+  alliedteam_limit_count: int = Field(default=30, description='战斗次数')
+  alliedteam_ap_enable: bool = Field(default=False, description='是否开启补充体力')
+  donatejade_enable: bool = Field(default=True, description='是否开启捐勾')
+  courtyard_enable: bool = Field(default=True, description='是否开启庭院事务')
   mail_enable: bool = Field(default=True, description='是否开启领取邮件')
-  xiezuo_enable: bool = Field(default=True, description='是否开启寻找协作')
-  huili_enable: bool = Field(default=False, description='是否开启回礼')
+  cooperation_enable: bool = Field(default=True, description='是否开启寻找协作')
+  returngift_enable: bool = Field(default=False, description='是否开启回礼')
   weekaward_enable: bool = Field(default=False, description='领取周奖励')
   mysteryshop_enable: bool = Field(default=False, description='是否开启神秘商店')
   isflower: bool = Field(default=False, description='是否二花')
@@ -45,7 +45,7 @@ class CoinType(Enum):
     unknow = 2
 class MSGType(Enum):
     none = 0
-    xiezuo = 1
+    cooperation = 1
     mshop = 2
     Utilize = 3
     neterror = 4

@@ -77,8 +77,8 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 
-        if con.daily_for_flag_config.tingyuan_enable:
-            if not self.run_tingyuan():
+        if con.daily_for_flag_config.courtyard_enable:
+            if not self.run_courtyard():
                 while 1:
                     self.screenshot()
                     if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
@@ -95,16 +95,16 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         if con.daily_for_flag_config.mail_enable:
             self.run_mail()
             delay_time += 5
-        if con.daily_for_flag_config.xiezuo_enable:
-            self.run_xiezuo()
+        if con.daily_for_flag_config.cooperation_enable:
+            self.run_cooperation()
             delay_time += 3
-        if con.daily_for_flag_config.juangou_enable:
-            self.run_juangou()
+        if con.daily_for_flag_config.donatejade_enable:
+            self.run_donatejade()
             delay_time += 10
-        if con.daily_for_flag_config.huili_enable:
+        if con.daily_for_flag_config.returngift_enable:
             if delay_time < 10:
                 time.sleep(10-delay_time)
-            self.run_huili()
+            self.run_returngift()
         if con.daily_for_flag_config.weekaward_enable:
             xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
             self.execute_guild(xzconfig)
@@ -155,8 +155,8 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                         # 直接将消息添加到当前任务的消息列表中
                         self.msg.append(msg_item)
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
-        if con.daily_for_flag_config.tongxin_battle_enable or con.daily_for_flag_config.tongxin_ap_enable:
-            self.run_tongxing(con.daily_for_flag_config.tongxin_battle_enable,con.daily_for_flag_config.tongxin_ap_enable)
+        if con.daily_for_flag_config.alliedteam_battle_enable or con.daily_for_flag_config.alliedteam_ap_enable:
+            self.run_alliedteam(con.daily_for_flag_config.alliedteam_battle_enable,con.daily_for_flag_config.alliedteam_ap_enable)
         if con.daily_for_flag_config.trialbattle_enable:
             self.run_trialbattle()
         if con.daily_for_flag_config.summon_up_enable:
@@ -165,19 +165,19 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         self.set_next_run(task='DailyForFlag', finish=True, success=True)
         logger.info(self.msg)
         raise TaskEnd (self.msg)
-    def run_juangou(self):
+    def run_donatejade(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_guild)
         self.goto_realm()
-        self.juangou()
+        self.donatejade()
         self.back_guild()
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
     
-    def juangou(self):
+    def donatejade(self):
         retry_count = 0 
         while 1:
             self.screenshot()
@@ -228,7 +228,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
             if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
                 continue
     
-    def run_tingyuan(self):
+    def run_courtyard(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -329,17 +329,17 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
             self.ui_goto(page_main)
         return result
 
-    def run_tongxing(self, battle_enable, ap_enable):
+    def run_alliedteam(self, battle_enable, ap_enable):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_team)
         if ap_enable:
-            self.run_tongxing_ap()
+            self.run_alliedteam_ap()
         if battle_enable:
-            self.run_tongxing_battle()
+            self.run_alliedteam_battle()
             self.return_to_main()
-    def run_tongxing_ap(self):    
+    def run_alliedteam_ap(self):    
         logger.info('开始执行补体力任务')
         start_time = time.time()
         while time.time()-start_time < 5:
@@ -390,7 +390,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                     continue
                 self.swipe(self.S_SELECT_LEVEL,3)
         return True           
-    def run_tongxing_battle(self):    
+    def run_alliedteam_battle(self):    
         logger.info('开始执行战斗任务')
         if not self.is_select_level():
             return False
@@ -459,7 +459,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 continue    
         self.ui_goto(page_main)
-        if self.get_config().daily_for_flag_config.tongxin_limit_count == 13:
+        if self.get_config().daily_for_flag_config.alliedteam_limit_count == 13:
             self.screenshot()
             self.ui_goto(page_friends)
             while 1:    
@@ -517,12 +517,12 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 self.screenshot()
             return self.appear(self.I_BATTLE)
         logger.info('Start run alone')
-        tongxin_limit_count=self.get_config().daily_for_flag_config.tongxin_limit_count
-        logger.info(f' tongxin_limit_count: {tongxin_limit_count}')
+        alliedteam_limit_count=self.get_config().daily_for_flag_config.alliedteam_limit_count
+        logger.info(f' alliedteam_limit_count: {alliedteam_limit_count}')
         self.check_lock(True)
         while 1:
             self.screenshot()
-            if self.current_count >= tongxin_limit_count:
+            if self.current_count >= alliedteam_limit_count:
                 logger.info('Orochi count limit out')
                 break
             if not is_in_evozone():
@@ -536,7 +536,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                     self.run_general_battle(config=self.config.daily_for_flag.general_battle_config)
                     break
         
-    def run_xiezuo(self):   
+    def run_cooperation(self):   
         #self.account_info =[] #self.get_account_info()
         # 打开悬赏封印 界面
         self.screenshot()
@@ -630,11 +630,11 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
                     self.push_notify(content=f"    发现现世勾协", title="协作任务提醒")
-                    self.msg.append([MSGType.xiezuo,"发现现世勾协"])
+                    self.msg.append([MSGType.cooperation,"发现现世勾协"])
                 else:
                     logger.info(f"find  jade cooperation ")
                     self.push_notify(content=f"    发现普通勾协", title="协作任务提醒")
-                    self.msg.append([MSGType.xiezuo,"发现普通勾协"])
+                    self.msg.append([MSGType.cooperation,"发现普通勾协"])
                 continue
             if self.appear(self.__getattribute__("I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn})
@@ -648,11 +648,11 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
                 retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn})
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")
-                    self.msg.append([MSGType.xiezuo,"发现现世体协"])
+                    self.msg.append([MSGType.cooperation,"发现现世体协"])
                     self.push_notify(content=f"    发现现世体协", title="协作任务提醒")
                 else:
                     logger.info(f"find  sushi cooperation ")
-                    self.msg.append([MSGType.xiezuo,"发现普通体协"])
+                    self.msg.append([MSGType.cooperation,"发现普通体协"])
                     self.push_notify(content=f"    发现普通体协", title="协作任务提醒")
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
@@ -663,7 +663,7 @@ class ScriptTask(GeneralBattle,GeneralRoom,Guild,WeeklyTrifles,Mall,GameUi,Login
         logger.info(f"get cooperation size {len(retList)}")
         return retList
 
-    def run_huili(self):
+    def run_returngift(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)

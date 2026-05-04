@@ -68,7 +68,7 @@ class ScriptTask(GameUi, DailyAssets):
                             raise RequestHumanTakeover("RequestHumanTakeover")
             self._notify_daily_completion()
             # 检查是否需要关机
-            if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_tongxin_battle_enable:
+            if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_alliedteam_battle_enable:
                 self._coordinated_shutdown_system(config_name)
             self.next_run("Daily", success=True)
         finally:
@@ -289,10 +289,10 @@ class ScriptTask(GameUi, DailyAssets):
         config = self._create_account_config(account_info)
         # 如果没有任何任务被启用，跳过该账号
         if not ( 
-            config.tongxin_battle_enable or config.tongxin_ap_enable or \
-            config.mail_enable or config.juangou_enable or  \
-            config.tingyuan_enable or config.xiezuo_enable or   \
-            config.huili_enable or config.weekaward_enable or   \
+            config.alliedteam_battle_enable or config.alliedteam_ap_enable or \
+            config.mail_enable or config.donatejade_enable or  \
+            config.courtyard_enable or config.cooperation_enable or   \
+            config.returngift_enable or config.weekaward_enable or   \
             config.mysteryshop_enable or config.kekkaiActivation_enable or  \
             config.KekkaiUtilize_enable or config.tree_planting_enable > 0 or \
             config.trialbattle_enable or config.summon_up_enable \
@@ -315,13 +315,13 @@ class ScriptTask(GameUi, DailyAssets):
         
         # 全局配置
         base_config = self.daily_conf.daily_config
-        config.tongxin_battle_enable = base_config.total_tongxin_battle_enable and account_info.tongxin_battle_enable
-        config.tongxin_ap_enable = base_config.total_tongxin_ap_enable and account_info.tongxin_ap_enable
+        config.alliedteam_battle_enable = base_config.total_alliedteam_battle_enable and account_info.alliedteam_battle_enable
+        config.alliedteam_ap_enable = base_config.total_alliedteam_ap_enable and account_info.alliedteam_ap_enable
         config.mail_enable = base_config.total_mail_enable and account_info.mail_enable
-        config.juangou_enable = base_config.total_juangou_enable and account_info.juangou_enable
-        config.tingyuan_enable = base_config.total_tingyuan_enable and account_info.tingyuan_enable
-        config.xiezuo_enable = base_config.total_xiezuo_enable and account_info.xiezuo_enable
-        config.huili_enable = base_config.total_huili_enable and account_info.huili_enable
+        config.donatejade_enable = base_config.total_donatejade_enable and account_info.donatejade_enable
+        config.courtyard_enable = base_config.total_courtyard_enable and account_info.courtyard_enable
+        config.cooperation_enable = base_config.total_cooperation_enable and account_info.cooperation_enable
+        config.returngift_enable = base_config.total_returngift_enable and account_info.returngift_enable
         config.weekaward_enable = base_config.total_weekaward_enable and account_info.weekaward_enable
         config.mysteryshop_enable = base_config.total_mysteryshop_enable and account_info.mysteryshop_enable
         config.kekkaiActivation_enable = base_config.total_kekkaiActivation_enable and account_info.kekkaiActivation_enable
@@ -331,7 +331,7 @@ class ScriptTask(GameUi, DailyAssets):
         config.summon_up_enable = base_config.total_summon_up_enable and account_info.summon_up_enable
         # 账号特定配置
         config.isflower = account_info.isflower
-        config.tongxin_limit_count = account_info.tongxin_limit_count
+        config.alliedteam_limit_count = account_info.alliedteam_limit_count
 
         return config
 
@@ -415,7 +415,7 @@ class ScriptTask(GameUi, DailyAssets):
         should_retry = False
         
         match msg_type:
-            case MSGType.xiezuo:
+            case MSGType.cooperation:
                 self.config.notifier.push(
                     content=self._build_notify_content(account_info),
                     title=self._build_notify_title(msg_content, "协作任务提醒"),
@@ -501,12 +501,12 @@ class ScriptTask(GameUi, DailyAssets):
         if start_time.weekday() == 0:
             self.daily_conf.daily_config.total_weekaward_enable = True
             
-        self.daily_conf.daily_config.total_tongxin_battle_enable = False
-        self.daily_conf.daily_config.total_tongxin_ap_enable = False
-        self.daily_conf.daily_config.total_huili_enable = False
-        self.daily_conf.daily_config.total_tingyuan_enable = True
+        self.daily_conf.daily_config.total_alliedteam_battle_enable = False
+        self.daily_conf.daily_config.total_alliedteam_ap_enable = False
+        self.daily_conf.daily_config.total_returngift_enable = False
+        self.daily_conf.daily_config.total_courtyard_enable = True
         self.daily_conf.daily_config.total_mail_enable = True
-        self.daily_conf.daily_config.total_xiezuo_enable = True
+        self.daily_conf.daily_config.total_cooperation_enable = True
         self.daily_conf.daily_config.need_login = True
         self.config.model.daily = self.daily_conf
         
@@ -518,25 +518,25 @@ class ScriptTask(GameUi, DailyAssets):
         self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
 
         # 如果开启了同心战斗，则调整设置
-        if self.daily_conf.daily_config.total_tongxin_battle_enable:
-            self.daily_conf.daily_config.total_tongxin_battle_enable = False
-            self.daily_conf.daily_config.total_tongxin_ap_enable = True
-            self.daily_conf.daily_config.total_tingyuan_enable = False
+        if self.daily_conf.daily_config.total_alliedteam_battle_enable:
+            self.daily_conf.daily_config.total_alliedteam_battle_enable = False
+            self.daily_conf.daily_config.total_alliedteam_ap_enable = True
+            self.daily_conf.daily_config.total_courtyard_enable = False
             self.daily_conf.daily_config.total_mail_enable = True
-            self.daily_conf.daily_config.total_xiezuo_enable = True
+            self.daily_conf.daily_config.total_cooperation_enable = True
             self.daily_conf.daily_config.need_login = True
             self.config.model.daily = self.daily_conf
             
             self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
             self.save_config()
-        elif self.daily_conf.daily_config.total_huili_enable:
+        elif self.daily_conf.daily_config.total_returngift_enable:
             # 如果开启了回礼功能
-            self.daily_conf.daily_config.total_tongxin_battle_enable = True
-            self.daily_conf.daily_config.total_tongxin_ap_enable = False
-            self.daily_conf.daily_config.total_huili_enable = False
-            self.daily_conf.daily_config.total_tingyuan_enable = False
+            self.daily_conf.daily_config.total_alliedteam_battle_enable = True
+            self.daily_conf.daily_config.total_alliedteam_ap_enable = False
+            self.daily_conf.daily_config.total_returngift_enable = False
+            self.daily_conf.daily_config.total_courtyard_enable = False
             self.daily_conf.daily_config.total_mail_enable = False
-            self.daily_conf.daily_config.total_xiezuo_enable = False
+            self.daily_conf.daily_config.total_cooperation_enable = False
             self.daily_conf.daily_config.need_login = True
             self.config.model.daily = self.daily_conf
             
@@ -547,12 +547,12 @@ class ScriptTask(GameUi, DailyAssets):
         """安排晚上的运行时间"""
         self.daily_conf.daily_config.total_weekaward_enable = False
         self.daily_conf.daily_config.total_mysteryshop_enable = False
-        self.daily_conf.daily_config.total_tongxin_battle_enable = False
-        self.daily_conf.daily_config.total_tongxin_ap_enable = False
-        self.daily_conf.daily_config.total_huili_enable = True
-        self.daily_conf.daily_config.total_tingyuan_enable = False
+        self.daily_conf.daily_config.total_alliedteam_battle_enable = False
+        self.daily_conf.daily_config.total_alliedteam_ap_enable = False
+        self.daily_conf.daily_config.total_returngift_enable = True
+        self.daily_conf.daily_config.total_courtyard_enable = False
         self.daily_conf.daily_config.total_mail_enable = False
-        self.daily_conf.daily_config.total_xiezuo_enable = False
+        self.daily_conf.daily_config.total_cooperation_enable = False
         self.daily_conf.daily_config.need_login = True
         self.config.model.daily = self.daily_conf
         self.set_next_run("Daily", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))

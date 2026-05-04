@@ -1,7 +1,7 @@
 [
   {
     "itemName": "qiyuan",
-    "imageName": "huili_qiyuan.png",
+    "imageName": "returngift_qiyuan.png",
     "roiFront": "966,630,67,61",
     "roiBack": "949,607,100,100",
     "method": "Template matching",
@@ -10,7 +10,7 @@
   },
   {
     "itemName": "btn_think",
-    "imageName": "huili_btn_think.png",
+    "imageName": "returngift_btn_think.png",
     "roiFront": "928,613,38,35",
     "roiBack": "916,596,70,70",
     "method": "Template matching",
@@ -19,7 +19,7 @@
   },
   {
     "itemName": "h_back_red",
-    "imageName": "huili_h_back_red.png",
+    "imageName": "returngift_h_back_red.png",
     "roiFront": "851,144,31,33",
     "roiBack": "777,114,182,110",
     "method": "Template matching",
@@ -28,7 +28,7 @@
   },
   {
     "itemName": "btn_ensure",
-    "imageName": "huili_btn_ensure.png",
+    "imageName": "returngift_btn_ensure.png",
     "roiFront": "693,405,134,49",
     "roiBack": "639,376,244,100",
     "method": "Template matching",
@@ -37,7 +37,7 @@
   },
   {
     "itemName": "to_think",
-    "imageName": "huili_to_think.png",
+    "imageName": "returngift_to_think.png",
     "roiFront": "1060,602,58,53",
     "roiBack": "1042,580,100,100",
     "method": "Template matching",
@@ -46,7 +46,7 @@
   },
   {
     "itemName": "flag_think",
-    "imageName": "huili_flag_think.png",
+    "imageName": "returngift_flag_think.png",
     "roiFront": "969,176,64,106",
     "roiBack": "938,147,133,158",
     "method": "Template matching",
@@ -55,7 +55,7 @@
   },
   {
     "itemName": "h_back_red2",
-    "imageName": "huili_h_back_red2.png",
+    "imageName": "returngift_h_back_red2.png",
     "roiFront": "933,88,44,39",
     "roiBack": "906,55,100,100",
     "method": "Template matching",
