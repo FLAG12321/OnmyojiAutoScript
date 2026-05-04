@@ -162,6 +162,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 daily_for_flag_task=DailyForFlagScriptTask(self.config, self.device)
                 if  daily_for_flag_task.harvest_mail():
                     self.mail_flag=False
+                sleep(1)
+            self.screenshot()
             if self.ui_get_current_page()!=page_main:
                 self.ui_goto(page_main)
             else :
@@ -304,6 +306,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     daily_for_flag_task=DailyForFlagScriptTask(self.config, self.device)
                     daily_for_flag_task.harvest_mail()
                     self.mail_flag=False
+                    sleep(1)
+                    self.screenshot()
             else:
                 raise TaskEnd
         finally:
@@ -592,9 +596,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             pass
         elif self.appear_then_click(self.I_CLICK_DIALOGUE_2,interval=1.5):
             pass
-        elif self.privileges_flag and self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1):
+        elif self.privileges_flag and not self.experience_youkai_battle and not self.mail_flag and self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1):
             pass    
-        elif self.privileges_flag and self.appear_then_click(self.I_CLICK_LV,interval=1):    
+        elif self.privileges_flag and not self.experience_youkai_battle and not self.mail_flag and self.appear_then_click(self.I_CLICK_LV,interval=1):    
             self.exploration_flag =True 
         elif self.appear_then_click(self.I_CLICK_CV, interval=1):
             pass
