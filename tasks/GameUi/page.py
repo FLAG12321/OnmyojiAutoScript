@@ -36,6 +36,8 @@ class Page:
         PageRegistry.register(self)
 
     def __eq__(self, other):
+        if other is None:
+            return False
         return self.name == other.name
 
     def __hash__(self):
