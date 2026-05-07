@@ -69,6 +69,9 @@ class ONNXPaddleOcr(onnxocr.ONNXPaddleOcr):
         tmp_img_list = []
         for img in img_list:
             img_height, img_width = img.shape[0:2]
+            # 跳过空图像，防止除零错误
+            if img_height == 0 or img_width == 0:
+                continue
             if img_height * 1.0 / img_width >= 1.5:
                 img = np.rot90(img)
             tmp_img_list.append(img)

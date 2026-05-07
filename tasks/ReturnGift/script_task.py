@@ -20,6 +20,9 @@ from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
 from tasks.ReturnGift.assets import ReturnGiftAssets
 from tasks.ReturnGift.config import ReturnGiftConfig
 import random
+import json
+from pathlib import Path
+
 from module.base.utils import point2str
 
 class ScriptTask(GameUi,ReturnGiftAssets):
@@ -36,8 +39,26 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         self.screenshot()
         if self.ui_get_current_page() != page_guild:
             self.ui_goto(page_guild)
+
+        if not self._check_daily_running_with_returngift():
+            logger.info("无运行的Daily实例，等待3分钟...")
+            daily_started = self._wait_and_monitor_daily_start(180, 10)
+            if not daily_started:
+                logger.info("等待3分钟后无Daily运行，ReturnGift跳过")
+                next_run_time = datetime.now().replace(hour=0, minute=19, second=30, microsecond=0) + timedelta(days=1)
+                self.set_next_run(task='ReturnGift', target=next_run_time)
+                raise TaskEnd('ReturnGift')
+
+        check_timer = Timer(45).start()
         while 1:
             self.screenshot()
+
+            if check_timer.reached():
+                check_timer.reset()
+                if self._check_daily_running_with_returngift():
+                    logger.info("检测到Daily运行，保持循环等待")
+                    continue
+
             if retry_count >= 4:
                 retry_count=0
                 if self.ui_get_current_page() != page_guild:
@@ -186,6 +207,33 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 break
             retry_count += 1
         return send_time
+    def _check_daily_running_with_returngift(self) -> bool:
+        """检查是否有 total_returngift_enable=true 的Daily正在运行"""
+        progress_file = Path('./logs/daily_progress.json')
+        if not progress_file.exists():
+            return False
+
+        with open(progress_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        for key, value in data.items():
+            if value.get('status') != 'running':
+                continue
+            if value.get('returngift_enable', False):
+                return True
+
+        return False
+
+    def _wait_and_monitor_daily_start(self, max_seconds=180, interval=10) -> bool:
+        """等待并监控Daily启动，返回True=Daily已启动"""
+        check_count = max_seconds // interval
+        for i in range(check_count):
+            if self._check_daily_running_with_returngift():
+                logger.info("检测到Daily运行")
+                return True
+            logger.info(f"等待Daily启动... ({i * interval}/{max_seconds}s)")
+            time.sleep(interval)
+        return False
             
             
 

@@ -1,54 +1,54 @@
 [
   {
     "itemName": "orochi",
-    "imageName": "o_orochi.png",
-    "roiFront": "55,104,295,406",
-    "roiBack": "55,104,295,406",
+    "imageName": "orochi.png",
+    "roiFront": "268,110,70,233",
+    "roiBack": "210,97,151,311",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "八级大蛇进入"
   },
   {
     "itemName": "form_team",
-    "imageName": "o_form_team.png",
-    "roiFront": "937,591,100,100",
-    "roiBack": "937,591,100,100",
+    "imageName": "form_team.png",
+    "roiFront": "967,607,83,44",
+    "roiBack": "924,554,167,163",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "组队"
   },
   {
     "itemName": "orochi_lock",
-    "imageName": "o_orochi_lock.png",
-    "roiFront": "575,561,22,26",
-    "roiBack": "466,546,191,62",
+    "imageName": "orochi_lock.png",
+    "roiFront": "649,656,25,33",
+    "roiBack": "610,642,293,73",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
   },
   {
     "itemName": "orochi_unlock",
-    "imageName": "o_orochi_unlock.png",
-    "roiFront": "575,561,21,21",
-    "roiBack": "483,544,188,60",
+    "imageName": "orochi_unlock.png",
+    "roiFront": "651,661,23,21",
+    "roiBack": "628,639,178,73",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
   },
   {
     "itemName": "orochi_fire",
-    "imageName": "o_orochi_fire.png",
-    "roiFront": "1095,577,131,124",
-    "roiBack": "1095,577,131,124",
+    "imageName": "orochi_fire.png",
+    "roiFront": "1146,594,87,47",
+    "roiBack": "1121,578,133,114",
     "method": "Template matching",
     "threshold": 0.6,
     "description": "点击挑战"
   },
   {
     "itemName": "shi_records",
-    "imageName": "o_shi_records.png",
-    "roiFront": "821,638,48,45",
-    "roiBack": "821,638,48,45",
+    "imageName": "shi_records.png",
+    "roiFront": "844,569,39,43",
+    "roiBack": "807,539,108,91",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "式神录"

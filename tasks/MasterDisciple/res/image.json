@@ -37,8 +37,8 @@
   },
   {
     "itemName": "to_team",
-    "roiFront": "959,158,59,190",
-    "roiBack": "31,92,1225,619",
+    "roiFront": "1005,190,167,58",
+    "roiBack": "870,163,360,190",
     "description": "description",
     "imageName": "to_team.png",
     "method": "Template matching",

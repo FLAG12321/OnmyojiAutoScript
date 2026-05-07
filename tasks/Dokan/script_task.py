@@ -130,11 +130,36 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             return ''
 
     def check_current_weekday(self, success=False):
+        cfg: Dokan = self.config.dokan
         today = datetime.today()
-        current_weekday = today.weekday()  # 周一为0，周日为6
-        next_run_weekday = 1
-        if current_weekday in [4,5,6] or (current_weekday == 3 and success):
-            self.next_run_week(next_run_weekday)
+        current_weekday = today.weekday()
+
+        # 周一到周四(0-3): 放行星期几检查，后续仍需通过QQ群触发检测
+        if current_weekday <= 3:
+            return
+
+        # 周五到周日(4-6): 根据周末配置决定
+        if not cfg.dokan_config.enable_weekend_run:
+            days_until_monday = (7 - current_weekday) % 7
+            if days_until_monday == 0:
+                days_until_monday = 7
+            self.set_next_run(task='Dokan', target=datetime.now() + timedelta(days=days_until_monday))
+            self.finish_task()
+            return
+
+        run_today = False
+        if current_weekday == 4 and cfg.dokan_config.run_on_friday:
+            run_today = True
+        elif current_weekday == 5 and cfg.dokan_config.run_on_saturday:
+            run_today = True
+        elif current_weekday == 6 and cfg.dokan_config.run_on_sunday:
+            run_today = True
+
+        if run_today:
+            # 放行，后续仍需通过QQ群触发检测
+            return
+        else:
+            self.set_next_run(task='Dokan', target=datetime.now() + timedelta(days=1))
             self.finish_task()
 
     def check_qq_group_message(self, cfg_trigger) -> bool:
@@ -431,7 +456,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 next_run = datetime.now() + timedelta(minutes=retry_minutes)
                 logger.info(f"未检测到QQ群触发消息，{retry_minutes}分钟后重试，下次运行: {next_run.strftime('%H:%M:%S')}")
                 self.config.notifier.push(title='道馆', content=f'未检测到QQ群触发消息，{retry_minutes}分钟后重试')
-                self.set_next_run(target=next_run)
+                self.set_next_run(task='Dokan', target=next_run)
                 self.finish_task()
             else:
                 logger.info("检测到QQ群触发消息，开始执行道馆任务")
@@ -446,7 +471,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             # 解析时间戳并设置创建道馆时间
             timestamp = json_response.get('timestamp')
             if not timestamp:
-                self.set_next_run(target=datetime_now + timedelta(minutes=3))
+                self.set_next_run(task='Dokan', target=datetime_now + timedelta(minutes=3))
                 self.finish_task()
             # 解析时间戳获取时分秒
             timestamp_time = datetime.fromtimestamp(timestamp)
@@ -455,9 +480,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             if not json_response or not json_response.get('est', False):
                 logger.warning(f"福利道馆未开启: {json_response}")
                 if datetime_now.time() > timestamp_time.time():
-                    self.set_next_run(target=datetime_now + timedelta(minutes=3))
+                    self.set_next_run(task='Dokan', target=datetime_now + timedelta(minutes=3))
                     self.finish_task()
-                self.set_next_run(target=datetime.combine(datetime_now.date(), timestamp_time.time()))
+                self.set_next_run(task='Dokan', target=datetime.combine(datetime_now.date(), timestamp_time.time()))
                 self.finish_task()
 
             # 获取明天的日期，但使用timestamp的时分秒
@@ -504,7 +529,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                         if dakan_time < MIN_DOKAN_TIME:
                             next_run_time = self.first_open_dokan_time + MIN_DOKAN_TIME
                             logger.warning(f"道馆战斗时间不足15分钟，设置下次运行时间: {next_run_time}")
-                            self.set_next_run(target=next_run_time)
+                            self.set_next_run(task='Dokan', target=next_run_time)
                             self.finish_task()
                         else:
                             logger.warning(f"道馆持续时间超过15分钟,直接进行下一次道馆")
@@ -891,7 +916,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             self.dokan_battle_number = 0
             self.check_current_weekday(True)
             if self.create_doukan_time:
-                self.set_next_run(target=self.create_doukan_time)
+                self.set_next_run(task='Dokan', target=self.create_doukan_time)
             else:
                 self.set_next_run(task='Dokan', finish=True, server=True, success=True)
             self.finish_task()
@@ -919,7 +944,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     logger.info(f"寮成员{self.goto_dokan_num}次未进入道馆, 结束任务!")
                     self.check_current_weekday(True)
                     if self.create_doukan_time:
-                        self.set_next_run(target=self.create_doukan_time)
+                        self.set_next_run(task='Dokan', target=self.create_doukan_time)
                     else:
                         self.set_next_run(task='Dokan', finish=True, server=True, success=True)
                     self.finish_task()
@@ -1243,7 +1268,10 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             del ipages.page_main.links[ipages.page_shikigami_records]
         ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_dokan)
         ipages.page_dokan.link(button=self.I_PAGE_DOKAN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
-        self.ui_goto(ipages.page_dokan)
+        sleep(5)
+        self.screenshot()
+        if self.ui_get_current_page() != ipages.page_dokan:
+            self.ui_goto(ipages.page_dokan)
         self.ui_goto_page(ipages.page_shikigami_records)
         
         cfg = self.config.dokan
@@ -1269,6 +1297,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 if cfg.switch_soul_config.enable_switch_by_name:
                     self.run_switch_soul_by_name(cfg.switch_soul_config.group_name, cfg.switch_soul_config.team_name)
 
+        self.screenshot()
         self.ui_goto(ipages.page_dokan)
     def appear_rgb(self, target, image=None, difference: int = 10):
         """

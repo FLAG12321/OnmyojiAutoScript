@@ -20,7 +20,7 @@ class MasterDiscipleAssets:
 	# description 
 	I_PAGE_BATTLE_GUARD = RuleImage(roi_front=(166,19,122,39), roi_back=(117,9,241,92), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/page_battle_guard.png")
 	# description 
-	I_TO_TEAM = RuleImage(roi_front=(959,158,59,190), roi_back=(31,92,1225,619), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/to_team.png")
+	I_TO_TEAM = RuleImage(roi_front=(1005,190,167,58), roi_back=(870,163,360,190), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/to_team.png")
 	# description 
 	I_PAGE_TEAM = RuleImage(roi_front=(93,27,128,36), roi_back=(64,10,211,87), threshold=0.8, method="Template matching", file="./tasks/MasterDisciple/res/page_team.png")
 	# description 

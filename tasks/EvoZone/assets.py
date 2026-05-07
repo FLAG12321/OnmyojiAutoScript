@@ -12,30 +12,30 @@ class EvoZoneAssets:
 
 	# Image Rule Assets
 	# 火麒麟进入 
-	I_FIRE_KIRIN = RuleImage(roi_front=(84,126,217,406), roi_back=(84,126,217,406), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_fire_kirin.png")
+	I_FIRE_KIRIN = RuleImage(roi_front=(114,128,183,328), roi_back=(66,68,280,484), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/fire_kirin.png")
 	# 组队 
-	I_FORM_TEAM = RuleImage(roi_front=(934,585,100,100), roi_back=(916,572,156,130), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_form_team.png")
+	I_FORM_TEAM = RuleImage(roi_front=(965,607,89,47), roi_back=(923,560,169,142), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/form_team.png")
 	# description 
-	I_EVOZONE_LOCK = RuleImage(roi_front=(558,565,31,32), roi_back=(548,554,53,54), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_evozone_lock.png")
+	I_EVOZONE_LOCK = RuleImage(roi_front=(700,653,29,34), roi_back=(642,627,169,92), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/evozone_lock.png")
 	# description 
-	I_EVOZONE_UNLOCK = RuleImage(roi_front=(560,565,26,29), roi_back=(551,557,43,45), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_evozone_unlock.png")
+	I_EVOZONE_UNLOCK = RuleImage(roi_front=(701,652,25,35), roi_back=(656,635,211,80), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/evozone_unlock.png")
 	# 点击挑战 
-	I_EVOZONE_FIRE = RuleImage(roi_front=(1095,577,131,124), roi_back=(1095,577,131,124), threshold=0.6, method="Template matching", file="./tasks/EvoZone/o/o_evozone_fire.png")
+	I_EVOZONE_FIRE = RuleImage(roi_front=(1149,602,81,34), roi_back=(1093,537,178,162), threshold=0.6, method="Template matching", file="./tasks/EvoZone/o/evozone_fire.png")
 	# 式神录 
-	I_SHI_RECORDS = RuleImage(roi_front=(821,638,48,45), roi_back=(821,638,48,45), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_shi_records.png")
+	I_SHI_RECORDS = RuleImage(roi_front=(844,570,39,40), roi_back=(811,531,104,109), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/shi_records.png")
 	# 小小宠物，发现宝藏 
 	I_PET_PRESENT = RuleImage(roi_front=(873,184,62,147), roi_back=(873,184,62,147), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_pet_present.png")
 	# 风麒麟进入 
-	I_WIND_KIRIN = RuleImage(roi_front=(377,126,232,420), roi_back=(377,126,232,420), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_wind_kirin.png")
+	I_WIND_KIRIN = RuleImage(roi_front=(424,97,190,273), roi_back=(395,58,247,520), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/wind_kirin.png")
 	# 水麒麟进入 
-	I_WATER_KIRIN = RuleImage(roi_front=(671,122,236,420), roi_back=(671,122,236,420), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_water_kirin.png")
+	I_WATER_KIRIN = RuleImage(roi_front=(734,130,183,299), roi_back=(689,62,273,511), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/water_kirin.png")
 	# 雷麒麟进入 
-	I_LIGHTNING_KIRIN = RuleImage(roi_front=(967,121,239,419), roi_back=(967,121,239,419), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/o_lightning_kirin.png")
+	I_LIGHTNING_KIRIN = RuleImage(roi_front=(1037,120,180,237), roi_back=(1002,87,245,461), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/lightning_kirin.png")
 
 
 	# List Rule Assets
 	# 这个是觉醒界面选择不同层数的 
-	L_LAYER_LIST = RuleList(folder="./tasks/EvoZone/res", direction="vertical", mode="ocr", roi_back=(138,130,359,500), size=(44, 88), 
+	L_LAYER_LIST = RuleList(folder="./tasks/EvoZone/res", direction="vertical", mode="ocr", roi_back=(129,104,79,574), size=(31, 103), 
 					 array=["壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖", "拾"])
 
 

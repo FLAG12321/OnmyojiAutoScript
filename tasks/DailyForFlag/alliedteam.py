@@ -227,8 +227,9 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyForFlagBase):
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas2')
+    c = Config('QMUMU1')
     d = Device(c)
     self = Alliedteam(c, d)
     self.screenshot()
-    self.run_alliedteam(False, True)
+    self.run_alliedteam_ap()
+    #self.run_alliedteam(False, True)

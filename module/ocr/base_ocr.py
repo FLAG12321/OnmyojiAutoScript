@@ -153,6 +153,12 @@ class BaseCor:
         :return:
         """
         x, y, w, h = roi
+        img_h, img_w = image.shape[0:2]
+        # 将 ROI 限制在图片边界内，防止裁剪出空图像导致后续除零
+        x = max(0, min(x, img_w - 1))
+        y = max(0, min(y, img_h - 1))
+        w = min(w, img_w - x)
+        h = min(h, img_h - y)
         return image[y:y + h, x:x + w]
 
     def ocr_item(self, image):

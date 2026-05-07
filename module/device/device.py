@@ -43,7 +43,6 @@ class Device(Platform, Screenshot, Control, AppControl):
                 # Stop then start emulator to handle stuck states
                 if self.emulator_instance is not None:
                     logger.warning(f'Emulator not running, stopping and restarting... (trial {trial + 1}/3)')
-                    self.emulator_stop()
                     self.emulator_start()
                 else:
                     # emulator_instance is None, try to re-discover emulator
@@ -53,7 +52,6 @@ class Device(Platform, Screenshot, Control, AppControl):
                     del_cached_property(self, 'all_emulator_instances')
                     if self.emulator_instance is not None:
                         logger.info('Re-discovered emulator instance, stopping and restarting...')
-                        self.emulator_stop()
                         self.emulator_start()
                     else:
                         logger.critical(

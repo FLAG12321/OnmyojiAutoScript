@@ -52,6 +52,11 @@ class DokanConfig(BaseModel):
     # 防封：使用固定的随机区域进行随机点击，若为False将自动识别当前画面中的最大纯色区域作为随机点击区域
     # anti_detect_click_fixed_random_area: bool = Field(default=False, description='anti_detect_click_fixed_random_area_help')
 
+    enable_weekend_run: bool = Field(default=False, description='启用周末运行')
+    run_on_friday: bool = Field(default=False, description='周五运行')
+    run_on_saturday: bool = Field(default=False, description='周六运行')
+    run_on_sunday: bool = Field(default=False, description='周日运行')
+
 
 class QQGroupTriggerConfig(BaseModel):
     # 是否启用QQ群消息触发道馆

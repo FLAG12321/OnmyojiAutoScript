@@ -260,7 +260,35 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 continue
 
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
-
+    def _run_boss(self):
+        """
+        更新前请先看 ./README.md
+        """
+        logger.hr(f'Start run climb type BOSS')
+        #logger.hr(f'Start run climb type AP')
+        self.ui_clicks([self.I_TO_BATTLE_BOSS],
+                       stop=self.I_CHECK_BATTLE_BOSS, interval=1)
+        logger.hr(f'Start run climb type BOSS')
+        ocr_limit_timer = Timer(1).start()
+        while 1:
+            self.screenshot()
+            #self.put_status()
+            # --------------------------------------------------------------
+            if not ocr_limit_timer.reached():
+                continue
+            ocr_limit_timer.reset()
+            if not self.ocr_appear(self.O_FIRE):
+                self.appear_then_click(self.I_CHECK_BATTLE_MAIN, interval=4)
+                continue
+            #  --------------------------------------------------------------
+            #self.lock_team(self.conf.general_battle)
+            if not self.check_tickets_enough():
+                logger.warning(f'No tickets left, wait for next time')
+                break
+            if self.conf.general_climb.random_sleep:
+                random_sleep(probability=0.2)
+            if self.start_battle():
+                continue
     def _run_pass_1(self):
         """
             更新前请先看 ./README.md
@@ -495,11 +523,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         # 回退到主界面
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
 
-    def _run_boss(self):
-        """
-        更新前请先看 ./README.md
-        """
-        logger.hr(f'Start run climb type BOSS')
+
 
     def start_battle(self):
         click_times, max_times = 0, random.randint(2, 4)
@@ -557,7 +581,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                     continue
                 if appear_reward_purple_snake_skin:
                     reward_click = random.choice(
-                        [self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT])
+                        [self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM])
                     self.click(reward_click, interval=1.8)
                     ok_cnt += 1
                     continue
@@ -695,7 +719,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         :param click_now: 是否立即点击
         :return: 随机的点击位置
         """
-        options = [self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM]
+        options = [self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM]
         if exclude_click:
             options = [option for option in options if option not in exclude_click]
         target = random.choice(options)

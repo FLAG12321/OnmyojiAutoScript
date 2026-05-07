@@ -74,7 +74,7 @@ class ExplorationAssets:
 	# 进入难度选择界面 
 	I_E_EXPLORATION_OPEN = RuleImage(roi_front=(1077,248,37,80), roi_back=(1072,242,47,92), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_exploration_open.png")
 	# 探索按钮 
-	I_E_EXPLORATION_CLICK = RuleImage(roi_front=(898,518,96,42), roi_back=(898,518,96,42), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_exploration_click.png")
+	I_E_EXPLORATION_CLICK = RuleImage(roi_front=(1089,603,81,43), roi_back=(845,520,414,194), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/e_exploration_click.png")
 	# 自动轮换开着 
 	I_E_AUTO_ROTATE_ON = RuleImage(roi_front=(104,649,153,44), roi_back=(104,649,153,44), threshold=0.9, method="Template matching", file="./tasks/Exploration/res/res_e_auto_rotate_on.png")
 	# 自动轮换关闭 
@@ -100,7 +100,7 @@ class ExplorationAssets:
 	# 战后奖励 
 	I_BATTLE_REWARD = RuleImage(roi_front=(647,395,31,21), roi_back=(1,1,1278,718), threshold=0.9, method="Template matching", file="./tasks/Exploration/res/res_battle_reward.png")
 	# 妖 
-	I_EXPLORATION_TITLE = RuleImage(roi_front=(1133,124,47,43), roi_back=(1133,124,47,43), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/res_exploration_title.png")
+	I_EXPLORATION_TITLE = RuleImage(roi_front=(1146,114,29,29), roi_back=(1116,96,92,71), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/res_exploration_title.png")
 	# description 
 	I_BATTLE_START = RuleImage(roi_front=(555,688,39,27), roi_back=(221,677,561,41), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_battle_start.png")
 	# description 
@@ -110,15 +110,15 @@ class ExplorationAssets:
 	# description 
 	I_E_EXIT_CONFIRM = RuleImage(roi_front=(694,380,163,49), roi_back=(694,380,163,49), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_exit_confirm.png")
 	# 宝箱 
-	I_TREASURE_BOX_CLICK = RuleImage(roi_front=(33,476,70,49), roi_back=(2,130,135,406), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/res_treasure_box_click.png")
+	I_TREASURE_BOX_CLICK = RuleImage(roi_front=(33,363,52,44), roi_back=(13,88,93,491), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/res_treasure_box_click.png")
 	# 困28滚动到最后 
 	I_SWIPE_END = RuleImage(roi_front=(994,234,119,100), roi_back=(968,196,311,165), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_swipe_end.png")
 	# 队伍的表情标志 
 	I_TEAM_EMOJI = RuleImage(roi_front=(36,437,44,46), roi_back=(4,407,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_team_emoji.png")
 	# 组队按钮 
-	I_EXP_CREATE_TEAM = RuleImage(roi_front=(590,514,122,52), roi_back=(543,490,192,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_create_team.png")
+	I_EXP_CREATE_TEAM = RuleImage(roi_front=(907,601,72,46), roi_back=(864,577,154,117), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/exp_create_team.png")
 	# 创建确认 
-	I_EXP_CREATE_ENSURE = RuleImage(roi_front=(534,486,218,59), roi_back=(516,475,244,85), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_create_ensure.png")
+	I_EXP_CREATE_ENSURE = RuleImage(roi_front=(589,499,104,33), roi_back=(516,475,244,85), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/exp_create_ensure.png")
 	# description 
 	I_E_UNLOCK = RuleImage(roi_front=(891,650,33,33), roi_back=(818,628,431,85), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_e_unlock.png")
 	# description 
@@ -129,6 +129,8 @@ class ExplorationAssets:
 	I_E_MAIN_FLAG = RuleImage(roi_front=(992,599,181,23), roi_back=(747,545,527,95), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/e_main_flag.png")
 	# description 
 	I_E_MAIN_SUSHI = RuleImage(roi_front=(567,204,150,34), roi_back=(256,94,797,494), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/e_main_sushi.png")
+	# description 
+	I_E_ENTRANCE = RuleImage(roi_front=(217,11,35,40), roi_back=(14,9,342,58), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/e_entrance.png")
 
 
 	# Long Click Rule Assets
@@ -144,7 +146,7 @@ class ExplorationAssets:
 
 	# Ocr Rule Assets
 	# 识别当前显示的章节 
-	O_E_EXPLORATION_LEVEL_NUMBER = RuleOcr(roi=(1079,193,147,467), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="e_exploration_level_number")
+	O_E_EXPLORATION_LEVEL_NUMBER = RuleOcr(roi=(1054,198,151,360), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="e_exploration_level_number")
 	# 候补出战的数量 
 	O_E_ALTERNATE_NUMBER = RuleOcr(roi=(1092,122,69,32), area=(1092,122,69,32), mode="DigitCounter", method="Default", keyword="", name="e_alternate_number")
 	# 探索右上角 突破卷的数量 

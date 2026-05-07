@@ -30,7 +30,12 @@ class ScriptTask(GameUi, DailyAssets):
         self._mark_task_start(config_name, pid)
         
         try:
+            # 加载配置，获取returngift_enable状态
             self.daily_conf = self.config.daily 
+            returngift_enable = self.daily_conf.daily_config.total_returngift_enable
+            # 更新进度文件中的returngift_enable状态
+            self._update_task_returngift_enable(config_name, returngift_enable)
+            
             login_time = self.daily_conf.daily_config.need_login_time
             sup_account_list = self._get_sorted_accounts(login_time)
             
@@ -99,12 +104,33 @@ class ScriptTask(GameUi, DailyAssets):
                 'status': 'running',
                 'start_time': datetime.now().isoformat(),
                 'completed': False,
-                'pid': pid  # 记录当前PID
+                'pid': pid,
+                'returngift_enable': False  # 初始为False，后续更新
             }
             
             # 保存更新后的进度
             with open(progress_file, 'w', encoding='utf-8') as f:
                 json.dump(progress_data, f, ensure_ascii=False, indent=2)
+
+    def _update_task_returngift_enable(self, config_name, returngift_enable):
+        """更新进度文件中的returngift_enable状态"""
+        progress_file = Path('./logs/daily_progress.json')
+        
+        with self._shutdown_lock:
+            if not progress_file.exists():
+                return
+            
+            try:
+                with open(progress_file, 'r', encoding='utf-8') as f:
+                    progress_data = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                return
+            
+            key = f'config_{config_name}'
+            if key in progress_data:
+                progress_data[key]['returngift_enable'] = returngift_enable
+                with open(progress_file, 'w', encoding='utf-8') as f:
+                    json.dump(progress_data, f, ensure_ascii=False, indent=2)
     
     def _mark_task_completed(self, config_name):
         """

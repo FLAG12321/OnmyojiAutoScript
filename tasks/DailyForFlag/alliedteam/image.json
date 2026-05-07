@@ -109,7 +109,7 @@
   },
   {
     "itemName": "to_team",
-    "imageName": "alliedteam_to_team.png",
+    "imageName": "to_team.png",
     "roiFront": "65,600,62,74",
     "roiBack": "21,572,113,112",
     "method": "Template matching",

@@ -13,14 +13,14 @@
   },
   {
     "itemName": "random_top",
-    "roiFront": "126,66,989,58",
-    "roiBack": "123,65,991,58",
+    "roiFront": "565,7,359,54",
+    "roiBack": "564,6,361,56",
     "description": "description"
   },
   {
     "itemName": "random_bottom",
-    "roiFront": "196,598,581,78",
-    "roiBack": "194,597,583,81",
+    "roiFront": "387,639,288,55",
+    "roiBack": "385,638,290,58",
     "description": "description"
   },
   {

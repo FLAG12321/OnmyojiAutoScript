@@ -12,24 +12,24 @@ class OrochiAssets:
 
 	# Image Rule Assets
 	# 八级大蛇进入 
-	I_OROCHI = RuleImage(roi_front=(55,104,295,406), roi_back=(55,104,295,406), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/o_orochi.png")
+	I_OROCHI = RuleImage(roi_front=(268,110,70,233), roi_back=(210,97,151,311), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/orochi.png")
 	# 组队 
-	I_FORM_TEAM = RuleImage(roi_front=(937,591,100,100), roi_back=(937,591,100,100), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/o_form_team.png")
+	I_FORM_TEAM = RuleImage(roi_front=(967,607,83,44), roi_back=(924,554,167,163), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/form_team.png")
 	# description 
-	I_OROCHI_LOCK = RuleImage(roi_front=(575,561,22,26), roi_back=(466,546,191,62), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/o_orochi_lock.png")
+	I_OROCHI_LOCK = RuleImage(roi_front=(649,656,25,33), roi_back=(610,642,293,73), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/orochi_lock.png")
 	# description 
-	I_OROCHI_UNLOCK = RuleImage(roi_front=(575,561,21,21), roi_back=(483,544,188,60), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/o_orochi_unlock.png")
+	I_OROCHI_UNLOCK = RuleImage(roi_front=(651,661,23,21), roi_back=(628,639,178,73), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/orochi_unlock.png")
 	# 点击挑战 
-	I_OROCHI_FIRE = RuleImage(roi_front=(1095,577,131,124), roi_back=(1095,577,131,124), threshold=0.6, method="Template matching", file="./tasks/Orochi/o/o_orochi_fire.png")
+	I_OROCHI_FIRE = RuleImage(roi_front=(1146,594,87,47), roi_back=(1121,578,133,114), threshold=0.6, method="Template matching", file="./tasks/Orochi/o/orochi_fire.png")
 	# 式神录 
-	I_SHI_RECORDS = RuleImage(roi_front=(821,638,48,45), roi_back=(821,638,48,45), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/o_shi_records.png")
+	I_SHI_RECORDS = RuleImage(roi_front=(844,569,39,43), roi_back=(807,539,108,91), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/shi_records.png")
 	# 小小宠物，发现宝藏 
 	I_PET_PRESENT = RuleImage(roi_front=(873,184,62,147), roi_back=(873,184,62,147), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/o_pet_present.png")
 
 
 	# List Rule Assets
 	# 这个是御魂界面选择不同层数的 
-	L_LAYER_LIST = RuleList(folder="./tasks/Orochi/res", direction="vertical", mode="ocr", roi_back=(138,130,359,500), size=(45, 88), 
+	L_LAYER_LIST = RuleList(folder="./tasks/Orochi/res", direction="vertical", mode="ocr", roi_back=(129,104,79,574), size=(31, 103), 
 					 array=["壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖", "拾", "悲", "神", "虚"])
 
 

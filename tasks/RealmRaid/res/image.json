@@ -1,8 +1,8 @@
 [
   {
     "itemName": "realm_raid",
-    "imageName": "res_realm_raid.png",
-    "roiFront": "246,628,63,64",
+    "imageName": "realm_raid.png",
+    "roiFront": "261,638,44,40",
     "roiBack": "246,628,63,64",
     "method": "Template matching",
     "threshold": 0.8,
@@ -73,18 +73,18 @@
   },
   {
     "itemName": "unlock",
-    "imageName": "res_unlock.png",
-    "roiFront": "818,579,38,42",
-    "roiBack": "818,579,38,42",
+    "imageName": "unlock.png",
+    "roiFront": "821,581,22,38",
+    "roiBack": "809,564,51,72",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "没有锁的状态图标"
   },
   {
     "itemName": "lock",
-    "imageName": "res_lock.png",
-    "roiFront": "818,579,36,41",
-    "roiBack": "818,579,36,41",
+    "imageName": "lock.png",
+    "roiFront": "820,581,27,38",
+    "roiBack": "808,572,60,77",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "以锁的状态图片"
@@ -92,7 +92,7 @@
   {
     "itemName": "fresh",
     "imageName": "res_fresh.png",
-    "roiFront": "957,564,182,66",
+    "roiFront": "1006,581,80,36",
     "roiBack": "957,564,182,66",
     "method": "Template matching",
     "threshold": 0.8,

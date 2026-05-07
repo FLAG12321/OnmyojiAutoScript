@@ -1,8 +1,8 @@
 [
   {
     "itemName": "gr_ticket",
-    "roiFront": "920,21,100,41",
-    "roiBack": "920,21,100,41",
+    "roiFront": "952,15,68,30",
+    "roiBack": "951,14,71,33",
     "mode": "Digit",
     "method": "Default",
     "keyword": "",

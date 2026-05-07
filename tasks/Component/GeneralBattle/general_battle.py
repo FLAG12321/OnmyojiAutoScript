@@ -483,6 +483,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             while 1:
                 self.screenshot()
                 if self.appear(lock_image):
+                    logger.info("Lock team")
                     break
                 if self.appear_then_click(unlock_image, interval=1):
                     continue

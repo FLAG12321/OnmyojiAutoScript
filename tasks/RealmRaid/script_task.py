@@ -283,6 +283,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         """
         if lock_team_enable:
             while 1:
+                logger.info('Check lock: %s', lock_team_enable)
                 self.screenshot()
                 if self.appear_then_click(self.I_UNLOCK, interval=1):
                     continue

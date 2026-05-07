@@ -13,7 +13,7 @@ from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_travel
+from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
 from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode
 from tasks.Exploration.solo import SoloExploration
@@ -805,19 +805,19 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self.screenshot()
         self.ui_get_current_page()
         self.ui_goto(page_main)
-        self.ui_goto(page_travel)
+        self.ui_goto(page_youki)
 
         # 等待任务页面出现
-        while 1:
+        """ while 1:
             self.screenshot()
             if self.appear(self.I_PAGE_TASK):
                 logger.info('Guard: task page appeared')
                 break
             if self.appear_then_click(self.I_TO_TASK, interval=1):
-                continue
+                continue """
 
         # 在任务列表中找到"守护历练"并点击
-        start_time = time.time()
+        """ start_time = time.time()
         swipe_count = 0
         while time.time() - start_time < 30:
             self.screenshot()
@@ -838,7 +838,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         if not self.appear(self.I_PAGE_BATTLE_GUARD):
             logger.warning('Guard: failed to find battle guard page')
-            return False
+            return False """
 
         start_time = time.time()
         to_team_click_cnt = 0
@@ -854,11 +854,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     raise  TaskEnd('Guard daily limit may be exhausted')
                 start_time = time.time()
                 continue
-            if self.appear(self.I_PAGE_BATTLE_GUARD) and not self.appear(self.I_TO_TEAM):
+            """ if self.appear(self.I_PAGE_BATTLE_GUARD) and not self.appear(self.I_TO_TEAM):
                 start_time = time.time()
                 logger.info('Guard: swiping to find team button')
                 self.swipe(self.S_TO_BATTLE_SWIPE, 5)
-                continue
+                continue """
 
         logger.warning('Guard: failed to enter team room')
         return False
@@ -1058,7 +1058,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # _guard_run_battle 内部在战斗胜利时会自动处理邀请弹窗并点击确认
             # 确认后师父会自动收到邀请，下一轮等师父进入即可
             win = self._guard_run_battle(battle_config)
-            if  self.appear(self.I_PAGE_BATTLE_GUARD):
+            if  self.appear(self.I_TO_TEAM):
                 start_time = time.time()
                 while time.time()-start_time<5:
                     self.screenshot()

@@ -83,6 +83,20 @@ class SoloExploration(BaseExploration):
                 if self.check_exit():
                     self.quit_explore()
                     break
+                #宝箱
+                if self.appear(self.I_TREASURE_BOX_CLICK):
+                    while 1:
+                        self.screenshot()
+                        if self.appear(self.I_REWARD):
+                            self.ui_click_until_disappear(self.I_REWARD)
+                            logger.info('Get reward.')
+                            break
+                        if self.ui_reward_appear_click():
+                            continue
+                        if self.appear_then_click(self.I_UI_CANCEL, interval=0.8):
+                            continue
+                        if self.appear_then_click(self.I_TREASURE_BOX_CLICK, interval=1):
+                            continue
                 #体力不够
                 if self.appear(self.I_E_MAIN_SUSHI):
                     self.ui_click_until_disappear(self.I_UI_BACK_RED)
@@ -514,7 +528,7 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
 
-    config = Config('oas1')
+    config = Config('oas3')
     device = Device(config)
     t = ScriptTask(config, device)
-    t.run()
+    t.run_solo()

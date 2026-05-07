@@ -12,7 +12,7 @@ class RealmRaidAssets:
 
 	# Image Rule Assets
 	# 点击结界突破的图片 
-	I_REALM_RAID = RuleImage(roi_front=(246,628,63,64), roi_back=(246,628,63,64), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_realm_raid.png")
+	I_REALM_RAID = RuleImage(roi_front=(261,638,44,40), roi_back=(246,628,63,64), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/realm_raid.png")
 	# 五个勋章 
 	I_MEDAL_5 = RuleImage(roi_front=(238,205,212,53), roi_back=(216,187,919,364), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_5.png")
 	# description 
@@ -28,11 +28,11 @@ class RealmRaidAssets:
 	# 右上角红色的关闭 
 	I_BACK_RED = RuleImage(roi_front=(1178,101,57,64), roi_back=(1178,101,57,64), threshold=0.7, method="Template matching", file="./tasks/RealmRaid/res/res_back_red.png")
 	# 没有锁的状态图标 
-	I_UNLOCK = RuleImage(roi_front=(818,579,38,42), roi_back=(818,579,38,42), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_unlock.png")
+	I_UNLOCK = RuleImage(roi_front=(821,581,22,38), roi_back=(809,564,51,72), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/unlock.png")
 	# 以锁的状态图片 
-	I_LOCK = RuleImage(roi_front=(818,579,36,41), roi_back=(818,579,36,41), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_lock.png")
+	I_LOCK = RuleImage(roi_front=(820,581,27,38), roi_back=(808,572,60,77), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/lock.png")
 	# 刷新按钮 
-	I_FRESH = RuleImage(roi_front=(957,564,182,66), roi_back=(957,564,182,66), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fresh.png")
+	I_FRESH = RuleImage(roi_front=(1006,581,80,36), roi_back=(957,564,182,66), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fresh.png")
 	# 点击的式神录 
 	I_SHIKIGAMI = RuleImage(roi_front=(1206,608,54,51), roi_back=(1206,608,54,51), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_shikigami.png")
 	# 进攻 

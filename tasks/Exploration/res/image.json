@@ -10,9 +10,9 @@
   },
   {
     "itemName": "e_exploration_click",
-    "imageName": "res_e_exploration_click.png",
-    "roiFront": "898,518,96,42",
-    "roiBack": "898,518,96,42",
+    "imageName": "e_exploration_click.png",
+    "roiFront": "1089,603,81,43",
+    "roiBack": "845,520,414,194",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "探索按钮"
@@ -128,8 +128,8 @@
   {
     "itemName": "exploration_title",
     "imageName": "res_exploration_title.png",
-    "roiFront": "1133,124,47,43",
-    "roiBack": "1133,124,47,43",
+    "roiFront": "1146,114,29,29",
+    "roiBack": "1116,96,92,71",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "妖"
@@ -173,8 +173,8 @@
   {
     "itemName": "treasure_box_click",
     "imageName": "res_treasure_box_click.png",
-    "roiFront": "33,476,70,49",
-    "roiBack": "2,130,135,406",
+    "roiFront": "33,363,52,44",
+    "roiBack": "13,88,93,491",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "宝箱"
@@ -199,17 +199,17 @@
   },
   {
     "itemName": "exp_create_team",
-    "imageName": "res_exp_create_team.png",
-    "roiFront": "590,514,122,52",
-    "roiBack": "543,490,192,100",
+    "imageName": "exp_create_team.png",
+    "roiFront": "907,601,72,46",
+    "roiBack": "864,577,154,117",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "组队按钮"
   },
   {
     "itemName": "exp_create_ensure",
-    "imageName": "res_exp_create_ensure.png",
-    "roiFront": "534,486,218,59",
+    "imageName": "exp_create_ensure.png",
+    "roiFront": "589,499,104,33",
     "roiBack": "516,475,244,85",
     "method": "Template matching",
     "threshold": 0.8,
@@ -259,5 +259,14 @@
     "imageName": "e_main_sushi.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "e_entrance",
+    "roiFront": "217,11,35,40",
+    "roiBack": "14,9,342,58",
+    "description": "description",
+    "imageName": "e_entrance.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

@@ -29,16 +29,16 @@
   {
     "itemName": "check_exploration",
     "imageName": "check_exploration.png",
-    "roiFront": "1145,130,27,31",
-    "roiBack": "1119,116,85,75",
+    "roiFront": "1084,173,48,27",
+    "roiBack": "1050,163,124,55",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
   },
   {
     "itemName": "exploration_goto_awake_zone",
-    "imageName": "page_exploration_goto_awake_zone.png",
-    "roiFront": "57,628,57,42",
+    "imageName": "exploration_goto_awake_zone.png",
+    "roiFront": "67,638,47,46",
     "roiBack": "33,619,113,79",
     "method": "Template matching",
     "threshold": 0.65,
@@ -46,8 +46,8 @@
   },
   {
     "itemName": "exploration_goto_soul_zone",
-    "imageName": "page_exploration_goto_soul_zone.png",
-    "roiFront": "163,642,44,36",
+    "imageName": "exploration_goto_soul_zone.png",
+    "roiFront": "163,640,50,43",
     "roiBack": "134,623,93,70",
     "method": "Template matching",
     "threshold": 0.8,
@@ -55,8 +55,8 @@
   },
   {
     "itemName": "exploration_goto_realm_raid",
-    "imageName": "page_exploration_goto_realm_raid.png",
-    "roiFront": "248,636,67,48",
+    "imageName": "exploration_goto_realm_raid.png",
+    "roiFront": "256,636,50,44",
     "roiBack": "229,612,203,87",
     "method": "Template matching",
     "threshold": 0.65,
@@ -64,8 +64,8 @@
   },
   {
     "itemName": "exploration_goto_goryou_realm",
-    "imageName": "page_exploration_goto_goryou_realm.png",
-    "roiFront": "353,639,47,45",
+    "imageName": "exploration_goto_goryou_realm.png",
+    "roiFront": "359,635,44,50",
     "roiBack": "346,626,178,67",
     "method": "Template matching",
     "threshold": 0.7,
@@ -73,8 +73,8 @@
   },
   {
     "itemName": "exploration_goto_delegation",
-    "imageName": "page_exploration_goto_delegation.png",
-    "roiFront": "453,639,53,37",
+    "imageName": "exploration_goto_delegation.png",
+    "roiFront": "451,636,47,43",
     "roiBack": "409,613,167,75",
     "method": "Template matching",
     "threshold": 0.65,
@@ -82,8 +82,8 @@
   },
   {
     "itemName": "exploration_goto_secret_zones",
-    "imageName": "page_exploration_goto_secret_zones.png",
-    "roiFront": "549,633,53,40",
+    "imageName": "exploration_goto_secret_zones.png",
+    "roiFront": "548,635,46,47",
     "roiBack": "524,614,200,87",
     "method": "Template matching",
     "threshold": 0.7,
@@ -91,9 +91,9 @@
   },
   {
     "itemName": "exploration_goto_area_boss",
-    "imageName": "page_exploration_goto_area_boss.png",
-    "roiFront": "640,638,51,45",
-    "roiBack": "640,638,180,45",
+    "imageName": "exploration_goto_area_boss.png",
+    "roiFront": "644,638,44,47",
+    "roiBack": "628,618,190,89",
     "method": "Template matching",
     "threshold": 0.65,
     "description": "探索前往地域鬼王"
@@ -109,8 +109,8 @@
   },
   {
     "itemName": "exploration_goto_six_gates",
-    "imageName": "page_exploration_goto_six_gates.png",
-    "roiFront": "938,640,60,49",
+    "imageName": "exploration_goto_six_gates.png",
+    "roiFront": "930,632,50,52",
     "roiBack": "820,631,296,66",
     "method": "Template matching",
     "threshold": 0.65,
@@ -118,8 +118,8 @@
   },
   {
     "itemName": "exploration_goto_bondling_fairyland",
-    "imageName": "page_exploration_goto_bondling_fairyland.png",
-    "roiFront": "1037,635,56,44",
+    "imageName": "exploration_goto_bondling_fairyland.png",
+    "roiFront": "1021,632,54,50",
     "roiBack": "918,623,218,72",
     "method": "Template matching",
     "threshold": 0.65,
@@ -136,25 +136,25 @@
   },
   {
     "itemName": "check_awake",
-    "imageName": "page_check_awake.png",
-    "roiFront": "376,565,73,82",
-    "roiBack": "376,565,73,82",
+    "imageName": "check_awake.png",
+    "roiFront": "147,15,141,43",
+    "roiBack": "23,6,356,81",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
   },
   {
     "itemName": "check_soul_zones",
-    "imageName": "page_check_soul_zones.png",
-    "roiFront": "49,186,298,237",
-    "roiBack": "49,186,298,237",
+    "imageName": "check_soul_zones.png",
+    "roiFront": "141,10,89,51",
+    "roiBack": "42,7,264,84",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
   },
   {
     "itemName": "check_realm_raid",
-    "imageName": "page_check_realm_raid.png",
+    "imageName": "check_realm_raid.png",
     "roiFront": "129,632,52,48",
     "roiBack": "66,526,233,188",
     "method": "Template matching",
@@ -163,9 +163,9 @@
   },
   {
     "itemName": "check_goryou",
-    "imageName": "page_check_goryou.png",
-    "roiFront": "881,17,30,39",
-    "roiBack": "881,17,30,39",
+    "imageName": "check_goryou.png",
+    "roiFront": "149,13,138,47",
+    "roiBack": "141,6,155,66",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -250,5 +250,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "exploration_goto_youki",
+    "roiFront": "734,638,52,40",
+    "roiBack": "702,623,192,87",
+    "description": "description",
+    "imageName": "exploration_goto_youki.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "check_youki",
+    "roiFront": "153,18,128,39",
+    "roiBack": "141,5,155,68",
+    "description": "description",
+    "imageName": "check_youki.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

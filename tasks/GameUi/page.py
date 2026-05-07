@@ -113,6 +113,10 @@ page_exploration.link(button=G.I_EXPLORATION_GOTO_SECRET_ZONES, destination=page
 page_area_boss = Page(G.I_CHECK_AREA_BOSS)
 page_area_boss.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_AREA_BOSS, destination=page_area_boss)
+#妖气探索
+page_youki = Page(G.I_CHECK_YOUKI)
+page_youki.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
+page_exploration.link(button=G.I_EXPLORATION_GOTO_YOUKI, destination=page_youki)
 # 平安奇谭 heian kitan
 page_heian_kitan = Page(G.I_CHECK_HEIAN_KITAN)
 page_heian_kitan.link(button=G.I_CHECK_HEIAN_KITAN, destination=page_exploration)

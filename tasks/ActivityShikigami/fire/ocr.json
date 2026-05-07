@@ -46,8 +46,8 @@
   },
   {
     "itemName": "remain_boss",
-    "roiFront": "1113,669,131,31",
-    "roiBack": "1099,659,162,52",
+    "roiFront": "1097,668,166,34",
+    "roiBack": "1080,656,192,56",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",
