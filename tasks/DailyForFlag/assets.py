@@ -41,7 +41,7 @@ class DailyForFlagAssets:
 	# description 
 	I_BACK_BLACK = RuleImage(roi_front=(24,17,54,49), roi_back=(7,0,85,82), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_back_black.png")
 	# description 
-	I_TO_TEAM = RuleImage(roi_front=(65,600,62,74), roi_back=(21,572,113,112), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/to_team.png")
+	I_TO_TEAM = RuleImage(roi_front=(44,591,70,36), roi_back=(21,572,113,112), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/to_team.png")
 	# description 
 	I_BATTLE = RuleImage(roi_front=(1179,603,78,72), roi_back=(1162,580,114,126), threshold=0.8, method="Template matching", file="./tasks/DailyForFlag/alliedteam/alliedteam_battle.png")
 	# description 

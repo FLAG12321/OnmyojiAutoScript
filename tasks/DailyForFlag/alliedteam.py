@@ -227,7 +227,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyForFlagBase):
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('QMUMU1')
+    c = Config('QMUMU2')
     d = Device(c)
     self = Alliedteam(c, d)
     self.screenshot()

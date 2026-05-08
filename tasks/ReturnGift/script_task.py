@@ -58,6 +58,9 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                 if self._check_daily_running_with_returngift():
                     logger.info("检测到Daily运行，保持循环等待")
                     continue
+                else:
+                    logger.info("无Daily运行，ReturnGift跳过")
+                    break
 
             if retry_count >= 4:
                 retry_count=0
@@ -65,8 +68,8 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                     self.ui_goto(page_main)
                     self.ui_goto(page_guild)
                     continue
-            if datetime.now() - self.start_time >= timeout_duration  or datetime.now() > timeout + timedelta(minutes=3):
-                break
+            """ if datetime.now() - self.start_time >= timeout_duration  or datetime.now() > timeout + timedelta(minutes=3):
+                break """
             if self.appear(self.I_R_SEND_FLAG):
                 sendtimeout, send_btn_click_count = self.send_gift()
                 total_send_btn_click_count += send_btn_click_count

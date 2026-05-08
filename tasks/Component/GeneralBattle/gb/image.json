@@ -55,8 +55,8 @@
   },
   {
     "itemName": "preset_ensure",
-    "imageName": "gb_preset_ensure.png",
-    "roiFront": "352,643,141,50",
+    "imageName": "preset_ensure.png",
+    "roiFront": "388,649,71,35",
     "roiBack": "305,625,236,83",
     "method": "Template matching",
     "threshold": 0.8,
@@ -154,9 +154,9 @@
   },
   {
     "itemName": "exit_ensure",
-    "imageName": "gb_exit_ensure.png",
-    "roiFront": "674,388,135,63",
-    "roiBack": "674,388,135,63",
+    "imageName": "exit_ensure.png",
+    "roiFront": "713,410,60,29",
+    "roiBack": "661,371,155,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "退出确认"

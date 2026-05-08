@@ -118,9 +118,9 @@
   },
   {
     "itemName": "check_guild",
-    "imageName": "page_check_guild.png",
+    "imageName": "check_guild.png",
     "roiFront": "1072,630,49,46",
-    "roiBack": "1072,630,49,46",
+    "roiBack": "1039,605,113,107",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

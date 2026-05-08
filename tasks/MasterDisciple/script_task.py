@@ -1537,11 +1537,12 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
     from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
-    c = Config('oas1')
+    c = Config('oas3')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
-    self.run()
+    self.master_run_battle_back_stone(config=GeneralBattleConfig())
+    #self.run()
     """ while 1:
         self.screenshot()
         if  self.appear(self.I_ENSURE_SWITCH):

@@ -13,7 +13,7 @@ from datetime import datetime
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # ===== 配置 =====
-ENDPOINT = "http://192.168.1.8:3000"
+ENDPOINT = "http://192.168.1.33:3000"
 ACCESS_TOKEN = "Lu1122"
 GROUP_ID = 1045504603
 CREATE_SENDER_ID = 0      # 道馆创建关键词发送者QQ, 0=不限制

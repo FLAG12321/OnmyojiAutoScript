@@ -426,7 +426,7 @@ if __name__ == '__main__':
     game.screenshot()
     game.ui_goto(page_main)
     game.ui_goto(page_shikigami_records)
-    """ game.ui_goto(page_onmyodo)
+    game.ui_goto(page_onmyodo)
     game.ui_goto(page_friends)
     game.ui_goto(page_guild)
     game.ui_goto(page_team)
@@ -434,4 +434,4 @@ if __name__ == '__main__':
     game.ui_goto(page_travel)
     game.ui_goto(page_daily)
     game.ui_goto(page_mall)
-    game.ui_goto(page_main) """
+    game.ui_goto(page_main)

@@ -110,7 +110,7 @@
   {
     "itemName": "to_team",
     "imageName": "to_team.png",
-    "roiFront": "65,600,62,74",
+    "roiFront": "44,591,70,36",
     "roiBack": "21,572,113,112",
     "method": "Template matching",
     "threshold": 0.8,
