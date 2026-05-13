@@ -19,8 +19,8 @@
   },
   {
     "itemName": "sou_switch_1",
-    "imageName": "ss_sou_switch_1.png",
-    "roiFront": "971,149,34,32",
+    "imageName": "sou_switch_1.png",
+    "roiFront": "976,151,31,30",
     "roiBack": "962,141,51,48",
     "method": "Template matching",
     "threshold": 0.8,
@@ -28,8 +28,8 @@
   },
   {
     "itemName": "sou_switch_2",
-    "imageName": "ss_sou_switch_2.png",
-    "roiFront": "967,296,42,39",
+    "imageName": "sou_switch_2.png",
+    "roiFront": "977,305,27,25",
     "roiBack": "961,292,54,49",
     "method": "Template matching",
     "threshold": 0.8,
@@ -37,8 +37,8 @@
   },
   {
     "itemName": "sou_switch_3",
-    "imageName": "ss_sou_switch_3.png",
-    "roiFront": "968,448,41,38",
+    "imageName": "sou_switch_3.png",
+    "roiFront": "977,454,26,27",
     "roiBack": "962,442,52,48",
     "method": "Template matching",
     "threshold": 0.8,
@@ -46,8 +46,8 @@
   },
   {
     "itemName": "sou_switch_4",
-    "imageName": "ss_sou_switch_4.png",
-    "roiFront": "967,597,42,25",
+    "imageName": "sou_switch_4.png",
+    "roiFront": "973,601,33,25",
     "roiBack": "962,592,53,34",
     "method": "Template matching",
     "threshold": 0.8,
@@ -65,8 +65,8 @@
   {
     "itemName": "sou_check_in",
     "imageName": "ss_sou_check_in.png",
-    "roiFront": "269,69,50,49",
-    "roiBack": "269,69,50,49",
+    "roiFront": "276,79,37,35",
+    "roiBack": "264,70,57,53",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "用于判断是否在式神录里面"
