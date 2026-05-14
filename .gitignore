@@ -21,6 +21,7 @@ config/reloadalas
 test.py
 test/
 
+
 # OnmyojiAutoScript
 *.user
 !module/gui/FluentUI/fluentuiplugin.dll
@@ -275,7 +276,9 @@ oas.bat
 /wechat_group
 /temp_path
 /SnapMark-master
-/process_csv.py
-/all_members.csv
+/batch_process_csv.py
+/*.csv
 /logs
 /2026*
+OASX-master/
+csv/

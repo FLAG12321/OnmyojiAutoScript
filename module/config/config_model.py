@@ -117,7 +117,7 @@ class ConfigModel(ConfigBase):
     daily_for_flag: DailyForFlag = Field(default_factory=DailyForFlag)
     multi_acc_exp: MultiAccExp = Field(default_factory=MultiAccExp)
     master_disciple: MasterDisciple = Field(default_factory=MasterDisciple)
-    
+
     # 这些是刷御魂的
     orochi: Orochi = Field(default_factory=Orochi)
     orochi_moans: OrochiMoans = Field(default_factory=OrochiMoans)
