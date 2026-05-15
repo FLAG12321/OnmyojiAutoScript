@@ -8,7 +8,7 @@ from module.exception import TaskEnd
 
 from tasks.GameUi.page import page_main
 from tasks.GameUi.assets import GameUiAssets
-from tasks.DailyForFlag.config import MSGType
+from tasks.DailyAltAcc.config import MSGType
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.RichMan.guild import Guild
 from tasks.RichMan.config import GuildStore
@@ -20,16 +20,16 @@ from tasks.KekkaiActivation.config import CardType
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 
 # Sub-tasks
-from tasks.DailyForFlag.courtyard import Courtyard
-from tasks.DailyForFlag.mail import Mail
-from tasks.DailyForFlag.donatejade import Donatejade
-from tasks.DailyForFlag.cooperation import Cooperation
-from tasks.DailyForFlag.returngift import Returngift
-from tasks.DailyForFlag.alliedteam import Alliedteam
-from tasks.DailyForFlag.mshop import Mshop
-from tasks.DailyForFlag.tree import Tree
-from tasks.DailyForFlag.summon_up import SummonUp
-from tasks.DailyForFlag.trialbattle import Trialbattle
+from tasks.DailyAltAcc.courtyard import Courtyard
+from tasks.DailyAltAcc.mail import Mail
+from tasks.DailyAltAcc.donatejade import Donatejade
+from tasks.DailyAltAcc.cooperation import Cooperation
+from tasks.DailyAltAcc.returngift import Returngift
+from tasks.DailyAltAcc.alliedteam import Alliedteam
+from tasks.DailyAltAcc.mshop import Mshop
+from tasks.DailyAltAcc.tree import Tree
+from tasks.DailyAltAcc.summon_up import SummonUp
+from tasks.DailyAltAcc.trialbattle import Trialbattle
 
 
 class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
@@ -73,7 +73,7 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 
-        if con.daily_for_flag_config.courtyard_enable:
+        if con.daily_alt_acc_config.courtyard_enable:
             if not self.run_courtyard():
                 while 1:
                     self.screenshot()
@@ -88,35 +88,35 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                     self.ui_goto(page_main)
                 
             delay_time += 10
-        if con.daily_for_flag_config.mail_enable:
+        if con.daily_alt_acc_config.mail_enable:
             self.run_mail()
             delay_time += 5
-        if con.daily_for_flag_config.cooperation_enable:
+        if con.daily_alt_acc_config.cooperation_enable:
             self.run_cooperation()
             delay_time += 3
-        if con.daily_for_flag_config.donatejade_enable:
+        if con.daily_alt_acc_config.donatejade_enable:
             self.run_donatejade()
             delay_time += 10
-        if con.daily_for_flag_config.returngift_enable:
+        if con.daily_alt_acc_config.returngift_enable:
             if delay_time < 10:
                 time.sleep(10-delay_time)
             self.run_returngift()
-        if con.daily_for_flag_config.weekaward_enable:
+        if con.daily_alt_acc_config.weekaward_enable:
             xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
             self.execute_guild(xzconfig)
             self.execute_mall()
             self._share_collect()
-        if con.daily_for_flag_config.mysteryshop_enable:
+        if con.daily_alt_acc_config.mysteryshop_enable:
             self.run_mysteryshop()
             # 执行挂卡（只执行核心逻辑，避免TaskEnd）
-        if con.daily_for_flag_config.tree_planting_enable > 0:
+        if con.daily_alt_acc_config.tree_planting_enable > 0:
             self.run_tree_planting()
-        if con.daily_for_flag_config.trialbattle_enable:
+        if con.daily_alt_acc_config.trialbattle_enable:
             self.run_trialbattle()
-        if con.daily_for_flag_config.summon_up_enable:
+        if con.daily_alt_acc_config.summon_up_enable:
             self.run_summon_up()
 
-        if con.daily_for_flag_config.kekkaiActivation_enable:
+        if con.daily_alt_acc_config.kekkaiActivation_enable:
             try:
                 activation_task = KekkaiActivation(self.config, self.device)
                 activation_conf=activation_task.config.kekkai_activation.activation_config
@@ -129,7 +129,7 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                 activation_task.run()
             except TaskEnd:
                 pass  # 忽略挂卡任务的结束信号
-        if con.daily_for_flag_config.KekkaiUtilize_enable:    
+        if con.daily_alt_acc_config.KekkaiUtilize_enable:    
             # 执行蹭卡
             try:
                 utilize_task = KekkaiUtilize(self.config, self.device)
@@ -155,10 +155,10 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                         # 直接将消息添加到当前任务的消息列表中
                         self.msg.append(msg_item)
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
-        if con.daily_for_flag_config.alliedteam_battle_enable or con.daily_for_flag_config.alliedteam_ap_enable:
-            self.run_alliedteam(con.daily_for_flag_config.alliedteam_battle_enable,con.daily_for_flag_config.alliedteam_ap_enable)
+        if con.daily_alt_acc_config.alliedteam_battle_enable or con.daily_alt_acc_config.alliedteam_ap_enable:
+            self.run_alliedteam(con.daily_alt_acc_config.alliedteam_battle_enable,con.daily_alt_acc_config.alliedteam_ap_enable)
 
-        self.set_next_run(task='DailyForFlag', finish=True, success=True)
+        self.set_next_run(task='DailyAltAcc', finish=True, success=True)
         logger.info(self.msg)
         raise TaskEnd (self.msg)
 

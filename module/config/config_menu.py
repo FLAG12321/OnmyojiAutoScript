@@ -23,7 +23,7 @@ class ConfigMenu:
         # 日常的任务
         self.menu["Daily Task"] = ['DailyTrifles', 'AreaBoss', 'GoldYoukai', 'ExperienceYoukai', 'Nian',
                                    'TalismanPass', 'DemonEncounter', 'Pets', 'SoulsTidy', 'Delegation', 'WantedQuests',
-                                   'Tako', 'AutoCheckinBigGod','DailyForFlag', 'MultiAccExp', 'MasterDisciple']
+                                   'Tako', 'AutoCheckinBigGod','DailyAltAcc', 'MultiAccExp', 'MasterDisciple']
         # 很肝的任务
         self.menu["Liver Emperor Exclusive"] = [
             "BondlingFairyland",
@@ -34,7 +34,7 @@ class ConfigMenu:
             "HeroTest",
             "FindJade",
             "MemoryScrolls",
-            "Daily",
+            "MultiDailyAltAcc",
             "ReturnGift",
             "Plotline",
             "SearchId"

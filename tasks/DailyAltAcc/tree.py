@@ -2,10 +2,10 @@
 import time
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 
 
-class Tree(DailyForFlagBase):
+class Tree(DailyAltAccBase):
     def run_tree_planting(self):
         def buy_flower():
             logger.info("买花") 
@@ -86,7 +86,7 @@ class Tree(DailyForFlagBase):
                 continue
              
         logger.info("开始捐赠") 
-        if self.get_config().daily_for_flag_config.tree_planting_enable < 2:
+        if self.get_config().daily_alt_acc_config.tree_planting_enable < 2:
             logger.info("种树配置为仅买花，跳过捐赠")
             self.appear_then_click(self.I_BACK_Y, interval=1)
             self.ui_goto(page_main)

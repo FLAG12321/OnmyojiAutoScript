@@ -2,10 +2,10 @@
 import time
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.page import page_main
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 
 
-class Courtyard(DailyForFlagBase):
+class Courtyard(DailyAltAccBase):
     def run_courtyard(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:

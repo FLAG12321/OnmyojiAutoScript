@@ -3,13 +3,13 @@ import time
 from typing import List
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.WantedQuests.config import CooperationType
-from tasks.DailyForFlag.config import MSGType
+from tasks.DailyAltAcc.config import MSGType
 
 
-class Cooperation(DailyForFlagBase):
+class Cooperation(DailyAltAccBase):
     def run_cooperation(self):   
         #self.account_info =[] #self.get_account_info()
         # 打开悬赏封印 界面

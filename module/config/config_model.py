@@ -37,7 +37,7 @@ from tasks.Delegation.config import Delegation
 from tasks.WantedQuests.config import WantedQuests
 from tasks.Tako.config import Tako
 from tasks.AutoCheckinBigGod.config import AutoCheckinBigGod
-from tasks.DailyForFlag.config import DailyForFlag
+from tasks.DailyAltAcc.config import DailyAltAcc
 from tasks.MultiAccExp.config import MultiAccExp
 from tasks.MasterDisciple.config import MasterDisciple
 # ----------------------------------------------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ from tasks.Hyakkiyakou.config import Hyakkiyakou
 from tasks.HeroTest.config import HeroTest
 from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
-from tasks.Daily.config import Daily
+from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc
 from tasks.ReturnGift.config import ReturnGift
 from tasks.Plotline.config import Plotline
 from tasks.SearchId.config import SearchId
@@ -114,7 +114,7 @@ class ConfigModel(ConfigBase):
     wanted_quests: WantedQuests = Field(default_factory=WantedQuests)
     tako: Tako = Field(default_factory=Tako)
     auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
-    daily_for_flag: DailyForFlag = Field(default_factory=DailyForFlag)
+    daily_alt_acc: DailyAltAcc = Field(default_factory=DailyAltAcc)
     multi_acc_exp: MultiAccExp = Field(default_factory=MultiAccExp)
     master_disciple: MasterDisciple = Field(default_factory=MasterDisciple)
 
@@ -143,7 +143,7 @@ class ConfigModel(ConfigBase):
     hero_test: HeroTest = Field(default_factory=HeroTest)
     find_jade: FindJade = Field(default_factory=FindJade)
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
-    daily: Daily = Field(default_factory=Daily)
+    multi_daily_alt_acc: MultiDailyAltAcc = Field(default_factory=MultiDailyAltAcc)
     plotline: Plotline = Field(default_factory=Plotline)
     search_id: SearchId = Field(default_factory=SearchId)
     return_gift: ReturnGift = Field(default_factory=ReturnGift)

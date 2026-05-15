@@ -6,7 +6,7 @@
 
 ## 解决的问题
 
-在 Daily、MultiAccExp、FindJade 等多账号任务中，以下逻辑被反复实现：
+在 MultiDailyAltAcc、MultiAccExp、FindJade 等多账号任务中，以下逻辑被反复实现：
 - 账号过滤（根据 `need_login` 和 `login_time` 判断是否需要处理）
 - 账号排序（按邮箱分组、按完成时间排序）
 - 账号切换（调用 `SwitchAccount`）
@@ -44,11 +44,11 @@ from tasks.Component.MultiAccountRunner.multi_account_runner import MultiAccount
 
 # 在 script_task.py 的 run() 方法中
 def run(self):
-    self.daily_conf = self.config.daily
+    self.daily_conf = self.config.multi_daily_alt_acc
     login_time = self.daily_conf.daily_config.need_login_time
 
     runner = MultiAccountRunner(
-        task_name="Daily",
+        task_name="MultiDailyAltAcc",
         config=self.config,
         device=self.device,
         account_list=self.daily_conf.sup_account_list,

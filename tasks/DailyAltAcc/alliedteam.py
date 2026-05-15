@@ -7,12 +7,12 @@ from module.base.utils import save_image
 from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.page import page_main, page_team, page_friends
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 
 
-class Alliedteam(GeneralBattle, GeneralRoom, DailyForFlagBase):
+class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     def run_alliedteam(self, battle_enable, ap_enable):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
@@ -147,7 +147,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyForFlagBase):
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 continue    
         self.ui_goto(page_main)
-        if self.get_config().daily_for_flag_config.alliedteam_limit_count == 13:
+        if self.get_config().daily_alt_acc_config.alliedteam_limit_count == 13:
             self.screenshot()
             self.ui_goto(page_friends)
             while 1:    
@@ -204,7 +204,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyForFlagBase):
                 self.screenshot()
             return self.appear(self.I_BATTLE)
         logger.info('Start run alone')
-        alliedteam_limit_count=self.get_config().daily_for_flag_config.alliedteam_limit_count
+        alliedteam_limit_count=self.get_config().daily_alt_acc_config.alliedteam_limit_count
         logger.info(f' alliedteam_limit_count: {alliedteam_limit_count}')
         self.check_lock(True)
         while 1:
@@ -220,7 +220,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyForFlagBase):
                 if self.appear_then_click(self.I_BATTLE, interval=1):
                     pass
                 if not self.appear(self.I_BATTLE):
-                    self.run_general_battle(config=self.config.daily_for_flag.general_battle_config)
+                    self.run_general_battle(config=self.config.daily_alt_acc.general_battle_config)
                     break
 
 

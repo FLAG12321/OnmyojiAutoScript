@@ -3,12 +3,12 @@ import time
 from module.base.timer import Timer
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_summon
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Plotline.assets import PlotlineAssets
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 
 
-class Trialbattle(DailyForFlagBase):
+class Trialbattle(DailyAltAccBase):
     def run_trialbattle(self):
         """
         试炼战斗主循环：导航到召唤页面，循环执行 fire -> battle_wait，

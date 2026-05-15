@@ -4,10 +4,10 @@ from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.page import page_main
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 
 
-class Mail(DailyForFlagBase):
+class Mail(DailyAltAccBase):
     def harvest_mail(self) -> bool:
         logger.info('Harvest mail')
 

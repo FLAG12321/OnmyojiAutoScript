@@ -2,10 +2,10 @@
 import time
 from module.logger import logger
 from tasks.GameUi.page import page_main
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 
 
-class SummonUp(DailyForFlagBase):
+class SummonUp(DailyAltAccBase):
     def run_summon_up(self):
         """
         召唤子任务主函数

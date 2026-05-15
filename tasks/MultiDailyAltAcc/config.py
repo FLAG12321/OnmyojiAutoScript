@@ -27,7 +27,7 @@ class ExtendedAccountInfo(AccountInfo):
     tree_planting_enable: int = Field(default=2, description='种树:0不运行 1买花 2买花捐树')
     trialbattle_enable: bool = Field(default=True, description='是否开启试炼战斗')
     summon_up_enable: bool = Field(default=True, description='是否开启UP召唤领取礼包')
-class DailyConfig(ConfigBase):
+class MultiDailyAltAccConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
     total_alliedteam_battle_enable: bool = Field(default=False, description='同心模式')
@@ -48,9 +48,9 @@ class DailyConfig(ConfigBase):
     total_summon_up_enable: bool = Field(default=False, description='是否开启UP召唤领取礼包')
     shutdown_after_finish: bool = Field(default=False, description='日常任务完成后是否关机')
 
-class Daily(ConfigBase):
+class MultiDailyAltAcc(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
-    daily_config: DailyConfig = Field(default_factory=DailyConfig)
+    multi_daily_alt_acc_config: MultiDailyAltAccConfig = Field(default_factory=MultiDailyAltAccConfig)
     # 小号信息
     sup_account_list: list[ExtendedAccountInfo] = None
     def update_account_login_history(self, account: ExtendedAccountInfo):
@@ -65,7 +65,7 @@ class Daily(ConfigBase):
     @model_validator(mode='before')
     @classmethod
     def validator_all(cls, v: dict) -> Any:
-        sup_account_count = v.get('daily_config', {}).get('sup_account_count', 1)
+        sup_account_count = v.get('multi_daily_alt_acc_config', {}).get('sup_account_count', 1)
 
         def validator_list(list_name, data, item_type=None, list_size=1):
             if list_name not in data:

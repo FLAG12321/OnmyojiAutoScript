@@ -158,9 +158,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
                     return
             if self.mail_flag:
-                from tasks.DailyForFlag.script_task import ScriptTask as DailyForFlagScriptTask
-                daily_for_flag_task=DailyForFlagScriptTask(self.config, self.device)
-                if  daily_for_flag_task.harvest_mail():
+                from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
+                daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
+                if  daily_alt_acc_task.harvest_mail():
                     self.mail_flag=False
                 sleep(1)
             self.screenshot()
@@ -302,9 +302,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if e.args[0] == 'Insufficient AP' and self.mail_flag:
                 self.screenshot()
                 if self.appear(self.I_PAGE_MAIN):
-                    from tasks.DailyForFlag.script_task import ScriptTask as DailyForFlagScriptTask
-                    daily_for_flag_task=DailyForFlagScriptTask(self.config, self.device)
-                    daily_for_flag_task.harvest_mail()
+                    from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
+                    daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
+                    daily_alt_acc_task.harvest_mail()
                     self.mail_flag=False
                     sleep(1)
                     self.screenshot()

@@ -54,7 +54,7 @@ class Script:
         'AbyssShadows',
         'EternitySea',
         'BondlingFairyland',
-        'Daily',
+        'MultiDailyAltAcc',
     ]
 
     def __init__(self, config_name: str ='oas') -> None:

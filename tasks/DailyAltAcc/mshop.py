@@ -2,14 +2,14 @@
 import time
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_mall
-from tasks.DailyForFlag.utils import DailyForFlagBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.RichMan.mall.mall import Mall
 from tasks.RichMan.config import Consignment
 from tasks.MysteryShop.assets import MysteryShopAssets
-from tasks.DailyForFlag.config import GoodsType, CoinType, MSGType
+from tasks.DailyAltAcc.config import GoodsType, CoinType, MSGType
 
 
-class Mshop(Mall, DailyForFlagBase):
+class Mshop(Mall, DailyAltAccBase):
     def execute_mall(self):
             logger.hr('Mall', 1)
             self.screenshot()
@@ -95,7 +95,7 @@ class Mshop(Mall, DailyForFlagBase):
             info_list=self.FindGoodsType(GoodsType.fmpi,cointype_and_coinNum_list)
             if len(info_list) > 0:
                 all_info_list.extend(info_list)
-        if self.get_config().daily_for_flag_config.isflower and self.appear(self.I_MS_ALL_HEISUI):
+        if self.get_config().daily_alt_acc_config.isflower and self.appear(self.I_MS_ALL_HEISUI):
             logger.info(f"appear I_MS_ALL_HEISUI: {all_info_list}")
             info_list=self.FindGoodsType(GoodsType.heisui,cointype_and_coinNum_list)
             if len(info_list) > 0:

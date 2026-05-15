@@ -2,11 +2,11 @@
 from module.config.config import Config
 from module.device.device import Device
 from tasks.GameUi.game_ui import GameUi
-from tasks.DailyForFlag.assets import DailyForFlagAssets
+from tasks.DailyAltAcc.assets import DailyAltAccAssets
 from tasks.Plotline.assets import PlotlineAssets
 
 
-class DailyForFlagBase(GameUi, DailyForFlagAssets):
+class DailyAltAccBase(GameUi, DailyAltAccAssets):
     """所有子任务的公共基类，提供通用方法和资源"""
     config: Config
     device: Device
@@ -17,7 +17,7 @@ class DailyForFlagBase(GameUi, DailyForFlagAssets):
         self.msg = []
 
     def get_config(self):
-        return self.config.daily_for_flag
+        return self.config.daily_alt_acc
 
     def get_award_daliy(self) -> bool:
         """
@@ -55,4 +55,4 @@ class DailyForFlagBase(GameUi, DailyForFlagAssets):
 if __name__ == "__main__":
     c = Config('oas3')
     d = Device(c)
-    self = DailyForFlagBase(c, d)
+    self = DailyAltAccBase(c, d)

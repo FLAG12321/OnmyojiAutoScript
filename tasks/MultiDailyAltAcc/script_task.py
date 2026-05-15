@@ -8,16 +8,16 @@ from pathlib import Path
 from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError
 from module.logger import logger
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
-from tasks.Daily import DailyForFlagEx 
-from tasks.Daily.assets import DailyAssets
-from tasks.Daily.config import AccountInfo, Daily, ExtendedAccountInfo
+from tasks.MultiDailyAltAcc import DailyAltAccEx
+from tasks.MultiDailyAltAcc.assets import MultiDailyAltAccAssets
+from tasks.MultiDailyAltAcc.config import AccountInfo, MultiDailyAltAcc, ExtendedAccountInfo
 from tasks.GameUi.game_ui import GameUi
-from tasks.DailyForFlag.config import MSGType
+from tasks.DailyAltAcc.config import MSGType
 from script import Script 
 
 
-class ScriptTask(GameUi, DailyAssets):
-    daily_conf: Daily = None
+class ScriptTask(GameUi, MultiDailyAltAccAssets):
+    daily_conf: MultiDailyAltAcc = None
     # 添加一个类级别的锁，用于同步关机操作
     _shutdown_lock = threading.Lock()
 
@@ -31,12 +31,12 @@ class ScriptTask(GameUi, DailyAssets):
         
         try:
             # 加载配置，获取returngift_enable状态
-            self.daily_conf = self.config.daily 
-            returngift_enable = self.daily_conf.daily_config.total_returngift_enable
+            self.daily_conf = self.config.multi_daily_alt_acc 
+            returngift_enable = self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable
             # 更新进度文件中的returngift_enable状态
             self._update_task_returngift_enable(config_name, returngift_enable)
             
-            login_time = self.daily_conf.daily_config.need_login_time
+            login_time = self.daily_conf.multi_daily_alt_acc_config.need_login_time
             sup_account_list = self._get_sorted_accounts(login_time)
             
             for accountInfo in sup_account_list:
@@ -63,24 +63,24 @@ class ScriptTask(GameUi, DailyAssets):
                             content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",  
                             title="ERROR"
                         )
-                        self.daily_conf.daily_config.need_login = False
-                        if not self.daily_conf.daily_config.need_login_time == self.start_time:   
-                            self.daily_conf.daily_config.need_login_time = login_time
+                        self.daily_conf.multi_daily_alt_acc_config.need_login = False
+                        if not self.daily_conf.multi_daily_alt_acc_config.need_login_time == self.start_time:   
+                            self.daily_conf.multi_daily_alt_acc_config.need_login_time = login_time
                         self.save_config()
-                        self.next_run("Daily", success=False)
+                        self.next_run("MultiDailyAltAcc", success=False)
                         Script.save_error_log(self) 
                         if e.__class__.__name__ == "RequestHumanTakeover": 
                             raise RequestHumanTakeover("RequestHumanTakeover")
             self._notify_daily_completion()
             # 检查是否需要关机
-            if self.daily_conf.daily_config.shutdown_after_finish and self.daily_conf.daily_config.total_alliedteam_battle_enable:
+            if self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish and self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
                 self._coordinated_shutdown_system(config_name)
-            self.next_run("Daily", success=True)
+            self.next_run("MultiDailyAltAcc", success=True)
         finally:
             # 无论任务是否成功完成，都要标记为完成
             self._mark_task_completed(config_name)
         
-        raise TaskEnd("Daily")
+        raise TaskEnd("MultiDailyAltAcc")
 
     def _mark_task_start(self, config_name, pid):
         """
@@ -302,9 +302,9 @@ class ScriptTask(GameUi, DailyAssets):
 
     def _should_process_account(self, account_info, login_time):
         """判断是否应该处理该账号"""
-        logger.info(f"account {account_info.character} need_login: {self.daily_conf.daily_config.need_login}")
-        #logger.info(f"need_login: {self.daily_conf.daily_config.need_login}")
-        if not self.daily_conf.daily_config.need_login and not self.is_need_login(account_info, login_time):
+        logger.info(f"account {account_info.character} need_login: {self.daily_conf.multi_daily_alt_acc_config.need_login}")
+        #logger.info(f"need_login: {self.daily_conf.multi_daily_alt_acc_config.need_login}")
+        if not self.daily_conf.multi_daily_alt_acc_config.need_login and not self.is_need_login(account_info, login_time):
             logger.warning(f"{account_info.character} Skipped last Login Time: {account_info.last_complete_time}")
             return False
         return True
@@ -340,7 +340,7 @@ class ScriptTask(GameUi, DailyAssets):
         config = ExtendedAccountInfo()
         
         # 全局配置
-        base_config = self.daily_conf.daily_config
+        base_config = self.daily_conf.multi_daily_alt_acc_config
         config.alliedteam_battle_enable = base_config.total_alliedteam_battle_enable and account_info.alliedteam_battle_enable
         config.alliedteam_ap_enable = base_config.total_alliedteam_ap_enable and account_info.alliedteam_ap_enable
         config.mail_enable = base_config.total_mail_enable and account_info.mail_enable
@@ -402,13 +402,13 @@ class ScriptTask(GameUi, DailyAssets):
         spec.loader.exec_module(module)
 
         WQEX = type("WQEX", (module.ScriptTask,), {
-            "get_config": DailyForFlagEx.get_config
+            "get_config": DailyAltAccEx.get_config
         })
         wq = WQEX(**kwargs)
         return wq
     def _create_task_instance(self, config):
         """创建任务实例"""
-        dff = self.CreatObjectFromModule("DailyForFlag", config=self.config, device=self.device)
+        dff = self.CreatObjectFromModule("DailyAltAcc", config=self.config, device=self.device)
         dff.daily_conf = self.daily_conf
         dff.account_info = config
         return dff
@@ -431,8 +431,8 @@ class ScriptTask(GameUi, DailyAssets):
         # 更新配置文件中的时间
         self.daily_conf.update_account_login_history(account_info)
         # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
-        self.config.model.daily = self.daily_conf
-        self.daily_conf.daily_config.need_login_time = self.start_time
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+        self.daily_conf.multi_daily_alt_acc_config.need_login_time = self.start_time
         self.save_config()
         return True
 
@@ -453,7 +453,7 @@ class ScriptTask(GameUi, DailyAssets):
                 )
             case MSGType.Utilize:
                 logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
-                self.daily_conf.daily_config.total_KekkaiUtilize_enable = False
+                self.daily_conf.multi_daily_alt_acc_config.total_KekkaiUtilize_enable = False
             case MSGType.neterror:
                 logger.info("网络错误,准备重试")
                 should_retry = True
@@ -522,66 +522,66 @@ class ScriptTask(GameUi, DailyAssets):
         """安排白天的运行时间"""
         # 周三或周六开启神秘商店
         if start_time.weekday() == 2 or start_time.weekday() == 5:
-            self.daily_conf.daily_config.total_mysteryshop_enable = True
+            self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = True
         # 周一开启周奖励
         if start_time.weekday() == 0:
-            self.daily_conf.daily_config.total_weekaward_enable = True
+            self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = True
             
-        self.daily_conf.daily_config.total_alliedteam_battle_enable = False
-        self.daily_conf.daily_config.total_alliedteam_ap_enable = False
-        self.daily_conf.daily_config.total_returngift_enable = False
-        self.daily_conf.daily_config.total_courtyard_enable = True
-        self.daily_conf.daily_config.total_mail_enable = True
-        self.daily_conf.daily_config.total_cooperation_enable = True
-        self.daily_conf.daily_config.need_login = True
-        self.config.model.daily = self.daily_conf
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = True
+        self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
+        self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
+        self.daily_conf.multi_daily_alt_acc_config.need_login = True
+        self.config.model.multi_daily_alt_acc = self.daily_conf
         
-        self.set_next_run("Daily", target=start_time.replace(hour=18, minute=5))
+        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=18, minute=5))
         self.save_config()
 
     def _schedule_after_midnight(self, start_time: datetime):
         """安排凌晨的运行时间"""
-        self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
+        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5))
 
         # 如果开启了同心战斗，则调整设置
-        if self.daily_conf.daily_config.total_alliedteam_battle_enable:
-            self.daily_conf.daily_config.total_alliedteam_battle_enable = False
-            self.daily_conf.daily_config.total_alliedteam_ap_enable = True
-            self.daily_conf.daily_config.total_courtyard_enable = False
-            self.daily_conf.daily_config.total_mail_enable = True
-            self.daily_conf.daily_config.total_cooperation_enable = True
-            self.daily_conf.daily_config.need_login = True
-            self.config.model.daily = self.daily_conf
+        if self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
+            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = True
+            self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
+            self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
+            self.daily_conf.multi_daily_alt_acc_config.need_login = True
+            self.config.model.multi_daily_alt_acc = self.daily_conf
             
-            self.set_next_run("Daily", target=start_time.replace(hour=6, minute=5))
+            self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5))
             self.save_config()
-        elif self.daily_conf.daily_config.total_returngift_enable:
+        elif self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
             # 如果开启了回礼功能
-            self.daily_conf.daily_config.total_alliedteam_battle_enable = True
-            self.daily_conf.daily_config.total_alliedteam_ap_enable = False
-            self.daily_conf.daily_config.total_returngift_enable = False
-            self.daily_conf.daily_config.total_courtyard_enable = False
-            self.daily_conf.daily_config.total_mail_enable = False
-            self.daily_conf.daily_config.total_cooperation_enable = False
-            self.daily_conf.daily_config.need_login = True
-            self.config.model.daily = self.daily_conf
+            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = True
+            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
+            self.daily_conf.multi_daily_alt_acc_config.need_login = True
+            self.config.model.multi_daily_alt_acc = self.daily_conf
             
-            self.set_next_run("Daily", target=datetime.now() + timedelta(minutes=20))
+            self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=20))
             self.save_config()
 
     def _schedule_evening(self, start_time: datetime):
         """安排晚上的运行时间"""
-        self.daily_conf.daily_config.total_weekaward_enable = False
-        self.daily_conf.daily_config.total_mysteryshop_enable = False
-        self.daily_conf.daily_config.total_alliedteam_battle_enable = False
-        self.daily_conf.daily_config.total_alliedteam_ap_enable = False
-        self.daily_conf.daily_config.total_returngift_enable = True
-        self.daily_conf.daily_config.total_courtyard_enable = False
-        self.daily_conf.daily_config.total_mail_enable = False
-        self.daily_conf.daily_config.total_cooperation_enable = False
-        self.daily_conf.daily_config.need_login = True
-        self.config.model.daily = self.daily_conf
-        self.set_next_run("Daily", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))
+        self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = True
+        self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.need_login = True
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))
         self.save_config()
         
 if __name__ == '__main__':

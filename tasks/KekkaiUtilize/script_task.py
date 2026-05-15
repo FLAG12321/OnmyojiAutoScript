@@ -82,7 +82,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             if self.utilize_add_count >= 5:
                 logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
                 # 添加消息到列表，以便在TaskEnd时返回
-                from tasks.DailyForFlag.config import MSGType
+                from tasks.DailyAltAcc.config import MSGType
                 self.msg.append([MSGType.Utilize, "未找到寄养卡"])
                 self.push_notify(content=f"没有合适可以蹭的卡, 5分钟后再次执行蹭卡")
                 

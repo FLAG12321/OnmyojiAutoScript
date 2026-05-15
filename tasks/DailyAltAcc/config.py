@@ -12,7 +12,7 @@ from tasks.Component.GeneralInvite.config_invite import InviteConfig
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.KekkaiActivation.config import KekkaiActivation as KekkaiActivationConfig
 from tasks.KekkaiUtilize.config import KekkaiUtilize as KekkaiUtilizeConfig
-class DailyForFlagConfig(BaseModel):
+class DailyAltAccConfig(BaseModel):
 
   alliedteam_battle_enable: bool = Field(default=False, description='是否开启同心队战斗')
   alliedteam_limit_count: int = Field(default=30, description='战斗次数')
@@ -30,9 +30,9 @@ class DailyForFlagConfig(BaseModel):
   tree_planting_enable: int  = Field(default=2, description='0不运行 1买花 2买花捐树')
   trialbattle_enable: bool = Field(default=True, description='是否开启试炼战斗')
   summon_up_enable: bool = Field(default=True, description='是否开启UP召唤领取礼包')
-class DailyForFlag(ConfigBase):
+class DailyAltAcc(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
-    daily_for_flag_config: DailyForFlagConfig  = Field(default_factory=DailyForFlagConfig)
+    daily_alt_acc_config: DailyAltAccConfig  = Field(default_factory=DailyAltAccConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
 class GoodsType(Enum):
     shepi = 0
