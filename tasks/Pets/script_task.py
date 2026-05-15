@@ -32,7 +32,7 @@ class ScriptTask(GameUi, PetsAssets):
             if self.ui_get_current_page() != page_main:
                 self.ui_goto(page_main)
                 self.set_next_run('Pets', target=datetime.now() + timedelta(minutes=5))
-            raise Exception ('Pets not found')
+            raise TaskEnd ('Pets')
         start_time = time.time()
         click_group_flag1 = [self.C_CLICK_PETS_4, 
                             self.C_CLICK_PETS_5,

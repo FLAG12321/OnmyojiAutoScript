@@ -17,6 +17,7 @@ from module.exception import TaskEnd
 from module.atom.image import RuleImage
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
+from tasks.GameUi.assets import GameUiAssets
 from tasks.ReturnGift.assets import ReturnGiftAssets
 from tasks.ReturnGift.config import ReturnGiftConfig
 import random
@@ -82,7 +83,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                     self.screenshot()
                     if self.appear_then_click(self.I_R_BACK_Y, interval=1):
                         continue
-                    if self.ui_get_current_page() == page_guild:
+                    if self.appear(GameUiAssets.I_CHECK_GUILD):
                         break
                 continue
             if self.appear_then_click(self.I_R_PAGE_GUILD,action=self.C_R_TOSEND_CLICK,interval=2):
