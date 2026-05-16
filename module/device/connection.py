@@ -537,7 +537,7 @@ class Connection(ConnectionAttr):
             elif device.status == 'device':
                 pass
             else:
-                logger.warning(f'Device {serial} is is having a unknown status: {device.status}')
+                logger.warning(f'Device {serial} is having an unknown status: {device.status}')
 
         # Skip for emulator-5554
         if 'emulator-' in serial:
@@ -552,25 +552,41 @@ class Connection(ConnectionAttr):
             msg = self.adb_client.connect(serial)
             logger.info(msg)
             if 'connected' in msg:
-                # Connected to 127.0.0.1:59865
-                # Already connected to 127.0.0.1:59865
                 return True
             elif 'bad port' in msg:
-                # bad port number '598265' in '127.0.0.1:598265'
                 logger.error(msg)
                 possible_reasons('Serial incorrect, might be a typo')
                 raise RequestHumanTakeover
             elif '(10061)' in msg:
-                # cannot connect to 127.0.0.1:55555:
-                # No connection could be made because the target machine actively refused it. (10061)
-                logger.info(msg)
-                logger.warning('No such device exists, please restart the emulator or set a correct serial')
+                # No connection could be made because the target machine actively refused it.
+                logger.warning('Connection refused, emulator is not running')
+                raise EmulatorNotRunningError
+            elif '(10060)' in msg:
+                # Connection attempt timed out
+                logger.warning('Connection timed out, emulator may not be running')
+                raise EmulatorNotRunningError
+            elif 'cannot connect' in msg:
+                logger.warning(f'Cannot connect to {serial}: {msg}')
                 raise EmulatorNotRunningError
 
-        # Failed to connect
-        logger.warning(f'Failed to connect {serial} after 3 trial, assume connected')
-        self.detect_device()
-        return False
+        # 3 tries failed without a clear error, verify with shell command
+        logger.warning(f'Failed to connect {serial} after 3 tries, verifying device status...')
+        if self._verify_device_alive(serial):
+            return True
+
+        logger.warning(f'Device {serial} is not responding')
+        raise EmulatorNotRunningError
+
+    def _verify_device_alive(self, serial) -> bool:
+        """Verify device is actually reachable by running a shell command."""
+        try:
+            devices = self.list_device().select(serial=serial, status='device')
+            if not devices:
+                return False
+            result = self.adb.shell('echo pong', timeout=5)
+            return 'pong' in result
+        except Exception:
+            return False
 
     @Config.when(DEVICE_OVER_HTTP=True)
     def adb_connect(self, serial):
@@ -804,10 +820,18 @@ class Connection(ConnectionAttr):
                     logger.info(f'Current serial {self.serial} not found but paired device {port_serial} found. '
                                 f'Using serial: {port_serial}')
                     self.serial = port_serial
-                if not port_device and emu_device:
+                elif not port_device and emu_device:
                     logger.info(f'Current serial {self.serial} not found but paired device {emu_serial} found. '
                                 f'Using serial: {emu_serial}')
                     self.serial = emu_serial
+                else:
+                    logger.warning(f'Target device {self.serial} not found in available devices, '
+                                   f'emulator may not be running')
+        elif self.config.script.device.serial != 'auto':
+            # Non-auto serial, check if target device is visible
+            if not available.select(serial=self.serial):
+                logger.warning(f'Target device {self.serial} not found in available devices, '
+                               f'will attempt adb connect')
 
     @retry
     def list_package(self, show_log=True):

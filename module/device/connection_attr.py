@@ -222,44 +222,70 @@ class ConnectionAttr:
 
     @cached_property
     def adb_binary(self):
-        # Try adb in deploy.yaml
-        # from module.webui.setting import State
-        # file = State.deploy_config.AdbExecutable
-        # file = file.replace('\\', '/')
-        # if os.path.exists(file):
-        #     return os.path.abspath(file)
-        #
-        # # Try existing adb.exe
-        # for file in self.adb_binary_list:
-        #     if os.path.exists(file):
-        #         return os.path.abspath(file)
+        import sys
+        import shutil
 
         # Try adb in python environment
-        import sys
         file = os.path.join(sys.executable, '../Lib/site-packages/adbutils/binaries/adb.exe')
         file = os.path.abspath(file).replace('\\', '/')
         if os.path.exists(file):
             return file
 
-        # Use adb in system PATH
-        file = 'adb'
-        return file
+        # Try known paths
+        for file in self.adb_binary_list:
+            if os.path.exists(file):
+                return os.path.abspath(file).replace('\\', '/')
+
+        # Try system PATH
+        adb_in_path = shutil.which('adb')
+        if adb_in_path:
+            return adb_in_path
+
+        logger.critical('No adb binary found, please check your environment')
+        raise RequestHumanTakeover
 
     @cached_property
     def adb_client(self) -> AdbClient:
         host = '127.0.0.1'
         port = 5037
 
-        # Trying to get adb port from env
         env = os.environ.get('ANDROID_ADB_SERVER_PORT', None)
         if env is not None:
             try:
                 port = int(env)
             except ValueError:
-                logger.warning(f'Invalid environ variable ANDROID_ADB_SERVER_PORT={port}, using default port')
+                logger.warning(f'Invalid ANDROID_ADB_SERVER_PORT={env}, using default 5037')
 
         logger.attr('AdbClient', f'AdbClient({host}, {port})')
-        return AdbClient(host, port)
+        client = AdbClient(host, port)
+
+        if not self._adb_server_is_alive(client):
+            self._adb_server_start()
+            if not self._adb_server_is_alive(client):
+                logger.critical('Failed to start adb server')
+                raise RequestHumanTakeover
+
+        return client
+
+    def _adb_server_is_alive(self, client: AdbClient) -> bool:
+        try:
+            client.server_version()
+            return True
+        except (ConnectionRefusedError, ConnectionResetError, OSError):
+            return False
+
+    def _adb_server_start(self):
+        import subprocess
+        logger.info('Adb server not running, starting...')
+        try:
+            subprocess.run(
+                [self.adb_binary, 'start-server'],
+                timeout=15,
+                capture_output=True
+            )
+            logger.info('Adb server started')
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            logger.error(f'Failed to start adb server: {e}')
 
     @cached_property
     def adb(self) -> AdbDevice:
