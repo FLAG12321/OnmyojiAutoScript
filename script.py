@@ -57,6 +57,12 @@ class Script:
         'MultiDailyAltAcc',
     ]
 
+    # 不需要游戏运行的任务，跳过 app_is_running 检测
+    SKIP_APP_CHECK_TASKS = [
+        'Restart',
+        'AutoCheckinBigGod',
+    ]
+
     def __init__(self, config_name: str ='oas') -> None:
         self._emulator_down = False
         logger.hr('Start', level=0)
@@ -423,6 +429,8 @@ class Script:
 
         try:
             self.device.screenshot()
+            if command not in self.SKIP_APP_CHECK_TASKS and not self.device.app_is_running():
+                raise GameNotRunningError('Game not running')
             module_name = 'script_task'
             module_path = str(Path.cwd() / 'tasks' / command / (module_name+'.py'))
             logger.info(f'module_path: {module_path}, module_name: {module_name}')
@@ -433,7 +441,7 @@ class Script:
             if self._should_notify_task_end(task_name):
                 self.config.notifier.push(
                     title=f'任务提醒',
-                    content=f"{I18n.trans_zh_cn(command)}{command} 任务执行完毕，完成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    content=f"{I18n.trans_zh_cn(command)} 任务执行完毕，完成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 )
             return True
         except GameNotRunningError as e:
