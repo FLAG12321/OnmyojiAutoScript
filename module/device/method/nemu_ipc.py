@@ -12,7 +12,7 @@ from module.base.decorator import cached_property, del_cached_property, has_cach
 from module.base.utils import ensure_time
 from module.device.method.minitouch import insert_swipe, random_rectangle_point
 from module.device.method.utils import RETRY_TRIES, retry_sleep
-from module.exception import RequestHumanTakeover
+from module.exception import RequestHumanTakeover, GameNotRunningError
 from module.logger import logger
 
 
@@ -498,6 +498,10 @@ class NemuIpc():
                 except (NemuIpcIncompatible, NemuIpcError) as e:
                     logger.error(e)
                     logger.error('Emulator info incorrect')
+                except (TimeoutError, asyncio.TimeoutError) as e:
+                    logger.error(f'NemuIpc connect timeout: {e}')
+                    logger.error('Emulator may be stuck or not fully loaded')
+                    raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
 
         # Search emulator instance
         # with E:\ProgramFiles\MuMuPlayer-12.0\shell\MuMuPlayer.exe
@@ -515,6 +519,10 @@ class NemuIpc():
             logger.error(e)
             logger.error('Unable to initialize NemuIpc')
             raise RequestHumanTakeover
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            logger.error(f'NemuIpc connect timeout: {e}')
+            logger.error('Emulator may be stuck or not fully loaded')
+            raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
 
     def nemu_ipc_available(self) -> bool:
         if not self.is_mumu_family:
@@ -534,7 +542,12 @@ class NemuIpc():
         logger.info('nemu_ipc released')
 
     def screenshot_nemu_ipc(self):
-        image = self.nemu_ipc.screenshot()
+        try:
+            image = self.nemu_ipc.screenshot()
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            logger.error(f'NemuIpc screenshot timeout: {e}')
+            self.nemu_ipc_release()
+            raise GameNotRunningError('NemuIpc timeout, emulator not responsive')
 
         image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
         cv2.flip(image, 0, dst=image)
