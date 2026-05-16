@@ -32,34 +32,28 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
     retry_times :int = 0
     def __init__(self, *args, **kwargs):
-        for trial in range(4):
+        for trial in range(3):
             try:
                 super().__init__(*args, **kwargs)
                 break
             except EmulatorNotRunningError:
-                if trial >= 3:
-                    logger.critical('Failed to start emulator after 3 retries')
+                if trial >= 2:
+                    logger.critical('Failed to start emulator after 3 attempts')
                     raise RequestHumanTakeover
-                # Stop then start emulator to handle stuck states
-                if self.emulator_instance is not None:
-                    logger.warning(f'Emulator not running, stopping and restarting... (trial {trial + 1}/3)')
-                    self.emulator_start()
-                else:
-                    # emulator_instance is None, try to re-discover emulator
-                    logger.warning(f'Emulator instance not found, re-discovering... (trial {trial + 1}/3)')
-                    del_cached_property(self, 'emulator_instance')
-                    del_cached_property(self, 'emulator_info')
-                    del_cached_property(self, 'all_emulator_instances')
-                    if self.emulator_instance is not None:
-                        logger.info('Re-discovered emulator instance, stopping and restarting...')
-                        self.emulator_start()
-                    else:
-                        logger.critical(
-                            f'No emulator with serial "{self.config.Emulator_Serial}" found, '
-                            f'please set a correct serial'
-                        )
-                        raise RequestHumanTakeover
 
+                instance = self._resolve_emulator_instance()
+                if instance is None:
+                    raise RequestHumanTakeover
+
+                logger.warning(f'Emulator not running, starting... (attempt {trial + 1}/3)')
+                if not self._emulator_function_wrapper(self._emulator_start):
+                    continue
+
+                if not self.emulator_start_watch():
+                    logger.warning('Emulator start watch timeout, stopping stuck emulator...')
+                    self._emulator_function_wrapper(self._emulator_stop)
+                    self._wait_emulator_shutdown()
+                    continue
 
         # Auto-fill emulator info
         if IS_WINDOWS and self.config.script.device.emulatorinfo_type == 'auto':
@@ -70,6 +64,26 @@ class Device(Platform, Screenshot, Control, AppControl):
         # Auto-select the fastest screenshot method
         if self.config.script.device.screenshot_method == 'auto':
             self.run_simple_screenshot_benchmark()
+
+    def _resolve_emulator_instance(self):
+        """查找模拟器实例，必要时重新发现"""
+        if self.emulator_instance is not None:
+            return self.emulator_instance
+
+        logger.warning('Emulator instance not found, re-discovering...')
+        del_cached_property(self, 'emulator_instance')
+        del_cached_property(self, 'emulator_info')
+        del_cached_property(self, 'all_emulator_instances')
+
+        if self.emulator_instance is not None:
+            logger.info(f'Re-discovered emulator instance: {self.emulator_instance}')
+            return self.emulator_instance
+
+        logger.critical(
+            f'No emulator with serial "{self.serial}" found, '
+            f'please set a correct serial'
+        )
+        return None
 
     def run_simple_screenshot_benchmark(self):
         """

@@ -1,4 +1,6 @@
 import ctypes
+import json
+import os
 import re
 import subprocess
 import psutil
@@ -285,29 +287,67 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         logger.error(f'Emulator function {func.__name__}() failed')
         return False
 
+    def _is_emulator_process_alive(self) -> bool:
+        """
+        Generic check: is the emulator process still running?
+        Uses psutil to find a process matching the emulator executable.
+        """
+        instance = self.emulator_instance
+        if instance is None:
+            return False
+
+        exe = instance.emulator.path
+        if not exe:
+            return False
+
+        exe_name = os.path.basename(exe).lower()
+
+        for proc in psutil.process_iter(['name', 'pid']):
+            try:
+                if proc.info['name'] and proc.info['name'].lower() == exe_name:
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        return False
+
+    def _query_mumu12_state(self):
+        """
+        Query MuMu12 emulator instance state via MuMuManager.exe info.
+
+        Returns:
+            dict: Parsed JSON info, or None if query failed or not MuMu12
+        """
+        instance = self.emulator_instance
+        if instance is None or instance != Emulator.MuMuPlayer12:
+            return None
+        if instance.MuMuPlayer12_id is None:
+            return None
+        exe = instance.emulator.path
+        console = Emulator.single_to_console(exe)
+        cmd = f'"{console}" info -v {instance.MuMuPlayer12_id}'
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=5, shell=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return json.loads(result.stdout.strip())
+        except Exception:
+            pass
+        return None
+
     def emulator_start_watch(self):
         """
-        Returns:
-            bool: True if startup completed
-                False if timeout, unexpected stop, adb preemptive
-        """
-        logger.hr('Emulator start', level=2)
-        current_window = get_focused_window()
-        serial = self.emulator_instance.serial
-        logger.info(f'Current window: {current_window}')
+        Wait for emulator to fully start up.
+        Checks: ADB connection → shell response → game package → window structure.
 
-        def adb_connect():
-            m = self.adb_client.connect(self.serial)
-            if 'connected' in m:
-                # Connected to 127.0.0.1:59865
-                # Already connected to 127.0.0.1:59865
-                return False
-            elif '(10061)' in m:
-                # cannot connect to 127.0.0.1:55555:
-                # No connection could be made because the target machine actively refused it. (10061)
-                return False
-            else:
-                return True
+        Returns:
+            bool: True if startup completed, False if timeout
+        """
+        logger.hr('Emulator start watch', level=2)
+        current_window = get_focused_window()
+        serial = self.serial
+        logger.info(f'Watching serial: {serial}')
 
         @run_once
         def show_online(m):
@@ -319,21 +359,38 @@ class PlatformWindows(PlatformBase, EmulatorManager):
 
         @run_once
         def show_package(m):
-            logger.info(f'Found azurlane packages: {m}')
+            logger.info(f'Found packages: {m}')
 
         interval = Timer(1).start()
         timeout = Timer(120).start()
         struct_window = Timer(10)
+        state_check_timer = Timer(15).start()
         new_window = 0
+        adb_connected = False
+
         while 1:
             interval.wait()
             interval.reset()
             if timeout.reached():
-                logger.warning(f'Emulator start timeout')
+                logger.warning('Emulator start timeout')
                 return False
 
-            # Check emulator window showing up
-            # logger.info([get_focused_window(), get_window_title(get_focused_window())])
+            # Periodically check if emulator process is actually running
+            if not adb_connected and state_check_timer.reached():
+                state_check_timer.reset()
+                state = self._query_mumu12_state()
+                if state is not None:
+                    # MuMu12: use detailed state query
+                    if not state.get('is_process_started', False):
+                        logger.warning(f'Emulator process not started (player_state={state.get("player_state")}), aborting watch')
+                        return False
+                else:
+                    # Generic: check if emulator exe is still running
+                    if not self._is_emulator_process_alive():
+                        logger.warning('Emulator process not found, aborting watch')
+                        return False
+
+            # Detect new emulator window and restore focus
             if current_window != 0 and new_window == 0:
                 new_window = get_focused_window()
                 if current_window != new_window and not self.config.script.device.emulator_window_minimize and not self.config.script.device.run_background_only:
@@ -341,47 +398,55 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                     set_focus_window(current_window)
                 else:
                     new_window = 0
+
+            logger.info(f'Waiting for emulator, remain[{timeout.remain():.1f}s]')
+
+            # Step 1: Check ADB device status
             try:
-                logger.info(f'Try to connect emulator, remain[{timeout.remain():.1f}s]')
-                # Check device connection
                 devices = self.list_device().select(serial=serial)
-                # logger.info(devices)
-                if devices:
-                    device: AdbDeviceWithStatus = devices.first_or_none()
-                    if device.status == 'device':
-                        # Emulator online
-                        pass
-                    if device.status == 'offline':
-                        self.adb_client.disconnect(serial)
-                        adb_connect()
-                        continue
-                else:
-                    # Try to connect
-                    adb_connect()
-                    continue
             except Exception as e:
-                logger.warning(f'Error during adb_connect in watch loop: {e}')
-                return False
+                logger.info(f'list_device error (transient): {e}')
+                continue
 
-            show_online(devices.first_or_none())
+            if not devices:
+                # Device not visible yet, try adb connect
+                try:
+                    self.adb_client.connect(serial)
+                except Exception:
+                    pass
+                continue
 
-            # Check command availability
+            device: AdbDeviceWithStatus = devices.first_or_none()
+            if device.status == 'offline':
+                self.adb_client.disconnect(serial)
+                try:
+                    self.adb_client.connect(serial)
+                except Exception:
+                    pass
+                continue
+            if device.status != 'device':
+                continue
+
+            show_online(device)
+
+            # Step 2: Verify shell is responsive
             try:
                 pong = self.adb_shell(['echo', 'pong'])
             except Exception as e:
-                logger.info(e)
+                logger.info(f'Shell not ready: {e}')
                 continue
             show_ping(pong)
 
-            # Check game package
-            packages = self.list_app_packages(show_log=False)
-            if len(packages):
-                pass
-            else:
+            # Step 3: Verify game package exists
+            try:
+                packages = self.list_app_packages(show_log=False)
+            except Exception:
+                continue
+            if not packages:
                 continue
             show_package(packages)
 
-            # Check Window structure
+            # Step 4: Wait for window structure to stabilize
             if not struct_window.started():
                 struct_window.start()
             elif struct_window.reached():
@@ -391,7 +456,6 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             if not Handle.handle_has_children(hwnd=new_window):
                 continue
 
-            # All check passed
             break
 
         emulator_window_minimize = self.config.script.device.emulator_window_minimize
@@ -415,44 +479,58 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         return True
 
 
-    def emulator_start(self):
-        logger.hr('Emulator start', level=1)
-        for i in range(3):
-            # Stop
-            if not self._emulator_function_wrapper(self._emulator_stop):
+    def _wait_emulator_shutdown(self, timeout=30):
+        """
+        Wait until the emulator's ADB serial disappears from device list.
+        """
+        serial = self.serial
+        logger.info(f'Waiting for emulator {serial} to shut down...')
+        wait_timer = Timer(timeout).start()
+        interval = Timer(2).start()
+        while 1:
+            interval.wait()
+            interval.reset()
+            if wait_timer.reached():
+                logger.warning(f'Emulator shutdown wait timeout ({timeout}s), proceeding anyway')
                 return False
-            # Start
-            if self._emulator_function_wrapper(self._emulator_start):
-                # Success
-                if self.emulator_start_watch():
-                    return True
-                logger.attr(2 - i, f'Failed to connect or start, try again')
-                continue
-            else:
-                # Failed to start, stop and start again
-                if self._emulator_function_wrapper(self._emulator_stop):
-                    continue
-                else:
-                    return False
+            try:
+                devices = self.list_device().select(serial=serial)
+            except Exception:
+                return True
+            if not devices:
+                logger.info(f'Emulator {serial} is offline')
+                return True
+            device = devices.first_or_none()
+            if device and device.status == 'offline':
+                logger.info(f'Emulator {serial} is offline')
+                return True
+            logger.info(f'Emulator still alive, waiting... remain[{wait_timer.remain():.0f}s]')
 
-        logger.error('Failed to start emulator 3 times, stopped')
+    def emulator_start(self):
+        """Start emulator with watch. Used by game stuck recovery."""
+        logger.hr('Emulator start', level=1)
+        for trial in range(3):
+            if not self._emulator_function_wrapper(self._emulator_start):
+                logger.warning(f'Failed to start emulator (attempt {trial + 1}/3)')
+                continue
+
+            if self.emulator_start_watch():
+                return True
+            logger.warning(f'Emulator start watch failed (attempt {trial + 1}/3)')
+            self._emulator_function_wrapper(self._emulator_stop)
+            self._wait_emulator_shutdown()
+
+        logger.error('Failed to start emulator after 3 attempts')
         return False
 
     def emulator_stop(self):
         logger.hr('Emulator stop', level=1)
-        for _ in range(3):
-            # Stop
+        for trial in range(3):
             if self._emulator_function_wrapper(self._emulator_stop):
-                # Success
                 return True
-            else:
-                # Failed to stop, start and stop again
-                if self._emulator_function_wrapper(self._emulator_start):
-                    continue
-                else:
-                    return False
+            logger.warning(f'Failed to stop emulator (attempt {trial + 1}/3)')
 
-        logger.error('Failed to stop emulator 3 times, stopped')
+        logger.error('Failed to stop emulator after 3 attempts')
         return False
 
 
