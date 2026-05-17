@@ -1,8 +1,8 @@
 [
   {
     "itemName": "create_room",
-    "imageName": "gr_create_room.png",
-    "roiFront": "985,600,177,58",
+    "imageName": "create_room.png",
+    "roiFront": "1001,607,142,38",
     "roiBack": "396,569,813,100",
     "method": "Template matching",
     "threshold": 0.8,
@@ -10,9 +10,9 @@
   },
   {
     "itemName": "create_ensure",
-    "imageName": "gr_create_ensure.png",
-    "roiFront": "813,560,129,63",
-    "roiBack": "813,560,129,63",
+    "imageName": "create_ensure.png",
+    "roiFront": "840,573,74,37",
+    "roiBack": "785,543,187,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
