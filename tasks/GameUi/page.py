@@ -10,6 +10,7 @@ from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.base_task import BaseTask as BT
 from tasks.RyouToppa.assets import RyouToppaAssets
+from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
 
 
 class PageRegistry:
@@ -201,6 +202,10 @@ page_main.link(button=G.O_PAGE_GUILD, destination=page_guild)
 page_team = Page(G.I_CHECK_TEAM)
 page_team.link(button=G.I_BACK_Y, destination=page_main)
 page_main.link(button=G.O_PAGE_TEAM, destination=page_team)
+# 组队房间 room (退出需要两步: additional点击返回触发确认框, link点击确认退出)
+page_room = Page(GeneralInviteAssets.I_GI_EMOJI_1)
+page_room.additional = [GeneralInviteAssets.I_BACK_YELLOW]
+page_room.link(button=GeneralInviteAssets.I_GI_SURE, destination=page_main)
 # 收集 collection
 page_collection = Page(G.I_CHECK_COLLECTION)
 page_collection.additional =[G.I_DLC_TICK,G.I_DLC_EXIT]
