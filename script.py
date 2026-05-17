@@ -446,8 +446,12 @@ class Script:
             return True
         except GameNotRunningError as e:
             logger.warning(e)
+            if 'NemuIpc' in str(e) or 'nemu' in str(e).lower():
+                logger.warning('NemuIpc connect failed, emulator needs full restart')
+                self.device.emulator_stop()
+                self._emulator_down = True
             self.config.task_call('Restart')
-            return True
+            return False
         except (GameStuckError, GameTooManyClickError) as e:
             logger.error(e)
             self.save_error_log()

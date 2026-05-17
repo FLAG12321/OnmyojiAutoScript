@@ -362,9 +362,10 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             logger.info(f'Found packages: {m}')
 
         interval = Timer(1).start()
-        timeout = Timer(120).start()
+        timeout = Timer(180).start()
         struct_window = Timer(10)
         state_check_timer = Timer(15).start()
+        packages_timeout = Timer(120)
         new_window = 0
         adb_connected = False
 
@@ -375,19 +376,18 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                 logger.warning('Emulator start timeout')
                 return False
 
-            # Periodically check if emulator process is actually running
-            if not adb_connected and state_check_timer.reached():
+            # Periodically check emulator state via MuMuManager
+            if state_check_timer.reached():
                 state_check_timer.reset()
                 state = self._query_mumu12_state()
                 if state is not None:
-                    # MuMu12: use detailed state query
-                    if not state.get('is_process_started', False):
-                        logger.warning(f'Emulator process not started (player_state={state.get("player_state")}), aborting watch')
+                    player_state = state.get('player_state', '')
+                    is_started = state.get('is_process_started', False)
+                    if not is_started:
+                        logger.warning(f'Emulator process not started (player_state={player_state}), aborting watch')
                         return False
-                else:
-                    # Generic: check if emulator exe is still running
-                    if not self._is_emulator_process_alive():
-                        logger.warning('Emulator process not found, aborting watch')
+                    if adb_connected and player_state != 'start_finished':
+                        logger.warning(f'Emulator stuck (player_state={player_state}), aborting watch')
                         return False
 
             # Detect new emulator window and restore focus
@@ -428,6 +428,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                 continue
 
             show_online(device)
+            if not adb_connected:
+                adb_connected = True
+                packages_timeout.start()
 
             # Step 2: Verify shell is responsive
             try:
@@ -443,6 +446,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             except Exception:
                 continue
             if not packages:
+                if packages_timeout.reached():
+                    logger.warning(f'Game packages not found within {packages_timeout.limit}s after ADB connected, emulator likely stuck')
+                    return False
                 continue
             show_package(packages)
 
@@ -482,6 +488,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
     def _wait_emulator_shutdown(self, timeout=30):
         """
         Wait until the emulator's ADB serial disappears from device list.
+        If graceful shutdown times out, force-kill the emulator process.
         """
         serial = self.serial
         logger.info(f'Waiting for emulator {serial} to shut down...')
@@ -491,8 +498,11 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             interval.wait()
             interval.reset()
             if wait_timer.reached():
-                logger.warning(f'Emulator shutdown wait timeout ({timeout}s), proceeding anyway')
-                return False
+                logger.warning(f'Emulator shutdown wait timeout ({timeout}s), force killing...')
+                self._force_kill_emulator()
+                import time
+                time.sleep(3)
+                return True
             try:
                 devices = self.list_device().select(serial=serial)
             except Exception:
@@ -505,6 +515,57 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                 logger.info(f'Emulator {serial} is offline')
                 return True
             logger.info(f'Emulator still alive, waiting... remain[{wait_timer.remain():.0f}s]')
+
+    def _force_kill_emulator(self):
+        """
+        Force kill emulator process when graceful shutdown fails.
+        Uses process-level kill for all emulator types.
+        """
+        instance = self.emulator_instance
+        if instance is None:
+            return
+        exe = instance.emulator.path
+        if instance == Emulator.MuMuPlayer12:
+            if instance.MuMuPlayer12_id is not None:
+                cmd = f'"{Emulator.single_to_console(exe)}" control -v {instance.MuMuPlayer12_id} force_stop'
+                logger.info(f'Force stopping MuMu12: {cmd}')
+                try:
+                    subprocess.run(cmd, capture_output=True, timeout=10, shell=True)
+                except Exception as e:
+                    logger.warning(f'Force stop command failed: {e}, falling back to process kill')
+                    self.kill_process_by_regex(rf'MuMuVMMHeadless.exe.*--comment {instance.name}')
+        elif instance == Emulator.MuMuPlayer:
+            self.kill_process_by_regex(
+                rf'(NemuHeadless.exe|NemuPlayer.exe|NemuService.exe|NemuSVC.exe)'
+            )
+        elif instance == Emulator.MuMuPlayerX:
+            self.kill_process_by_regex(
+                rf'(NemuPlayer.exe.*-m {instance.name}|Muvm6Headless.exe|Muvm6SVC.exe)'
+            )
+        elif instance == Emulator.LDPlayerFamily:
+            self.kill_process_by_regex(
+                rf'(LDPlayer.exe.*-s {instance.LDPlayer_id}|dnplayer.exe.*-s {instance.LDPlayer_id})'
+            )
+        elif instance == Emulator.NoxPlayerFamily:
+            self.kill_process_by_regex(
+                rf'(Nox.exe.*-clone:{instance.name}|NoxVMHandle.exe.*-clone:{instance.name})'
+            )
+        elif instance == Emulator.BlueStacks5:
+            self.kill_process_by_regex(
+                rf'HD-Player.exe.*"--instance" "{instance.name}"'
+            )
+        elif instance == Emulator.BlueStacks4:
+            self.kill_process_by_regex(
+                rf'(Bluestacks.exe.*-vmname {instance.name}|BstkSVC.exe)'
+            )
+        elif instance == Emulator.MEmuPlayer:
+            self.kill_process_by_regex(
+                rf'(MEmu.exe.*{instance.name}|MEmuHeadless.exe.*{instance.name})'
+            )
+        else:
+            logger.warning(f'Force kill: unknown emulator type {instance}')
+
+        logger.info('Force kill emulator done')
 
     def emulator_start(self):
         """Start emulator with watch. Used by game stuck recovery."""
