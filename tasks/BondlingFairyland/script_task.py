@@ -256,7 +256,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
 
         while 1:
             # 有一种情况是本来要退出的，但是队长邀请了进入的战斗的加载界面
-            if self.appear(self.I_GI_HOME) or self.appear(self.I_GI_EXPLORE) or self.appear(self.I_CHECK_BONDLING_FAIRYLAND) or self.appear(self.I_BALL_HELP) :
+            if self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_EXPLORATION) or self.appear(self.I_CHECK_BONDLING_FAIRYLAND) or self.appear(self.I_BALL_HELP) :
                 break
             # 如果可能在房间就退出
             if self.exit_room():
@@ -674,7 +674,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
             self.screenshot()
 
             # 如果自己在探索界面或者是庭院，那就是房间已经被销毁了
-            if self.appear(self.I_GI_HOME) or self.appear(self.I_GI_EXPLORE) or self.appear(self.I_CHECK_BONDLING_FAIRYLAND) or self.appear(self.I_BALL_HELP):
+            if self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_EXPLORATION) or self.appear(self.I_CHECK_BONDLING_FAIRYLAND) or self.appear(self.I_BALL_HELP):
                 logger.warning('Room destroyed')
                 success = False
                 break
