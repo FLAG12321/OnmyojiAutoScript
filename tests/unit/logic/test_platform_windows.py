@@ -42,11 +42,11 @@ def build_platform(state):
 class FakeTimer:
     instances = []
     reached_schedule = {
-        180: [False, False, False],
+        300: [False, False, False],
         10: [False, True],
-        30: [True, True],
+        15: [True, True],
         120: [False, False],
-        60: [False, True],
+        180: [False, True],
     }
 
     def __init__(self, limit, count=0):
@@ -136,5 +136,5 @@ def test_emulator_start_watch_keeps_waiting_during_mumu_startup_grace(monkeypatc
     assert platform.emulator_start_watch() is True
     assert state["disconnect_calls"] == ["127.0.0.1:16608"]
     assert state["connect_calls"] == ["127.0.0.1:16608"]
-    grace_timer = next(timer for timer in FakeTimer.instances if timer.limit == 60)
+    grace_timer = next(timer for timer in FakeTimer.instances if timer.limit == 180)
     assert grace_timer.calls == 1

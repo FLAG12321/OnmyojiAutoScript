@@ -362,13 +362,13 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             logger.info(f'Found packages: {m}')
 
         interval = Timer(1).start()
-        timeout = Timer(180).start()
+        timeout = Timer(300).start()
         struct_window = Timer(10)
-        state_check_timer = Timer(30).start()
+        state_check_timer = Timer(15).start()
         packages_timeout = Timer(120)
         new_window = 0
         adb_connected = False
-        startup_grace = Timer(60).start()  # 60s grace period before aborting on process-not-started
+        startup_grace = Timer(180).start()  # 180s grace period before aborting on process-not-started
 
         while 1:
             interval.wait()
