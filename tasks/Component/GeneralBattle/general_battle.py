@@ -228,7 +228,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             # 如果出现领奖励
             action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
             if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
-                self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)#  or
+                self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)  #  or
                 # self.appear_then_click(self.I_REWARD_STATISTICS, action=action_click, interval=1.5) or
                 # self.appear_then_click(self.I_REWARD_PURPLE_SNAKE_SKIN, action=action_click, interval=1.5) or
                 # self.appear_then_click(self.I_REWARD_GOLD_SNAKE_SKIN, action=action_click, interval=1.5) or
@@ -237,8 +237,12 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 # self.appear_then_click(self.I_REWARD_SOUL_6, action=action_click, interval=1.5)
                 ):
                 continue
+            if self.appear_then_click(self.I_EXTRA_INFO, action=action_click, interval=1.5):
+                sleep(1.5)
+                continue
             if (not self.appear(self.I_REWARD) and
-                not self.appear(self.I_REWARD_GOLD)#  and
+                not self.appear(self.I_REWARD_GOLD) and
+                not self.appear(self.I_EXTRA_INFO)#  and
                 # not self.appear(self.I_REWARD_STATISTICS) and
                 # not self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) and
                 # not self.appear(self.I_REWARD_GOLD_SNAKE_SKIN) and

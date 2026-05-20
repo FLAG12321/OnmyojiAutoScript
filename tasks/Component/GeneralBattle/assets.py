@@ -135,6 +135,8 @@ class GeneralBattleAssets:
 	I_PRESET_WIT_NUMBER = RuleImage(roi_front=(40,655,37,37), roi_back=(9,636,100,74), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_preset_wit_number.png")
 	# 战斗信息标识 
 	I_BATTLE_INFO = RuleImage(roi_front=(230,12,37,39), roi_back=(210,1,147,72), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_battle_info.png")
+	# description 
+	I_EXTRA_INFO = RuleImage(roi_front=(58,43,47,51), roi_back=(13,17,136,146), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/extra_info.png")
 
 
 	# Image Rule Assets

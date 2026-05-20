@@ -190,6 +190,7 @@ def retry(func):
             self (NemuIpcImpl):
         """
         init = None
+        last_error = None
         for _ in range(RETRY_TRIES):
             try:
                 if callable(init):
@@ -204,13 +205,15 @@ def retry(func):
                 logger.error(e)
                 break
             # Function call timeout
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as e:
+                last_error = e
                 logger.warning(f'Func {func.__name__}() call timeout, retrying: {_}')
 
                 def init():
                     self.reconnect()
             # NemuIpcError
             except NemuIpcError as e:
+                last_error = e
                 logger.error(e)
 
                 def init():
@@ -223,6 +226,10 @@ def retry(func):
                     pass
 
         logger.critical(f'Retry {func.__name__}() failed')
+        if isinstance(last_error, asyncio.TimeoutError):
+            raise GameNotRunningError(f'NemuIpc timeout during {func.__name__}(), emulator not responsive')
+        if isinstance(last_error, NemuIpcError):
+            raise GameNotRunningError(f'NemuIpc unavailable during {func.__name__}(): {last_error}')
         raise RequestHumanTakeover
 
     return retry_wrapper
