@@ -47,9 +47,21 @@ class MockDevice(Device):
         """注入假截图到队列"""
         self._screenshot_queue.append(image.copy())
 
+    def add_screenshots(self, screenshots: list[np.ndarray]) -> None:
+        """批量注入假截图"""
+        for img in screenshots:
+            self._screenshot_queue.append(img.copy())
+
     def add_ocr_result(self, label: str, texts: list[str]) -> None:
         """注入假 OCR 结果"""
         self._ocr_results[label] = texts
+
+    def reset(self) -> None:
+        """重置所有状态，用于测试间隔离"""
+        self.clicks.clear()
+        self.swipes.clear()
+        self._screenshot_queue.clear()
+        self._ocr_results.clear()
 
     @property
     def click_count(self) -> int:
