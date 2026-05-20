@@ -364,10 +364,11 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         interval = Timer(1).start()
         timeout = Timer(180).start()
         struct_window = Timer(10)
-        state_check_timer = Timer(15).start()
+        state_check_timer = Timer(30).start()
         packages_timeout = Timer(120)
         new_window = 0
         adb_connected = False
+        startup_grace = Timer(60).start()  # 60s grace period before aborting on process-not-started
 
         while 1:
             interval.wait()
@@ -384,6 +385,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                     player_state = state.get('player_state', '')
                     is_started = state.get('is_process_started', False)
                     if not is_started:
+                        if not startup_grace.reached():
+                            logger.info(f'Emulator process not started yet (player_state={player_state}), keep waiting')
+                            continue
                         logger.warning(f'Emulator process not started (player_state={player_state}), aborting watch')
                         return False
                     if adb_connected and player_state != 'start_finished':
