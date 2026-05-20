@@ -342,26 +342,35 @@ class Script:
             if task.next_run > datetime.now():
                 logger.info(f'Wait until {task.next_run} for task `{task.command}`')
                 # self.is_first_task = False
-                method = self.config.script.optimization.when_task_queue_empty
-                close_game_limit_time = self.config.script.optimization.close_game_limit_time
-                close_emulator_limit_time = self.config.script.optimization.close_emulator_limit_time
+                if self._is_emulator_running():
+                    method = self.config.script.optimization.when_task_queue_empty
+                    close_game_limit_time = self.config.script.optimization.close_game_limit_time
+                    close_emulator_limit_time = self.config.script.optimization.close_emulator_limit_time
 
-                if method == 'goto_main':
-                    self._handle_goto_main()
-                elif method == 'close_game':
-                    self._handle_close_game(task, close_game_limit_time)
-                elif method in ['close_emulator_or_goto_main', 'close_emulator_or_close_game']:
-                    self._handle_close_emulator_or(task, close_game_limit_time, close_emulator_limit_time, method)
+                    if method == 'goto_main':
+                        self._handle_goto_main()
+                    elif method == 'close_game':
+                        self._handle_close_game(task, close_game_limit_time)
+                    elif method in ['close_emulator_or_goto_main', 'close_emulator_or_close_game']:
+                        self._handle_close_emulator_or(task, close_game_limit_time, close_emulator_limit_time, method)
+                    else:
+                        logger.warning(f'Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there')
+
+                    self.device.release_during_wait()
                 else:
-                    logger.warning(f'Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there')
+                    logger.info('Emulator not running, skip close_game/close_emulator optimization')
 
-                self.device.release_during_wait()
                 if not self.wait_until(task.next_run):
                     del_cached_property(self, 'config')
                     continue
             break
 
         return task.command
+
+    def _is_emulator_running(self) -> bool:
+        if 'device' not in self.__dict__:
+            return False
+        return not self._emulator_down
 
     def _handle_goto_main(self):
         logger.info('Goto main page during wait')

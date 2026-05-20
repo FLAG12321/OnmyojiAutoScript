@@ -2,6 +2,7 @@ import asyncio
 import ctypes
 import os
 import sys
+import time
 from functools import partial, wraps
 from pathlib import Path
 
@@ -489,19 +490,31 @@ class NemuIpc():
             folder = str(Path(self.config.script.device.emulatorinfo_path).parent.parent)
             index = serial_to_id(self.serial)
             if index is not None:
-                try:
-                    return NemuIpcImpl(
-                        nemu_folder=folder,
-                        instance_id=index,
-                        display_id=0
-                    ).__enter__()
-                except (NemuIpcIncompatible, NemuIpcError) as e:
-                    logger.error(e)
-                    logger.error('Emulator info incorrect')
-                except (TimeoutError, asyncio.TimeoutError) as e:
-                    logger.error(f'NemuIpc connect timeout: {e}')
-                    logger.error('Emulator may be stuck or not fully loaded')
-                    raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
+                max_retries = 10
+                last_error = None
+                for attempt in range(max_retries):
+                    try:
+                        return NemuIpcImpl(
+                            nemu_folder=folder,
+                            instance_id=index,
+                            display_id=0
+                        ).__enter__()
+                    except NemuIpcIncompatible as e:
+                        logger.error(e)
+                        logger.error('Emulator info incorrect')
+                        break
+                    except NemuIpcError as e:
+                        last_error = e
+                        if attempt < max_retries - 1:
+                            logger.warning(f'NemuIpc connect failed (attempt {attempt + 1}/{max_retries}), retry in 2s...')
+                            time.sleep(2)
+                    except (TimeoutError, asyncio.TimeoutError) as e:
+                        logger.error(f'NemuIpc connect timeout: {e}')
+                        raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
+                else:
+                    if last_error is not None:
+                        logger.error(last_error)
+                        logger.error('Emulator info path retries exhausted, falling back to instance search')
 
         # Search emulator instance
         # with E:\ProgramFiles\MuMuPlayer-12.0\shell\MuMuPlayer.exe
@@ -509,20 +522,32 @@ class NemuIpc():
         if self.emulator_instance is None:
             logger.error('Unable to use NemuIpc because emulator instance not found')
             raise RequestHumanTakeover
-        try:
-            return NemuIpcImpl(
-                nemu_folder=self.emulator_instance.emulator.abspath('../'),
-                instance_id=self.emulator_instance.MuMuPlayer12_id,
-                display_id=0
-            ).__enter__()
-        except (NemuIpcIncompatible, NemuIpcError) as e:
-            logger.error(e)
-            logger.error('Unable to initialize NemuIpc')
-            raise RequestHumanTakeover
-        except (TimeoutError, asyncio.TimeoutError) as e:
-            logger.error(f'NemuIpc connect timeout: {e}')
-            logger.error('Emulator may be stuck or not fully loaded')
-            raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
+
+        # Retry: IPC service may not be ready immediately after emulator cold boot
+        max_retries = 10
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                return NemuIpcImpl(
+                    nemu_folder=self.emulator_instance.emulator.abspath('../'),
+                    instance_id=self.emulator_instance.MuMuPlayer12_id,
+                    display_id=0
+                ).__enter__()
+            except NemuIpcIncompatible as e:
+                logger.error(e)
+                raise RequestHumanTakeover
+            except NemuIpcError as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f'NemuIpc connect failed (attempt {attempt + 1}/{max_retries}), retry in 2s...')
+                    time.sleep(2)
+            except (TimeoutError, asyncio.TimeoutError) as e:
+                logger.error(f'NemuIpc connect timeout: {e}')
+                raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
+
+        logger.error(last_error)
+        logger.error('Unable to initialize NemuIpc after retries')
+        raise GameNotRunningError('NemuIpc connect failed after retries, emulator IPC service not ready')
 
     def nemu_ipc_available(self) -> bool:
         if not self.is_mumu_family:
@@ -531,7 +556,7 @@ class NemuIpc():
             return False
         try:
             _ = self.nemu_ipc
-        except RequestHumanTakeover:
+        except (RequestHumanTakeover, GameNotRunningError):
             return False
         return True
 

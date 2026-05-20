@@ -12,7 +12,7 @@
     "itemName": "create_ensure",
     "imageName": "create_ensure.png",
     "roiFront": "840,573,74,37",
-    "roiBack": "785,543,187,100",
+    "roiBack": "787,543,187,78",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

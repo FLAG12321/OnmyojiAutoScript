@@ -133,6 +133,12 @@ class ExplorationAssets:
 	I_E_ENTRANCE = RuleImage(roi_front=(217,11,35,40), roi_back=(14,9,342,58), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/e_entrance.png")
 
 
+	# List Rule Assets
+	# 探索章节列表 
+	L_LEVEL_LIST = RuleList(folder="./tasks/Exploration/res", direction="vertical", mode="ocr", roi_back=(1069,200,107,353), size=(100, 80), 
+					 array=["第一章", "第二章", "第三章", "第四章", "第五章", "第六章", "第七章", "第八章", "第九章", "第十章", "第十一章", "第十二章", "第十三章", "第十四章", "第十五章", "第十六章", "第十七章", "第十八章", "第十九章", "第二十章", "第二十一章", "第二十二章", "第二十三章", "第二十四章", "第二十五章", "第二十六章", "第二十七章", "第二十八章"])
+
+
 	# Long Click Rule Assets
 	# description 
 	L_ROTATE_1 = RuleLongClick(roi_front=(516,582,22,21), roi_back=(516,582,22,21), duration=1500, name="rotate_1")
@@ -146,7 +152,7 @@ class ExplorationAssets:
 
 	# Ocr Rule Assets
 	# 识别当前显示的章节 
-	O_E_EXPLORATION_LEVEL_NUMBER = RuleOcr(roi=(1054,198,151,360), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="e_exploration_level_number")
+	O_E_EXPLORATION_LEVEL_NUMBER = RuleOcr(roi=(1070,204,108,356), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="e_exploration_level_number")
 	# 候补出战的数量 
 	O_E_ALTERNATE_NUMBER = RuleOcr(roi=(1092,122,69,32), area=(1092,122,69,32), mode="DigitCounter", method="Default", keyword="", name="e_alternate_number")
 	# 探索右上角 突破卷的数量 

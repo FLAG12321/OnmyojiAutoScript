@@ -70,7 +70,7 @@ class GameUiAssets:
 	# description 
 	I_MAIN_GOTO_EXPLORATION = RuleImage(roi_front=(493,116,45,75), roi_back=(243,100,933,211), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_goto_exploration.png")
 	# description 
-	I_CHECK_EXPLORATION = RuleImage(roi_front=(1084,173,48,27), roi_back=(1050,163,124,55), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_exploration.png")
+	I_CHECK_EXPLORATION = RuleImage(roi_front=(1240,116,23,30), roi_back=(1219,99,53,65), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_exploration.png")
 	# 探索前往觉醒 
 	I_EXPLORATION_GOTO_AWAKE_ZONE = RuleImage(roi_front=(67,638,47,46), roi_back=(33,619,113,79), threshold=0.65, method="Template matching", file="./tasks/GameUi/page/exploration_goto_awake_zone.png")
 	# 探索前往御魂 

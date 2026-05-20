@@ -135,47 +135,22 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
     # 打开指定的章节：
     def open_expect_level(self):
-        swipeCount = 0
-        while 1:
-            # 探索的 config
-            explorationConfig = self.config.exploration
+        explorationConfig = self.config.exploration
+        target_level = explorationConfig.exploration_config.exploration_level 
+        pos = self.list_find(self.L_LEVEL_LIST, target_level, max_swipe=40)
+        if not pos:
+            raise GameStuckError(
+                f"Could not find exploration level: {target_level}"
+            )
 
-            # 判断有无目标章节
-            self.screenshot()
-            # 获取当前章节名
-            results = self.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(self.device.image)
-            text1 = [result.ocr_text for result in results]
-            # 判断当前章节有无目标章节
-            result = set(text1).intersection({explorationConfig.exploration_config.exploration_level})
-            # 有则跳出检测
-            if self.appear(self.I_E_EXPLORATION_CLICK) or result and len(result) > 0:
-                break
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
-                continue
-            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
-                continue
-            self.device.click_record_clear()
-            self.swipe(self.S_SWIPE_LEVEL_UP)
-            swipeCount += 1
-            debug_info = f"Swiped {swipeCount} times, current exploration level: {text1}"
-            logger.info(debug_info)
-            if swipeCount >= 25:
-                raise GameStuckError(
-                    f"Swiped too many times ({swipeCount}), seems stuck in exploration level selection"
-                )
-                return False
-            time.sleep(1)
+        self.device.click(x=pos[0], y=pos[1])
 
-        # 选中对应章节
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                 continue
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
                 continue
-            self.O_E_EXPLORATION_LEVEL_NUMBER.keyword = explorationConfig.exploration_config.exploration_level
-            if self.ocr_appear_click(self.O_E_EXPLORATION_LEVEL_NUMBER):
-                self.wait_until_appear(self.I_E_EXPLORATION_CLICK, wait_time=3)
             if self.appear(self.I_E_EXPLORATION_CLICK):
                 break
             if self.is_in_room():

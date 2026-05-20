@@ -329,33 +329,23 @@ class ExpTest(RightActivity, FastDevice, RestartAssets, ExplorationAssets):
     def open_expect_level(self, level: int):
         self.config.model.script.device.control_method = ControlMethod.UIAUTOMATOR2
         exploration_level = self.exp_level_map.get(level, None)
-        swipeCount = 0
-        while 1:
-            self.screenshot()
+        if not exploration_level:
+            logger.error(f'Invalid level: {level}')
+            return False
 
-            results = self.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(self.device.image)
-            text1 = [result.ocr_text for result in results]
-            result = set(text1).intersection({exploration_level})
-            if self.appear(self.I_E_EXPLORATION_CLICK) or result and len(result) > 0:
-                break
-            self.device.click_record_clear()
-            self.swipe(self.S_SWIPE_LEVEL_UP)
-            swipeCount += 1
-            if swipeCount >= 25:
-                raise GameStuckError(
-                    f"Swiped too many times ({swipeCount}), seems stuck in exploration level selection"
-                )
-                return False
+        pos = self.list_find(self.L_LEVEL_LIST, exploration_level.value, max_swipe=25)
+        if not pos:
+            raise GameStuckError(
+                f"Could not find exploration level: {exploration_level.value}"
+            )
+
+        self.device.click(x=pos[0], y=pos[1])
         self.config.model.script.device.control_method = ControlMethod.WINDOW_MESSAGE
 
-        self.O_E_EXPLORATION_LEVEL_NUMBER.keyword = exploration_level
         while 1:
             self.screenshot()
-
             if self.appear(self.I_E_EXPLORATION_CLICK):
                 break
-            if self.ocr_appear_click(self.O_E_EXPLORATION_LEVEL_NUMBER):
-                self.wait_until_appear(self.I_E_EXPLORATION_CLICK, wait_time=3)
         while 1:
             self.screenshot()
             if self.appear(self.I_E_AUTO_ROTATE_ON) or self.appear(self.I_E_AUTO_ROTATE_OFF):

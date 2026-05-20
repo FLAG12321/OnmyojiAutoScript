@@ -639,7 +639,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 swipe_down = result is not None and isinstance(result, int) and result > 0
                 swipe_distance_ratio = 1
             # 结果是坐标证明找到了, 非坐标都是没找到
-            if result is not None and isinstance(result, tuple):
+            if result is not None and isinstance(result, tuple) and result!=(0, 0):
                 appear = True
                 break
             if swipe_distance_ratio:
@@ -647,6 +647,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             else:
                 x1, y1, x2, y2 = target.swipe_pos(after=swipe_down)
             self.device.swipe(p1=(x1, y1), p2=(x2, y2))
+            self.device.click_record_clear()
             sleep(random.uniform(0.8, 1.3))  # 等待滑动完成, 待优化
         if appear:
             return result
