@@ -312,6 +312,6 @@
     "description": "description",
     "imageName": "extra_info.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": "0.7"
   }
 ]

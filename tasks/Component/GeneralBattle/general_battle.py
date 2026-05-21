@@ -238,6 +238,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 ):
                 continue
             if self.appear_then_click(self.I_EXTRA_INFO, action=action_click, interval=1.5):
+                logger.info(f"Click self.I_EXTRA_INFO.name")
                 sleep(1.5)
                 continue
             if (not self.appear(self.I_REWARD) and
@@ -250,6 +251,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 # not self.appear(self.I_REWARD_SOUL_5) and
                 # not self.appear(self.I_REWARD_SOUL_6)
                 ):
+                logger.info(f"break reward loop")
                 break
 
         return win
