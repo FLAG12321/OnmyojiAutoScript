@@ -414,22 +414,72 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
 
 if __name__ == "__main__":
+    import cv2
     from module.config.config import Config
     from module.device.device import Device
+    from module.atom.ocr import RuleOcr
+    from module.ocr.models import get_ocr_model
 
-    config = Config('oas1')
+    config = Config('oas3')
     device = Device(config)
     t = BaseExploration(config, device)
     t.screenshot()
+    t.O_E_EXPLORATION_LEVEL_NUMBER.ocr(t.device.image)
+    # ===== 诊断：L_LEVEL_LIST 章节识别 =====
+    print("\n" + "=" * 60)
+    print("L_LEVEL_LIST diagnosis")
+    print("=" * 60)
 
+    # 1) 保存 ROI 裁剪图，肉眼确认输入是否包含目标章节
+    x, y, w, h = t.L_LEVEL_LIST.roi_back
+    print(f"roi_back: x={x}, y={y}, w={w}, h={h}")
+    print(f"full image shape: {t.device.image.shape}")
+    roi_image = t.device.image[y:y + h, x:x + w]
+    print(f"ROI crop shape: {roi_image.shape}")
+    cv2.imwrite("./debug_level_roi.png", roi_image)
+    print("ROI saved -> ./debug_level_roi.png")
+
+    # 2) 直接调用底层 PaddleOCR 模型，绕过所有 score / array 过滤
+    print("\n--- Raw OCR (no score/array filter) ---")
+    model = get_ocr_model("ch")
+    raw_results = model.detect_and_ocr(roi_image)
+    print(f"raw count = {len(raw_results)}")
+    for r in raw_results:
+        try:
+            top_left = (int(r.box[0][0]), int(r.box[0][1]))
+        except Exception:
+            top_left = r.box
+        print(f"  text='{r.ocr_text}'  score={r.score:.3f}  top_left={top_left}")
+
+    # 3) 走 BaseCor.detect_and_ocr（含 score>=0.6 过滤）
+    print("\n--- After BaseCor.detect_and_ocr (score >= 0.6 filter) ---")
+    target_ocr = RuleOcr(
+        roi=t.L_LEVEL_LIST.roi_back,
+        area=(0, 0, 100, 100),
+        mode="Full",
+        method="Default",
+        keyword="第十二章",
+        name="第十二章",
+    )
+    filtered = target_ocr.detect_and_ocr(t.device.image)
+    print(f"filtered count = {len(filtered)}")
+    for r in filtered:
+        print(f"  text='{r.ocr_text}'  score={r.score:.3f}")
+
+    # 4) 走完整 ocr_appear 流程（最后 array 包含过滤）
+    print("\n--- Full ocr_appear pipeline ---")
+    result = t.L_LEVEL_LIST.ocr_appear(t.device.image, name="第十二章")
+    print(f"ocr_appear -> {result}")
+    print("=" * 60 + "\n")
+    logger.info(result)
     # IMAGE_FILE = r"C:\Users\萌萌哒\Desktop\QQ20240818-163854.png"
     # image = load_image(IMAGE_FILE)
     # t.device.image = image
-    while 1:
+    #while 1:
     # print(t.search_up_fight(UpType.EXP))
-        t.screenshot()
-        print(t.I_UP_DARUMA.test_match(t.device.image))
-        time.sleep(0.2)
-    from PIL import Image
+    #    t.screenshot()
+    #    print(t.I_UP_DARUMA.test_match(t.device.image))
+    #    time.sleep(0.2)
+    #from PIL import Image
     # Image.fromarray(t.device.image.astype(np.uint8)).show()
 

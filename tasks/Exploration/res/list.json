@@ -2,7 +2,7 @@
   "name": "level_list",
   "direction": "vertical",
   "type": "ocr",
-  "roiBack": "1069,200,107,353",
+  "roiBack": "1065,203,164,348",
   "description": "探索章节列表",
   "list": [
     {
