@@ -548,8 +548,13 @@ class Script:
                 continue
             self._refresh_emulator_state_before_task_start()
             if self._emulator_down:
-                self.device = Device(self.config)
-                self._emulator_down = False
+                try:
+                    self.device = Device(self.config)
+                    self._emulator_down = False
+                except RequestHumanTakeover as e:
+                    logger.critical(e)
+                    logger.critical('Request human takeover')
+                    exit(1)
             else:
                 _ = self.device # 使用缓存
 

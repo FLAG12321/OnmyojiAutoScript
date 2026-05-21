@@ -365,10 +365,19 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         timeout = Timer(300).start()
         struct_window = Timer(10)
         state_check_timer = Timer(15).start()
-        packages_timeout = Timer(120)
+        # 阶段超时分配 (总预算 300s):
+        #   startup_grace: 模拟器进程启动 (从开始算)
+        #   stuck_grace:   ADB就绪后 player_state → start_finished
+        #   packages_timeout: ADB就绪后游戏包出现
+        #   struct_window: 包出现后窗口结构稳定
+        # 时序: startup(200s) → ADB就绪 → max(packages(60s), state(100s)) → window(10s)
+        # 最坏: 200 + 100 = 300s (state stuck), 或 200 + 60 + 10 = 270s (packages慢)
+        startup_grace = Timer(200).start()
+        packages_timeout = Timer(60)
+        stuck_grace = Timer(0)
+
         new_window = 0
         adb_connected = False
-        startup_grace = Timer(180).start()  # 180s grace period before aborting on process-not-started
 
         while 1:
             interval.wait()
@@ -391,8 +400,17 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                         logger.warning(f'Emulator process not started (player_state={player_state}), aborting watch')
                         return False
                     if adb_connected and player_state != 'start_finished':
+                        if not stuck_grace.started():
+                            stuck_grace = Timer(100).start()
+                            logger.info(f'Emulator state is {player_state}, waiting up to 100s for start_finished')
+                            continue
+                        if not stuck_grace.reached():
+                            logger.info(f'Emulator state is {player_state}, waiting for start_finished [{stuck_grace.remain():.0f}s]')
+                            continue
                         logger.warning(f'Emulator stuck (player_state={player_state}), aborting watch')
                         return False
+                    else:
+                        stuck_grace = Timer(0)
 
             # Detect new emulator window and restore focus
             if current_window != 0 and new_window == 0:

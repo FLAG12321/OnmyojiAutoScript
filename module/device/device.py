@@ -39,11 +39,11 @@ class Device(Platform, Screenshot, Control, AppControl):
             except EmulatorNotRunningError:
                 if trial >= 2:
                     logger.critical('Failed to start emulator after 3 attempts')
-                    raise RequestHumanTakeover
+                    raise RequestHumanTakeover from None
 
                 instance = self._resolve_emulator_instance()
                 if instance is None:
-                    raise RequestHumanTakeover
+                    raise RequestHumanTakeover from None
 
                 logger.warning(f'Emulator not running, starting... (attempt {trial + 1}/3)')
                 if not self._emulator_function_wrapper(self._emulator_start):

@@ -11,6 +11,7 @@ from enum import Enum
 from module.logger import logger
 from module.server.config_manager import ConfigManager
 from module.server.script_websocket import ScriptWSManager
+from module.exception import RequestHumanTakeover
 
 
 class ScriptState(int, Enum):
@@ -150,6 +151,11 @@ def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in) -> None:
         script = Script(config_name=config)
         script.state_queue = state_queue
         script.loop()
+    except RequestHumanTakeover as e:
+        logger.critical(f'Script {config} requires human takeover: {e}')
+        state_queue.put({"state": ScriptState.WARNING})
+        time.sleep(0.1)
+        exit(-1)
     except SystemExit as e:
         logger.info(f'Script {config} process exit')
         logger.error(f'Error: {e}')
