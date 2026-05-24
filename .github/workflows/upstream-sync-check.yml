@@ -1,0 +1,49 @@
+name: Check Upstream Updates
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 每天 UTC 8:00 (北京时间 16:00) 检查一次
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/runhey/OnmyojiAutoScript.git || true
+          git fetch upstream master
+          git fetch origin run_now_2
+
+      - name: Compare commits
+        id: compare
+        run: |
+          BEHIND=$(git rev-list --count origin/run_now_2..upstream/master)
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          if [ "$BEHIND" -gt "0" ]; then
+            COMMITS=$(git log --oneline origin/run_now_2..upstream/master | head -20)
+            echo "commits<<EOF" >> $GITHUB_OUTPUT
+            echo "$COMMITS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send email notification
+        if: steps.compare.outputs.behind > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const behind = '${{ steps.compare.outputs.behind }}';
+            const commits = `${{ steps.compare.outputs.commits }}`;
+
+            // 通过创建一个 repository dispatch 事件触发 GitHub 通知邮件
+            // 使用 commit status 来触发邮件通知
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: `## [Upstream Sync] master 有 ${behind} 个新 commit 待同步到 run_now_2\n\n最新提交：\n\`\`\`\n${commits}\n\`\`\``
+            });
