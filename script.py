@@ -344,8 +344,8 @@ class Script:
                 logger.info(f'Wait until {task.next_run} for task `{task.command}`')
                 # self.is_first_task = False
                 method = self.config.script.optimization.when_task_queue_empty
-                close_game_limit_time = self.config.script.optimization.close_game_limit_time
-                close_emulator_limit_time = self.config.script.optimization.close_emulator_limit_time
+                close_game_limit_time = self.config.script.optimization.close_game_wait_duration
+                close_emulator_limit_time = self.config.script.optimization.close_emulator_wait_duration
 
                 if method == 'goto_main':
                     self._handle_goto_main()
