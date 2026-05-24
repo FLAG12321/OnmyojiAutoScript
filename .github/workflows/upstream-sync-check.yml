@@ -17,53 +17,39 @@ jobs:
         run: |
           git remote add upstream https://github.com/runhey/OnmyojiAutoScript.git || true
           git fetch upstream master
-          git fetch origin master
+          git fetch origin run_now_2
 
       - name: Compare commits
         id: compare
         run: |
-          BEHIND=$(git rev-list --count origin/master..upstream/master)
-          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
-          if [ "$BEHIND" -gt "0" ]; then
-            COMMITS=$(git log --oneline origin/master..upstream/master | head -20)
+          # 检查 upstream/master 的最新 commit 是否已被合并到 run_now_2
+          UPSTREAM_HEAD=$(git rev-parse upstream/master)
+          if git merge-base --is-ancestor $UPSTREAM_HEAD origin/run_now_2; then
+            echo "behind=0" >> $GITHUB_OUTPUT
+          else
+            # 找到上次合并点之后 upstream 新增的 commit
+            MERGE_BASE=$(git merge-base origin/run_now_2 upstream/master)
+            BEHIND=$(git rev-list --count $MERGE_BASE..upstream/master)
+            echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+            COMMITS=$(git log --oneline $MERGE_BASE..upstream/master | head -20)
             echo "commits<<EOF" >> $GITHUB_OUTPUT
             echo "$COMMITS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create issue if behind
+      - name: Send email notification
         if: steps.compare.outputs.behind > 0
         uses: actions/github-script@v7
         with:
           script: |
             const behind = '${{ steps.compare.outputs.behind }}';
             const commits = `${{ steps.compare.outputs.commits }}`;
-            const title = `[Upstream] master 有 ${behind} 个新 commit 待同步`;
 
-            // 检查是否已有同类 issue 未关闭
-            const issues = await github.rest.issues.listForRepo({
+            // 通过创建一个 repository dispatch 事件触发 GitHub 通知邮件
+            // 使用 commit status 来触发邮件通知
+            await github.rest.repos.createCommitComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open',
-              labels: 'upstream-sync'
+              commit_sha: context.sha,
+              body: `## [Upstream Sync] master 有 ${behind} 个新 commit 待同步到 run_now_2\n\n最新提交：\n\`\`\`\n${commits}\n\`\`\``
             });
-
-            if (issues.data.length > 0) {
-              // 更新已有 issue
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issues.data[0].number,
-                title: title,
-                body: `upstream/master 领先 origin/master **${behind}** 个 commit。\n\n**最新提交：**\n\`\`\`\n${commits}\n\`\`\``
-              });
-            } else {
-              // 创建新 issue
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: title,
-                body: `upstream/master 领先 origin/master **${behind}** 个 commit。\n\n**最新提交：**\n\`\`\`\n${commits}\n\`\`\``,
-                labels: ['upstream-sync']
-              });
-            }
