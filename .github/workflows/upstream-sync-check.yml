@@ -22,10 +22,16 @@ jobs:
       - name: Compare commits
         id: compare
         run: |
-          BEHIND=$(git rev-list --count origin/run_now_2..upstream/master)
-          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
-          if [ "$BEHIND" -gt "0" ]; then
-            COMMITS=$(git log --oneline origin/run_now_2..upstream/master | head -20)
+          # 检查 upstream/master 的最新 commit 是否已被合并到 run_now_2
+          UPSTREAM_HEAD=$(git rev-parse upstream/master)
+          if git merge-base --is-ancestor $UPSTREAM_HEAD origin/run_now_2; then
+            echo "behind=0" >> $GITHUB_OUTPUT
+          else
+            # 找到上次合并点之后 upstream 新增的 commit
+            MERGE_BASE=$(git merge-base origin/run_now_2 upstream/master)
+            BEHIND=$(git rev-list --count $MERGE_BASE..upstream/master)
+            echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+            COMMITS=$(git log --oneline $MERGE_BASE..upstream/master | head -20)
             echo "commits<<EOF" >> $GITHUB_OUTPUT
             echo "$COMMITS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
