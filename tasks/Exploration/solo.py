@@ -38,6 +38,8 @@ class SoloExploration(BaseExploration):
 
             #
             if scene == Scene.WORLD:
+                # 打开右边箭头
+                self.ui_click(click=self.I_EXP_ARROW_LEFT, stop=self.I_EXP_ARROW_RIGHT, interval=2)
                 """ if self.appear(self.I_TREASURE_BOX_CLICK):
                     # 宝箱
                     logger.info('Treasure box appear, get it.')
@@ -157,6 +159,8 @@ class SoloExploration(BaseExploration):
             # 探索大世界
             if scene == Scene.WORLD:
                 self.wait_until_stable(self.I_CHECK_EXPLORATION)
+                # 打开右边箭头
+                self.ui_click(click=self.I_EXP_ARROW_LEFT, stop=self.I_EXP_ARROW_RIGHT, interval=2)
                 if self.appear(self.I_TREASURE_BOX_CLICK):
                     # 宝箱
                     logger.info('Treasure box appear, get it.')
@@ -298,6 +302,8 @@ class SoloExploration(BaseExploration):
             scene = self.get_current_scene()
             #
             if scene == Scene.WORLD:
+                # 打开右边箭头
+                self.ui_click(click=self.I_EXP_ARROW_LEFT, stop=self.I_EXP_ARROW_RIGHT, interval=2)
                 if self.appear(self.I_TREASURE_BOX_CLICK):
                     # 宝箱
                     logger.info('Treasure box appear, get it.')
