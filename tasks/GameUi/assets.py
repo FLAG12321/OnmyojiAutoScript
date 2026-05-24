@@ -86,7 +86,7 @@ class GameUiAssets:
 	# 探索前往地域鬼王 
 	I_EXPLORATION_GOTO_AREA_BOSS = RuleImage(roi_front=(644,638,44,47), roi_back=(628,618,190,89), threshold=0.65, method="Template matching", file="./tasks/GameUi/page/exploration_goto_area_boss.png")
 	# 探索前往平安奇谭 
-	I_EXPLORATION_GOTO_HEIAN_KITAN = RuleImage(roi_front=(739,643,52,44), roi_back=(739,643,180,44), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_exploration_goto_heian_kitan.png")
+	I_EXPLORATION_GOTO_HEIAN_KITAN = RuleImage(roi_front=(739,643,52,44), roi_back=(35,615,1097,102), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_exploration_goto_heian_kitan.png")
 	# 探索前往六道之门 
 	I_EXPLORATION_GOTO_SIX_GATES = RuleImage(roi_front=(930,632,50,52), roi_back=(820,631,296,66), threshold=0.65, method="Template matching", file="./tasks/GameUi/page/exploration_goto_six_gates.png")
 	# 探索前往契灵之境 
@@ -145,7 +145,11 @@ class GameUiAssets:
 	# 斗技主界面左上角文字图像 
 	I_CHECK_DUEL = RuleImage(roi_front=(149,16,64,38), roi_back=(133,0,110,74), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_duel.png")
 	# description 
-	I_CHECK_DEMON_ENCOUNTER = RuleImage(roi_front=(26,658,42,43), roi_back=(2,619,100,100), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_demon_encounter.png")
+	I_CHECK_DEMON_ENCOUNTER = RuleImage(roi_front=(153,16,129,38), roi_back=(153,16,129,38), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_demon_encounter.png")
+	# 检查逢魔之时现世逢魔界面 
+	I_CHECK_DEMON_ENCOUNTER_REALWORLD = RuleImage(roi_front=(26,658,42,43), roi_back=(2,619,100,100), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_demon_encounter_realworld.png")
+	# 逢魔之时进入现世逢魔 
+	I_DEMON_ENCOUNTER_REALWORLD_GOTO = RuleImage(roi_front=(994,485,106,30), roi_back=(994,485,106,30), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_demon_encounter_realworld.png")
 	# 检查狩猎战界面 
 	I_CHECK_HUNT = RuleImage(roi_front=(575,30,46,25), roi_back=(553,1,81,68), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/page_check_hunt.png")
 	# 检查狩猎战麒麟界面 
@@ -217,6 +221,8 @@ class GameUiAssets:
 	I_BACK_BATTLE = RuleImage(roi_front=(24,19,40,38), roi_back=(0,0,90,85), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_back_battle.png")
 	# description 
 	I_DLC_EXIT = RuleImage(roi_front=(450,455,67,31), roi_back=(438,449,99,89), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/dlc_exit.png")
+	# 进入现世逢魔 
+	I_DEMON_ENCOUNTER_REALWORLD = RuleImage(roi_front=(994,485,106,30), roi_back=(994,485,106,30), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_demon_encounter_realworld.png")
 
 
 	# Image Rule Assets

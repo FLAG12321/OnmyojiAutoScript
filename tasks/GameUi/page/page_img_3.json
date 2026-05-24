@@ -32,7 +32,7 @@
     "roiFront": "765,616,63,38",
     "roiBack": "735,590,120,100",
     "method": "Template matching",
-    "threshold": 0.6,
+    "threshold": 0.7,
     "description": "进入花合战"
   },
   {
@@ -41,7 +41,7 @@
     "roiFront": "649,630,65,30",
     "roiBack": "620,590,120,100",
     "method": "Template matching",
-    "threshold": 0.5,
+    "threshold": 0.7,
     "description": "description"
   },
   {

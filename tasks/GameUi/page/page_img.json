@@ -102,7 +102,7 @@
     "itemName": "exploration_goto_heian_kitan",
     "imageName": "page_exploration_goto_heian_kitan.png",
     "roiFront": "739,643,52,44",
-    "roiBack": "739,643,180,44",
+    "roiBack": "35,615,1097,102",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "探索前往平安奇谭"
