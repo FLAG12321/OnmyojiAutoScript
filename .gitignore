@@ -49,6 +49,7 @@ CLAUDE.md
 .codex/
 .claude/
 openspec/
+docs/superpowers/
 
 
 # Created by .ignore support plugin (hsz.mobi)
@@ -273,6 +274,9 @@ console.bat
 .vscode/*
 tasks/AutoCheckinBigGod/frida-server-17.6.2-android-x86_64
 oas.bat
+
+
+# by FLAG12321
 /wechat_group
 /temp_path
 /SnapMark-master
@@ -281,4 +285,5 @@ oas.bat
 /logs
 /2026*
 OASX-master/
-csv/
+/csv
+skills-lock.json
