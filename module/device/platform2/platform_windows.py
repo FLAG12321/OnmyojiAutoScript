@@ -366,18 +366,21 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         struct_window = Timer(10)
         state_check_timer = Timer(15).start()
         # 阶段超时分配 (总预算 300s):
-        #   startup_grace: 模拟器进程启动 (从开始算)
-        #   stuck_grace:   ADB就绪后 player_state → start_finished
-        #   packages_timeout: ADB就绪后游戏包出现
-        #   struct_window: 包出现后窗口结构稳定
-        # 时序: startup(200s) → ADB就绪 → max(packages(60s), state(100s)) → window(10s)
-        # 最坏: 200 + 100 = 300s (state stuck), 或 200 + 60 + 10 = 270s (packages慢)
+        #   startup_grace:    模拟器进程启动 (从开始算)
+        #   stuck_grace:      ADB 就绪后 player_state → start_finished (仅 MuMu12, 100s)
+        #   packages_timeout: state finished 后游戏包出现 (MuMu12) / ADB 就绪后游戏包出现 (其他, 60s)
+        #   struct_window:    包出现后窗口结构稳定 (10s)
+        # 时序 (MuMu12): startup(200s) → ADB → stuck_grace(100s) → state finished → packages(60s) → window(10s)
+        # 时序 (其他):   startup(200s) → ADB → packages(60s) → window(10s)
+        # 最坏 (MuMu12): 200+100+60+10=370s 由外层 timeout(300s) 截断
+        # 最坏 (其他):   200+60+10=270s
         startup_grace = Timer(200).start()
         packages_timeout = Timer(60)
         stuck_grace = Timer(0)
 
         new_window = 0
         adb_connected = False
+        state_finished_seen = False  # Bug 1 fix: packages_timeout only starts after state==start_finished
 
         while 1:
             interval.wait()
@@ -411,6 +414,10 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                         return False
                     else:
                         stuck_grace = Timer(0)
+                        if adb_connected and player_state == 'start_finished' and not state_finished_seen:
+                            state_finished_seen = True
+                            packages_timeout.start()
+                            logger.info(f'Emulator state reached start_finished, packages_timeout started ({packages_timeout.limit}s)')
 
             # Detect new emulator window and restore focus
             if current_window != 0 and new_window == 0:
@@ -452,7 +459,13 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             show_online(device)
             if not adb_connected:
                 adb_connected = True
-                packages_timeout.start()
+                # Bug 1 fix: for MuMu12, packages_timeout deferred to state==start_finished;
+                # for non-MuMu12 (state unqueryable), start now (legacy behavior).
+                is_mumu12 = self.emulator_instance == Emulator.MuMuPlayer12 if self.emulator_instance else False
+                if not is_mumu12:
+                    state_finished_seen = True
+                    packages_timeout.start()
+                    logger.info(f'Non-MuMu12 emulator detected, packages_timeout started immediately ({packages_timeout.limit}s)')
 
             # Step 2: Verify shell is responsive
             try:
@@ -468,8 +481,8 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             except Exception:
                 continue
             if not packages:
-                if packages_timeout.reached():
-                    logger.warning(f'Game packages not found within {packages_timeout.limit}s after ADB connected, emulator likely stuck')
+                if state_finished_seen and packages_timeout.reached():
+                    logger.warning(f'Game packages not found within {packages_timeout.limit}s after state_finished, emulator likely stuck')
                     return False
                 continue
             show_package(packages)
