@@ -22,6 +22,21 @@ from module.exception import (GameNotRunningError,
                               EmulatorNotRunningError)
 from module.logger import logger
 import time
+from enum import Enum
+
+
+class EmulatorState(Enum):
+    COLD = "cold"
+    HEALTHY = "healthy"
+    ZOMBIE = "zombie"
+
+
+_VALID_TRANSITIONS = {
+    EmulatorState.COLD: {EmulatorState.HEALTHY},
+    EmulatorState.HEALTHY: {EmulatorState.ZOMBIE},
+    EmulatorState.ZOMBIE: {EmulatorState.COLD},
+}
+
 
 class Device(Platform, Screenshot, Control, AppControl):
     _screen_size_checked = False
@@ -32,6 +47,7 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
     retry_times :int = 0
     def __init__(self, *args, **kwargs):
+        self.emulator_state = EmulatorState.COLD
         for trial in range(3):
             try:
                 super().__init__(*args, **kwargs)
@@ -64,6 +80,18 @@ class Device(Platform, Screenshot, Control, AppControl):
         # Auto-select the fastest screenshot method
         if self.config.script.device.screenshot_method == 'auto':
             self.run_simple_screenshot_benchmark()
+
+    def _transition_to(self, target: EmulatorState) -> None:
+        """Transition emulator state with validation. Same state is a no-op."""
+        from module.exception import ScriptError
+        if target == self.emulator_state:
+            return
+        if target not in _VALID_TRANSITIONS[self.emulator_state]:
+            raise ScriptError(
+                f'Illegal emulator state transition: {self.emulator_state.name} → {target.name}'
+            )
+        logger.info(f'EmulatorState: {self.emulator_state.name} → {target.name}')
+        self.emulator_state = target
 
     def _resolve_emulator_instance(self):
         """查找模拟器实例，必要时重新发现"""
