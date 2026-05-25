@@ -24,7 +24,7 @@ class GameUiAssets:
 
 	# Image Rule Assets
 	# description 
-	I_DLC_TICK = RuleImage(roi_front=(527,415,42,34), roi_back=(498,397,95,69), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/dlc_tick.png")
+	I_DLC_TICK = RuleImage(roi_front=(527,378,43,39), roi_back=(383,333,286,138), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/dlc_tick.png")
 
 
 	# Ocr Rule Assets
@@ -180,9 +180,9 @@ class GameUiAssets:
 	# description 
 	I_MAIN_GOTO_FRIENDS = RuleImage(roi_front=(874,630,62,31), roi_back=(845,590,120,100), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/main_goto_friends.png")
 	# 进入花合战 
-	I_MAIN_GOTO_DAILY = RuleImage(roi_front=(765,616,63,38), roi_back=(735,590,120,100), threshold=0.6, method="Template matching", file="./tasks/GameUi/page/main_goto_daily.png")
+	I_MAIN_GOTO_DAILY = RuleImage(roi_front=(765,616,63,38), roi_back=(735,590,120,100), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/main_goto_daily.png")
 	# description 
-	I_MAIN_GOTO_MALL = RuleImage(roi_front=(649,630,65,30), roi_back=(620,590,120,100), threshold=0.5, method="Template matching", file="./tasks/GameUi/page/main_goto_mall.png")
+	I_MAIN_GOTO_MALL = RuleImage(roi_front=(649,630,65,30), roi_back=(620,590,120,100), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/main_goto_mall.png")
 	# description 
 	I_MAIN_GOTO_GUILD = RuleImage(roi_front=(544,626,49,31), roi_back=(495,590,120,100), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/main_goto_guild.png")
 	# description 
@@ -204,7 +204,7 @@ class GameUiAssets:
 	# description 
 	I_CHECK_TEAM = RuleImage(roi_front=(98,25,71,38), roi_back=(27,18,225,71), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_team.png")
 	# description 
-	I_CHECK_COLLECTION = RuleImage(roi_front=(380,620,100,100), roi_back=(380,620,100,100), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_collection.png")
+	I_CHECK_COLLECTION = RuleImage(roi_front=(584,649,49,46), roi_back=(366,608,844,107), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_collection.png")
 	# description 
 	I_BACK_Y = RuleImage(roi_front=(15,4,57,52), roi_back=(1,2,100,91), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_back_y.png")
 	# description 
@@ -221,8 +221,6 @@ class GameUiAssets:
 	I_BACK_BATTLE = RuleImage(roi_front=(24,19,40,38), roi_back=(0,0,90,85), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_back_battle.png")
 	# description 
 	I_DLC_EXIT = RuleImage(roi_front=(450,455,67,31), roi_back=(438,449,99,89), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/dlc_exit.png")
-	# 进入现世逢魔 
-	I_DEMON_ENCOUNTER_REALWORLD = RuleImage(roi_front=(994,485,106,30), roi_back=(994,485,106,30), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_demon_encounter_realworld.png")
 
 
 	# Image Rule Assets

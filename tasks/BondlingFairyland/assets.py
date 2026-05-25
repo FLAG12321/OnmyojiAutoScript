@@ -77,7 +77,7 @@ class BondlingFairylandAssets:
 	# description 
 	I_BF_UNLOCK = RuleImage(roi_front=(822,651,28,28), roi_back=(822,651,28,28), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/bf/bf_bf_unlock.png")
 	# description 
-	I_BF_STORE = RuleImage(roi_front=(261,632,57,57), roi_back=(261,632,57,57), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/bf/bf_bf_store.png")
+	I_BF_STORE = RuleImage(roi_front=(268,628,50,47), roi_back=(233,600,116,100), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/bf/bf_store.png")
 	# 点击式神录 
 	I_BF_RECORDS = RuleImage(roi_front=(1028,566,43,42), roi_back=(1028,566,43,42), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/bf/bf_bf_records.png")
 	# 左边第一个球：截屏的时候是火灵 
@@ -141,7 +141,7 @@ class BondlingFairylandAssets:
 	# 禁用优先连接羁绊式神 
 	I_C_FIRST_DISABLE = RuleImage(roi_front=(708,560,38,34), roi_back=(702,553,49,49), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/capture/capture_c_first_disable.png")
 	# 结契设置确定 
-	I_CAPTION_ENSURE = RuleImage(roi_front=(665,610,129,56), roi_back=(652,601,153,77), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/capture/capture_caption_ensure.png")
+	I_CAPTION_ENSURE = RuleImage(roi_front=(708,624,53,33), roi_back=(652,601,153,77), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/capture/caption_ensure.png")
 	# 结契设置按钮 
 	I_CLICK_CAPTION = RuleImage(roi_front=(68,414,54,42), roi_back=(48,398,97,81), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/capture/capture_click_caption.png")
 	# 禁用连续使用盘子 

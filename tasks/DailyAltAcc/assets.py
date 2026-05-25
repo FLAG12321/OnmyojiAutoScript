@@ -428,7 +428,7 @@ class DailyAltAccAssets:
 	# description 
 	I_TRIALBATTLE_START = RuleImage(roi_front=(280,443,49,35), roi_back=(118,389,259,241), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/trialbattle_start.png")
 	# description 
-	I_TO_TRIALBATTLE = RuleImage(roi_front=(625,543,26,29), roi_back=(341,456,585,196), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/to_trialbattle.png")
+	I_TO_TRIALBATTLE = RuleImage(roi_front=(993,96,58,53), roi_back=(921,51,213,158), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/to_trialbattle.png")
 	# description 
 	I_TRIALBATTLE_FIRE = RuleImage(roi_front=(1098,575,58,51), roi_back=(1026,492,197,180), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/trialbattle_fire.png")
 	# description 

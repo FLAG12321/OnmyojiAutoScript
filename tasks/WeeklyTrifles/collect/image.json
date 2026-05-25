@@ -10,12 +10,12 @@
   },
   {
     "itemName": "wt_scroll",
-    "imageName": "collect_wt_scroll.png",
-    "roiFront": "1128,615,77,67",
-    "roiBack": "1128,615,77,67",
+    "imageName": "wt_scroll.png",
+    "roiFront": "336,285,51,42",
+    "roiBack": "272,243,151,124",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "点击式神绘卷"
+    "description": "点击分享"
   },
   {
     "itemName": "wt_collect",
@@ -46,12 +46,12 @@
   },
   {
     "itemName": "wt_collect_wechat",
-    "imageName": "collect_wt_collect_wechat.png",
-    "roiFront": "280,600,440,100",
-    "roiBack": "280,600,440,100",
+    "imageName": "wt_collect_wechat.png",
+    "roiFront": "241,644,49,47",
+    "roiBack": "212,628,786,87",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "微信分享"
+    "description": "朋友圈分享"
   },
   {
     "itemName": "wt_qr_code",

@@ -19,8 +19,8 @@
   },
   {
     "itemName": "to_trialbattle",
-    "roiFront": "625,543,26,29",
-    "roiBack": "341,456,585,196",
+    "roiFront": "993,96,58,53",
+    "roiBack": "921,51,213,158",
     "description": "description",
     "imageName": "to_trialbattle.png",
     "method": "Template matching",

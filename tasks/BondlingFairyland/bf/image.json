@@ -28,9 +28,9 @@
   },
   {
     "itemName": "bf_store",
-    "imageName": "bf_bf_store.png",
-    "roiFront": "261,632,57,57",
-    "roiBack": "261,632,57,57",
+    "imageName": "bf_store.png",
+    "roiFront": "268,628,50,47",
+    "roiBack": "233,600,116,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
