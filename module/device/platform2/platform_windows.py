@@ -328,7 +328,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         cmd = f'"{console}" info -v {instance.MuMuPlayer12_id}'
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=5, shell=True
+                cmd, capture_output=True, text=True, timeout=10, shell=True
             )
             if result.returncode == 0 and result.stdout.strip():
                 return json.loads(result.stdout.strip())
