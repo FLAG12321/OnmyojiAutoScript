@@ -50,6 +50,8 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.emulator_state = EmulatorState.COLD
         from module.device.emulator_health import EmulatorHealth
         self.health = EmulatorHealth(self)
+        from module.device.emulator_reset import FullReset
+        self.reset = FullReset(self)
         for trial in range(3):
             try:
                 super().__init__(*args, **kwargs)
