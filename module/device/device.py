@@ -52,28 +52,29 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.health = EmulatorHealth(self)
         from module.device.emulator_reset import FullReset
         self.reset = FullReset(self)
-        for trial in range(3):
-            try:
-                super().__init__(*args, **kwargs)
-                break
-            except EmulatorNotRunningError:
-                if trial >= 2:
-                    logger.critical('Failed to start emulator after 3 attempts')
-                    raise RequestHumanTakeover from None
 
-                instance = self._resolve_emulator_instance()
-                if instance is None:
-                    raise RequestHumanTakeover from None
+        # Initialize mixin state. Tolerate EmulatorNotRunningError here since
+        # health probe + full_recovery below handle the "emulator down" path.
+        try:
+            super().__init__(*args, **kwargs)
+        except EmulatorNotRunningError:
+            logger.warning('super().__init__ saw EmulatorNotRunningError — will probe health below')
 
-                logger.warning(f'Emulator not running, starting... (attempt {trial + 1}/3)')
-                if not self._emulator_function_wrapper(self._emulator_start):
-                    continue
-
-                if not self.emulator_start_watch():
-                    logger.warning('Emulator start watch timeout, stopping stuck emulator...')
-                    self._emulator_function_wrapper(self._emulator_stop)
-                    self._wait_emulator_shutdown()
-                    continue
+        # Probe health first — if the user already has a working emulator,
+        # don't disturb it. Only run full_recovery if unhealthy.
+        if self.health.is_alive():
+            self._transition_to(EmulatorState.HEALTHY)
+        else:
+            logger.warning(f'Initial health check failed: {self.health.why_dead()}')
+            recovered = False
+            for trial in range(3):
+                if self.full_recovery():
+                    recovered = True
+                    break
+                logger.warning(f'full_recovery attempt {trial + 1}/3 failed')
+            if not recovered:
+                logger.critical('Failed to bring emulator to HEALTHY after 3 attempts')
+                raise RequestHumanTakeover from None
 
         # Auto-fill emulator info
         if IS_WINDOWS and self.config.script.device.emulatorinfo_type == 'auto':
@@ -96,6 +97,47 @@ class Device(Platform, Screenshot, Control, AppControl):
             )
         logger.info(f'EmulatorState: {self.emulator_state.name} → {target.name}')
         self.emulator_state = target
+
+    def full_recovery(self) -> bool:
+        """
+        ZOMBIE/COLD → HEALTHY one-shot recovery.
+
+        Sequence: FullReset.execute() → _emulator_start → emulator_start_watch
+        → health.is_alive() verification. Transitions state to HEALTHY on
+        success.
+
+        NOTE: this method MUST NOT call itself recursively (D14). If
+        emulator_start_watch fails, return False and let the caller decide
+        whether to retry; do not invoke full_recovery again from here.
+        """
+        logger.hr('Device full_recovery', level=1)
+
+        # 1. Tear down any residue (idempotent — best-effort even from COLD).
+        self.reset.execute()
+        if self.emulator_state != EmulatorState.COLD:
+            self._transition_to(EmulatorState.COLD)
+
+        # 2. COLD → HEALTHY: bring up the emulator.
+        instance = self._resolve_emulator_instance()
+        if instance is None:
+            logger.error('full_recovery: emulator instance not found')
+            return False
+
+        if not self._emulator_function_wrapper(self._emulator_start):
+            logger.warning('full_recovery: _emulator_start failed')
+            return False
+
+        if not self.emulator_start_watch():
+            logger.warning('full_recovery: emulator_start_watch returned False')
+            return False
+
+        if not self.health.is_alive():
+            logger.warning(f'full_recovery: health check failed: {self.health.why_dead()}')
+            return False
+
+        self._transition_to(EmulatorState.HEALTHY)
+        logger.info('full_recovery: HEALTHY')
+        return True
 
     def _resolve_emulator_instance(self):
         """查找模拟器实例，必要时重新发现"""
