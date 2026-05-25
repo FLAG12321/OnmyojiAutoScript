@@ -268,5 +268,23 @@
     "imageName": "e_entrance.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "exp_arrow_right",
+    "imageName": "res_exp_arrow_right.png",
+    "roiFront": "1240,117,24,21",
+    "roiBack": "1178,74,100,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "箭头，收纳"
+  },
+  {
+    "itemName": "exp_arrow_left",
+    "imageName": "res_exp_arrow_left.png",
+    "roiFront": "1244,115,18,26",
+    "roiBack": "1178,78,100,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "箭头，打开"
   }
 ]
