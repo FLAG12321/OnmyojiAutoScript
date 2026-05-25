@@ -73,9 +73,16 @@ class Script:
         self.config_name = config_name
         # Skip first restart
         self.is_first_task = True
-        # Failure count of tasks
+        # Failure count of tasks (legacy; preserved for back-compat references but no longer drives exit)
         # Key: str, task name, value: int, failure count
         self.failure_record = {}
+        # Global recovery failure counter (Task 17). Replaces failure_record[task]
+        # for exit decision. Incremented when a full_recovery cycle fails; reset
+        # to 0 after any task succeeds. Exit(1) when >= 3.
+        self.recovery_failure_count = 0
+        # Set True by reactive health check (Task 19) when an exception
+        # confirms emulator is ZOMBIE; next loop iteration triggers full_recovery.
+        self._needs_recovery = False
         # 运行loop的线程
         self.loop_thread: Thread = None
 
@@ -463,10 +470,23 @@ class Script:
             return True
         except GameNotRunningError as e:
             logger.warning(e)
-            if 'NemuIpc' in str(e) or 'nemu' in str(e).lower():
-                logger.warning('NemuIpc connect failed, emulator needs full restart')
-                self.device.emulator_stop()
-                self._emulator_down = True
+            # Reactive health check (Task 19). Confirm whether the emulator
+            # itself is down (ZOMBIE) or just the app. ZOMBIE path: mark for
+            # full_recovery (next pre-task gate handles it); do NOT schedule a
+            # Restart task (Restart only restarts the app, not the emulator).
+            from module.device.device import EmulatorState
+            if not self.device.health.is_alive():
+                logger.warning(
+                    f'Reactive health check confirms ZOMBIE: {self.device.health.why_dead()}'
+                )
+                try:
+                    self.device._transition_to(EmulatorState.ZOMBIE)
+                except Exception:
+                    pass  # may already be ZOMBIE; transition is best-effort
+                self._needs_recovery = True
+                return False
+            # Emulator healthy, only app died → original Restart path.
+            logger.info('Emulator healthy, app died, scheduling Restart')
             self.config.task_call('Restart')
             return False
         except (GameStuckError, GameTooManyClickError) as e:
@@ -547,17 +567,28 @@ class Script:
                 self.config.task_delay(task='Restart', success=True, server=True)
                 del_cached_property(self, 'config')
                 continue
-            self._refresh_emulator_state_before_task_start()
-            if self._emulator_down:
-                try:
-                    self.device = Device(self.config)
-                    self._emulator_down = False
-                except RequestHumanTakeover as e:
-                    logger.critical(e)
-                    logger.critical('Request human takeover')
-                    exit(1)
-            else:
-                _ = self.device # 使用缓存
+            # Pre-task health gate (Task 18). Replaces former _refresh_emulator_state +
+            # Device rebuild path. If unhealthy, drive full_recovery inline rather than
+            # scheduling a Restart task (Restart runs at app layer only; emulator-layer
+            # recovery is the scheduler's job).
+            _ = self.device  # trigger cached_property if first access
+            if self._needs_recovery or not self.device.health.is_alive():
+                logger.warning(
+                    f'Pre-task health check failed: {self.device.health.why_dead()}'
+                )
+                if not self.device.full_recovery():
+                    self.recovery_failure_count += 1
+                    logger.warning(
+                        f'full_recovery failed ({self.recovery_failure_count}/3)'
+                    )
+                    if self.recovery_failure_count >= 3:
+                        logger.critical(
+                            'Recovery failed 3 times consecutively, request human takeover'
+                        )
+                        exit(1)
+                    continue  # next loop iteration retries
+                self._needs_recovery = False
+                self._emulator_down = False
 
             # Run
             logger.info(f'Scheduler: Start task `{task}`')
@@ -568,20 +599,19 @@ class Script:
             logger.info(f'Scheduler: End task `{task}`')
             self.is_first_task = False
 
-            # Check failures
-            # failed = deep_get(self.failure_record, keys=task, default=0)
+            # Global recovery failure counter (Task 17). Replaces per-task accumulator.
+            if success:
+                if self.recovery_failure_count > 0:
+                    logger.info(
+                        f'Task success, reset recovery_failure_count from {self.recovery_failure_count} to 0'
+                    )
+                self.recovery_failure_count = 0
+            # Note: failure_record[task] still updated for telemetry / GUI inspection,
+            # but no longer drives exit. exit is driven by recovery_failure_count which
+            # accumulates only on full_recovery failures (Task 18).
             failed = self.failure_record[task] if task in self.failure_record else 0
             failed = 0 if success else failed + 1
-            # deep_set(self.failure_record, keys=task, value=failed)
             self.failure_record[task] = failed
-            if failed >= 3:
-                logger.critical(f"Task `{task}` failed 3 or more times.")
-                logger.critical("Possible reason #1: You haven't used it correctly. "
-                                "Please read the help text of the options.")
-                logger.critical("Possible reason #2: There is a problem with this task. "
-                                "Please contact developers or try to fix it yourself.")
-                logger.critical('Request human takeover')
-                exit(1)
 
             if success:
                 del_cached_property(self, 'config')
