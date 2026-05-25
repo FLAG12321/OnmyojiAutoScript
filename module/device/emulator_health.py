@@ -150,6 +150,36 @@ class EmulatorHealth:
 
         return False, f'unknown screenshot_method: {method!r}'
 
+    def is_alive(self) -> bool:
+        """
+        AND of 4 sub-checks. Failure details stored in _last_failures for why_dead().
+        Each sub-check is independent and may not raise; if one does, it's caught
+        here and treated as a failure with the exception text as reason.
+        """
+        self._last_failures = []
+        checks = [
+            (HealthCriterion.PROCESS, self._process_check),
+            (HealthCriterion.ADB, self._adb_check),
+            (HealthCriterion.STATE, self._state_check),
+            (HealthCriterion.CHANNEL, self._screenshot_channel_check),
+        ]
+        for criterion, fn in checks:
+            try:
+                ok, reason = fn()
+            except Exception as e:
+                ok, reason = False, f'unexpected exception: {e}'
+            if not ok:
+                self._last_failures.append((criterion, reason))
+                logger.warning(f'Health check failed: {criterion.value}={reason}')
+        return not self._last_failures
+
+    def why_dead(self) -> str:
+        """Return diagnostic string from most recent is_alive() call."""
+        if not self._last_failures:
+            return 'alive (no failures recorded)'
+        parts = [f'{c.value}={r}' for c, r in self._last_failures]
+        return '; '.join(parts)
+
 
 if __name__ == '__main__':
     # Manual REPL smoke test. Usage: ./toolkit/python.exe -m module.device.emulator_health [config_name]

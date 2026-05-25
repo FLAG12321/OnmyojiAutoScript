@@ -48,6 +48,8 @@ class Device(Platform, Screenshot, Control, AppControl):
     retry_times :int = 0
     def __init__(self, *args, **kwargs):
         self.emulator_state = EmulatorState.COLD
+        from module.device.emulator_health import EmulatorHealth
+        self.health = EmulatorHealth(self)
         for trial in range(3):
             try:
                 super().__init__(*args, **kwargs)
