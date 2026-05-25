@@ -510,14 +510,12 @@ class NemuIpc():
                         logger.error(e)
                         logger.error('Emulator info incorrect')
                         break
-                    except NemuIpcError as e:
+                    except (NemuIpcError, TimeoutError, asyncio.TimeoutError) as e:
                         last_error = e
                         if attempt < max_retries - 1:
-                            logger.warning(f'NemuIpc connect failed (attempt {attempt + 1}/{max_retries}), retry in 2s...')
+                            kind = 'timeout' if isinstance(e, (TimeoutError, asyncio.TimeoutError)) else 'error'
+                            logger.warning(f'NemuIpc connect {kind} (attempt {attempt + 1}/{max_retries}), retry in 2s...')
                             time.sleep(2)
-                    except (TimeoutError, asyncio.TimeoutError) as e:
-                        logger.error(f'NemuIpc connect timeout: {e}')
-                        raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
                 else:
                     if last_error is not None:
                         logger.error(last_error)
@@ -543,17 +541,17 @@ class NemuIpc():
             except NemuIpcIncompatible as e:
                 logger.error(e)
                 raise RequestHumanTakeover
-            except NemuIpcError as e:
+            except (NemuIpcError, TimeoutError, asyncio.TimeoutError) as e:
                 last_error = e
                 if attempt < max_retries - 1:
-                    logger.warning(f'NemuIpc connect failed (attempt {attempt + 1}/{max_retries}), retry in 2s...')
+                    kind = 'timeout' if isinstance(e, (TimeoutError, asyncio.TimeoutError)) else 'error'
+                    logger.warning(f'NemuIpc connect {kind} (attempt {attempt + 1}/{max_retries}), retry in 2s...')
                     time.sleep(2)
-            except (TimeoutError, asyncio.TimeoutError) as e:
-                logger.error(f'NemuIpc connect timeout: {e}')
-                raise GameNotRunningError('NemuIpc connect timeout, emulator not responsive')
 
         logger.error(last_error)
         logger.error('Unable to initialize NemuIpc after retries')
+        if isinstance(last_error, (TimeoutError, asyncio.TimeoutError)):
+            raise GameNotRunningError('NemuIpc connect timeout after retries, emulator not responsive')
         raise GameNotRunningError('NemuIpc connect failed after retries, emulator IPC service not ready')
 
     def nemu_ipc_available(self) -> bool:
