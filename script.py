@@ -64,11 +64,9 @@ class Script:
     ]
 
     def __init__(self, config_name: str ='oas') -> None:
-        self._emulator_down = False
         logger.hr('Start', level=0)
         self.server = None
         self.state_queue: Queue = None
-        self._emulator_down = False
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
         self.config_name = config_name
         # Skip first restart
@@ -372,21 +370,6 @@ class Script:
 
         return task.command
 
-    def _refresh_emulator_state_before_task_start(self):
-        if self._emulator_down or 'device' not in self.__dict__:
-            return
-
-        try:
-            status = self.device.detect_emulator_status(self.device.serial)
-            logger.info(f'Emulator status before task start: {status}')
-        except Exception as e:
-            logger.warning(f'Failed to detect emulator status before task start: {e}')
-            status = 'offline'
-
-        if status != 'device':
-            logger.warning('Emulator is not available before task start, recreate device via Restart flow')
-            self._emulator_down = True
-
     def _handle_goto_main(self):
         logger.info('Goto main page during wait')
         self.run('GotoMain')
@@ -402,7 +385,6 @@ class Script:
         if task.next_run > datetime.now() + timedelta(hours=close_emulator_limit_time.hour, minutes=close_emulator_limit_time.minute, seconds=close_emulator_limit_time.second):
             logger.info('Close emulator during wait')
             self.device.emulator_stop()
-            self._emulator_down = True # 标记
         elif method == 'close_emulator_or_goto_main':
             self._handle_goto_main()
         else:
@@ -468,25 +450,13 @@ class Script:
                     content=f"{I18n.trans_zh_cn(command)} 任务执行完毕，完成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 )
             return True
+        except EmulatorNotRunningError as e:
+            logger.warning(e)
+            self._needs_recovery = True
+            self.config.task_call('Restart')
+            return False
         except GameNotRunningError as e:
             logger.warning(e)
-            # Reactive health check (Task 19). Confirm whether the emulator
-            # itself is down (ZOMBIE) or just the app. ZOMBIE path: mark for
-            # full_recovery (next pre-task gate handles it); do NOT schedule a
-            # Restart task (Restart only restarts the app, not the emulator).
-            from module.device.device import EmulatorState
-            if not self.device.health.is_alive():
-                logger.warning(
-                    f'Reactive health check confirms ZOMBIE: {self.device.health.why_dead()}'
-                )
-                try:
-                    self.device._transition_to(EmulatorState.ZOMBIE)
-                except Exception:
-                    pass  # may already be ZOMBIE; transition is best-effort
-                self._needs_recovery = True
-                return False
-            # Emulator healthy, only app died → original Restart path.
-            logger.info('Emulator healthy, app died, scheduling Restart')
             self.config.task_call('Restart')
             return False
         except (GameStuckError, GameTooManyClickError) as e:
@@ -567,15 +537,9 @@ class Script:
                 self.config.task_delay(task='Restart', success=True, server=True)
                 del_cached_property(self, 'config')
                 continue
-            # Pre-task health gate (Task 18). Replaces former _refresh_emulator_state +
-            # Device rebuild path. If unhealthy, drive full_recovery inline rather than
-            # scheduling a Restart task (Restart runs at app layer only; emulator-layer
-            # recovery is the scheduler's job).
             _ = self.device  # trigger cached_property if first access
-            if self._needs_recovery or not self.device.health.is_alive():
-                logger.warning(
-                    f'Pre-task health check failed: {self.device.health.why_dead()}'
-                )
+            if self._needs_recovery:
+                logger.warning('Emulator recovery requested, running full_recovery before task')
                 if not self.device.full_recovery():
                     self.recovery_failure_count += 1
                     logger.warning(
@@ -586,9 +550,8 @@ class Script:
                             'Recovery failed 3 times consecutively, request human takeover'
                         )
                         exit(1)
-                    continue  # next loop iteration retries
+                    continue  # next loop iteration retries the pending Restart/task
                 self._needs_recovery = False
-                self._emulator_down = False
 
             # Run
             logger.info(f'Scheduler: Start task `{task}`')

@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timedelta
 
-from module.exception import GameNotRunningError
+from module.exception import GameNotRunningError, EmulatorNotRunningError
 from module.device.method.nemu_ipc import NemuIpcError
 from script import Script
 
@@ -23,8 +23,8 @@ class FakeWaitingTask:
 class FakeOptimization:
     def __init__(self, method='close_emulator_or_close_game'):
         self.when_task_queue_empty = method
-        self.close_game_limit_time = type('TimeValue', (), {'hour': 0, 'minute': 10, 'second': 0})()
-        self.close_emulator_limit_time = type('TimeValue', (), {'hour': 0, 'minute': 30, 'second': 0})()
+        self.close_game_wait_duration = type('TimeValue', (), {'hour': 0, 'minute': 10, 'second': 0})()
+        self.close_emulator_wait_duration = type('TimeValue', (), {'hour': 0, 'minute': 30, 'second': 0})()
 
 
 class FakeScriptConfig:
@@ -63,11 +63,25 @@ class FakeIdleDevice:
         self.release_during_wait_calls += 1
 
 
+class FakeHealth:
+    def __init__(self):
+        self.is_alive_calls = 0
+
+    def is_alive(self):
+        self.is_alive_calls += 1
+        return True
+
+    def why_dead(self):
+        return 'fake healthy'
+
+
 class FakeDevice:
     def __init__(self, status='device'):
         self.serial = '127.0.0.1:16384'
         self.status = status
         self.emulator_stop_calls = 0
+        self.full_recovery_calls = 0
+        self.health = FakeHealth()
 
     def detect_emulator_status(self, serial):
         assert serial == self.serial
@@ -75,6 +89,16 @@ class FakeDevice:
 
     def emulator_stop(self):
         self.emulator_stop_calls += 1
+
+    def full_recovery(self):
+        self.full_recovery_calls += 1
+        return True
+
+    def stuck_record_clear(self):
+        return None
+
+    def click_record_clear(self):
+        return None
 
 def make_script_with_device(status='device'):
     script = Script('oas1')
@@ -105,40 +129,65 @@ def test_get_next_task_closes_emulator_during_idle_even_without_cached_device(mo
     assert idle_device.release_during_wait_calls == 1
 
 
-def test_refresh_emulator_state_marks_emulator_down_when_status_offline():
-    script = make_script_with_device(status='offline')
+def test_loop_runs_full_recovery_when_recovery_requested_before_task(monkeypatch):
+    script = Script('oas1')
+    restart_task = FakeWaitingTask(datetime.now() - timedelta(seconds=1))
+    restart_task.command = 'Restart'
+    script.config = FakeQueueConfig(restart_task)
+    script.device = FakeDevice(status='device')
+    script._needs_recovery = True
+    script.is_first_task = False
 
-    script._refresh_emulator_state_before_task_start()
+    run_calls = []
 
-    assert script._emulator_down is True
+    def fake_run(command):
+        run_calls.append(command)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(script, 'run', fake_run)
+
+    with pytest.raises(SystemExit):
+        script.loop()
+
+    assert script.device.full_recovery_calls == 1
+    assert script._needs_recovery is False
+    assert run_calls == ['Restart']
 
 
-def test_refresh_emulator_state_keeps_emulator_up_when_status_device():
+def test_run_schedules_restart_for_game_not_running_without_health_probe():
     script = make_script_with_device(status='device')
 
-    script._refresh_emulator_state_before_task_start()
+    def raise_game_not_running():
+        raise GameNotRunningError('Game not running')
 
-    assert script._emulator_down is False
-
-
-def test_run_restarts_when_nemu_ipc_reports_game_not_running():
-    script = make_script_with_device(status='device')
-
-    def raise_nemu_error():
-        raise GameNotRunningError('NemuIpc unavailable during screenshot(): emulator closed')
-
-    script.device.screenshot = raise_nemu_error
+    script.device.screenshot = raise_game_not_running
     script.device.app_is_running = lambda: True
 
     success = script.run('ReturnGift')
 
     assert success is False
-    assert script._emulator_down is True
-    assert script.device.emulator_stop_calls == 1
+    assert script._needs_recovery is False
+    assert script.device.health.is_alive_calls == 0
     assert script.config.called_tasks == ['Restart']
 
 
-def test_nemu_retry_converts_nemu_error_to_game_not_running():
+def test_run_schedules_restart_and_recovery_for_emulator_not_running():
+    script = make_script_with_device(status='device')
+
+    def raise_emulator_not_running():
+        raise EmulatorNotRunningError('emulator is not running')
+
+    script.device.screenshot = raise_emulator_not_running
+    script.device.app_is_running = lambda: True
+
+    success = script.run('ReturnGift')
+
+    assert success is False
+    assert script._needs_recovery is True
+    assert script.config.called_tasks == ['Restart']
+
+
+def test_nemu_retry_converts_nemu_error_to_emulator_not_running():
     from module.device.method import nemu_ipc
 
     calls = []
@@ -151,7 +200,7 @@ def test_nemu_retry_converts_nemu_error_to_game_not_running():
     def broken(self):
         raise NemuIpcError('emulator instance is probably dead')
 
-    with pytest.raises(GameNotRunningError, match='NemuIpc unavailable during broken'):
+    with pytest.raises(EmulatorNotRunningError, match='NemuIpc unavailable during broken'):
         broken(DummyImpl())
 
     assert calls

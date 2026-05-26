@@ -1,5 +1,6 @@
 import types
 
+from module.device.platform2.emulator_windows import Emulator
 from module.device.platform2.platform_windows import PlatformWindows
 
 
@@ -28,6 +29,7 @@ def build_platform(state):
             return states.pop(0)
         return states[0]
 
+    platform.emulator_instance = Emulator.MuMuPlayer12
     platform.list_device = lambda: state["devices"]
     platform.adb_client = types.SimpleNamespace(
         connect=connect,
@@ -136,5 +138,5 @@ def test_emulator_start_watch_keeps_waiting_during_mumu_startup_grace(monkeypatc
     assert platform.emulator_start_watch() is True
     assert state["disconnect_calls"] == ["127.0.0.1:16608"]
     assert state["connect_calls"] == ["127.0.0.1:16608"]
-    grace_timer = next(timer for timer in FakeTimer.instances if timer.limit == 180)
-    assert grace_timer.calls == 1
+    startup_grace_timer = next(timer for timer in FakeTimer.instances if timer.limit == 200)
+    assert startup_grace_timer.calls == 1

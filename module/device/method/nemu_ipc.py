@@ -13,7 +13,7 @@ from module.base.decorator import cached_property, del_cached_property, has_cach
 from module.base.utils import ensure_time
 from module.device.method.minitouch import insert_swipe, random_rectangle_point
 from module.device.method.utils import RETRY_TRIES, retry_sleep
-from module.exception import RequestHumanTakeover, GameNotRunningError
+from module.exception import RequestHumanTakeover, GameNotRunningError, EmulatorNotRunningError
 from module.logger import logger
 
 
@@ -227,9 +227,9 @@ def retry(func):
 
         logger.critical(f'Retry {func.__name__}() failed')
         if isinstance(last_error, asyncio.TimeoutError):
-            raise GameNotRunningError(f'NemuIpc timeout during {func.__name__}(), emulator not responsive')
+            raise EmulatorNotRunningError(f'NemuIpc timeout during {func.__name__}(), emulator not responsive')
         if isinstance(last_error, NemuIpcError):
-            raise GameNotRunningError(f'NemuIpc unavailable during {func.__name__}(): {last_error}')
+            raise EmulatorNotRunningError(f'NemuIpc unavailable during {func.__name__}(): {last_error}')
         raise RequestHumanTakeover
 
     return retry_wrapper
@@ -551,8 +551,8 @@ class NemuIpc():
         logger.error(last_error)
         logger.error('Unable to initialize NemuIpc after retries')
         if isinstance(last_error, (TimeoutError, asyncio.TimeoutError)):
-            raise GameNotRunningError('NemuIpc connect timeout after retries, emulator not responsive')
-        raise GameNotRunningError('NemuIpc connect failed after retries, emulator IPC service not ready')
+            raise EmulatorNotRunningError('NemuIpc connect timeout after retries, emulator not responsive')
+        raise EmulatorNotRunningError('NemuIpc connect failed after retries, emulator IPC service not ready')
 
     def nemu_ipc_available(self) -> bool:
         if not self.is_mumu_family:
@@ -577,7 +577,7 @@ class NemuIpc():
         except (TimeoutError, asyncio.TimeoutError) as e:
             logger.error(f'NemuIpc screenshot timeout: {e}')
             self.nemu_ipc_release()
-            raise GameNotRunningError('NemuIpc timeout, emulator not responsive')
+            raise EmulatorNotRunningError('NemuIpc timeout, emulator not responsive')
 
         image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
         cv2.flip(image, 0, dst=image)

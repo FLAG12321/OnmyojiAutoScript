@@ -53,10 +53,10 @@ class Device(Platform, Screenshot, Control, AppControl):
         from module.device.emulator_reset import FullReset
         self.reset = FullReset(self)
 
-        # Initialize mixin state. Tolerate EmulatorNotRunningError here since
-        # health probe + full_recovery below handle the "emulator down" path.
+        initialized = False
         try:
             super().__init__(*args, **kwargs)
+            initialized = True
         except EmulatorNotRunningError:
             logger.warning('super().__init__ saw EmulatorNotRunningError — will probe health below')
 
@@ -75,6 +75,9 @@ class Device(Platform, Screenshot, Control, AppControl):
             if not recovered:
                 logger.critical('Failed to bring emulator to HEALTHY after 3 attempts')
                 raise RequestHumanTakeover from None
+
+        if not initialized:
+            super().__init__(*args, **kwargs)
 
         # Auto-fill emulator info
         if IS_WINDOWS and self.config.script.device.emulatorinfo_type == 'auto':
