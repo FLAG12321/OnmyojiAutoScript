@@ -22,7 +22,7 @@ from module.exception import (GameNotRunningError, GamePageUnknownError)
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.GameUi.assets import GameUiAssets
-from tasks.GameUi.page import Page, PageRegistry, page_main, random_click,page_mall,page_shikigami_records,page_onmyodo,page_friends,page_guild,page_team,page_collection,page_travel,page_daily
+from tasks.GameUi.page import Page, PageRegistry, page_login, page_main, random_click,page_mall,page_shikigami_records,page_onmyodo,page_friends,page_guild,page_team,page_collection,page_travel,page_daily
 from tasks.Restart.assets import RestartAssets
 from tasks.SixRealms.assets import SixRealmsAssets
 from tasks.base_task import BaseTask
@@ -128,6 +128,8 @@ class GameUi(BaseTask, GameUiAssets):
                     continue
                 if self.ui_page_appear(page=page, interval=None):
                     logger.attr("UI", page.name)
+                    if page == page_login:
+                        raise GameNotRunningError("Login page detected")
                     self.ui_current = page
                     return page
             # Try to close unknown page: 优先尝试 I_BACK_MAIN 回主页
