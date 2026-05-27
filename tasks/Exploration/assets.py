@@ -131,16 +131,16 @@ class ExplorationAssets:
 	I_E_MAIN_SUSHI = RuleImage(roi_front=(567,204,150,34), roi_back=(256,94,797,494), threshold=0.7, method="Template matching", file="./tasks/Exploration/res/e_main_sushi.png")
 	# description 
 	I_E_ENTRANCE = RuleImage(roi_front=(217,11,35,40), roi_back=(14,9,342,58), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/e_entrance.png")
+	# 箭头，收纳 
+	I_EXP_ARROW_RIGHT = RuleImage(roi_front=(1240,117,24,21), roi_back=(1178,74,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_arrow_right.png")
+	# 箭头，打开 
+	I_EXP_ARROW_LEFT = RuleImage(roi_front=(1244,115,18,26), roi_back=(1178,78,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_arrow_left.png")
 
 
 	# List Rule Assets
 	# 探索章节列表 
 	L_LEVEL_LIST = RuleList(folder="./tasks/Exploration/res", direction="vertical", mode="ocr", roi_back=(1065,203,164,348), size=(100, 80), 
 					 array=["第一章", "第二章", "第三章", "第四章", "第五章", "第六章", "第七章", "第八章", "第九章", "第十章", "第十一章", "第十二章", "第十三章", "第十四章", "第十五章", "第十六章", "第十七章", "第十八章", "第十九章", "第二十章", "第二十一章", "第二十二章", "第二十三章", "第二十四章", "第二十五章", "第二十六章", "第二十七章", "第二十八章"])
-	# 箭头，收纳 
-	I_EXP_ARROW_RIGHT = RuleImage(roi_front=(1240,117,24,21), roi_back=(1178,74,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_arrow_right.png")
-	# 箭头，打开 
-	I_EXP_ARROW_LEFT = RuleImage(roi_front=(1244,115,18,26), roi_back=(1178,78,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_arrow_left.png")
 
 
 	# Long Click Rule Assets
