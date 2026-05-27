@@ -127,11 +127,11 @@ class RichFileHandler(RichHandler):
 
 # Add file logger
 pyw_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+if pyw_name in ('', '-', '-c'):
+    pyw_name = 'script'
 
 
 def set_file_logger(name=pyw_name, *, do_cleanup=False):
-    if '_' in name:
-        name = name.split('_', 1)[0]
     log_file = f'./log/{date.today()}_{name}.txt'
     try:
         file = open(log_file, mode='a', encoding='utf-8')
