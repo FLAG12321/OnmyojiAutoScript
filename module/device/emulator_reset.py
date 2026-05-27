@@ -108,7 +108,7 @@ class FullReset:
     def _teardown_layer1_process_graceful(self) -> bool:
         """档 1: MuMuManager shutdown_player（≤10s graceful）。"""
         logger.info('  Kill tier 1: MuMuManager shutdown_player')
-        from module.device.platform2.emulator import Emulator
+        from module.device.platform2.emulator_windows import Emulator
         instance = self.device.emulator_instance
         if instance is None or instance.MuMuPlayer12_id is None:
             return False
@@ -125,7 +125,7 @@ class FullReset:
     def _teardown_layer1_process_force_stop(self) -> bool:
         """档 2: MuMuManager control force_stop（≤5s）。"""
         logger.info('  Kill tier 2: MuMuManager control force_stop')
-        from module.device.platform2.emulator import Emulator
+        from module.device.platform2.emulator_windows import Emulator
         instance = self.device.emulator_instance
         if instance is None or instance.MuMuPlayer12_id is None:
             return False
