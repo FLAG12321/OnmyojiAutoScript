@@ -16,6 +16,9 @@ class HealthCriterion(Enum):
     CHANNEL = "channel"
 
 
+STATE_UNAVAILABLE_REASON = 'MuMuManager state unavailable (non-MuMu12 or query failed)'
+
+
 class EmulatorHealth:
     """
     模拟器健康判定 — 4 标准 AND 综合体检。
@@ -104,7 +107,7 @@ class EmulatorHealth:
         except Exception as e:
             return False, f'_query_mumu12_state raised: {e}'
         if state is None:
-            return False, 'MuMuManager state unavailable (non-MuMu12 or query failed)'
+            return False, STATE_UNAVAILABLE_REASON
         player_state = state.get('player_state', '')
         if player_state != 'start_finished':
             return False, f'player_state={player_state!r}'
@@ -152,9 +155,8 @@ class EmulatorHealth:
 
     def is_alive(self) -> bool:
         """
-        AND of 4 sub-checks. Failure details stored in _last_failures for why_dead().
-        Each sub-check is independent and may not raise; if one does, it's caught
-        here and treated as a failure with the exception text as reason.
+        Failure details stored in _last_failures for why_dead().
+        MuMuManager state unavailable is skipped; all other failed checks are fatal.
         """
         self._last_failures = []
         checks = [
@@ -169,6 +171,9 @@ class EmulatorHealth:
             except Exception as e:
                 ok, reason = False, f'unexpected exception: {e}'
             if not ok:
+                if criterion == HealthCriterion.STATE and reason == STATE_UNAVAILABLE_REASON:
+                    logger.info(f'Health check skipped: {criterion.value}={reason}')
+                    continue
                 self._last_failures.append((criterion, reason))
                 logger.warning(f'Health check failed: {criterion.value}={reason}')
         return not self._last_failures
