@@ -41,3 +41,24 @@ def test_health_fails_when_mumu_state_is_not_start_finished(monkeypatch):
 
     assert health.is_alive() is False
     assert health.why_dead() == "state=player_state='starting'"
+
+
+def test_non_mumu_process_check_uses_generic_process_probe():
+    class NonMumuDevice(FakeDevice):
+        def __init__(self):
+            super().__init__()
+            self.emulator_instance = object()
+            self.generic_probe_calls = 0
+
+        def _query_mumu12_state(self):
+            return None
+
+        def _is_emulator_process_alive(self):
+            self.generic_probe_calls += 1
+            return True
+
+    device = NonMumuDevice()
+    health = EmulatorHealth(device)
+
+    assert health._process_check() == (True, 'generic emulator process alive')
+    assert device.generic_probe_calls == 1

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 import psutil
 
+from module.device.platform2.emulator_windows import Emulator
 from module.logger import logger
 
 if TYPE_CHECKING:
@@ -39,15 +40,19 @@ class EmulatorHealth:
     # ------------------------------------------------------------------
 
     def _process_check(self) -> tuple:
-        """
-        Process存活检查：psutil 找 MuMuVMMHeadless.exe 且 cmdline 含
-        '--comment {instance.name}'。
-
-        psutil.AccessDenied (拿不到 cmdline) 时退化为仅匹配进程名（D14）。
-        """
+        """Process 存活检查：MuMu12 精确匹配，其他模拟器使用通用进程探测。"""
         instance = self.device.emulator_instance
         if instance is None:
             return False, 'emulator_instance is None'
+
+        if instance != Emulator.MuMuPlayer12:
+            try:
+                if self.device._is_emulator_process_alive():
+                    return True, 'generic emulator process alive'
+                return False, 'generic emulator process dead'
+            except Exception as e:
+                return False, f'generic process check exception: {e}'
+
         target_name = getattr(instance, 'name', None)
         if not target_name:
             return False, 'instance.name unavailable'

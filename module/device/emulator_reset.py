@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import psutil
 
 from module.base.decorator import del_cached_property
+from module.device.platform2.emulator_windows import Emulator
 from module.logger import logger
 
 if TYPE_CHECKING:
@@ -108,9 +109,8 @@ class FullReset:
     def _teardown_layer1_process_graceful(self) -> bool:
         """档 1: MuMuManager shutdown_player（≤10s graceful）。"""
         logger.info('  Kill tier 1: MuMuManager shutdown_player')
-        from module.device.platform2.emulator_windows import Emulator
         instance = self.device.emulator_instance
-        if instance is None or instance.MuMuPlayer12_id is None:
+        if instance is None or instance != Emulator.MuMuPlayer12 or instance.MuMuPlayer12_id is None:
             return False
         exe = instance.emulator.path
         console = Emulator.single_to_console(exe)
@@ -125,9 +125,8 @@ class FullReset:
     def _teardown_layer1_process_force_stop(self) -> bool:
         """档 2: MuMuManager control force_stop（≤5s）。"""
         logger.info('  Kill tier 2: MuMuManager control force_stop')
-        from module.device.platform2.emulator_windows import Emulator
         instance = self.device.emulator_instance
-        if instance is None or instance.MuMuPlayer12_id is None:
+        if instance is None or instance != Emulator.MuMuPlayer12 or instance.MuMuPlayer12_id is None:
             return False
         exe = instance.emulator.path
         console = Emulator.single_to_console(exe)
@@ -226,12 +225,18 @@ class FullReset:
         return self._wait_process_dead(timeout=5)
 
     def _teardown_layer1_process(self) -> bool:
-        """Layer 1: 进程拆除，4 档分级 kill。任一档成功即停止。"""
+        """Layer 1: 进程拆除，MuMu12 用分级 kill，其他模拟器用通用停止。"""
         logger.info('FullReset Layer 1: process')
 
         if not self._process_alive():
             logger.info('  - process already dead, skip')
             return True
+
+        if self.device.emulator_instance != Emulator.MuMuPlayer12:
+            logger.info('  Kill generic emulator via _emulator_stop')
+            if not self.device._emulator_function_wrapper(self.device._emulator_stop):
+                return False
+            return self._wait_process_dead(timeout=10)
 
         tiers = [
             ('graceful', self._teardown_layer1_process_graceful),
