@@ -54,18 +54,23 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.reset = FullReset(self)
 
         initialized = False
+        emulator_down = False
         try:
             super().__init__(*args, **kwargs)
             initialized = True
         except EmulatorNotRunningError:
-            logger.warning('super().__init__ saw EmulatorNotRunningError — will probe health below')
+            emulator_down = True
+            logger.warning('super().__init__ saw EmulatorNotRunningError — will run full_recovery')
 
         # Probe health first — if the user already has a working emulator,
         # don't disturb it. Only run full_recovery if unhealthy.
-        if self.health.is_alive():
+        if not emulator_down and self.health.is_alive():
             self._transition_to(EmulatorState.HEALTHY)
         else:
-            logger.warning(f'Initial health check failed: {self.health.why_dead()}')
+            if emulator_down:
+                logger.warning('Initial emulator connection failed, run full_recovery directly')
+            else:
+                logger.warning(f'Initial health check failed: {self.health.why_dead()}')
             recovered = False
             for trial in range(3):
                 if self.full_recovery():
