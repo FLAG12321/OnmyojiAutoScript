@@ -38,8 +38,8 @@
   {
     "itemName": "to_battle_main",
     "imageName": "to_battle_main.png",
-    "roiFront": "832,328,31,128",
-    "roiBack": "738,251,217,281",
+    "roiFront": "402,308,39,128",
+    "roiBack": "336,205,195,326",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "进入主要的战斗界面"
@@ -74,7 +74,7 @@
   {
     "itemName": "battle_main_to_records",
     "imageName": "battle_main_to_records.png",
-    "roiFront": "1002,560,37,41",
+    "roiFront": "1020,561,37,45",
     "roiBack": "976,539,146,100",
     "method": "Template matching",
     "threshold": 0.8,
@@ -181,8 +181,8 @@
   },
   {
     "itemName": "fire_switch",
-    "roiFront": "1219,520,29,25",
-    "roiBack": "1208,507,46,47",
+    "roiFront": "1238,543,19,29",
+    "roiBack": "1218,528,49,57",
     "description": "description",
     "imageName": "fire_switch.png",
     "method": "Template matching",

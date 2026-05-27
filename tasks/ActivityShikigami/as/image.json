@@ -20,7 +20,7 @@
   {
     "itemName": "climb_mode_pass",
     "imageName": "climb_mode_pass.png",
-    "roiFront": "1150,527,23,35",
+    "roiFront": "1139,544,26,27",
     "roiBack": "1118,500,62,100",
     "method": "Template matching",
     "threshold": 0.8,
@@ -29,7 +29,7 @@
   {
     "itemName": "climb_mode_ap",
     "imageName": "climb_mode_ap.png",
-    "roiFront": "1115,668,29,30",
+    "roiFront": "1090,541,29,27",
     "roiBack": "1062,516,200,193",
     "method": "Template matching",
     "threshold": 0.8,
@@ -38,8 +38,8 @@
   {
     "itemName": "climb_mode_switch",
     "imageName": "climb_mode_switch.png",
-    "roiFront": "1236,531,29,27",
-    "roiBack": "1179,494,100,100",
+    "roiFront": "1235,549,25,21",
+    "roiBack": "1223,531,50,62",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "切换按键"
