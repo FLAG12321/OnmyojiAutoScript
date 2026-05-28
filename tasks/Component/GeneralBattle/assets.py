@@ -12,17 +12,17 @@ class GeneralBattleAssets:
 
 	# Click Rule Assets
 	# description 
-	C_WIN_1 = RuleClick(roi_front=(175,102,1054,99), roi_back=(175,102,1054,99), name="win_1")
+	C_WIN_1 = RuleClick(roi_front=(176,103,1049,95), roi_back=(175,102,1052,98), name="win_1")
 	# description 
-	C_WIN_2 = RuleClick(roi_front=(22,112,210,496), roi_back=(22,112,210,496), name="win_2")
+	C_WIN_2 = RuleClick(roi_front=(25,128,89,398), roi_back=(23,127,91,401), name="win_2")
 	# description 
-	C_WIN_3 = RuleClick(roi_front=(1059,114,206,468), roi_back=(1059,114,206,468), name="win_3")
+	C_WIN_3 = RuleClick(roi_front=(1162,159,77,387), roi_back=(1161,158,79,390), name="win_3")
 	# description 
-	C_REWARD_1 = RuleClick(roi_front=(606,603,325,87), roi_back=(606,603,325,87), name="reward_1")
+	C_REWARD_1 = RuleClick(roi_front=(642,623,272,47), roi_back=(641,621,274,50), name="reward_1")
 	# description 
-	C_REWARD_2 = RuleClick(roi_front=(25,134,224,472), roi_back=(25,134,224,472), name="reward_2")
+	C_REWARD_2 = RuleClick(roi_front=(19,167,94,329), roi_back=(18,166,96,332), name="reward_2")
 	# description 
-	C_REWARD_3 = RuleClick(roi_front=(1092,156,168,437), roi_back=(1092,156,168,437), name="reward_3")
+	C_REWARD_3 = RuleClick(roi_front=(1163,201,92,314), roi_back=(1162,200,95,317), name="reward_3")
 
 
 	# Click Rule Assets
