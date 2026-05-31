@@ -36,15 +36,6 @@
     "description": "百鬼夜行图"
   },
   {
-    "itemName": "wt_scroll_2",
-    "imageName": "collect_wt_scroll_2.png",
-    "roiFront": "1182,24,24,122",
-    "roiBack": "1163,12,63,155",
-    "method": "Template matching",
-    "threshold": 0.7,
-    "description": "百妖风物鉴"
-  },
-  {
     "itemName": "wt_collect_wechat",
     "imageName": "wt_collect_wechat.png",
     "roiFront": "241,644,49,47",

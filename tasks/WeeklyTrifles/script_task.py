@@ -73,7 +73,7 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
                 break
             if self.appear_then_click(self.I_WT_SHIKIAGMI, interval=1):
                 continue
-            if self.appear_then_click(self.I_WT_SCROLL, interval=1):
+            if self.appear_then_click(self.I_WT_SHARE, interval=1):
                 continue
         # 确认的是百鬼夜行图
         #self.ui_click(self.I_WT_SCROLL_2, self.I_WT_SCROLL_1)
@@ -109,8 +109,6 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             if self.appear(self.I_WT_SHIKIAGMI):
                 break
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
-                continue
-            if self.appear_then_click(self.I_UI_BACK_BLUE, interval=1):
                 continue
             if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
                 continue
