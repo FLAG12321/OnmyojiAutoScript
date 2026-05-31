@@ -243,6 +243,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 logger.info(f"Click self.I_EXTRA_INFO.name")
                 sleep(1.5)
                 continue
+            # 未知结算弹窗（皮肤碎片等）：点一下空白区域尝试跳过
+            if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD)and not self.appear(self.I_WIN):
+                self.click(self.C_RANDOM_CLICK)  #碎片
+                self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL) #整个皮肤
+                continue
             if (not self.appear(self.I_REWARD) and
                 not self.appear(self.I_REWARD_GOLD) and
                 not self.appear(self.I_EXTRA_INFO)#  and
