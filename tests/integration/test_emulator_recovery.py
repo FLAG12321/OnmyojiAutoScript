@@ -2,6 +2,7 @@ import pytest
 from datetime import datetime, timedelta
 
 from module.exception import GameNotRunningError, EmulatorNotRunningError
+from module.device.device import EmulatorState
 from module.device.method.nemu_ipc import NemuIpcError
 from script import Script
 
@@ -82,6 +83,8 @@ class FakeDevice:
         self.emulator_stop_calls = 0
         self.full_recovery_calls = 0
         self.health = FakeHealth()
+        self.emulator_state = EmulatorState.HEALTHY
+        self.transitions = []
 
     def detect_emulator_status(self, serial):
         assert serial == self.serial
@@ -93,6 +96,10 @@ class FakeDevice:
     def full_recovery(self):
         self.full_recovery_calls += 1
         return True
+
+    def _transition_to(self, target):
+        self.transitions.append((self.emulator_state, target))
+        self.emulator_state = target
 
     def stuck_record_clear(self):
         return None
@@ -171,7 +178,7 @@ def test_run_schedules_restart_for_game_not_running_without_health_probe():
     assert script.config.called_tasks == ['Restart']
 
 
-def test_run_schedules_restart_and_recovery_for_emulator_not_running():
+def test_run_marks_healthy_emulator_zombie_before_scheduling_recovery():
     script = make_script_with_device(status='device')
 
     def raise_emulator_not_running():
@@ -183,6 +190,8 @@ def test_run_schedules_restart_and_recovery_for_emulator_not_running():
     success = script.run('ReturnGift')
 
     assert success is False
+    assert script.device.emulator_state == EmulatorState.ZOMBIE
+    assert script.device.transitions == [(EmulatorState.HEALTHY, EmulatorState.ZOMBIE)]
     assert script._needs_recovery is True
     assert script.config.called_tasks == ['Restart']
 

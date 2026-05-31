@@ -26,7 +26,7 @@ from multiprocessing.queues import Queue
 from module.config.utils import convert_to_underscore
 from module.config.config import Config
 from module.config.config_model import ConfigModel
-from module.device.device import Device
+from module.device.device import Device, EmulatorState
 from module.base.utils import load_module
 from module.base.decorator import del_cached_property
 from module.logger import logger
@@ -452,6 +452,8 @@ class Script:
             return True
         except EmulatorNotRunningError as e:
             logger.warning(e)
+            if self.device.emulator_state == EmulatorState.HEALTHY:
+                self.device._transition_to(EmulatorState.ZOMBIE)
             self._needs_recovery = True
             self.config.task_call('Restart')
             return False
