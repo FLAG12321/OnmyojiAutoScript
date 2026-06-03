@@ -160,5 +160,14 @@
     "imageName": "summon_up_buy_flag.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "summon_up_jump",
+    "roiFront": "553,664,178,25",
+    "roiBack": "200,480,925,225",
+    "description": "description",
+    "imageName": "summon_up_jump.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

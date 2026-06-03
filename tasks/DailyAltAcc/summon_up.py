@@ -108,6 +108,9 @@ class SummonUp(DailyAltAccBase):
             if share_end and buy_end:
                 start_time = time.time()
                 break
+            if self.appear_then_click(self.I_SUMMON_UP_JUMP, interval=1):
+                    start_time = time.time()
+                    continue
             if self.appear(self.I_SUMMON_UP_TO_GIFT):
                 if not share_end:
                     share_end =share_summon_up()
@@ -136,7 +139,7 @@ class SummonUp(DailyAltAccBase):
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas2')
+    c = Config('QMUMU1')
     d = Device(c)
     self = SummonUp(c, d)
     self.screenshot()

@@ -388,6 +388,8 @@ class DailyAltAccAssets:
 	I_SUMMON_UP_TO_SHARE = RuleImage(roi_front=(294,433,87,26), roi_back=(140,387,255,94), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_to_share.png")
 	# description 
 	I_SUMMON_UP_BUY_FLAG = RuleImage(roi_front=(358,596,85,42), roi_back=(318,571,160,79), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_buy_flag.png")
+	# description 
+	I_SUMMON_UP_JUMP = RuleImage(roi_front=(553,664,178,25), roi_back=(200,480,925,225), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_jump.png")
 
 
 	# Image Rule Assets

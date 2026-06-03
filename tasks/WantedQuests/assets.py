@@ -86,7 +86,7 @@ class WantedQuestsAssets:
 	# 邀请好友界面 好友列表第一列 
 	O_WQ_INVITE_COLUMN_1 = RuleOcr(roi=(240,185,190,340), area=(0,0,100,100), mode="FULL", method="Default", keyword="", name="wq_invite_column_1")
 	# 邀请好友界面 好友列表第二列 
-	O_WQ_INVITE_COLUMN_2 = RuleOcr(roi=(520,185,190,340), area=(520,185,190,340), mode="FULL", method="Default", keyword="", name="wq_invite_column_2")
+	O_WQ_INVITE_COLUMN_2 = RuleOcr(roi=(520,185,190,340), area=(0,0,100,100), mode="FULL", method="Default", keyword="", name="wq_invite_column_2")
 
 
 	# Click Rule Assets
@@ -137,7 +137,7 @@ class WantedQuestsAssets:
 	# 挑战券的数量 
 	O_WQ_NUMBER = RuleOcr(roi=(569,13,50,32), area=(569,13,50,32), mode="Digit", method="Default", keyword="", name="wq_number")
 	# 悬赏封印 
-	O_WQ_WANTED = RuleOcr(roi=(15,116,85,401), area=(15,116,85,401), mode="Full", method="Default", keyword="", name="wq_wanted")
+	O_WQ_WANTED = RuleOcr(roi=(9,145,123,381), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="wq_wanted")
 	# Ocr-description 
 	O_WQ_TEXT_1 = RuleOcr(roi=(67,233,52,32), area=(67,233,52,32), mode="Single", method="Default", keyword="封印", name="wq_text_1")
 	# Ocr-description 
@@ -167,9 +167,9 @@ class WantedQuestsAssets:
 	# Ocr-description 
 	O_WQ_INFO_4 = RuleOcr(roi=(613,456,315,44), area=(613,456,315,44), mode="Single", method="Default", keyword="", name="wq_info_4")
 	# 怪物名称,如酒吞，阎魔等 
-	O_WQ_MONSTER_TYPE = RuleOcr(roi=(165,215,45,175), area=(165,215,45,175), mode="Full", method="Default", keyword="", name="wq_monster_type")
+	O_WQ_MONSTER_TYPE = RuleOcr(roi=(165,215,45,175), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="wq_monster_type")
 	#  
-	O_WQ_TEXT_ALL = RuleOcr(roi=(12,119,88,393), area=(12,119,88,393), mode="Full", method="Default", keyword="", name="wq_text_all")
+	O_WQ_TEXT_ALL = RuleOcr(roi=(20,140,110,390), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="wq_text_all")
 
 
 	# Image Rule Assets

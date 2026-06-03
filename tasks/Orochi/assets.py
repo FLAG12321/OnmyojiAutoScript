@@ -16,9 +16,9 @@ class OrochiAssets:
 	# 组队 
 	I_FORM_TEAM = RuleImage(roi_front=(967,607,83,44), roi_back=(924,554,167,163), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/form_team.png")
 	# description 
-	I_OROCHI_LOCK = RuleImage(roi_front=(700,656,35,33), roi_back=(610,642,293,73), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/orochi_lock.png")
+	I_OROCHI_LOCK = RuleImage(roi_front=(700,656,35,33), roi_back=(610,642,293,73), threshold=0.7, method="Template matching", file="./tasks/Orochi/o/orochi_lock.png")
 	# description 
-	I_OROCHI_UNLOCK = RuleImage(roi_front=(702,654,29,33), roi_back=(628,639,178,73), threshold=0.8, method="Template matching", file="./tasks/Orochi/o/orochi_unlock.png")
+	I_OROCHI_UNLOCK = RuleImage(roi_front=(702,654,29,33), roi_back=(628,639,178,73), threshold=0.7, method="Template matching", file="./tasks/Orochi/o/orochi_unlock.png")
 	# 点击挑战 
 	I_OROCHI_FIRE = RuleImage(roi_front=(1146,594,87,47), roi_back=(1121,578,133,114), threshold=0.6, method="Template matching", file="./tasks/Orochi/o/orochi_fire.png")
 	# 式神录 
