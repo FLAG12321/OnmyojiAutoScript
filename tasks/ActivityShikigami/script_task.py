@@ -9,7 +9,6 @@ import random
 from typing import Any
 from cached_property import cached_property
 
-from module.atom.image import RuleImage
 from module.atom.click import RuleClick
 from module.atom.ocr import RuleOcr
 from module.base.protect import random_sleep
@@ -25,6 +24,7 @@ from tasks.Component.BaseActivity.base_activity import BaseActivity
 from tasks.Component.BaseActivity.config_activity import GeneralClimb
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
+from tasks.GameUi.page import page_main, page_shikigami_records
 from tasks.ActivityShikigami.pass_monopoly import PassMonopolyMixin
 import tasks.Component.GeneralBattle.config_general_battle
 import tasks.ActivityShikigami.page as game
@@ -152,14 +152,15 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         # 缓存期内每次调用预估递减 1 (一场战斗 1 张门票)
         self._ticket_cache: dict[str, int] = {}
         self._ticket_last_ocr: dict[str, datetime] = {}
-        self._ap20_soul_switched: bool = False
-    
+
     def run(self) -> None:
         self.limit_time: timedelta = self.conf.general_climb.limit_time_v
         #
         for climb_type in self.conf.general_climb.run_sequence_v:
-            # 进入到活动的主页面，不是具体的战斗页面
+            # 切换御魂(回到 page_main 后进入 page_shikigami_records 再切回 page_main)
             self.ui_get_current_page()
+            self.switch_soul()
+            # 进入到活动的主页面，不是具体的战斗页面
             self.ui_goto(game.page_climb_act)
             try:
                 method_func = getattr(self, f'_run_{climb_type}')
@@ -187,7 +188,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         """
         logger.hr(f'Start run climb type PASS', 1)
         self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
-        self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
         self.switch_climb_mode_in_game('pass')
 
         ocr_limit_timer = Timer(1).start()
@@ -225,7 +225,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         logger.hr(f'Start run climb type AP')
         self.ui_clicks([self.I_TO_BATTLE_MAIN],
                        stop=self.I_CHECK_BATTLE_MAIN, interval=1)
-        self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
         self.switch_climb_mode_in_game('ap')
 
         ocr_limit_timer = Timer(1).start()
@@ -303,12 +302,11 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         AP20爬塔模式：7入口遍历，每入口不限次数battle循环
         """
         logger.hr('Start run climb type AP20', 1)
-        self._ap20_soul_switched = False
 
         self.ui_click(self.I_TO_AP20, stop=self.I_CHECK_AP20, interval=1)
 
         for entry_idx in range(7):
-            logger.hr(f'AP20 entry [{entry_idx}/7]', 2)
+            logger.hr(f'AP20 entry [{entry_idx}/6]', 2)
 
             entry_img = getattr(self, f'I_AP20_ENTRY_{entry_idx}')
             swipe_count = 0
@@ -327,10 +325,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
 
             self.appear_then_click(entry_img, interval=2)
             self.ui_click(self.I_TO_AP20_BOSS, stop=self.I_CHECK_AP20_BOSS, interval=1)
-
-            if not self._ap20_soul_switched:
-                self.switch_soul(self.I_CHECK_AP20_BOSS, self.I_CHECK_AP20_BOSS)
-                self._ap20_soul_switched = True
 
             ocr_limit_timer = Timer(1).start()
             fire_retry = 0
@@ -502,21 +496,14 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 self.random_click_swipt()
         return True
 
-    def switch_soul(self, enter_button: RuleImage, cur_img: RuleImage):
+    def switch_soul(self):
         conf = self.conf.switch_soul_config
         conf.validate_switch_soul()
-        enable_switch = getattr(conf, f"enable_switch_{self.climb_type}", False)
-        enable_by_name = getattr(conf, f"enable_switch_{self.climb_type}_by_name", False)
-        if not enable_switch and not enable_by_name:
+        if not getattr(conf, f"enable_switch_{self.climb_type}", False):
             return
-        self.ui_click(enter_button, stop=self.I_CHECK_RECORDS, interval=1)
-        if enable_by_name:
-            group, team = getattr(conf, f"{self.climb_type}_group_team_name").split(",")
-            self.run_switch_soul_by_name(group, team)
-        elif enable_switch:
-            group_team = getattr(conf, f"{self.climb_type}_group_team")
-            self.run_switch_soul(group_team)
-        self.ui_click(self.I_UI_BACK_YELLOW, stop=cur_img, interval=1)
+        self.ui_goto(page_shikigami_records)
+        self.run_switch_soul(getattr(conf, f"{self.climb_type}_group_team"))
+        self.ui_goto(page_main)
 
     def switch_climb_mode_in_game(self, mode: str = 'ap'):
         map_check = {
@@ -610,8 +597,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                    preset_enable=enable_preset,
                    preset_group=group if enable_preset else 1,
                    preset_team=team if enable_preset else 1,
-                   green_enable=getattr(self.conf.general_battle, f'enable_{self.climb_type}_green', False),
-                   green_mark=getattr(self.conf.general_battle, f'{self.climb_type}_green_mark'),
                    random_click_swipt_enable=getattr(self.conf.general_battle, f'enable_{self.climb_type}_anti_detect',
                                                      False), )
 

@@ -3,7 +3,6 @@
 # github https://github.com/runhey
 from pydantic import BaseModel, Field, model_validator
 
-from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType
 from tasks.Component.config_scheduler import Scheduler
 from tasks.Component.config_base import ConfigBase, TimeDelta
 from tasks.Component.BaseActivity.config_activity import GeneralClimb
@@ -23,96 +22,55 @@ def check_soul_by_number(enable_switch: bool, group_team: str, label: str):
         raise ValueError(f"[{label}]Switching soul configurations must be numeric")
 
 
-def check_soul_by_ocr(enable_switch: bool, group_team: str, label: str):
-    if not enable_switch:
-        return
-    if not group_team:
-        raise ValueError(f"[{label}]Switch Soul configuration is enabled, but there is no setting")
-    if ',' not in group_team:
-        raise ValueError(f"[{label}]The switch soul configuration must be in English ','")
-    parts = group_team.split(',')
-    if len(parts) != 2:
-        raise ValueError(f"[{label}]The length of the switch soul configuration must be equal to 2")
-
-
 class SwitchSoulConfig(BaseModel):
     enable_switch_pass: bool = Field(default=False, description='是否切换门票爬塔御魂')
     pass_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-    enable_switch_pass_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
-    pass_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
     enable_switch_ap: bool = Field(default=False, description='是否切换体力爬塔御魂')
     ap_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-    enable_switch_ap_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
-    ap_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
     enable_switch_boss: bool = Field(default=False, description='是否切换boss爬塔御魂')
     boss_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-    enable_switch_boss_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
-    boss_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
     enable_switch_ap100: bool = Field(default=False, description='是否切换100体爬塔御魂')
     ap100_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-    enable_switch_ap100_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
-    ap100_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
     enable_switch_ap20: bool = Field(default=False, description='是否切换ap20御魂')
     ap20_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-    enable_switch_ap20_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
-    ap20_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
     enable_switch_pass_monopoly: bool = Field(default=False, description='是否切换大富翁御魂')
     pass_monopoly_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-    enable_switch_pass_monopoly_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
-    pass_monopoly_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
     # @model_validator(mode='after')
     def validate_switch_soul(self):
-        label_set = self.get_label_set()
-        for label in label_set:
+        for label in self.get_label_set():
             enable_num = getattr(self, f"enable_switch_{label}", False)
             team = getattr(self, f"{label}_group_team", None)
             check_soul_by_number(enable_num, team, label=label.upper())
-
-            enable_ocr = getattr(self, f"enable_switch_{label}_by_name", False)
-            team_name = getattr(self, f"{label}_group_team_name", None)
-            check_soul_by_ocr(enable_ocr, team_name, label=label.upper())
         return self
 
     def get_label_set(self):
         return {field.replace("enable_switch_", "") for field in self.model_fields if
-                     field.startswith("enable_switch_") and not field.endswith("by_name")}
+                     field.startswith("enable_switch_")}
 
 
 class GeneralBattleConfig(BaseModel):
     enable_pass_preset: bool = Field(default=False, description='是否切换门票爬塔预设, 仅数字切换御魂可用')
-    enable_pass_green: bool = Field(default=False, description='是否开启门票爬塔绿标')
-    pass_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='门票爬塔绿标位置')
     enable_pass_anti_detect: bool = Field(default=False, description='门票爬塔战斗过程是否随机点击或滑动')
 
     enable_ap_preset: bool = Field(default=False, description='是否切换体力爬塔预设, 仅数字切换御魂可用')
-    enable_ap_green: bool = Field(default=False, description='是否开启体力爬塔绿标')
-    ap_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='体力爬塔绿标位置')
     enable_ap_anti_detect: bool = Field(default=False, description='体力爬塔战斗过程是否随机点击或滑动')
 
     enable_boss_preset: bool = Field(default=False, description='是否切换boss爬塔预设, 仅数字切换御魂可用')
-    enable_boss_green: bool = Field(default=False, description='是否开启boss爬塔绿标')
-    boss_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='boss爬塔绿标位置')
     enable_boss_anti_detect: bool = Field(default=False, description='boss爬塔战斗过程是否随机点击或滑动')
 
     enable_ap100_preset: bool = Field(default=False, description='是否切换100体爬塔预设, 仅数字切换御魂可用')
-    enable_ap100_green: bool = Field(default=False, description='是否开启100体爬塔绿标')
-    ap100_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='100体爬塔绿标位置')
     enable_ap100_anti_detect: bool = Field(default=False, description='100体爬塔战斗过程是否随机点击或滑动')
 
     enable_ap20_preset: bool = Field(default=False, description='是否切换ap20爬塔预设, 仅数字切换御魂可用')
-    enable_ap20_green: bool = Field(default=False, description='是否开启ap20爬塔绿标')
-    ap20_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='ap20爬塔绿标位置')
     enable_ap20_anti_detect: bool = Field(default=False, description='ap20爬塔战斗过程是否随机点击或滑动')
 
     enable_pass_monopoly_preset: bool = Field(default=False, description='是否切换大富翁预设, 仅数字切换御魂可用')
-    enable_pass_monopoly_green: bool = Field(default=False, description='是否开启大富翁绿标')
-    pass_monopoly_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='大富翁绿标位置')
     enable_pass_monopoly_anti_detect: bool = Field(default=False, description='大富翁战斗过程是否随机点击或滑动')
 
 
