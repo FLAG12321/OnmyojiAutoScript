@@ -1,7 +1,6 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from enum import Enum, auto
 from time import sleep
 from datetime import datetime, timedelta
 import cv2
@@ -26,6 +25,7 @@ from tasks.Component.BaseActivity.base_activity import BaseActivity
 from tasks.Component.BaseActivity.config_activity import GeneralClimb
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
+from tasks.ActivityShikigami.pass_monopoly import PassMonopolyMixin
 import tasks.Component.GeneralBattle.config_general_battle
 import tasks.ActivityShikigami.page as game
 
@@ -80,17 +80,6 @@ class LimitTimeOut(Exception):
 
 class LimitCountOut(Exception):
     pass
-
-class ActivityShikigamiScene(Enum):
-    ACTIVITYSHIKIGAMI_SCENE_MAIN = 0
-    ACTIVITYSHIKIGAMI_SCENE_SELECT_DICE = 1
-    ACTIVITYSHIKIGAMI_SCENE_SHOP = 2
-    ACTIVITYSHIKIGAMI_SCENE_FIRE = 3
-    ACTIVITYSHIKIGAMI_SCENE_QA = 4
-    ACTIVITYSHIKIGAMI_SCENE_ROLL = 5
-    ACTIVITYSHIKIGAMI_SCENE_REWARD = 6
-    ACTIVITYSHIKIGAMI_SCENE_SKIP = 7
-    ACTIVITYSHIKIGAMI_SCENE_UNKNOWN = 99
 
 class StateMachine(BaseTask):
     run_idx: int = 0  # 当前爬塔类型
@@ -151,14 +140,13 @@ class StateMachine(BaseTask):
         logger.hr(f'Climb switch to {self.climb_type}', 2)
         return True
 
-class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikigamiAssets):
+class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMixin, ActivityShikigamiAssets):
     """
     更新前请先看 ./README.md
     """
     
     def __init__(self, config, device):
         super().__init__(config, device)
-        self.selected_dice = None  # 添加实例变量存储选中的骰子
         # check_tickets_enough 缓存: 避免每次循环都 OCR 剩余门票
         # 策略: pass/ap 剩余 >= 50 时 10 分钟 OCR 一次; boss 剩余 >= 10 时 10 分钟 OCR 一次
         # 缓存期内每次调用预估递减 1 (一场战斗 1 张门票)
@@ -402,242 +390,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 logger.info(f'Try click fire AP20, remain times[{max_times - click_times}]')
                 continue
         self.run_general_battle(config=self.get_general_battle_conf())
-
-    def _run_pass_1(self):
-        """
-            更新前请先看 ./README.md
-        """
-        logger.hr(f'Start run climb type pass')
-        self.screenshot()
-        # 进入战斗主界面
-        self.appear_then_click(self.I_TO_BATTLE_MAIN_2, interval=1)
-        #self.switch_climb_mode_in_game('pass')
-        current_scene=self.get_current_scene()
-        while 1:
-            self.screenshot()
-            if current_scene == ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_UNKNOWN:
-                logger.warning("未能在10秒内识别到有效场景，返回主页面重新尝试")
-                if self.appear(self.I_TO_BATTLE_MAIN_2):
-                    self.ui_click(self.I_TO_BATTLE_MAIN_2, stop=self.I_CHECK_BATTLE_MAIN_2, interval=1)
-                    continue
-            current_scene = self.get_current_scene()
-            if current_scene ==ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN and self.O_REMAIN_PASS.ocr_digit(self.device.image)<=0:
-                return
-            self.handle_scene(current_scene)
-            
-            # 检查任务限制
-            try:
-                self.put_status()
-            except (LimitTimeOut, LimitCountOut):
-                break
-
-    def get_current_scene(self) -> ActivityShikigamiScene:
-        """ 获取当前场景，轮询最多10秒后如果仍未识别到有效场景则返回UNKNOWN """
-        import time
-        start_time = time.time()
-        
-        while time.time() - start_time < 10:
-            self.screenshot()
-            # 检查SKIP场景，这通常是在战斗结束后可能出现的场景
-            # 需要根据实际游戏中SKIP场景的特点来添加检测条件
-            if self.appear(self.I_SKIP_BUTTON,interval=1):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_SKIP
-            if self.appear(self.I_PAGE_SHOP, interval=1):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_SHOP
-            if self.appear(self.I_PAGE_SELECT_DICE, interval=1):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_SELECT_DICE
-            if self.appear(self.I_PAGE_FIRE, interval=1) or self.appear(self.I_PAGE_FIRE2, interval=1):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_FIRE
-            if self.appear(self.I_PAGE_QA, interval=1):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_QA
-            if self.appear(self.I_PAGE_ROLL, interval=1):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_ROLL
-            if self.appear(self.I_CHECK_BATTLE_MAIN_2, interval=3):
-                return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN
-            # 这里需要添加检测奖励页面的逻辑，假设我们有相关的图像元素
-            # 需要根据实际情况定义奖励页面的图像元素
-            # if self.appear_rgb(self.I_PAGE_AWARD):  # 假设有这样的图像元素
-            #     return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_AWARD
-            
-            # 小延时避免CPU占用过高
-            time.sleep(0.1)
-        
-        return ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_UNKNOWN
-
-    def handle_scene(self, scene: ActivityShikigamiScene) -> None:
-        """ 根据当前场景执行对应的操作 """
-        scene_handlers = {
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_MAIN: self.handle_main_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_SELECT_DICE: self.handle_select_dice_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_SHOP: self.handle_shop_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_FIRE: self.handle_fire_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_QA: self.handle_qa_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_ROLL: self.handle_roll_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_REWARD: self.handle_reward_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_SKIP: self.handle_skip_scene,
-            ActivityShikigamiScene.ACTIVITYSHIKIGAMI_SCENE_UNKNOWN: self.handle_unknown_scene
-        }
-
-        handler = scene_handlers.get(scene, self.handle_unknown_scene)
-        handler()
-
-    def handle_main_scene(self) -> None:
-        """ 处理主界面场景 """
-        logger.info("当前在主界面场景")
-        # 获取当前截图
-        self.screenshot()
-        if (self.appear_then_click(self.I_UI_CONFIRM, interval=1)
-                    or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1)):
-                logger.info("点击确认按钮")
-                return
-        current_image = self.device.image
-        # 检测 I_DICE_1, I_DICE_2, I_DICE_3 是否分别出现两次
-        dice_1_count = len(self.I_DICE_1.match_all_any(current_image))
-        dice_2_count = len(self.I_DICE_2.match_all_any(current_image))
-        dice_3_count = len(self.I_DICE_3.match_all_any(current_image))
-        
-        # 如果任意一个骰子出现两次，则点击 I_FIRE_2
-        # 修复：正确调用ocr_digit_counter方法并获取计数
-        pass_2_count = self.O_REMAIN_PASS_2.ocr_digit(current_image)
-        if pass_2_count > 0 and (dice_1_count >= 2 or dice_2_count >= 2 or dice_3_count >= 2):
-            # 确定是哪个骰子出现了两次
-            if dice_1_count >= 2:
-                self.selected_dice = self.C_DICE_1
-            elif dice_2_count >= 2:
-                self.selected_dice = self.C_DICE_2
-            elif dice_3_count >= 2:
-                self.selected_dice = self.C_DICE_3
-            
-            # 检查当前是否有I_FIRE_2，如果没有则通过I_FIRE_SWITCH切换
-            if not self.appear(self.I_FIRE_2):
-                # 点击I_FIRE_SWITCH切换到I_FIRE_2模式
-                self.click(self.I_FIRE_SWITCH)
-                # 等待切换完成
-                self.screenshot()
-                
-            # 点击I_FIRE_2
-            self.appear_then_click(self.I_FIRE_2,interval=2)
-                
-        else:
-            # 如果没有骰子出现两次，则切换到I_FIRE_1模式
-            if not self.appear(self.I_FIRE_1):
-                # 点击I_FIRE_SWITCH切换到I_FIRE_1模式
-                self.click(self.I_FIRE_SWITCH)
-                # 等待切换完成
-                self.screenshot()
-            self.appear_then_click(self.I_FIRE_1,interval=2)
-    def handle_select_dice_scene(self) -> None:
-        """ 处理选择骰子场景 """
-        logger.info(f"当前在选择骰子场景，选中的骰子: {self.selected_dice.name if self.selected_dice else 'None'}")
-        # 实现选择骰子逻辑，可以根据self.selected_dice参数来决定选择哪个骰子
-        # 示例：如果需要点击特定的骰子
-        if self.selected_dice:
-            # 根据选中的骰子执行相应的操作
-            # 这里可以添加选择骰子的具体逻辑
-            self.click(self.selected_dice)
-        else:
-            # 如果没有指定骰子，可以选择默认行为
-            self.click(self.I_DICE_3)
-            logger.info("没有指定骰子，执行默认操作")
-        pass
-
-    def handle_shop_scene(self) -> None:
-        """ 处理商店场景 """
-        logger.info("当前在商店场景")
-        self.screenshot()
-        current_image = self.device.image
-        buy_enables=self.I_BUY_ENABLE.match_all_any(current_image)
-        logger.info(f"buy_enables: {buy_enables}")
-        if len(buy_enables) ==1:
-            logger.info("buy_enables ==1")
-            self.I_BUY_BTN.roi_back=(buy_enables[0][1]-40,buy_enables[0][2]-140,230,120)
-            buy_enable=1
-        else:
-            buy_enable=0
-        # 实现商店相关逻辑，购买道具
-        import time
-        start_time = time.time()
-        #-40,-140       230 120
-        while time.time() - start_time < 5:
-            self.screenshot()
-            # 尝试点击购买道具（如果有可购买的物品）
-            if buy_enable ==0 and self.appear_then_click(self.I_RED_EXIT, interval=2.5):
-                break
-            if buy_enable ==1 and self.appear_then_click(self.I_BUY_BTN, interval=2.5):
-                start_time = time.time()
-                continue
-            # 检查是否有确认按钮或其他需要处理的弹窗
-            if (self.appear_then_click(self.I_UI_CONFIRM, interval=1)
-                    or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1)):
-                logger.info("点击确认按钮")
-                break
-        logger.info("商店场景处理完成")
-        pass
-
-    def handle_fire_scene(self) -> None:
-        """ 处理战斗开始场景（出现火图标） """
-        logger.info("当前在战斗开始场景")
-        # 检查是否有确认按钮
-        self.screenshot()
-        
-        if self.appear_then_click(self.I_PAGE_FIRE, interval=2.5):
-            # 临时替换battle_wait方法以使用自定义的战斗等待逻辑
-            original_battle_wait = self.battle_wait
-            self.battle_wait = self.activity_shikigami_battle_wait
-            try:
-                self.run_general_battle(config=self.get_general_battle_conf())
-            finally:
-                # 恢复原始的battle_wait方法
-                self.battle_wait = original_battle_wait
-            return
-        if self.appear(self.I_PAGE_FIRE2):
-            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
-             logger.info("点击确认按钮")
-            return
-        
-
-    def handle_qa_scene(self) -> None:
-        """ 处理问答场景 """
-        logger.info("当前在问答场景")
-        #实现问答场景逻辑
-        self.screenshot()
-        if self.appear_then_click(self.I_PAGE_QA,action=self.C_ANSWER_CLICK_1, interval=2.5):
-            pass
-
-    def handle_roll_scene(self) -> None:
-        """ 处理投掷场景 """
-        logger.info("当前在投掷场景")
-        #  实现投掷场景逻辑
-        self.screenshot()
-        if self.appear_then_click(self.I_PAGE_ROLL, interval=2.5):
-            pass
-        pass
-
-    def handle_reward_scene(self) -> None:
-        """ 处理奖励场景 """
-        logger.info("当前在奖励场景")
-        # 实现奖励场景的处理逻辑
-        # 例如：点击领取奖励、处理奖励弹窗等
-        self.ui_reward_appear_click()
-        pass
-
-    def handle_skip_scene(self) -> None:
-        """ 处理跳过场景 """
-        logger.info("当前在跳过场景")
-        # 实现跳过场景的处理逻辑
-        self.screenshot()
-        self.appear_then_click(self.I_SKIP_BUTTON, interval=2)
-        logger.info("跳过场景处理完成，准备返回主场景")
-        pass
-
-    def handle_unknown_scene(self) -> None:
-        """ 处理未知场景 """
-        logger.info("当前场景未知")
-        self.screenshot()
-        # 回退到主界面
-        self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
-
-
 
     def start_battle(self):
         click_times, max_times = 0, random.randint(2, 4)
