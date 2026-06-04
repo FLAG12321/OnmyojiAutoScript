@@ -61,6 +61,11 @@ class SwitchSoulConfig(BaseModel):
     enable_switch_ap20_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
     ap20_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
+    enable_switch_pass_monopoly: bool = Field(default=False, description='是否切换大富翁御魂')
+    pass_monopoly_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
+    enable_switch_pass_monopoly_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
+    pass_monopoly_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
+
     # @model_validator(mode='after')
     def validate_switch_soul(self):
         label_set = self.get_label_set()
