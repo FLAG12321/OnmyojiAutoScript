@@ -72,15 +72,6 @@
     "description": "进入100体活动标识"
   },
   {
-    "itemName": "remain_pass_2",
-    "roiFront": "1167,19,54,29",
-    "roiBack": "1141,11,86,38",
-    "description": "description",
-    "mode": "DigitCounter",
-    "method": "Default",
-    "keyword": ""
-  },
-  {
     "itemName": "fire2",
     "roiFront": "1131,588,100,53",
     "roiBack": "1167,601,35,27",
