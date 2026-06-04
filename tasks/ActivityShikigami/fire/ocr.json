@@ -1,8 +1,8 @@
 [
   {
     "itemName": "fire",
-    "roiFront": "1135,601,78,46",
-    "roiBack": "1137,600,78,50",
+    "roiFront": "1141,605,75,41",
+    "roiBack": "1165,609,31,26",
     "mode": "Single",
     "method": "Default",
     "keyword": "挑战",
@@ -79,5 +79,14 @@
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": ""
+  },
+  {
+    "itemName": "fire2",
+    "roiFront": "1131,588,100,53",
+    "roiBack": "1167,601,35,27",
+    "description": "description",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "挑战"
   }
 ]

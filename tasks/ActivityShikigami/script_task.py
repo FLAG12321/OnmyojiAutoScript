@@ -159,6 +159,11 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
     def __init__(self, config, device):
         super().__init__(config, device)
         self.selected_dice = None  # 添加实例变量存储选中的骰子
+        # check_tickets_enough 缓存: 避免每次循环都 OCR 剩余门票
+        # 策略: pass/ap 剩余 >= 50 时 10 分钟 OCR 一次; boss 剩余 >= 10 时 10 分钟 OCR 一次
+        # 缓存期内每次调用预估递减 1 (一场战斗 1 张门票)
+        self._ticket_cache: dict[str, int] = {}
+        self._ticket_last_ocr: dict[str, datetime] = {}
     
     def run(self) -> None:
         self.limit_time: timedelta = self.conf.general_climb.limit_time_v
@@ -261,6 +266,24 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
 
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
     def _run_boss(self):
+        def start_battle():
+            click_times, max_times = 0, random.randint(2, 4)
+            while 1:
+                self.screenshot()
+                if self.is_in_battle(False):
+                    break
+                if click_times >= max_times:
+                    logger.warning(f'Climb {self.climb_type} cannot enter, maybe already end, try next')
+                    return
+                if (self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or
+                        self.appear_then_click(self.I_UI_CONFIRM, interval=1) ):
+                    continue
+                if self.ocr_appear_click(self.O_FIRE2, interval=2):
+                    click_times += 1
+                    logger.info(f'Try click fire, remain times[{max_times - click_times}]')
+                    continue
+            # 运行战斗
+            self.run_general_battle(config=self.get_general_battle_conf())
         """
         更新前请先看 ./README.md
         """
@@ -277,7 +300,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             if not ocr_limit_timer.reached():
                 continue
             ocr_limit_timer.reset()
-            if not self.ocr_appear(self.O_FIRE):
+            if not self.ocr_appear(self.O_FIRE2):
                 self.appear_then_click(self.I_CHECK_BATTLE_MAIN, interval=4)
                 continue
             #  --------------------------------------------------------------
@@ -287,7 +310,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 break
             if self.conf.general_climb.random_sleep:
                 random_sleep(probability=0.2)
-            if self.start_battle():
+            if start_battle():
                 continue
     def _run_pass_1(self):
         """
@@ -552,6 +575,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         self.count_map[self.climb_type] = self.current_count
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
+        fire_ocr = self.O_FIRE2 if self.climb_type == 'boss' else self.O_FIRE
         ok_cnt, max_retry = 0, 5
         while 1:
             sleep(random.uniform(0.5, 1.5))
@@ -560,7 +584,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             if ok_cnt > max_retry:
                 break
             # 识别到挑战说明已经退出战斗
-            if ok_cnt > 0 and self.ocr_appear(self.O_FIRE):
+            if ok_cnt > 0 and self.ocr_appear(fire_ocr):
                 return True
             # 战斗失败
             if self.appear(self.I_FALSE):
@@ -608,6 +632,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         self.count_map[self.climb_type] = self.current_count
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
+        fire_ocr = self.O_FIRE2 if self.climb_type == 'boss' else self.O_FIRE
         ok_cnt, max_retry = 0, 5
         while 1:
             sleep(random.uniform(0.5, 1.5))
@@ -616,7 +641,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
             if ok_cnt > max_retry:
                 break
             # 识别到挑战说明已经退出战斗
-            if ok_cnt > 0 and self.ocr_appear(self.O_FIRE):
+            if ok_cnt > 0 and self.ocr_appear(fire_ocr):
                 return True
             # 战斗失败
             if self.appear(self.I_FALSE):
@@ -678,24 +703,63 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         """
         判断当前爬塔门票是否足够
         :return: True 可以运行 or False
+
+        缓存策略 (ap100 除外, 仍每次都OCR):
+        - pass/ap: 剩余 < 50 时每次都 OCR; >= 50 时 10 分钟 OCR 一次
+        - boss:    剩余 < 10 时每次都 OCR; >= 10 时 10 分钟 OCR 一次
+        缓存命中时预估递减 1 (一场战斗 1 张门票)
         """
-        logger.hr(f'Check {self.climb_type} tickets')
-        if not self.wait_until_appear(self.O_FIRE, wait_time=3):
-            logger.warning(f'Detect fire fail, try reidentify')
-            return False
+        climb = self.climb_type
+
+        # 缓存判断 (ap100 不参与缓存)
+        if climb != 'ap100':
+            threshold = {'pass': 50, 'ap': 50, 'boss': 10}.get(climb, 0)
+            cached = self._ticket_cache.get(climb)
+            last_ocr = self._ticket_last_ocr.get(climb)
+            now = datetime.now()
+            need_ocr = (
+                cached is None
+                or cached < threshold
+                or last_ocr is None
+                or (now - last_ocr) >= timedelta(minutes=10)
+            )
+            if not need_ocr:
+                self._ticket_cache[climb] = max(0, cached - 1)
+                elapsed = int((now - last_ocr).total_seconds())
+                logger.info(
+                    f'Skip OCR for {climb} tickets, cached={self._ticket_cache[climb]} '
+                    f'(last OCR {elapsed}s ago)'
+                )
+                return self._ticket_cache[climb] > 0
+
+        logger.hr(f'Check {climb} tickets')
+
+        if climb == 'boss':
+            if not self.wait_until_appear(self.O_FIRE2, wait_time=3):
+                logger.warning(f'Detect fire fail, try reidentify')
+                return False
+        else:
+            if not self.wait_until_appear(self.O_FIRE, wait_time=3):
+                logger.warning(f'Detect fire fail, try reidentify')
+                return False
         self.screenshot()
         remain_times = 0
-        if self.climb_type == 'pass':
+        if climb == 'pass':
             remain_times = self.O_REMAIN_PASS.ocr_digit(
                 _prepare_image_for_ocr(self.device.image, asset=self.O_REMAIN_PASS))
-        if self.climb_type == 'ap':
+        if climb == 'ap':
             remain_times = self.O_REMAIN_AP.ocr_digit(
                 _prepare_image_for_ocr(self.device.image, asset=self.O_REMAIN_AP))
-        if self.climb_type == 'boss':
+        if climb == 'boss':
             _, remain_times, _ = self.O_REMAIN_BOSS.ocr_digit_counter(self.device.image)
-        if self.climb_type == 'ap100':
+        if climb == 'ap100':
             remain_times = self.O_REMAIN_AP100.ocr_digit(
                 _prepare_image_for_ocr(self.device.image, asset=self.O_REMAIN_AP100))
+
+        if climb != 'ap100':
+            self._ticket_cache[climb] = remain_times
+            self._ticket_last_ocr[climb] = datetime.now()
+
         return remain_times > 0
 
     def get_general_battle_conf(self) -> tasks.Component.GeneralBattle.config_general_battle.GeneralBattleConfig:

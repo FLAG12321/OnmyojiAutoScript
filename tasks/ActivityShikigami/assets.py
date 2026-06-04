@@ -56,7 +56,7 @@ class ActivityShikigamiAssets:
 	# 进入主要的战斗界面 
 	I_TO_BATTLE_MAIN = RuleImage(roi_front=(402,308,39,128), roi_back=(336,205,195,326), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
 	# 点击进入boss战斗页面 
-	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1078,184,36,130), roi_back=(1023,132,132,253), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
+	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1084,282,34,122), roi_back=(1038,228,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
 	# description 
 	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(148,17,135,39), roi_back=(78,5,260,107), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_main.png")
 	# description 
@@ -128,7 +128,7 @@ class ActivityShikigamiAssets:
 
 	# Ocr Rule Assets
 	# 挑战 
-	O_FIRE = RuleOcr(roi=(1135,601,78,46), area=(1137,600,78,50), mode="Single", method="Default", keyword="挑战", name="fire")
+	O_FIRE = RuleOcr(roi=(1141,605,75,41), area=(1165,609,31,26), mode="Single", method="Default", keyword="挑战", name="fire")
 	# 体力的数量检测 
 	O_REMAIN_AP = RuleOcr(roi=(584,17,71,31), area=(583,14,70,34), mode="DigitCounter", method="Default", keyword="", name="remain_ap")
 	# 活动体力的剩余检测 
@@ -145,5 +145,7 @@ class ActivityShikigamiAssets:
 	O_ENTER_AP100 = RuleOcr(roi=(73,98,95,32), area=(5,79,256,108), mode="Single", method="Default", keyword="将魂试炼", name="enter_ap100")
 	# description 
 	O_REMAIN_PASS_2 = RuleOcr(roi=(1167,19,54,29), area=(1141,11,86,38), mode="DigitCounter", method="Default", keyword="", name="remain_pass_2")
+	# description
+	O_FIRE2 = RuleOcr(roi=(1131,588,100,53), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
 
 
