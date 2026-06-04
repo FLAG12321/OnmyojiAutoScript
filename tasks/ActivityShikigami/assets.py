@@ -35,9 +35,9 @@ class ActivityShikigamiAssets:
 	# AP20入口3 
 	I_AP20_ENTRY_3 = RuleImage(roi_front=(850,398,42,47), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_3.png")
 	# AP20入口4 
-	I_AP20_ENTRY_4 = RuleImage(roi_front=(673,193,83,69), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_4.png")
+	I_AP20_ENTRY_4 = RuleImage(roi_front=(924,514,46,47), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_4.png")
 	# AP20入口5 
-	I_AP20_ENTRY_5 = RuleImage(roi_front=(973,518,41,42), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_5.png")
+	I_AP20_ENTRY_5 = RuleImage(roi_front=(949,450,42,47), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_5.png")
 	# AP20入口6 
 	I_AP20_ENTRY_6 = RuleImage(roi_front=(971,483,46,49), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_6.png")
 

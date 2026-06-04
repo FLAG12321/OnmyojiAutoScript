@@ -74,7 +74,7 @@
   {
     "itemName": "ap20_entry_4",
     "imageName": "ap20_entry_4.png",
-    "roiFront": "673,193,83,69",
+    "roiFront": "924,514,46,47",
     "roiBack": "212,61,1060,619",
     "method": "Template matching",
     "threshold": 0.8,
@@ -83,7 +83,7 @@
   {
     "itemName": "ap20_entry_5",
     "imageName": "ap20_entry_5.png",
-    "roiFront": "973,518,41,42",
+    "roiFront": "949,450,42,47",
     "roiBack": "212,61,1060,619",
     "method": "Template matching",
     "threshold": 0.8,
