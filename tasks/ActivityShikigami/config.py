@@ -61,6 +61,11 @@ class SwitchSoulConfig(BaseModel):
     enable_switch_ap20_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
     ap20_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
 
+    enable_switch_pass_monopoly: bool = Field(default=False, description='是否切换大富翁御魂')
+    pass_monopoly_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
+    enable_switch_pass_monopoly_by_name: bool = Field(default=False, description='是否通过ocr切换御魂')
+    pass_monopoly_group_team_name: str = Field(default='', description='组名,队伍名 中间用英文,分隔')
+
     # @model_validator(mode='after')
     def validate_switch_soul(self):
         label_set = self.get_label_set()
@@ -104,6 +109,11 @@ class GeneralBattleConfig(BaseModel):
     enable_ap20_green: bool = Field(default=False, description='是否开启ap20爬塔绿标')
     ap20_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='ap20爬塔绿标位置')
     enable_ap20_anti_detect: bool = Field(default=False, description='ap20爬塔战斗过程是否随机点击或滑动')
+
+    enable_pass_monopoly_preset: bool = Field(default=False, description='是否切换大富翁预设, 仅数字切换御魂可用')
+    enable_pass_monopoly_green: bool = Field(default=False, description='是否开启大富翁绿标')
+    pass_monopoly_green_mark: GreenMarkType = Field(default=GreenMarkType.GREEN_LEFT1, description='大富翁绿标位置')
+    enable_pass_monopoly_anti_detect: bool = Field(default=False, description='大富翁战斗过程是否随机点击或滑动')
 
 
 class ActivityShikigami(ConfigBase):

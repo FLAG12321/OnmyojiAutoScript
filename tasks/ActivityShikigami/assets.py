@@ -58,14 +58,6 @@ class ActivityShikigamiAssets:
 	C_RANDOM_BOTTOM = RuleClick(roi_front=(389,665,277,36), roi_back=(388,664,280,39), name="random_bottom")
 	# description 
 	C_RANDOM_ALL = RuleClick(roi_front=(42,94,1207,543), roi_back=(42,94,1207,543), name="random_all")
-	# description 
-	C_DICE_1 = RuleClick(roi_front=(356,284,59,85), roi_back=(354,282,62,87), name="dice_1")
-	# description 
-	C_DICE_2 = RuleClick(roi_front=(599,268,73,90), roi_back=(597,267,75,92), name="dice_2")
-	# description 
-	C_DICE_3 = RuleClick(roi_front=(827,280,58,69), roi_back=(826,278,61,71), name="dice_3")
-	# description 
-	C_ANSWER_CLICK_1 = RuleClick(roi_front=(593,294,134,39), roi_back=(592,293,136,42), name="answer_click_1")
 
 
 	# Image Rule Assets
@@ -100,38 +92,6 @@ class ActivityShikigamiAssets:
 	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(151,17,126,42), roi_back=(118,5,184,80), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_boss.png")
 	# 从main进入到式神录 
 	I_BATTLE_MAIN_TO_RECORDS = RuleImage(roi_front=(1020,561,37,45), roi_back=(976,539,146,100), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/battle_main_to_records.png")
-	# description 
-	I_TO_BATTLE_MAIN_2 = RuleImage(roi_front=(664,360,29,132), roi_back=(645,325,85,212), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main_2.png")
-	# description 
-	I_CHECK_BATTLE_MAIN_2 = RuleImage(roi_front=(843,581,31,34), roi_back=(815,567,69,59), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_main_2.png")
-	# description 
-	I_FIRE_1 = RuleImage(roi_front=(1143,592,61,90), roi_back=(1135,579,110,118), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/fire_1.png")
-	# description 
-	I_FIRE_2 = RuleImage(roi_front=(1143,592,61,90), roi_back=(1135,579,110,118), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/fire_2.png")
-	# description 
-	I_PAGE_QA = RuleImage(roi_front=(532,89,236,70), roi_back=(498,78,305,91), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_qa.png")
-	# description 
-	I_PAGE_FIRE = RuleImage(roi_front=(987,573,78,38), roi_back=(977,564,95,57), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_fire.png")
-	# description 
-	I_PAGE_ROLL = RuleImage(roi_front=(1061,555,90,35), roi_back=(990,512,212,126), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_roll.png")
-	# description 
-	I_DICE_1 = RuleImage(roi_front=(956,579,30,37), roi_back=(941,568,126,58), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/Dice_1.png")
-	# description 
-	I_DICE_2 = RuleImage(roi_front=(956,579,30,37), roi_back=(941,568,126,58), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/Dice_2.png")
-	# description 
-	I_DICE_3 = RuleImage(roi_front=(956,579,30,37), roi_back=(941,568,126,58), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/Dice_3.png")
-	# description 
-	I_PAGE_SELECT_DICE = RuleImage(roi_front=(761,201,38,30), roi_back=(401,171,492,73), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_select_dice.png")
-	# description 
-	I_FIRE_SWITCH = RuleImage(roi_front=(1238,543,19,29), roi_back=(1218,528,49,57), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/fire_switch.png")
-	# description 
-	I_BUY_BTN = RuleImage(roi_front=(876,471,90,43), roi_back=(828,441,176,95), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/buy_btn.png")
-	# description 
-	I_PAGE_FIRE2 = RuleImage(roi_front=(990,564,69,59), roi_back=(963,530,119,112), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_fire2.png")
-	# description 
-	I_BUY_ENABLE = RuleImage(roi_front=(844,564,26,25), roi_back=(245,536,791,79), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/buy_enable.png")
-	# description 
-	I_PAGE_SHOP = RuleImage(roi_front=(512,67,257,71), roi_back=(421,38,414,140), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page_shop.png")
 
 
 	# Image Rule Assets
@@ -181,8 +141,57 @@ class ActivityShikigamiAssets:
 	# 进入100体活动标识 
 	O_ENTER_AP100 = RuleOcr(roi=(73,98,95,32), area=(5,79,256,108), mode="Single", method="Default", keyword="将魂试炼", name="enter_ap100")
 	# description 
-	O_REMAIN_PASS_2 = RuleOcr(roi=(1167,19,54,29), area=(1141,11,86,38), mode="DigitCounter", method="Default", keyword="", name="remain_pass_2")
-	# description 
 	O_FIRE2 = RuleOcr(roi=(1131,588,100,53), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
+
+
+	# Click Rule Assets
+	# 大富翁骰子1点击区域 
+	C_MONOPOLY_DICE_1_CLICK = RuleClick(roi_front=(356,284,59,85), roi_back=(354,282,62,87), name="monopoly_dice_1_click")
+	# 大富翁骰子2点击区域 
+	C_MONOPOLY_DICE_2_CLICK = RuleClick(roi_front=(599,268,73,90), roi_back=(597,267,75,92), name="monopoly_dice_2_click")
+	# 大富翁骰子3点击区域 
+	C_MONOPOLY_DICE_3_CLICK = RuleClick(roi_front=(827,280,58,69), roi_back=(826,278,61,71), name="monopoly_dice_3_click")
+	# 大富翁问答场景答案1点击位置 
+	C_MONOPOLY_QA_ANSWER_1 = RuleClick(roi_front=(593,294,134,39), roi_back=(592,293,136,42), name="monopoly_qa_answer_1")
+
+
+	# Image Rule Assets
+	# 进入大富翁战斗主页面 
+	I_TO_MONOPOLY_MAIN = RuleImage(roi_front=(664,360,29,132), roi_back=(645,325,85,212), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/to_monopoly_main.png")
+	# 确认在大富翁主页面 
+	I_CHECK_MONOPOLY_MAIN = RuleImage(roi_front=(843,581,31,34), roi_back=(815,567,69,59), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/check_monopoly_main.png")
+	# 大富翁问答页面标识 
+	I_MONOPOLY_PAGE_QA = RuleImage(roi_front=(532,89,236,70), roi_back=(498,78,305,91), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_page_qa.png")
+	# 大富翁商店页面标识 
+	I_MONOPOLY_PAGE_SHOP = RuleImage(roi_front=(512,67,257,71), roi_back=(421,38,414,140), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_page_shop.png")
+	# 大富翁战斗触发火图标 
+	I_MONOPOLY_PAGE_FIRE = RuleImage(roi_front=(987,573,78,38), roi_back=(977,564,95,57), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_page_fire.png")
+	# 大富翁骰子模式战斗触发火图标 
+	I_MONOPOLY_PAGE_FIRE_DICE = RuleImage(roi_front=(990,564,69,59), roi_back=(963,530,119,112), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_page_fire_dice.png")
+	# 大富翁投掷骰子页面标识 
+	I_MONOPOLY_PAGE_ROLL = RuleImage(roi_front=(1061,555,90,35), roi_back=(990,512,212,126), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_page_roll.png")
+	# 大富翁选择骰子页面标识 
+	I_MONOPOLY_PAGE_SELECT_DICE = RuleImage(roi_front=(761,201,38,30), roi_back=(401,171,492,73), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_page_select_dice.png")
+	# 大富翁骰子1图标 
+	I_MONOPOLY_DICE_1_ICON = RuleImage(roi_front=(956,579,30,37), roi_back=(941,568,126,58), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_dice_1_icon.png")
+	# 大富翁骰子2图标 
+	I_MONOPOLY_DICE_2_ICON = RuleImage(roi_front=(956,579,30,37), roi_back=(941,568,126,58), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_dice_2_icon.png")
+	# 大富翁骰子3图标 
+	I_MONOPOLY_DICE_3_ICON = RuleImage(roi_front=(956,579,30,37), roi_back=(941,568,126,58), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_dice_3_icon.png")
+	# 大富翁普通模式火按钮 
+	I_MONOPOLY_FIRE_BTN_NORMAL = RuleImage(roi_front=(1143,592,61,90), roi_back=(1135,579,110,118), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_fire_btn_normal.png")
+	# 大富翁骰子模式火按钮 
+	I_MONOPOLY_FIRE_BTN_DICE = RuleImage(roi_front=(1143,592,61,90), roi_back=(1135,579,110,118), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_fire_btn_dice.png")
+	# 大富翁火按钮切换器 
+	I_MONOPOLY_FIRE_SWITCH = RuleImage(roi_front=(1238,543,19,29), roi_back=(1218,528,49,57), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_fire_switch.png")
+	# 大富翁商店购买按钮 
+	I_MONOPOLY_BUY_BTN = RuleImage(roi_front=(876,471,90,43), roi_back=(828,441,176,95), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_buy_btn.png")
+	# 大富翁商店可购买标识 
+	I_MONOPOLY_BUY_ENABLE = RuleImage(roi_front=(844,564,26,25), roi_back=(245,536,791,79), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/pass_monopoly/monopoly_buy_enable.png")
+
+
+	# Ocr Rule Assets
+	# 大富翁剩余次数 OCR 
+	O_MONOPOLY_REMAIN_PASS = RuleOcr(roi=(1167,19,54,29), area=(1141,11,86,38), mode="DigitCounter", method="Default", keyword="", name="monopoly_remain_pass")
 
 
