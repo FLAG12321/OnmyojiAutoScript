@@ -1105,11 +1105,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 创建SoloExploration实例
         solo_exploration = SoloExploration(self.config, self.device)
 
-        # 自动选择最高章节（和Plotline一样）
-        max_available_chapter = self._find_max_available_chapter(solo_exploration)
-        if max_available_chapter:
-            solo_exploration.config.model.exploration.exploration_config.exploration_level = max_available_chapter
-            logger.info(f"Set exploration chapter to: {max_available_chapter}")
+        solo_exploration.config.model.exploration.exploration_config.exploration_level = ExplorationLevel.AUTO
+        logger.info("Set exploration chapter to: AUTO")
 
         # 在代码中初始化探索配置，不暴露给用户
         solo_exploration._config.general_battle_config.lock_team_enable = False
@@ -1187,86 +1184,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             sleep(random.uniform(0.4, 0.8))
         return False
 
-    def _find_max_available_chapter(self, solo_exploration):
-        """
-        查找当前可进行的最高章节（参照Plotline实现）
-        """
-        chapters = [
-            ExplorationLevel.EXPLORATION_28, ExplorationLevel.EXPLORATION_27,
-            ExplorationLevel.EXPLORATION_26, ExplorationLevel.EXPLORATION_25,
-            ExplorationLevel.EXPLORATION_24, ExplorationLevel.EXPLORATION_23,
-            ExplorationLevel.EXPLORATION_22, ExplorationLevel.EXPLORATION_21,
-            ExplorationLevel.EXPLORATION_20, ExplorationLevel.EXPLORATION_19,
-            ExplorationLevel.EXPLORATION_18, ExplorationLevel.EXPLORATION_17,
-            ExplorationLevel.EXPLORATION_16, ExplorationLevel.EXPLORATION_15,
-            ExplorationLevel.EXPLORATION_14, ExplorationLevel.EXPLORATION_13,
-            ExplorationLevel.EXPLORATION_12, ExplorationLevel.EXPLORATION_11,
-            ExplorationLevel.EXPLORATION_10, ExplorationLevel.EXPLORATION_9,
-            ExplorationLevel.EXPLORATION_8, ExplorationLevel.EXPLORATION_7,
-            ExplorationLevel.EXPLORATION_6, ExplorationLevel.EXPLORATION_5,
-            ExplorationLevel.EXPLORATION_4, ExplorationLevel.EXPLORATION_3,
-            ExplorationLevel.EXPLORATION_2, ExplorationLevel.EXPLORATION_1
-        ]
-
-        # 进入探索章节选择界面
-        solo_exploration.ui_get_current_page()
-        solo_exploration.ui_goto(page_exploration)
-
-        previous_highest_chapter = None
-        consecutive_same_count = 0
-        max_checks = 5
-
-        while consecutive_same_count < 2 and max_checks > 0:
-            current_highest_chapter = None
-
-            for attempt in range(3):
-                solo_exploration.screenshot()
-                results = solo_exploration.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(solo_exploration.device.image)
-                current_chapters = [result.ocr_text for result in results]
-
-                for chapter in chapters:
-                    if chapter.value in current_chapters:
-                        current_highest_chapter = chapter
-                        break
-
-                if current_highest_chapter:
-                    break
-                sleep(0.5)
-
-            if not current_highest_chapter:
-                solo_exploration.swipe(solo_exploration.S_SWIPE_LEVEL_DOWN, interval=1)
-                solo_exploration.screenshot()
-                results = solo_exploration.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(solo_exploration.device.image)
-                current_chapters = [result.ocr_text for result in results]
-
-                for chapter in chapters:
-                    if chapter.value in current_chapters:
-                        current_highest_chapter = chapter
-                        break
-
-            if previous_highest_chapter is not None and current_highest_chapter == previous_highest_chapter:
-                consecutive_same_count += 1
-                logger.info(f"Consecutive same chapter detected: {current_highest_chapter}")
-            elif current_highest_chapter is not None:
-                consecutive_same_count = 1
-                logger.info(f"Detected highest chapter: {current_highest_chapter}")
-            else:
-                logger.info("No accessible chapter detected")
-
-            previous_highest_chapter = current_highest_chapter
-            max_checks -= 1
-
-            if consecutive_same_count >= 2:
-                logger.info(f"Confirmed max available chapter: {current_highest_chapter}")
-                break
-
-        if previous_highest_chapter is None:
-            previous_highest_chapter = ExplorationLevel.EXPLORATION_1
-            logger.warning("No accessible chapter found, defaulting to chapter 1")
-        else:
-            logger.info(f"Final max available chapter: {previous_highest_chapter}")
-
-        return previous_highest_chapter
 
     # ======================== 师父模式 ========================
 

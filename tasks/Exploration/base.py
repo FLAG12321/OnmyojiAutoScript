@@ -4,16 +4,18 @@
 import time
 import numpy as np
 import random
+import cv2
 from enum import Enum
 from cached_property import cached_property
 from datetime import timedelta, datetime
+from ppocronnx.predict_system import BoxedResult
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.Exploration.assets import ExplorationAssets
-from tasks.Exploration.config import ChooseRarity, AutoRotate, AttackNumber, UpType
+from tasks.Exploration.config import ChooseRarity, AutoRotate, AttackNumber, UpType, ExplorationLevel
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_exploration, page_shikigami_records, page_main
@@ -25,6 +27,7 @@ from module.base.timer import Timer
 from module.exception import RequestHumanTakeover, TaskEnd, GameStuckError
 from module.atom.image_grid import ImageGrid
 from module.atom.animate import RuleAnimate
+from module.atom.ocr import RuleOcr
 from module.base.utils import load_image
 
 class Scene(Enum):
@@ -62,8 +65,12 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.screenshot()
 
         if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
-            logger.info("In world")
-            return Scene.WORLD
+            from time import sleep
+            sleep(1.5)
+            self.screenshot()
+            if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
+                logger.info("In world")
+                return Scene.WORLD
         elif self.appear(self.I_E_ENTRANCE) and self.appear(self.I_E_EXPLORATION_CLICK):
             logger.info("In entrance")
             return Scene.ENTRANCE
@@ -133,17 +140,165 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd('Exploration')
 
+    def _chapter_level_values(self) -> list[ExplorationLevel]:
+        return [level for level in ExplorationLevel if level != ExplorationLevel.AUTO]
+
+    def _chapter_level_index(self, level: ExplorationLevel | str) -> int:
+        if isinstance(level, str):
+            level = self.level_name_to_enum(level)
+        if level is None:
+            raise GameStuckError('Invalid exploration level')
+        return int(level.name.split('_')[-1])
+
+    def level_name_to_enum(self, text: str) -> ExplorationLevel | None:
+        for level in self._chapter_level_values():
+            if level.value == text:
+                return level
+        return None
+
+    def max_level_from_names(self, names: list[str]) -> ExplorationLevel:
+        levels = [self.level_name_to_enum(name) for name in names]
+        levels = [level for level in levels if level is not None]
+        if not levels:
+            return ExplorationLevel.EXPLORATION_1
+        return max(levels, key=self._chapter_level_index)
+
+    def enhance_chapter_text(self, image):
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        v = hsv[:, :, 2]
+        v_inv = 255 - v
+        v_norm = cv2.normalize(v_inv, None, 0, 255, cv2.NORM_MINMAX)
+        result = cv2.cvtColor(v_norm, cv2.COLOR_GRAY2BGR)
+        result = cv2.resize(result, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        return result
+
+    def normalize_detected_levels(self, boxed_results: list[BoxedResult]) -> list[str]:
+        valid_names = {level.value for level in self._chapter_level_values()}
+        normalized = []
+        for result in boxed_results:
+            text = result.ocr_text.strip()
+            if text in valid_names:
+                normalized.append(text)
+        return normalized
+
+    def get_level_roi_image(self):
+        x, y, w, h = self.O_E_EXPLORATION_LEVEL_NUMBER.roi
+        return self.device.image[y:y + h, x:x + w].copy()
+
+    def _create_enhanced_level_ocr(self, image) -> RuleOcr:
+        h, w = image.shape[:2]
+        return RuleOcr(
+            roi=(0, 0, w, h),
+            area=(0, 0, 100, 100),
+            mode='Full',
+            method='Default',
+            keyword='',
+            name='enhanced_level_ocr',
+        )
+
+    def _detect_levels_from_enhanced_image(self, image) -> list[BoxedResult]:
+        return self._create_enhanced_level_ocr(image).detect_and_ocr(image)
+
+    def find_max_chapter(self):
+        self.ui_get_current_page()
+        self.ui_goto(page_exploration)
+
+        previous_names = None
+        stable_count = 0
+        max_checks = 8
+
+        while max_checks > 0:
+            self.screenshot()
+            roi_image = self.get_level_roi_image()
+            enhanced = self.enhance_chapter_text(roi_image)
+            results = self._detect_levels_from_enhanced_image(enhanced)
+            current_names = self.normalize_detected_levels(results)
+            logger.info(f'Enhanced OCR levels: {current_names}')
+
+            if current_names and current_names == previous_names:
+                stable_count += 1
+            elif current_names:
+                stable_count = 1
+            else:
+                stable_count = 0
+            logger.info(f'Stable count: {stable_count}')
+
+            if stable_count >= 2 and current_names:
+                resolved_level = self.max_level_from_names(current_names)
+                logger.info(f'Resolved max chapter: {resolved_level}')
+                return resolved_level
+
+            previous_names = current_names
+            self.swipe(self.S_SWIPE_LEVEL_DOWN, interval=1)
+            max_checks -= 1
+
+        if not previous_names:
+            logger.warning('No valid chapter found after enhanced OCR, defaulting to chapter 1')
+        resolved_level = self.max_level_from_names(previous_names or [])
+        logger.info(f'Resolved max chapter: {resolved_level}')
+        return resolved_level
+
+    def click_level_with_enhanced_ocr(self, target_level, max_swipe=40):
+        roi_x, roi_y, _, _ = self.O_E_EXPLORATION_LEVEL_NUMBER.roi
+        target_level = self.level_name_to_enum(target_level) if isinstance(target_level, str) else target_level
+        if target_level is None:
+            raise GameStuckError('Invalid exploration level')
+        target_name = target_level.value
+
+        for attempt in range(max_swipe):
+            self.screenshot()
+            roi_image = self.get_level_roi_image()
+            enhanced = self.enhance_chapter_text(roi_image)
+            results = self._detect_levels_from_enhanced_image(enhanced)
+            normalized_names = self.normalize_detected_levels(results)
+
+            for result in results:
+                if result.ocr_text.strip() != target_name:
+                    continue
+                box = result.box
+                cx = sum(point[0] for point in box) / 4
+                cy = sum(point[1] for point in box) / 4
+                raw_x = int(roi_x + cx / 2)
+                raw_y = int(roi_y + cy / 2)
+                self.device.click(x=raw_x, y=raw_y, control_name=f'enhanced_level_{target_name}')
+                return True
+
+            visible_levels = [self.level_name_to_enum(name) for name in normalized_names]
+            visible_levels = [level for level in visible_levels if level is not None]
+            if not visible_levels:
+                raise GameStuckError(
+                    f'No visible levels found while looking for {target_name}; attempt={attempt + 1}'
+                )
+
+            min_visible = min(visible_levels, key=self._chapter_level_index)
+            max_visible = max(visible_levels, key=self._chapter_level_index)
+            target_index = self._chapter_level_index(target_level)
+            min_index = self._chapter_level_index(min_visible)
+            max_index = self._chapter_level_index(max_visible)
+
+            if target_index > max_index:
+                self.swipe(self.S_SWIPE_LEVEL_DOWN, interval=1)
+                continue
+            if target_index < min_index:
+                self.swipe(self.S_SWIPE_LEVEL_UP, interval=1)
+                continue
+
+            raise GameStuckError(
+                f'Enhanced OCR saw {normalized_names} but could not click {target_name}; attempt={attempt + 1}'
+            )
+
+        raise GameStuckError(f'Could not find exploration level with enhanced OCR: {target_name}')
+
     # 打开指定的章节：
     def open_expect_level(self):
         explorationConfig = self.config.exploration
-        target_level = explorationConfig.exploration_config.exploration_level 
-        pos = self.list_find(self.L_LEVEL_LIST, target_level, max_swipe=40)
-        if not pos:
-            raise GameStuckError(
-                f"Could not find exploration level: {target_level}"
-            )
+        target_level = explorationConfig.exploration_config.exploration_level
+        if target_level == ExplorationLevel.AUTO:
+            target_level = self.find_max_chapter()
+            logger.info(f'Resolved AUTO exploration level to: {target_level}')
 
-        self.device.click(x=pos[0], y=pos[1])
+        if not self.click_level_with_enhanced_ocr(target_level, max_swipe=40):
+            raise GameStuckError(f'Could not find exploration level with enhanced OCR: {target_level}')
 
         while 1:
             self.screenshot()

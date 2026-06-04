@@ -23,12 +23,13 @@ class ScriptTask(SoloScriptTask):
 
 
 if __name__ == "__main__":
+    import sys
     from module.config.config import Config
     from module.device.device import Device
 
-    config = Config('oas1')
+    config_name = sys.argv[1] if len(sys.argv) > 1 else 'oas2'
+    config = Config(config_name)
     device = Device(config)
     t = ScriptTask(config, device)
-    t.config.exploration.exploration_config.exploration_level = '第二十八章'
     t.run()
 

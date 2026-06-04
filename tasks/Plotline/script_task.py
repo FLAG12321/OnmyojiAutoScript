@@ -262,13 +262,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         solo_exploration = SoloExploration(self.config, self.device)
         self._solo_exploration = solo_exploration
         
-        # 获取当前最高的可探索章节
-        max_available_chapter = self.find_max_available_chapter(solo_exploration)
-        
-        if max_available_chapter:
-            # 更新配置中的探索章节
-            solo_exploration.config.model.exploration.exploration_config.exploration_level = max_available_chapter
-            logger.info(f"设置探索章节为: {max_available_chapter}")
+        solo_exploration.config.model.exploration.exploration_config.exploration_level = ExplorationLevel.AUTO
+        logger.info("设置探索章节为: AUTO")
         
         solo_exploration._config.general_battle_config.lock_team_enable = self.plotline_conf.plotline_config.exploration_battle_lock
         solo_exploration._config.exploration_config.minions_cnt=5
@@ -328,101 +323,6 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     continue
         
 
-    def find_max_available_chapter(self, solo_exploration):
-        """ 查找当前可进行的最高章节 """
-        # 定义章节列表，从最高到最低
-        chapters = [
-            ExplorationLevel.EXPLORATION_28, ExplorationLevel.EXPLORATION_27,
-            ExplorationLevel.EXPLORATION_26, ExplorationLevel.EXPLORATION_25,
-            ExplorationLevel.EXPLORATION_24, ExplorationLevel.EXPLORATION_23,
-            ExplorationLevel.EXPLORATION_22, ExplorationLevel.EXPLORATION_21,
-            ExplorationLevel.EXPLORATION_20, ExplorationLevel.EXPLORATION_19,
-            ExplorationLevel.EXPLORATION_18, ExplorationLevel.EXPLORATION_17,
-            ExplorationLevel.EXPLORATION_16, ExplorationLevel.EXPLORATION_15,
-            ExplorationLevel.EXPLORATION_14, ExplorationLevel.EXPLORATION_13,
-            ExplorationLevel.EXPLORATION_12, ExplorationLevel.EXPLORATION_11,
-            ExplorationLevel.EXPLORATION_10, ExplorationLevel.EXPLORATION_9,
-            ExplorationLevel.EXPLORATION_8, ExplorationLevel.EXPLORATION_7,
-            ExplorationLevel.EXPLORATION_6, ExplorationLevel.EXPLORATION_5,
-            ExplorationLevel.EXPLORATION_4, ExplorationLevel.EXPLORATION_3,
-            ExplorationLevel.EXPLORATION_2, ExplorationLevel.EXPLORATION_1
-        ]
-
-        # 进入探索章节选择界面
-        from tasks.GameUi.page import page_exploration
-        solo_exploration.ui_get_current_page()
-        solo_exploration.ui_goto(page_exploration)
-
-        # 记录上次找到的最高章节
-        previous_highest_chapter = None
-        consecutive_same_count = 0  # 连续相同章节计数
-        max_checks = 5  # 最大检测次数
-        
-        # 查找当前可访问的最高章节
-        while consecutive_same_count < 2 and max_checks > 0:
-            # 从当前界面开始，一次性获取所有可见章节
-            current_highest_chapter = None
-            
-            # 多次截图以提高OCR准确性
-            for attempt in range(3):
-                solo_exploration.screenshot()
-                # 检测当前屏幕上的所有章节文本
-                results = solo_exploration.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(solo_exploration.device.image)
-                current_chapters = [result.ocr_text for result in results]
-                
-                # 检查当前屏幕中是否有我们在找的章节，并找出其中最高的
-                for chapter in chapters:
-                    if chapter.value in current_chapters:
-                        # 发现当前屏幕中存在该章节，这就是当前可访问的最高章节
-                        current_highest_chapter = chapter
-                        break  # 找到最高章节后跳出循环
-                
-                if current_highest_chapter:
-                    break
-                sleep(0.5)  # 短暂等待后重试
-            
-            # 如果没有找到任何章节，稍微向下滑动再试
-            if not current_highest_chapter:
-                solo_exploration.swipe(solo_exploration.S_SWIPE_LEVEL_DOWN, interval=1)
-                solo_exploration.screenshot()
-                results = solo_exploration.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(solo_exploration.device.image)
-                current_chapters = [result.ocr_text for result in results]
-                
-                # 再次检查当前屏幕中是否有我们在找的章节，并找出其中最高的
-                for chapter in chapters:
-                    if chapter.value in current_chapters:
-                        current_highest_chapter = chapter
-                        break
-
-            # 检查本次找到的最高章节是否与上次相同
-            if previous_highest_chapter is not None and current_highest_chapter == previous_highest_chapter:
-                consecutive_same_count += 1
-                logger.info(f"连续第{consecutive_same_count}次检测到相同最高章节: {current_highest_chapter}")
-            elif current_highest_chapter is not None:
-                consecutive_same_count = 1  # 重置计数
-                logger.info(f"本次检测到最高章节: {current_highest_chapter}")
-            else:
-                logger.info("本次未检测到任何可访问章节")
-            
-            previous_highest_chapter = current_highest_chapter
-            max_checks -= 1
-            
-            # 如果连续两次检测到相同的章节，确认为最大章节
-            if consecutive_same_count >= 2:
-                logger.info(f"连续两次检测到相同章节，确认最大可访问章节为: {current_highest_chapter}")
-                break
-
-        # 如果没有找到任何可访问的章节，默认返回第一章
-        if previous_highest_chapter is None:
-            previous_highest_chapter = ExplorationLevel.EXPLORATION_1
-            logger.warning("未能找到可进行的章节，默认使用第一章")
-        else:
-            logger.info(f"最终确定可进行的最高章节: {previous_highest_chapter}")
-        
-        # 确保返回到剧情界面 - 使用正确的返回按钮
-        #solo_exploration.ui_click(solo_exploration.I_UI_BACK_YELLOW, stop=solo_exploration.I_CHECK_EXPLORATION, interval=1)
-        
-        return previous_highest_chapter
 
     def handle_summon_scene(self) -> None:
         """ 处理召唤场景 """

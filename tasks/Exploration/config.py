@@ -38,6 +38,7 @@ class ExplorationLevel(str, Enum):
     EXPLORATION_26 = '第二十六章'
     EXPLORATION_27 = '第二十七章'
     EXPLORATION_28 = '第二十八章'
+    AUTO = '自动'
 
 
 class AttackNumber(str, Enum):
