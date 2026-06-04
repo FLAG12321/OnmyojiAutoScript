@@ -23,6 +23,7 @@ class GeneralClimb(ConfigBase):
     ap_limit: int = Field(default=300, description='体力爬塔的最大次数')
     boss_limit: int = Field(default=20, description='boss战爬塔的最大次数')
     ap100_limit: int = Field(default=20, description='100体爬塔的最大次数')
+    ap20_limit: int = Field(default=140, description='ap20爬塔的最大次数(7入口×20次)')
     run_sequence: str = Field(default='pass,ap100,boss,ap',
                               description='运行爬塔顺序(pass:门票,ap100:100体,boss:boss战,ap:体力)\n英文逗号分隔,从左到右运行,可自定义执行顺序\n例如:pass,ap100,boss,ap就是门票->100体->boss战->体力')
     # # 门票爬塔buff

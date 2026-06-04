@@ -10,6 +10,43 @@ from module.atom.list import RuleList
 class ActivityShikigamiAssets: 
 
 
+	# Ocr Rule Assets
+	# AP20挑战按钮OCR 
+	O_FIRE_AP20 = RuleOcr(roi=(1137,587,90,50), area=(1162,603,37,21), mode="Single", method="Default", keyword="挑战", name="fire_ap20")
+	# AP20剩余攻击次数(格式: X/20) 
+	O_REMAIN_AP20 = RuleOcr(roi=(1109,670,151,30), area=(0,0,0,0), mode="DigitCounter", method="Default", keyword="", name="remain_ap20")
+
+
+	# Image Rule Assets
+	# 从活动主页面进入AP20 
+	I_TO_AP20 = RuleImage(roi_front=(856,261,31,119), roi_back=(743,95,236,430), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/to_ap20.png")
+	# 确认进入AP20入口列表页面 
+	I_CHECK_AP20 = RuleImage(roi_front=(447,99,35,35), roi_back=(358,63,199,176), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/check_ap20.png")
+	# 确认进入AP20 BOSS战斗页面 
+	I_CHECK_AP20_BOSS = RuleImage(roi_front=(1137,585,90,50), roi_back=(1012,514,267,191), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/check_ap20_boss.png")
+	# AP20入口列表中点击进入BOSS 
+	I_TO_AP20_BOSS = RuleImage(roi_front=(1157,318,41,47), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/to_ap20_boss.png")
+	# AP20入口0 
+	I_AP20_ENTRY_0 = RuleImage(roi_front=(828,434,33,47), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_0.png")
+	# AP20入口1 
+	I_AP20_ENTRY_1 = RuleImage(roi_front=(840,449,41,42), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_1.png")
+	# AP20入口2 
+	I_AP20_ENTRY_2 = RuleImage(roi_front=(913,519,39,46), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_2.png")
+	# AP20入口3 
+	I_AP20_ENTRY_3 = RuleImage(roi_front=(850,398,42,47), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_3.png")
+	# AP20入口4 
+	I_AP20_ENTRY_4 = RuleImage(roi_front=(673,193,83,69), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_4.png")
+	# AP20入口5 
+	I_AP20_ENTRY_5 = RuleImage(roi_front=(973,518,41,42), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_5.png")
+	# AP20入口6 
+	I_AP20_ENTRY_6 = RuleImage(roi_front=(971,483,46,49), roi_back=(212,61,1060,619), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/ap20/ap20_entry_6.png")
+
+
+	# Swipe Rule Assets
+	# AP20入口列表向左滑动 
+	S_AP20_SWIPE_LEFT = RuleSwipe(roi_front=(917,308,49,25), roi_back=(1174,310,47,21), mode="Default", name="ap20_swipe_left")
+
+
 	# Click Rule Assets
 	# description 
 	C_RANDOM_LEFT = RuleClick(roi_front=(17,84,104,356), roi_back=(17,81,106,365), name="random_left")
@@ -145,7 +182,7 @@ class ActivityShikigamiAssets:
 	O_ENTER_AP100 = RuleOcr(roi=(73,98,95,32), area=(5,79,256,108), mode="Single", method="Default", keyword="将魂试炼", name="enter_ap100")
 	# description 
 	O_REMAIN_PASS_2 = RuleOcr(roi=(1167,19,54,29), area=(1141,11,86,38), mode="DigitCounter", method="Default", keyword="", name="remain_pass_2")
-	# description
+	# description 
 	O_FIRE2 = RuleOcr(roi=(1131,588,100,53), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
 
 

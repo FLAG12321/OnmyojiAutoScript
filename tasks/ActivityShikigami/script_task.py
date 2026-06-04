@@ -164,6 +164,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         # 缓存期内每次调用预估递减 1 (一场战斗 1 张门票)
         self._ticket_cache: dict[str, int] = {}
         self._ticket_last_ocr: dict[str, datetime] = {}
+        self._ap20_soul_switched: bool = False
     
     def run(self) -> None:
         self.limit_time: timedelta = self.conf.general_climb.limit_time_v
@@ -312,6 +313,96 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
                 random_sleep(probability=0.2)
             if start_battle():
                 continue
+
+    def _run_ap20(self):
+        """
+        AP20爬塔模式：7入口遍历，每入口不限次数battle循环
+        """
+        logger.hr('Start run climb type AP20', 1)
+        self._ap20_soul_switched = False
+
+        self.ui_click(self.I_TO_AP20, stop=self.I_CHECK_AP20, interval=1)
+
+        for entry_idx in range(7):
+            logger.hr(f'AP20 entry [{entry_idx}/7]', 2)
+
+            entry_img = getattr(self, f'I_AP20_ENTRY_{entry_idx}')
+            swipe_count = 0
+            max_swipe = 20
+            while not self.appear(entry_img):
+                if swipe_count >= max_swipe:
+                    logger.warning(f'Cannot find AP20 entry {entry_idx}, skip')
+                    break
+                logger.info(f'Swiping left to find entry {entry_idx} (attempt {swipe_count + 1})')
+                self.swipe(self.S_AP20_SWIPE_LEFT, interval=2)
+                sleep(2)
+                self.screenshot()
+                swipe_count += 1
+            if swipe_count >= max_swipe:
+                continue
+
+            self.appear_then_click(entry_img, interval=2)
+            self.ui_click(self.I_TO_AP20_BOSS, stop=self.I_CHECK_AP20_BOSS, interval=1)
+
+            if not self._ap20_soul_switched:
+                self.switch_soul(self.I_CHECK_AP20_BOSS, self.I_CHECK_AP20_BOSS)
+                self._ap20_soul_switched = True
+
+            ocr_limit_timer = Timer(1).start()
+            fire_retry = 0
+            max_fire_retry = 3
+            while True:
+                self.screenshot()
+
+                if not ocr_limit_timer.reached():
+                    continue
+                ocr_limit_timer.reset()
+
+                if not self.ocr_appear(self.O_FIRE_AP20):
+                    fire_retry += 1
+                    if fire_retry >= max_fire_retry:
+                        logger.info(f'AP20 entry {entry_idx} complete (no fire detected)')
+                        break
+                    logger.info(f'Fire not detected, retry {fire_retry}/{max_fire_retry}')
+                    self.appear_then_click(self.I_CHECK_AP20_BOSS, interval=2)
+                    continue
+                fire_retry = 0
+
+                # AP20 每个 entry 独立 20 次, ocr_digit_counter 返回 (current, remain, total)
+                # 20/20 表示已用完, remain==0 时切换到下一个 entry
+                _, remain, total = self.O_REMAIN_AP20.ocr_digit_counter(self.device.image)
+                logger.info(f'AP20 entry {entry_idx} remain: {remain}/{total}')
+                if total > 0 and remain <= 0:
+                    logger.info(f'AP20 entry {entry_idx} exhausted, back to battle main and re-enter for next entry')
+                    self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=3)
+                    self.ui_click(self.I_TO_AP20, stop=self.I_CHECK_AP20, interval=3)
+                    break
+
+                if self.conf.general_climb.random_sleep:
+                    random_sleep(probability=0.2)
+                self._start_battle_ap20()
+
+        self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
+        logger.info('AP20 all entries completed')
+
+    def _start_battle_ap20(self):
+        click_times, max_times = 0, random.randint(2, 4)
+        while True:
+            self.screenshot()
+            if self.is_in_battle(False):
+                break
+            if click_times >= max_times:
+                logger.warning(f'AP20 cannot enter battle, maybe already end')
+                return
+            if (self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or
+                    self.appear_then_click(self.I_UI_CONFIRM, interval=1)):
+                continue
+            if self.ocr_appear_click(self.O_FIRE_AP20, interval=2):
+                click_times += 1
+                logger.info(f'Try click fire AP20, remain times[{max_times - click_times}]')
+                continue
+        self.run_general_battle(config=self.get_general_battle_conf())
+
     def _run_pass_1(self):
         """
             更新前请先看 ./README.md
@@ -575,7 +666,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         self.count_map[self.climb_type] = self.current_count
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
-        fire_ocr = self.O_FIRE2 if self.climb_type == 'boss' else self.O_FIRE
+        fire_ocr = {'boss': self.O_FIRE2, 'ap20': self.O_FIRE_AP20}.get(self.climb_type, self.O_FIRE)
         ok_cnt, max_retry = 0, 5
         while 1:
             sleep(random.uniform(0.5, 1.5))
@@ -632,7 +723,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikiga
         self.count_map[self.climb_type] = self.current_count
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
-        fire_ocr = self.O_FIRE2 if self.climb_type == 'boss' else self.O_FIRE
+        fire_ocr = {'boss': self.O_FIRE2, 'ap20': self.O_FIRE_AP20}.get(self.climb_type, self.O_FIRE)
         ok_cnt, max_retry = 0, 5
         while 1:
             sleep(random.uniform(0.5, 1.5))
