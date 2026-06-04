@@ -186,8 +186,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type PASS', 1)
-        """ self.ui_clicks([self.I_TO_BATTLE_MAIN\, self.I_TO_BATTLE_MAIN_2],
-                       stop=self.I_CHECK_BATTLE_MAIN, interval=1) """
         self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
         self.switch_climb_mode_in_game('pass')
@@ -227,8 +225,6 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         logger.hr(f'Start run climb type AP')
         self.ui_clicks([self.I_TO_BATTLE_MAIN],
                        stop=self.I_CHECK_BATTLE_MAIN, interval=1)
-        """ self.ui_clicks([self.I_TO_BATTLE_MAIN, self.I_TO_BATTLE_MAIN_2],
-                       stop=self.I_CHECK_BATTLE_MAIN, interval=1) """
         self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS, self.I_CHECK_BATTLE_MAIN)
         self.switch_climb_mode_in_game('ap')
 
@@ -636,20 +632,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    from module.base.utils import load_image
-    #img_array = load_image(r"C:\Users\lu\Desktop\yys\OnmyojiAutoScript-easy-install\OnmyojiAutoScript-easy-install\temp_path\2026-04-01 12-30-01.png")
     c = Config('OAS1')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
     t.run()
-    #t.device.image = img_array
-    #t.handle_shop_scene()
-    """ t.handle_fire_scene()
-    # 获取当前截图
-    current_image = t.device.image
-    # 检测 I_DICE_1, I_DICE_2, I_DICE_3 出现的次数
-    dice_1_count = len(t.I_DICE_1.match_all_any(current_image))
-    dice_2_count = len(t.I_DICE_2.match_all_any(current_image))
-    dice_3_count = len(t.I_DICE_3.match_all_any(current_image))
-    logger.info(f'Dice 1: {dice_1_count}, Dice 2: {dice_2_count}, Dice 3: {dice_3_count}') """
