@@ -502,7 +502,10 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         """设置下一次运行时间"""
         start_time = self.start_time  # 使用任务开始时间而不是当前时间
         if success:
-            if 5 <= start_time.hour < 18:
+            if self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
+                # 同心战斗模式：不分时段，完成后直接走凌晨后流程（6:05执行上午任务）
+                self._schedule_after_midnight(start_time)
+            elif 5 <= start_time.hour < 18:
                 # 工作时间段：18:05执行
                 self._schedule_normal_day(start_time)
             elif start_time.hour < 5:
@@ -518,6 +521,12 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
             # 失败情况：10分钟后重试
             self.set_next_run(task, target=datetime.now() + timedelta(minutes=10))
 
+    def _reset_one_shot_flags(self):
+        """重置单次运行标志（只由用户手动开启，运行一次后自动关闭）"""
+        self.daily_conf.multi_daily_alt_acc_config.total_tree_planting_enable = 0
+        self.daily_conf.multi_daily_alt_acc_config.total_trialbattle_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_summon_up_enable = False
+
     def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""
         # 周三或周六开启神秘商店
@@ -526,7 +535,7 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         # 周一开启周奖励
         if start_time.weekday() == 0:
             self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = True
-            
+
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
@@ -534,8 +543,9 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
         self.daily_conf.multi_daily_alt_acc_config.need_login = True
+        self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
-        
+
         self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=18, minute=5))
         self.save_config()
 
@@ -551,12 +561,13 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
             self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
             self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
             self.daily_conf.multi_daily_alt_acc_config.need_login = True
+            self._reset_one_shot_flags()
             self.config.model.multi_daily_alt_acc = self.daily_conf
-            
+
             self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5))
             self.save_config()
         elif self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
-            # 如果开启了回礼功能
+            # 如果开启了回礼功能，回礼做完后切换到同心战斗模式
             self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = True
             self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
             self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
@@ -564,8 +575,9 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
             self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
             self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
             self.daily_conf.multi_daily_alt_acc_config.need_login = True
+            self._reset_one_shot_flags()
             self.config.model.multi_daily_alt_acc = self.daily_conf
-            
+
             self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=20))
             self.save_config()
 
@@ -580,6 +592,7 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
         self.daily_conf.multi_daily_alt_acc_config.need_login = True
+        self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
         self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))
         self.save_config()
