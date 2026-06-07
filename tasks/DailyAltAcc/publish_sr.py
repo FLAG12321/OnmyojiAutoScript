@@ -72,11 +72,12 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
                     queue.pop(matched_index)
                 queue = self._sort_queue(queue)
                 self._write_queue(queue)
-                # 发布成功后重新进入碎片页，从顶部开始匹配
-                ReturnGiftScriptTask._goto_return_gift_page(self)
             else:
                 logger.info(f'发布 SR 碎片: {top["name"]} 失败')
-
+            time.sleep(1)
+            self.screenshot()
+            self.appear_then_click(self.I_H_BACK_RED, interval=1)
+            break
     def _find_first_match(self, queue: list[dict]) -> int | None:
         """截图一次后遍历队列，返回首个命中模板的索引；全部未命中返回 None"""
         self.screenshot()
