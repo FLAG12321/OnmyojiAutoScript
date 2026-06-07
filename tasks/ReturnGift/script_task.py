@@ -244,15 +244,11 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
         self.device.swipe_adb(p1, p2, duration=duration)
 
-    def write_sr_count_result(self, items: list[dict]) -> dict:
-        result = {
-            'updated_at': datetime.now().isoformat(),
-            'total': len(items),
-            'items': items,
-        }
+    def write_sr_count_result(self, items: list[dict]) -> list[dict]:
+        """将SR碎片统计结果写入 logs/sr_count.json，格式为 [{"name": "I_SR_X", "count": N}, ...]"""
         with open(self.sr_count_output_path(), 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-        return result
+            json.dump(items, f, ensure_ascii=False, indent=2)
+        return items
 
     def count_sr_fragments(self) -> dict:
         con = self.config.return_gift.return_gift_config
@@ -292,13 +288,10 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                     continue
                 seen.add(template_name)
                 found_new = True
+                # 只保留资源名称和数量
                 items.append({
-                    'name': template_name,
-                    'template': f'count/{template_name}.png',
+                    'name': 'I_' + template_name.upper(),
                     'count': count,
-                    'match_box': [x, y, w, h],
-                    'ocr_box': list(ocr_box),
-                    'ocr_text': ocr_text,
                 })
             if found_new:
                 empty_swipes = 0
