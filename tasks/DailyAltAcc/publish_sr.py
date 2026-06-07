@@ -1,11 +1,13 @@
 # This Python file uses the following encoding: utf-8
 import json
+import time
 from pathlib import Path
 
+from module.base.utils import point2str
 from module.logger import logger
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.ReturnGift.assets import ReturnGiftAssets
-
+from tasks.ReturnGift.script_task import ScriptTask as ReturnGiftScriptTask
 
 class PublishSr(DailyAltAccBase, ReturnGiftAssets):
     """发布SR碎片子功能：依据 sr_count.json 生成可发布队列，按序点击发布"""
@@ -24,7 +26,7 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         else:
             queue = self._build_queue_from_sr_count()
             self._write_queue(queue)
-
+        ReturnGiftScriptTask._goto_return_gift_page(self)
         self._publish_loop(queue)
 
     def _build_queue_from_sr_count(self) -> list[dict]:
@@ -49,22 +51,31 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         return [v for _, v in indexed]
 
     def _publish_loop(self, queue: list[dict]):
-        """发布主循环：遍历队列匹配模板 → 点击 → 发布 → 递减 → 回写"""
+        """发布主循环：遍历队列匹配模板 → 点击 → 发布 → 递减 → 回写；未命中时滑动翻页直到连续空滑到底"""
+        EMPTY_SWIPE_LIMIT = 3
+        empty_swipes = 0
         while queue:
             matched_index = self._find_first_match(queue)
             if matched_index is None:
-                # 队列中所有模板均未命中，退出
-                logger.info('队列中所有 SR 模板均未命中，结束发布流程')
-                break
+                empty_swipes += 1
+                if empty_swipes >= EMPTY_SWIPE_LIMIT:
+                    logger.info('连续滑动未命中，已到底部，结束发布流程')
+                    break
+                self._swipe_page()
+                continue
 
+            empty_swipes = 0
             top = queue[matched_index]
-            self._do_publish_sr(top['name'])
-
-            top['count'] -= 1
-            if top['count'] <= 0:
-                queue.pop(matched_index)
-            queue = self._sort_queue(queue)
-            self._write_queue(queue)
+            if self._do_publish_sr(top['name']):
+                top['count'] -= 1
+                if top['count'] <= 0:
+                    queue.pop(matched_index)
+                queue = self._sort_queue(queue)
+                self._write_queue(queue)
+                # 发布成功后重新进入碎片页，从顶部开始匹配
+                ReturnGiftScriptTask._goto_return_gift_page(self)
+            else:
+                logger.info(f'发布 SR 碎片: {top["name"]} 失败')
 
     def _find_first_match(self, queue: list[dict]) -> int | None:
         """截图一次后遍历队列，返回首个命中模板的索引；全部未命中返回 None"""
@@ -78,10 +89,62 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
                 return idx
         return None
 
-    def _do_publish_sr(self, name: str):
-        """预留发布接口，当前仅日志占位"""
-        logger.info(f'TODO publish {name}')
+    def _swipe_page(self):
+        """向下滑动碎片列表页"""
+        self.device.click_record_clear()
+        p1 = (650, 520)
+        p2 = (650, 350)
+        logger.info('Swipe %s -> %s, 2S' % (point2str(*p1), point2str(*p2)))
+        self.device.swipe_adb(p1, p2, duration=2)
 
+    def _do_publish_sr(self, name: str):
+        """执行单次SR碎片发布"""
+        self.screenshot()
+        rule = getattr(self, name, None)
+        if rule is None:
+            logger.warning(f'找不到资源 {name}，跳过发布')
+            return False
+        logger.info(f'发布 SR 碎片: {name}')
+        start_time = time.time()
+        while (time.time()-start_time < 5):
+            self.screenshot()
+            if self.appear(self.I_PAGE_PUBLISH):
+                logger.info(f'选择发布个数: {name}')
+                break
+            if self.appear_then_click(rule,interval=1):
+                continue
+        if time.time()-start_time >= 5:
+            return False
+        start_time = time.time()
+        while (time.time()-start_time < 5):
+            self.screenshot()
+            if self.ocr_appear(self.O_CHECK_COUNT) and not self.appear(self.I_PUBLISH_ENSURE2):
+                break
+            if self.ocr_appear_click(self.O_CHECK_COUNT,action=self.I_PUBLISH_ENSURE2,interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_ADD_COUNT,interval=1):
+                start_time = time.time()
+                continue
+            if self.appear_then_click(self.I_TO_SELECT_COUNT,interval=1):
+                start_time = time.time()
+                continue
+        if time.time()-start_time >= 5:
+            return False
+        start_time = time.time()
+        while (time.time()-start_time < 5):
+            self.screenshot()
+            if not self.appear(self.I_PAGE_PUBLISH) and not self.appear(self.I_PUBLISH_ENSURE):
+                logger.info(f'发布 SR 碎片: {name} 成功')
+                break
+            if self.appear_then_click(self.I_PUBLISH_ENSURE,interval=1):
+                start_time = time.time()
+                continue
+        if time.time()-start_time >= 5:
+            return False
+        return True
+        
+        
     def _read_queue(self) -> list[dict]:
         """读取运行期队列文件"""
         with open(self.SR_CNT_FILE, 'r', encoding='utf-8') as f:

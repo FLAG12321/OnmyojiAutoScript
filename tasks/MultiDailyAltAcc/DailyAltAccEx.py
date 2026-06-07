@@ -18,6 +18,7 @@ def get_config(self):
     config.daily_alt_acc_config.tree_planting_enable = self.account_info.tree_planting_enable
     config.daily_alt_acc_config.trialbattle_enable = self.account_info.trialbattle_enable
     config.daily_alt_acc_config.summon_up_enable = self.account_info.summon_up_enable
+    config.daily_alt_acc_config.publish_sr_enable = self.account_info.publish_sr_enable
     return config
 def run_success(self):
     self.daily_conf.update_account_login_history

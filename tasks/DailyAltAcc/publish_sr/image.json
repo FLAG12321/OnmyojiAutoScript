@@ -1,0 +1,56 @@
+[
+  {
+    "itemName": "page_publish",
+    "roiFront": "664,296,104,26",
+    "roiBack": "563,228,305,107",
+    "description": "description",
+    "imageName": "page_publish.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "to_select_count",
+    "roiFront": "706,357,19,30",
+    "roiBack": "688,345,57,51",
+    "description": "description",
+    "imageName": "to_select_count.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "check_count",
+    "roiFront": "698,358,34,26",
+    "roiBack": "680,348,75,49",
+    "description": "description",
+    "imageName": "check_count.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "add_count",
+    "roiFront": "990,576,22,34",
+    "roiBack": "969,561,66,67",
+    "description": "description",
+    "imageName": "add_count.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "publish_ensure",
+    "roiFront": "611,463,63,43",
+    "roiBack": "579,455,120,59",
+    "description": "description",
+    "imageName": "publish_ensure.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "publish_ensure2",
+    "roiFront": "1069,577,59,37",
+    "roiBack": "1064,567,75,61",
+    "description": "description",
+    "imageName": "publish_ensure2.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  }
+]

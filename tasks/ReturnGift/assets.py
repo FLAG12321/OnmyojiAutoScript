@@ -147,6 +147,10 @@ class ReturnGiftAssets:
 	I_SR_67 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_67.png")
 	# SR碎片模板sr_68 
 	I_SR_68 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_68.png")
+	# description 
+	I_PAGE_PIECE = RuleImage(roi_front=(694,100,43,33), roi_back=(662,82,114,67), threshold=0.8, method="Template matching", file="./tasks/ReturnGift/count/page_piece.png")
+	# description 
+	I_TO_PAGE_PIECE = RuleImage(roi_front=(944,597,54,58), roi_back=(913,569,115,116), threshold=0.8, method="Template matching", file="./tasks/ReturnGift/count/to_page_piece.png")
 
 
 	# Click Rule Assets

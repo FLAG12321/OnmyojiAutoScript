@@ -610,5 +610,23 @@
     "method": "Template matching",
     "threshold": 0.85,
     "description": "SR碎片模板sr_68"
+  },
+  {
+    "itemName": "page_piece",
+    "roiFront": "694,100,43,33",
+    "roiBack": "662,82,114,67",
+    "description": "description",
+    "imageName": "page_piece.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "to_page_piece",
+    "roiFront": "944,597,54,58",
+    "roiBack": "913,569,115,116",
+    "description": "description",
+    "imageName": "to_page_piece.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

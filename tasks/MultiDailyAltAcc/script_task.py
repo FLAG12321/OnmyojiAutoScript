@@ -321,7 +321,8 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
             config.returngift_enable or config.weekaward_enable or   \
             config.mysteryshop_enable or config.kekkaiActivation_enable or  \
             config.KekkaiUtilize_enable or config.tree_planting_enable > 0 or \
-            config.trialbattle_enable or config.summon_up_enable \
+            config.trialbattle_enable or config.summon_up_enable or \
+            config.publish_sr_enable \
             ):
             logger.info(f"Skipping account {account_info.character} - No tasks enabled")
             return True
@@ -355,6 +356,8 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         config.tree_planting_enable = min(base_config.total_tree_planting_enable, account_info.tree_planting_enable)
         config.trialbattle_enable = base_config.total_trialbattle_enable and account_info.trialbattle_enable
         config.summon_up_enable = base_config.total_summon_up_enable and account_info.summon_up_enable
+        # 发布SR碎片：全局 AND 每个小号配置
+        config.publish_sr_enable = base_config.total_publish_sr_enable and account_info.publish_sr_enable
         # 账号特定配置
         config.isflower = account_info.isflower
         config.alliedteam_limit_count = account_info.alliedteam_limit_count
@@ -528,6 +531,7 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_tree_planting_enable = 0
         self.daily_conf.multi_daily_alt_acc_config.total_trialbattle_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_summon_up_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_publish_sr_enable = False
 
     def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""

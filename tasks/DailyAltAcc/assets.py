@@ -322,6 +322,26 @@ class DailyAltAccAssets:
 	O_MS_PRICENUM_8 = RuleOcr(roi=(843,516,159,41), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_8")
 
 
+	# Image Rule Assets
+	# description 
+	I_PAGE_PUBLISH = RuleImage(roi_front=(664,296,104,26), roi_back=(563,228,305,107), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/page_publish.png")
+	# description 
+	I_TO_SELECT_COUNT = RuleImage(roi_front=(706,357,19,30), roi_back=(688,345,57,51), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/to_select_count.png")
+	# description 
+	I_CHECK_COUNT = RuleImage(roi_front=(698,358,34,26), roi_back=(680,348,75,49), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/check_count.png")
+	# description 
+	I_ADD_COUNT = RuleImage(roi_front=(990,576,22,34), roi_back=(969,561,66,67), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/add_count.png")
+	# description 
+	I_PUBLISH_ENSURE = RuleImage(roi_front=(611,463,63,43), roi_back=(579,455,120,59), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/publish_ensure.png")
+	# description 
+	I_PUBLISH_ENSURE2 = RuleImage(roi_front=(1069,577,59,37), roi_back=(1064,567,75,61), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/publish_ensure2.png")
+
+
+	# Ocr Rule Assets
+	# description 
+	O_CHECK_COUNT = RuleOcr(roi=(690,356,53,31), area=(0,0,100,100), mode="DIGIT", method="Default", keyword="99", name="check_count")
+
+
 	# Click Rule Assets
 	# description 
 	C_BACK_RED = RuleClick(roi_front=(838,134,57,49), roi_back=(837,133,60,50), name="back_red")

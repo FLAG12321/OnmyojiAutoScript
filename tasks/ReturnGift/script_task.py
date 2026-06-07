@@ -5,7 +5,6 @@ import re
 import time
 import cv2
 import numpy as np
-from PIL import Image
 from cached_property import cached_property
 from datetime import timedelta, datetime
 from typing import List
@@ -47,17 +46,6 @@ def parse_sr_count(text) -> int | None:
     if match:
         return int(match.group())
     return None
-
-
-def offset_box_by_match(
-    base_ocr_box: tuple[int, int, int, int],
-    anchor_box: tuple[int, int, int, int],
-    matched_box: tuple[int, int, int, int],
-) -> tuple[int, int, int, int]:
-    # 根据模板命中偏移推导同一卡片的碎片数量OCR区域
-    dx = matched_box[0] - anchor_box[0]
-    dy = matched_box[1] - anchor_box[1]
-    return (base_ocr_box[0] + dx, base_ocr_box[1] + dy, base_ocr_box[2], base_ocr_box[3])
 
 
 def sort_sr_matches(matches: list[SrMatch]) -> list[SrMatch]:
@@ -154,14 +142,9 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         # 导航到回礼页面并统计碎片数量，模板资源使用预生成的静态文件
         self._goto_return_gift_page()
         self.count_sr_fragments()
+        next_run_time = datetime.now().replace(hour=0, minute=19, second=30, microsecond=0) + timedelta(days=1)
+        self.set_next_run(task='ReturnGift', target=next_run_time)
         raise TaskEnd('ReturnGift')
-
-    def return_gift_dir(self) -> Path:
-        # ReturnGift运行产物固定存放在任务目录，避免受当前工作目录变化影响
-        return Path(__file__).resolve().parent
-
-    def sr_count_dir(self) -> Path:
-        return self.return_gift_dir() / 'count'
 
     def sr_count_output_path(self) -> Path:
         # 统计结果放在 logs 目录，避免被 assets_extract 扫描到
@@ -169,68 +152,12 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         output.parent.mkdir(parents=True, exist_ok=True)
         return output
 
-    def build_sr_templates(self) -> list[dict]:
-        con = self.config.return_gift.return_gift_config
-        temp_dir = Path(con.sr_temp_path)
-        count_dir = self.sr_count_dir()
-        count_dir.mkdir(parents=True, exist_ok=True)
-
-        screenshots = sorted(temp_dir.glob(f'{con.sr_template_date} *.png'))
-        items = []
-        roi_x, roi_y, roi_w, roi_h = con.sr_match_roi
-        box_x, box_y, box_w, box_h = con.sr_template_box
-        roi_right = roi_x + roi_w
-        roi_bottom = roi_y + roi_h
-
-        for screenshot in screenshots:
-            # 只裁剪完全落在匹配范围和截图尺寸内的模板，避免生成无法复用的截图片段
-            if box_x < roi_x or box_y < roi_y or box_x + box_w > roi_right or box_y + box_h > roi_bottom:
-                logger.warning(f'SR模板裁剪框不在识别范围内，跳过: {screenshot}')
-                continue
-            with Image.open(screenshot) as image:
-                if box_x + box_w > image.width or box_y + box_h > image.height:
-                    logger.warning(f'SR模板裁剪框超出截图尺寸，跳过: {screenshot}')
-                    continue
-                crop = image.convert('RGB').crop((box_x, box_y, box_x + box_w, box_y + box_h))
-            name = f'sr_{len(items) + 1}'
-            file_name = f'{name}.png'
-            crop.save(count_dir / file_name)
-            items.append({
-                'name': name,
-                'file': f'count/{file_name}',
-                'source': str(screenshot),
-                'crop_box': [box_x, box_y, box_w, box_h],
-                'match_roi': list(con.sr_match_roi),
-            })
-
-        manifest = {
-            'created_at': datetime.now().isoformat(),
-            'items': items,
-        }
-        with open(count_dir / 'image.json', 'w', encoding='utf-8') as f:
-            json.dump(manifest, f, ensure_ascii=False, indent=2)
-        logger.info(f'生成SR模板数量: {len(items)}')
-        return items
-
-    def load_sr_templates(self) -> list[RuleImage]:
-        # 读取标准 image.json 格式的 SR 模板清单
-        manifest_path = self.sr_count_dir() / 'image.json'
-        if not manifest_path.exists():
-            raise FileNotFoundError(f'SR模板清单不存在: {manifest_path}')
-        with open(manifest_path, 'r', encoding='utf-8') as f:
-            items = json.load(f)
+    def _get_sr_templates(self) -> list[tuple[str, RuleImage]]:
+        # 收集所有 I_SR_* 资源，返回 (属性名, RuleImage) 列表
         templates = []
-        for item in items:
-            template_path = self.sr_count_dir() / item['imageName']
-            roi_front = tuple(int(x) for x in item['roiFront'].split(','))
-            roi_back = tuple(int(x) for x in item['roiBack'].split(','))
-            templates.append(RuleImage(
-                roi_front=roi_front,
-                roi_back=roi_back,
-                threshold=item.get('threshold', 0.85),
-                method=item.get('method', 'Template matching'),
-                file=str(template_path),
-            ))
+        for name in sorted(dir(self)):
+            if name.startswith('I_SR_') and isinstance(getattr(self, name), RuleImage):
+                templates.append((name, getattr(self, name)))
         return templates
 
     def build_sr_count_ocr(self, ocr_box) -> RuleOcr:
@@ -238,9 +165,10 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         return RuleOcr(roi=tuple(ocr_box), area=tuple(ocr_box), mode='DigitCounter', method='Default', keyword='', name='sr_count')
 
     def swipe_sr_count_page(self):
-        duration = 1
+        self.device.click_record_clear()
+        duration = 2
         p1 = (650, 520)
-        p2 = (650, 352)
+        p2 = (650, 350)
         logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
         self.device.swipe_adb(p1, p2, duration=duration)
 
@@ -250,30 +178,31 @@ class ScriptTask(GameUi,ReturnGiftAssets):
             json.dump(items, f, ensure_ascii=False, indent=2)
         return items
 
-    def count_sr_fragments(self) -> dict:
-        con = self.config.return_gift.return_gift_config
-        templates = self.load_sr_templates()
+    def count_sr_fragments(self) -> list[dict]:
+        # OCR区域相对于模板匹配位置的固定偏移（由原 sr_count_ocr_box 与 sr_template_box 推导）
+        OCR_DX = 8
+        OCR_DY = 149
+        OCR_W = 95
+        OCR_H = 22
+        EMPTY_SWIPE_LIMIT = 3
+
+        templates = self._get_sr_templates()
         seen = set()
         items = []
         empty_swipes = 0
 
-        while empty_swipes < con.sr_empty_swipe_limit and len(seen) < len(templates):
+        while empty_swipes < EMPTY_SWIPE_LIMIT and len(seen) < len(templates):
             self.screenshot()
             found_new = False
-            for template in templates:
-                template_name = Path(template.file).stem.lower()
-                if template_name in seen:
+            for attr_name, template in templates:
+                if attr_name in seen:
                     continue
-                matches = sort_sr_matches(template.match_all_any(
-                    image=self.device.image,
-                    roi=list(con.sr_match_roi),
-                    threshold=con.sr_match_threshold,
-                ))
+                # 使用资源自带的 roi_back 和 threshold 进行匹配
+                matches = sort_sr_matches(template.match_all_any(image=self.device.image))
                 if not matches:
                     continue
                 score, x, y, w, h = matches[0]
-                match_box = (x, y, w, h)
-                ocr_box = offset_box_by_match(con.sr_count_ocr_box, con.sr_template_box, match_box)
+                ocr_box = (x + OCR_DX, y + OCR_DY, OCR_W, OCR_H)
                 ocr = self.build_sr_count_ocr(ocr_box)
                 count = None
                 ocr_text = ''
@@ -284,13 +213,12 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                     if count is not None:
                         break
                 if count is None:
-                    logger.warning(f'SR碎片数量OCR解析失败: {template_name}, text={ocr_text}')
+                    logger.warning(f'SR碎片数量OCR解析失败: {attr_name}, text={ocr_text}')
                     continue
-                seen.add(template_name)
+                seen.add(attr_name)
                 found_new = True
-                # 只保留资源名称和数量
                 items.append({
-                    'name': 'I_' + template_name.upper(),
+                    'name': attr_name,
                     'count': count,
                 })
             if found_new:
@@ -309,10 +237,17 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         retry_count = 0
         while retry_count < 5:
             self.screenshot()
+            if self.appear_then_click(self.I_TO_PAGE_PIECE, interval=1):
+                time.sleep(1)
+                continue
+            if self.appear_then_click(self.I_PAGE_PIECE, interval=1):
+                time.sleep(1.5)
+                self.click(self.I_PAGE_PIECE)
+                return 
             if self.appear_then_click(self.I_R_PAGE_GUILD, action=self.C_R_TOSEND_CLICK, interval=2):
                 self.device.click_record_clear()
                 time.sleep(1)
-                return
+                continue                
             retry_count += 1
         raise RuntimeError('无法进入ReturnGift回礼页面')
 
