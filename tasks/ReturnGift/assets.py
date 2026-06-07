@@ -10,6 +10,145 @@ from module.atom.list import RuleList
 class ReturnGiftAssets: 
 
 
+	# Image Rule Assets
+	# SR碎片模板sr_1 
+	I_SR_1 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_1.png")
+	# SR碎片模板sr_2 
+	I_SR_2 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_2.png")
+	# SR碎片模板sr_3 
+	I_SR_3 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_3.png")
+	# SR碎片模板sr_4 
+	I_SR_4 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_4.png")
+	# SR碎片模板sr_5 
+	I_SR_5 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_5.png")
+	# SR碎片模板sr_6 
+	I_SR_6 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_6.png")
+	# SR碎片模板sr_7 
+	I_SR_7 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_7.png")
+	# SR碎片模板sr_8 
+	I_SR_8 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_8.png")
+	# SR碎片模板sr_9 
+	I_SR_9 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_9.png")
+	# SR碎片模板sr_10 
+	I_SR_10 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_10.png")
+	# SR碎片模板sr_11 
+	I_SR_11 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_11.png")
+	# SR碎片模板sr_12 
+	I_SR_12 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_12.png")
+	# SR碎片模板sr_13 
+	I_SR_13 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_13.png")
+	# SR碎片模板sr_14 
+	I_SR_14 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_14.png")
+	# SR碎片模板sr_15 
+	I_SR_15 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_15.png")
+	# SR碎片模板sr_16 
+	I_SR_16 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_16.png")
+	# SR碎片模板sr_17 
+	I_SR_17 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_17.png")
+	# SR碎片模板sr_18 
+	I_SR_18 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_18.png")
+	# SR碎片模板sr_19 
+	I_SR_19 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_19.png")
+	# SR碎片模板sr_20 
+	I_SR_20 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_20.png")
+	# SR碎片模板sr_21 
+	I_SR_21 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_21.png")
+	# SR碎片模板sr_22 
+	I_SR_22 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_22.png")
+	# SR碎片模板sr_23 
+	I_SR_23 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_23.png")
+	# SR碎片模板sr_24 
+	I_SR_24 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_24.png")
+	# SR碎片模板sr_25 
+	I_SR_25 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_25.png")
+	# SR碎片模板sr_26 
+	I_SR_26 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_26.png")
+	# SR碎片模板sr_27 
+	I_SR_27 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_27.png")
+	# SR碎片模板sr_28 
+	I_SR_28 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_28.png")
+	# SR碎片模板sr_29 
+	I_SR_29 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_29.png")
+	# SR碎片模板sr_30 
+	I_SR_30 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_30.png")
+	# SR碎片模板sr_31 
+	I_SR_31 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_31.png")
+	# SR碎片模板sr_32 
+	I_SR_32 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_32.png")
+	# SR碎片模板sr_33 
+	I_SR_33 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_33.png")
+	# SR碎片模板sr_34 
+	I_SR_34 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_34.png")
+	# SR碎片模板sr_35 
+	I_SR_35 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_35.png")
+	# SR碎片模板sr_36 
+	I_SR_36 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_36.png")
+	# SR碎片模板sr_37 
+	I_SR_37 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_37.png")
+	# SR碎片模板sr_38 
+	I_SR_38 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_38.png")
+	# SR碎片模板sr_39 
+	I_SR_39 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_39.png")
+	# SR碎片模板sr_40 
+	I_SR_40 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_40.png")
+	# SR碎片模板sr_41 
+	I_SR_41 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_41.png")
+	# SR碎片模板sr_42 
+	I_SR_42 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_42.png")
+	# SR碎片模板sr_43 
+	I_SR_43 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_43.png")
+	# SR碎片模板sr_44 
+	I_SR_44 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_44.png")
+	# SR碎片模板sr_45 
+	I_SR_45 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_45.png")
+	# SR碎片模板sr_46 
+	I_SR_46 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_46.png")
+	# SR碎片模板sr_47 
+	I_SR_47 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_47.png")
+	# SR碎片模板sr_48 
+	I_SR_48 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_48.png")
+	# SR碎片模板sr_49 
+	I_SR_49 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_49.png")
+	# SR碎片模板sr_50 
+	I_SR_50 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_50.png")
+	# SR碎片模板sr_51 
+	I_SR_51 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_51.png")
+	# SR碎片模板sr_52 
+	I_SR_52 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_52.png")
+	# SR碎片模板sr_53 
+	I_SR_53 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_53.png")
+	# SR碎片模板sr_54 
+	I_SR_54 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_54.png")
+	# SR碎片模板sr_55 
+	I_SR_55 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_55.png")
+	# SR碎片模板sr_56 
+	I_SR_56 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_56.png")
+	# SR碎片模板sr_57 
+	I_SR_57 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_57.png")
+	# SR碎片模板sr_58 
+	I_SR_58 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_58.png")
+	# SR碎片模板sr_59 
+	I_SR_59 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_59.png")
+	# SR碎片模板sr_60 
+	I_SR_60 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_60.png")
+	# SR碎片模板sr_61 
+	I_SR_61 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_61.png")
+	# SR碎片模板sr_62 
+	I_SR_62 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_62.png")
+	# SR碎片模板sr_63 
+	I_SR_63 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_63.png")
+	# SR碎片模板sr_64 
+	I_SR_64 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_64.png")
+	# SR碎片模板sr_65 
+	I_SR_65 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_65.png")
+	# SR碎片模板sr_66 
+	I_SR_66 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_66.png")
+	# SR碎片模板sr_67 
+	I_SR_67 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_67.png")
+	# SR碎片模板sr_68 
+	I_SR_68 = RuleImage(roi_front=(0,0,104,146), roi_back=(334,163,612,454), threshold=0.85, method="Template matching", file="./tasks/ReturnGift/count/sr_68.png")
+
+
 	# Click Rule Assets
 	# description 
 	C_R_TORECEIVE_FLAG_CLICK = RuleClick(roi_front=(1063,600,47,54), roi_back=(1062,598,50,57), name="r_toreceive_flag_click")
