@@ -30,11 +30,12 @@ from tasks.DailyAltAcc.mshop import Mshop
 from tasks.DailyAltAcc.tree import Tree
 from tasks.DailyAltAcc.summon_up import SummonUp
 from tasks.DailyAltAcc.trialbattle import Trialbattle
+from tasks.DailyAltAcc.publish_sr import PublishSr
 
 
 class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                  Returngift, Alliedteam, Mshop, Tree,
-                 SummonUp, Trialbattle,
+                 SummonUp, Trialbattle, PublishSr,
                  Guild, WeeklyTrifles):
     account_info: dict = None
     
@@ -115,6 +116,8 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
             self.run_trialbattle()
         if con.daily_alt_acc_config.summon_up_enable:
             self.run_summon_up()
+        if con.daily_alt_acc_config.publish_sr_enable:
+            self.run_publish_sr()
 
         if con.daily_alt_acc_config.kekkaiActivation_enable:
             try:
