@@ -30,6 +30,7 @@ class DailyAltAccConfig(BaseModel):
   tree_planting_enable: int  = Field(default=2, description='0不运行 1买花 2买花捐树')
   trialbattle_enable: bool = Field(default=True, description='是否开启试炼战斗')
   summon_up_enable: bool = Field(default=True, description='是否开启UP召唤领取礼包')
+  publish_sr_enable: bool = Field(default=False, description='是否发布SR碎片')
 class DailyAltAcc(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     daily_alt_acc_config: DailyAltAccConfig  = Field(default_factory=DailyAltAccConfig)
