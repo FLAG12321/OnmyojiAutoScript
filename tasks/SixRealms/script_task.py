@@ -20,11 +20,11 @@ class ScriptTask(SwitchSoul, MoonSea, GameUi):
         if self._config.switch_soul_config.enable:
             self.ui_get_current_page()
             self.ui_goto(page_shikigami_records)
-            self.run_switch_soul(self._config.switch_soul_config.switch_group_team)
-        if self._config.switch_soul_config.enable_switch_by_name:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
-            self.run_switch_soul_by_name(self._config.switch_soul_config.group_name, self._config.switch_soul_config.team_name)
+            # 六道之门使用两行御魂预设配置，按配置顺序依次切换。
+            self.run_switch_soul([
+                self._config.switch_soul_config.one_switch,
+                self._config.switch_soul_config.two_switch,
+            ])
         self.ui_get_current_page()
         self.ui_goto_page(page_six_gates)
         self.run_moon_sea()

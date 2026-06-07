@@ -502,7 +502,9 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         """设置下一次运行时间"""
         start_time = self.start_time  # 使用任务开始时间而不是当前时间
         if success:
-            if self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
+            if self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
+                self._schedule_alliedteam_after_returngift()
+            elif self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
                 # 同心战斗模式：不分时段，完成后直接走凌晨后流程（6:05执行上午任务）
                 self._schedule_after_midnight(start_time)
             elif 5 <= start_time.hour < 18:
@@ -567,19 +569,21 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
             self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5))
             self.save_config()
         elif self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
-            # 如果开启了回礼功能，回礼做完后切换到同心战斗模式
-            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = True
-            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
-            self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
-            self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
-            self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
-            self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
-            self.daily_conf.multi_daily_alt_acc_config.need_login = True
-            self._reset_one_shot_flags()
-            self.config.model.multi_daily_alt_acc = self.daily_conf
+            self._schedule_alliedteam_after_returngift()
 
-            self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=20))
-            self.save_config()
+    def _schedule_alliedteam_after_returngift(self):
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = True
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.need_login = True
+        self._reset_one_shot_flags()
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+
+        self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=20))
+        self.save_config()
 
     def _schedule_evening(self, start_time: datetime):
         """安排晚上的运行时间"""

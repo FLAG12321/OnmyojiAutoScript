@@ -1115,6 +1115,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         solo_exploration._config.exploration_config.up_type = UpType.ALL
         solo_exploration._config.scrolls.scrolls_enable = False
 
+        solo_exploration.ui_get_current_page()
+        solo_exploration.ui_goto(page_exploration)
+
         # 切换援助式神相关标记
         self.help_shikigami_detect = True
 
