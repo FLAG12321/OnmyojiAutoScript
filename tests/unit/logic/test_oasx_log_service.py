@@ -16,7 +16,7 @@ def test_log_service_reads_latest_window(tmp_path, monkeypatch):
     result = log_service.LogBrowserService().read_window(
         script_name="oas1",
         limit_lines=2,
-        limit_bytes=1024,
+        limit_bytes=4096,
     )
 
     assert result["script_name"] == "oas1"
