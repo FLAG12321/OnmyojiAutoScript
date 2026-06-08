@@ -169,9 +169,11 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    from module.base.utils import load_image
-    c = Config('oas3')
+
+    # 手动调试入口：使用 oas2 测试 SR16 碎片发布流程
+    c = Config('oas2')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
-    self.run_summon_up()   
+    result = self._do_publish_sr('I_SR_16')
+    print(f'_do_publish_sr(I_SR_16) result: {result}')

@@ -52,5 +52,23 @@
     "imageName": "publish_ensure2.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "page_publish_cancel",
+    "roiFront": "523,211,109,33",
+    "roiBack": "488,187,229,96",
+    "description": "description",
+    "imageName": "page_publish_cancel.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "publish_cancel_ensure",
+    "roiFront": "603,472,72,43",
+    "roiBack": "545,454,207,87",
+    "description": "description",
+    "imageName": "publish_cancel_ensure.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

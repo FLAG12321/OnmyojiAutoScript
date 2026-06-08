@@ -520,88 +520,6 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         return True
 
 
-    def _wait_emulator_shutdown(self, timeout=30):
-        """
-        Wait until the emulator's ADB serial disappears from device list.
-        If graceful shutdown times out, force-kill the emulator process.
-        """
-        serial = self.serial
-        logger.info(f'Waiting for emulator {serial} to shut down...')
-        wait_timer = Timer(timeout).start()
-        interval = Timer(2).start()
-        while 1:
-            interval.wait()
-            interval.reset()
-            if wait_timer.reached():
-                logger.warning(f'Emulator shutdown wait timeout ({timeout}s), force killing...')
-                self._force_kill_emulator()
-                import time
-                time.sleep(3)
-                return True
-            try:
-                devices = self.list_device().select(serial=serial)
-            except Exception:
-                return True
-            if not devices:
-                logger.info(f'Emulator {serial} is offline')
-                return True
-            device = devices.first_or_none()
-            if device and device.status == 'offline':
-                logger.info(f'Emulator {serial} is offline')
-                return True
-            logger.info(f'Emulator still alive, waiting... remain[{wait_timer.remain():.0f}s]')
-
-    def _force_kill_emulator(self):
-        """
-        Force kill emulator process when graceful shutdown fails.
-        Uses process-level kill for all emulator types.
-        """
-        instance = self.emulator_instance
-        if instance is None:
-            return
-        exe = instance.emulator.path
-        if instance == Emulator.MuMuPlayer12:
-            if instance.MuMuPlayer12_id is not None:
-                cmd = f'"{Emulator.single_to_console(exe)}" control -v {instance.MuMuPlayer12_id} force_stop'
-                logger.info(f'Force stopping MuMu12: {cmd}')
-                try:
-                    subprocess.run(cmd, capture_output=True, timeout=10, shell=True)
-                except Exception as e:
-                    logger.warning(f'Force stop command failed: {e}, falling back to process kill')
-                    self.kill_process_by_regex(rf'MuMuVMMHeadless.exe.*--comment {instance.name}')
-        elif instance == Emulator.MuMuPlayer:
-            self.kill_process_by_regex(
-                rf'(NemuHeadless.exe|NemuPlayer.exe|NemuService.exe|NemuSVC.exe)'
-            )
-        elif instance == Emulator.MuMuPlayerX:
-            self.kill_process_by_regex(
-                rf'(NemuPlayer.exe.*-m {instance.name}|Muvm6Headless.exe|Muvm6SVC.exe)'
-            )
-        elif instance == Emulator.LDPlayerFamily:
-            self.kill_process_by_regex(
-                rf'(LDPlayer.exe.*-s {instance.LDPlayer_id}|dnplayer.exe.*-s {instance.LDPlayer_id})'
-            )
-        elif instance == Emulator.NoxPlayerFamily:
-            self.kill_process_by_regex(
-                rf'(Nox.exe.*-clone:{instance.name}|NoxVMHandle.exe.*-clone:{instance.name})'
-            )
-        elif instance == Emulator.BlueStacks5:
-            self.kill_process_by_regex(
-                rf'HD-Player.exe.*"--instance" "{instance.name}"'
-            )
-        elif instance == Emulator.BlueStacks4:
-            self.kill_process_by_regex(
-                rf'(Bluestacks.exe.*-vmname {instance.name}|BstkSVC.exe)'
-            )
-        elif instance == Emulator.MEmuPlayer:
-            self.kill_process_by_regex(
-                rf'(MEmu.exe.*{instance.name}|MEmuHeadless.exe.*{instance.name})'
-            )
-        else:
-            logger.warning(f'Force kill: unknown emulator type {instance}')
-
-        logger.info('Force kill emulator done')
-
     def emulator_start(self):
         """Start emulator with watch. Used by game stuck recovery."""
         logger.hr('Emulator start', level=1)
@@ -613,8 +531,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             if self.emulator_start_watch():
                 return True
             logger.warning(f'Emulator start watch failed (attempt {trial + 1}/3)')
-            self._emulator_function_wrapper(self._emulator_stop)
-            self._wait_emulator_shutdown()
+            self.reset.execute()
 
         logger.error('Failed to start emulator after 3 attempts')
         return False

@@ -335,6 +335,10 @@ class DailyAltAccAssets:
 	I_PUBLISH_ENSURE = RuleImage(roi_front=(611,463,63,43), roi_back=(579,455,120,59), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/publish_ensure.png")
 	# description 
 	I_PUBLISH_ENSURE2 = RuleImage(roi_front=(1069,577,59,37), roi_back=(1064,567,75,61), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/publish_ensure2.png")
+	# description 
+	I_PAGE_PUBLISH_CANCEL = RuleImage(roi_front=(523,211,109,33), roi_back=(488,187,229,96), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/page_publish_cancel.png")
+	# description 
+	I_PUBLISH_CANCEL_ENSURE = RuleImage(roi_front=(603,472,72,43), roi_back=(545,454,207,87), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/publish_sr/publish_cancel_ensure.png")
 
 
 	# Ocr Rule Assets

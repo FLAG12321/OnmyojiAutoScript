@@ -5,7 +5,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_1"
   },
   {
@@ -14,7 +14,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_2"
   },
   {
@@ -23,7 +23,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_3"
   },
   {
@@ -32,7 +32,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_4"
   },
   {
@@ -41,7 +41,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_5"
   },
   {
@@ -50,7 +50,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_6"
   },
   {
@@ -59,7 +59,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_7"
   },
   {
@@ -68,7 +68,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_8"
   },
   {
@@ -77,7 +77,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_9"
   },
   {
@@ -86,7 +86,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_10"
   },
   {
@@ -95,7 +95,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_11"
   },
   {
@@ -104,7 +104,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_12"
   },
   {
@@ -113,7 +113,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_13"
   },
   {
@@ -122,7 +122,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_14"
   },
   {
@@ -131,7 +131,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_15"
   },
   {
@@ -140,7 +140,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_16"
   },
   {
@@ -149,7 +149,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_17"
   },
   {
@@ -158,7 +158,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_18"
   },
   {
@@ -167,7 +167,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_19"
   },
   {
@@ -176,7 +176,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_20"
   },
   {
@@ -185,7 +185,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_21"
   },
   {
@@ -194,7 +194,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_22"
   },
   {
@@ -203,7 +203,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_23"
   },
   {
@@ -212,7 +212,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_24"
   },
   {
@@ -221,7 +221,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_25"
   },
   {
@@ -230,7 +230,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_26"
   },
   {
@@ -239,7 +239,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_27"
   },
   {
@@ -248,7 +248,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_28"
   },
   {
@@ -257,7 +257,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_29"
   },
   {
@@ -266,7 +266,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_30"
   },
   {
@@ -275,7 +275,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_31"
   },
   {
@@ -284,7 +284,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_32"
   },
   {
@@ -293,7 +293,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_33"
   },
   {
@@ -302,7 +302,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_34"
   },
   {
@@ -311,7 +311,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_35"
   },
   {
@@ -320,7 +320,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_36"
   },
   {
@@ -329,7 +329,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_37"
   },
   {
@@ -338,7 +338,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_38"
   },
   {
@@ -347,7 +347,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_39"
   },
   {
@@ -356,7 +356,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_40"
   },
   {
@@ -365,7 +365,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_41"
   },
   {
@@ -374,7 +374,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_42"
   },
   {
@@ -383,7 +383,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_43"
   },
   {
@@ -392,7 +392,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_44"
   },
   {
@@ -401,7 +401,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_45"
   },
   {
@@ -410,7 +410,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_46"
   },
   {
@@ -419,7 +419,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_47"
   },
   {
@@ -428,7 +428,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_48"
   },
   {
@@ -437,7 +437,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_49"
   },
   {
@@ -446,7 +446,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_50"
   },
   {
@@ -455,7 +455,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_51"
   },
   {
@@ -464,7 +464,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_52"
   },
   {
@@ -473,7 +473,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_53"
   },
   {
@@ -482,7 +482,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_54"
   },
   {
@@ -491,7 +491,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_55"
   },
   {
@@ -500,7 +500,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_56"
   },
   {
@@ -509,7 +509,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_57"
   },
   {
@@ -518,7 +518,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_58"
   },
   {
@@ -527,7 +527,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_59"
   },
   {
@@ -536,7 +536,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_60"
   },
   {
@@ -545,7 +545,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_61"
   },
   {
@@ -554,7 +554,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_62"
   },
   {
@@ -563,7 +563,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_63"
   },
   {
@@ -572,7 +572,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_64"
   },
   {
@@ -581,7 +581,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_65"
   },
   {
@@ -590,7 +590,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_66"
   },
   {
@@ -599,7 +599,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_67"
   },
   {
@@ -608,7 +608,7 @@
     "roiFront": "0,0,104,146",
     "roiBack": "334,163,612,454",
     "method": "Template matching",
-    "threshold": 0.85,
+    "threshold": 0.8,
     "description": "SR碎片模板sr_68"
   },
   {

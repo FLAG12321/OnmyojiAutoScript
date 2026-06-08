@@ -3,6 +3,8 @@ import json
 import time
 from pathlib import Path
 
+from filelock import FileLock
+
 from module.base.utils import point2str
 from module.logger import logger
 from tasks.DailyAltAcc.utils import DailyAltAccBase
@@ -16,6 +18,8 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
     SR_COUNT_FILE = Path('logs/sr_count.json')
     # 输出/续做：可发布次数队列
     SR_CNT_FILE = Path(__file__).resolve().parent / 'sr_cnt.json'
+    # 多实例读写队列文件时使用的进程级文件锁
+    SR_CNT_LOCK_FILE = Path(str(SR_CNT_FILE) + '.lock')
     # 一次发布需要消耗的碎片数
     PER_PUBLISH = 99
 
@@ -112,7 +116,13 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
             if self.appear(self.I_PAGE_PUBLISH):
                 logger.info(f'选择发布个数: {name}')
                 break
+            if self.appear(self.I_PAGE_PUBLISH_CANCEL):
+                self.ui_click_until_disappear(self.I_PUBLISH_CANCEL_ENSURE,interval=1)
+                ReturnGiftScriptTask._goto_return_gift_page(self)
+                start_time = time.time()
+                continue
             if self.appear_then_click(rule,interval=1):
+                start_time = time.time()
                 continue
         if time.time()-start_time >= 5:
             return False
@@ -147,12 +157,14 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         
         
     def _read_queue(self) -> list[dict]:
-        """读取运行期队列文件"""
-        with open(self.SR_CNT_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        """读取运行期队列文件，使用文件锁避免多实例读到半写入内容"""
+        with FileLock(str(self.SR_CNT_LOCK_FILE)):
+            with open(self.SR_CNT_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
 
     def _write_queue(self, queue: list[dict]):
-        """写入运行期队列文件，支持断点续做"""
+        """写入运行期队列文件，使用文件锁支持多实例安全读写"""
         self.SR_CNT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.SR_CNT_FILE, 'w', encoding='utf-8') as f:
-            json.dump(queue, f, ensure_ascii=False, indent=2)
+        with FileLock(str(self.SR_CNT_LOCK_FILE)):
+            with open(self.SR_CNT_FILE, 'w', encoding='utf-8') as f:
+                json.dump(queue, f, ensure_ascii=False, indent=2)
