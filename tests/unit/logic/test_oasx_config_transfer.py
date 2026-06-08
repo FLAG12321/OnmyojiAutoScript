@@ -20,3 +20,13 @@ def test_config_import_rejects_duplicate(tmp_path, monkeypatch):
 
     with pytest.raises(ConfigAlreadyExistsError):
         ConfigManager.import_config("oas1", {"script": {}})
+
+
+def test_parse_task_json_source_requires_exactly_one_source():
+    from module.server.config_manager import ConfigJsonError, ConfigManager
+
+    # 任务导入必须在文本和文件中二选一，避免前端提交来源不明确。
+    with pytest.raises(ConfigJsonError):
+        ConfigManager.parse_task_json_source(json_text=None, file_content=None)
+    with pytest.raises(ConfigJsonError):
+        ConfigManager.parse_task_json_source(json_text="{}", file_content=b"{}")

@@ -5,16 +5,18 @@ import asyncio
 import json
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
 from module.config.utils import convert_to_underscore
 from module.server.config_manager import (
+    ConfigAlreadyExistsError,
     ConfigJsonError,
     ConfigNameError,
     ConfigNotFoundError,
     ConfigTaskError,
+    ConfigValidationError,
 )
 
 from module.logger import logger
@@ -53,6 +55,25 @@ async def config_all():
     return mm.all_json_file()
 
 
+@script_app.post('/config/import')
+async def config_import(name: str = Form(...), file: UploadFile = File(...)):
+    """导入脚本配置文件，上传文件名不会作为落盘名称。"""
+    try:
+        raw = await file.read()
+        data = json.loads(raw.decode('utf-8'))
+        config_name = mm.import_config(name, data)
+        mm.add_script_file(config_name)
+        return {'name': config_name, 'file': f'{config_name}.json'}
+    except ConfigAlreadyExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail={'message': str(e), 'fields': e.fields})
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=400, detail=f'Invalid JSON file: {e}')
+    except (ConfigNameError, ConfigJsonError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @script_app.get('/config/export')
 async def config_export(name: str):
     """导出脱敏后的脚本配置文件。"""
@@ -72,6 +93,32 @@ async def config_export(name: str):
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (ConfigNameError, ConfigJsonError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@script_app.post('/config/task/import')
+async def config_task_import(
+    config_name: str = Form(...),
+    task_name: str = Form(...),
+    json_text: str | None = Form(None),
+    file: UploadFile | None = File(None),
+):
+    """导入单个任务配置 JSON，内容必须是 {"task_key": {...}}。"""
+    try:
+        file_content = await file.read() if file is not None else None
+        data = mm.parse_task_json_source(json_text=json_text, file_content=file_content)
+        normalized_config_name, task_key = mm.import_task_config(config_name, task_name, data)
+        return {
+            'config_name': normalized_config_name,
+            'task_name': task_key,
+            'file': f'{normalized_config_name}.json',
+            'updated': True,
+        }
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail={'message': str(e), 'fields': e.fields})
+    except (ConfigNameError, ConfigJsonError, ConfigTaskError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
