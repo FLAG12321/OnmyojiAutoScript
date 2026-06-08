@@ -2,11 +2,20 @@
 # @author runhey
 # github https://github.com/runhey
 import asyncio
+import json
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
 from module.config.utils import convert_to_underscore
+from module.server.config_manager import (
+    ConfigJsonError,
+    ConfigNameError,
+    ConfigNotFoundError,
+    ConfigTaskError,
+)
 
 from module.logger import logger
 from module.server.main_manager import mm
@@ -42,6 +51,61 @@ async def config_new_name():
 @script_app.get('/config_all')
 async def config_all():
     return mm.all_json_file()
+
+
+@script_app.get('/config/export')
+async def config_export(name: str):
+    """导出脱敏后的脚本配置文件。"""
+    try:
+        config_name, data = mm.load_config_for_export(name)
+        redacted = mm.redact_config(data)
+        content = json.dumps(redacted, indent=2, ensure_ascii=False, sort_keys=False, default=str)
+        filename = f'{config_name}.json'
+        return Response(
+            content=content.encode('utf-8'),
+            media_type='application/json; charset=utf-8',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}',
+                'Cache-Control': 'no-store',
+            },
+        )
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (ConfigNameError, ConfigJsonError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@script_app.get('/config/task/export')
+async def config_task_export(config_name: str, task_name: str):
+    """导出脱敏后的单个任务配置 JSON 文件。"""
+    try:
+        normalized_name, task_key, data = mm.load_task_for_export(config_name, task_name)
+        content = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=False, default=str)
+        filename = f'{normalized_name}-{task_key}.json'
+        return Response(
+            content=content.encode('utf-8'),
+            media_type='application/json; charset=utf-8',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}',
+                'Cache-Control': 'no-store',
+            },
+        )
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (ConfigNameError, ConfigJsonError, ConfigTaskError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@script_app.get('/config/task/copy-json')
+async def config_task_copy_json(config_name: str, task_name: str):
+    """复制单个任务配置 JSON，返回未脱敏普通 JSON。"""
+    try:
+        _, _, data = mm.load_task_for_transfer(config_name, task_name)
+        return data
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (ConfigNameError, ConfigJsonError, ConfigTaskError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @script_app.put('/config')
