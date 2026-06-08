@@ -125,7 +125,7 @@ class GameUiAssets:
 	# description 
 	I_RYOUTOPPA_GOTO_REALMRAID = RuleImage(roi_front=(1201,234,62,105), roi_back=(1201,234,62,105), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_ryoutoppa_goto_realmraid.png")
 	# description 
-	I_EXPLORATION_GOTO_YOUKI = RuleImage(roi_front=(734,638,52,40), roi_back=(702,623,192,87), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/exploration_goto_youki.png")
+	I_EXPLORATION_GOTO_YOUKI = RuleImage(roi_front=(734,638,52,40), roi_back=(56,612,1067,101), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/exploration_goto_youki.png")
 	# description 
 	I_CHECK_YOUKI = RuleImage(roi_front=(153,18,128,39), roi_back=(141,5,155,68), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_youki.png")
 

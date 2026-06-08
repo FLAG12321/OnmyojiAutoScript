@@ -254,7 +254,7 @@
   {
     "itemName": "exploration_goto_youki",
     "roiFront": "734,638,52,40",
-    "roiBack": "702,623,192,87",
+    "roiBack": "56,612,1067,101",
     "description": "description",
     "imageName": "exploration_goto_youki.png",
     "method": "Template matching",
