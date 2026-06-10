@@ -2,7 +2,7 @@ import types
 
 import pytest
 
-from module.device.device import Device
+from module.device.device import Device, EmulatorState
 from module.exception import EmulatorNotRunningError
 
 
@@ -59,6 +59,54 @@ def test_device_init_retries_base_initialization_after_recovery(monkeypatch):
 
     assert init_calls == [config, config]
     assert device.package == 'com.netease.onmyoji.wyzymnqsd_cps'
+
+
+def build_recovery_device(watch_results, health_alive=True):
+    device = object.__new__(Device)
+    device.reset_calls = 0
+    device.start_calls = 0
+    device.watch_calls = 0
+    device.emulator_state = EmulatorState.COLD
+    device.health = types.SimpleNamespace(
+        is_alive=lambda: health_alive,
+        why_dead=lambda: 'fake health failure',
+    )
+    device.reset = types.SimpleNamespace(
+        execute=lambda: setattr(device, 'reset_calls', device.reset_calls + 1)
+    )
+    device._resolve_emulator_instance = lambda: object()
+    device._emulator_function_wrapper = lambda fn: fn()
+
+    def emulator_start():
+        device.start_calls += 1
+        return True
+
+    def emulator_start_watch():
+        device.watch_calls += 1
+        return watch_results.pop(0)
+
+    device._emulator_start = emulator_start
+    device.emulator_start_watch = emulator_start_watch
+    device._transition_to = lambda target: setattr(device, 'emulator_state', target)
+    return device
+
+
+def test_full_recovery_resets_and_restarts_after_first_watch_failure():
+    device = build_recovery_device([False, True])
+
+    assert Device.full_recovery(device) is True
+    assert device.reset_calls == 2
+    assert device.start_calls == 2
+    assert device.watch_calls == 2
+
+
+def test_full_recovery_returns_false_after_two_watch_failures():
+    device = build_recovery_device([False, False])
+
+    assert Device.full_recovery(device) is False
+    assert device.reset_calls == 2
+    assert device.start_calls == 2
+    assert device.watch_calls == 2
 
 
 def test_device_init_skips_health_probe_after_base_reports_emulator_down(monkeypatch):

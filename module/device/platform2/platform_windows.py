@@ -362,20 +362,20 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             logger.info(f'Found packages: {m}')
 
         interval = Timer(1).start()
-        timeout = Timer(300).start()
+        timeout = Timer(180).start()
         struct_window = Timer(10)
         state_check_timer = Timer(15).start()
-        # 阶段超时分配 (总预算 300s):
-        #   startup_grace:    模拟器进程启动 (从开始算)
-        #   stuck_grace:      ADB 就绪后 player_state → start_finished (仅 MuMu12, 100s)
-        #   packages_timeout: state finished 后游戏包出现 (MuMu12) / ADB 就绪后游戏包出现 (其他, 60s)
+        # 阶段超时分配 (总预算 180s):
+        #   startup_grace:    模拟器进程启动 (从开始算, 90s)
+        #   stuck_grace:      ADB 就绪后等待 player_state → start_finished (仅 MuMu12, 45s)
+        #   packages_timeout: state finished 后游戏包出现 (MuMu12) / ADB 就绪后游戏包出现 (其他, 30s)
         #   struct_window:    包出现后窗口结构稳定 (10s)
-        # 时序 (MuMu12): startup(200s) → ADB → stuck_grace(100s) → state finished → packages(60s) → window(10s)
-        # 时序 (其他):   startup(200s) → ADB → packages(60s) → window(10s)
-        # 最坏 (MuMu12): 200+100+60+10=370s 由外层 timeout(300s) 截断
-        # 最坏 (其他):   200+60+10=270s
-        startup_grace = Timer(200).start()
-        packages_timeout = Timer(60)
+        # MuMuManager 状态可能滞后；ADB、包和窗口已可用时允许先通过实际可用性验证。
+        # 时序 (MuMu12): startup(90s) → ADB → [state finished 或实际可用性验证] → window(10s)
+        # 时序 (其他):   startup(90s) → ADB → packages(30s) → window(10s)
+        # 最坏情况由外层 timeout(180s) 截断。
+        startup_grace = Timer(90).start()
+        packages_timeout = Timer(30)
         stuck_grace = Timer(0)
 
         new_window = 0
@@ -385,6 +385,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         while 1:
             interval.wait()
             interval.reset()
+            mumu_state_stuck = False
             if timeout.reached():
                 logger.warning('Emulator start timeout')
                 return False
@@ -404,14 +405,15 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                         return False
                     if adb_connected and player_state != 'start_finished':
                         if not stuck_grace.started():
-                            stuck_grace = Timer(100).start()
-                            logger.info(f'Emulator state is {player_state}, waiting up to 100s for start_finished')
-                            continue
-                        if not stuck_grace.reached():
-                            logger.info(f'Emulator state is {player_state}, waiting for start_finished [{stuck_grace.remain():.0f}s]')
-                            continue
-                        logger.warning(f'Emulator stuck (player_state={player_state}), aborting watch')
-                        return False
+                            stuck_grace = Timer(45).start()
+                            # MuMuManager 状态偶发滞后；继续走 ADB/包/窗口验证，避免可用模拟器被误判超时。
+                            logger.info(f'Emulator state is {player_state}, probing ADB readiness while waiting up to 45s for start_finished')
+                        elif not stuck_grace.reached():
+                            logger.info(f'Emulator state is {player_state}, probing ADB readiness while waiting for start_finished [{stuck_grace.remain():.0f}s]')
+                        else:
+                            # 状态已超时也先跑完本轮实际可用性检查，避免 ready 边界被误杀。
+                            mumu_state_stuck = True
+                            logger.warning(f'Emulator state stuck (player_state={player_state}), probing readiness before abort')
                     else:
                         stuck_grace = Timer(0)
                         if adb_connected and player_state == 'start_finished' and not state_finished_seen:
@@ -438,6 +440,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                 continue
 
             if not devices:
+                if mumu_state_stuck:
+                    logger.warning('Emulator stuck and ADB device not visible, aborting watch')
+                    return False
                 # Device not visible yet, try adb connect
                 try:
                     self.adb_client.connect(serial)
@@ -447,6 +452,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
 
             device: AdbDeviceWithStatus = devices.first_or_none()
             if device.status == 'offline':
+                if mumu_state_stuck:
+                    logger.warning('Emulator stuck and ADB device is offline, aborting watch')
+                    return False
                 self.adb_client.disconnect(serial)
                 try:
                     self.adb_client.connect(serial)
@@ -454,6 +462,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                     pass
                 continue
             if device.status != 'device':
+                if mumu_state_stuck:
+                    logger.warning(f'Emulator stuck and ADB status is {device.status}, aborting watch')
+                    return False
                 continue
 
             show_online(device)
@@ -471,6 +482,9 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             try:
                 pong = self.adb_shell(['echo', 'pong'])
             except Exception as e:
+                if mumu_state_stuck:
+                    logger.warning(f'Emulator stuck and shell not ready: {e}')
+                    return False
                 logger.info(f'Shell not ready: {e}')
                 continue
             show_ping(pong)
@@ -478,9 +492,15 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             # Step 3: Verify game package exists
             try:
                 packages = self.list_app_packages(show_log=False)
-            except Exception:
+            except Exception as e:
+                if mumu_state_stuck:
+                    logger.warning(f'Emulator stuck and package query failed: {e}')
+                    return False
                 continue
             if not packages:
+                if mumu_state_stuck:
+                    logger.warning('Emulator stuck and game packages not found, aborting watch')
+                    return False
                 if state_finished_seen and packages_timeout.reached():
                     logger.warning(f'Game packages not found within {packages_timeout.limit}s after state_finished, emulator likely stuck')
                     return False
@@ -493,8 +513,14 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             elif struct_window.reached():
                 break
             if new_window == 0:
+                if mumu_state_stuck:
+                    logger.warning('Emulator stuck and no new window detected, aborting watch')
+                    return False
                 continue
             if not Handle.handle_has_children(hwnd=new_window):
+                if mumu_state_stuck:
+                    logger.warning('Emulator stuck and window structure not ready, aborting watch')
+                    return False
                 continue
 
             break

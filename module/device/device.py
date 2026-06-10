@@ -108,44 +108,45 @@ class Device(Platform, Screenshot, Control, AppControl):
 
     def full_recovery(self) -> bool:
         """
-        ZOMBIE/COLD → HEALTHY one-shot recovery.
+        ZOMBIE/COLD → HEALTHY recovery.
 
         Sequence: FullReset.execute() → _emulator_start → emulator_start_watch
-        → health.is_alive() verification. Transitions state to HEALTHY on
-        success.
+        → health.is_alive() verification. If start watch fails once, kill the
+        emulator again and retry start/watch one more time. Transitions state
+        to HEALTHY on success.
 
-        NOTE: this method MUST NOT call itself recursively (D14). If
-        emulator_start_watch fails, return False and let the caller decide
-        whether to retry; do not invoke full_recovery again from here.
+        NOTE: this method MUST NOT call itself recursively (D14). Retries are
+        bounded inside this method; callers still decide whether to run another
+        full_recovery cycle after this method returns False.
         """
         logger.hr('Device full_recovery', level=1)
 
-        # 1. Tear down any residue (idempotent — best-effort even from COLD).
-        self.reset.execute()
-        if self.emulator_state != EmulatorState.COLD:
-            self._transition_to(EmulatorState.COLD)
-
-        # 2. COLD → HEALTHY: bring up the emulator.
         instance = self._resolve_emulator_instance()
         if instance is None:
             logger.error('full_recovery: emulator instance not found')
             return False
 
-        if not self._emulator_function_wrapper(self._emulator_start):
-            logger.warning('full_recovery: _emulator_start failed')
-            return False
+        for attempt in range(2):
+            # 每轮启动前都强杀一次，确保上轮 180s 超时后的 MuMu 残留被清掉。
+            self.reset.execute()
+            if self.emulator_state != EmulatorState.COLD:
+                self._transition_to(EmulatorState.COLD)
 
-        if not self.emulator_start_watch():
-            logger.warning('full_recovery: emulator_start_watch returned False')
-            return False
+            if not self._emulator_function_wrapper(self._emulator_start):
+                logger.warning(f'full_recovery: _emulator_start failed (attempt {attempt + 1}/2)')
+                continue
 
-        if not self.health.is_alive():
-            logger.warning(f'full_recovery: health check failed: {self.health.why_dead()}')
-            return False
+            if self.emulator_start_watch():
+                if not self.health.is_alive():
+                    logger.warning(f'full_recovery: health check failed: {self.health.why_dead()}')
+                    return False
+                self._transition_to(EmulatorState.HEALTHY)
+                logger.info('full_recovery: HEALTHY')
+                return True
 
-        self._transition_to(EmulatorState.HEALTHY)
-        logger.info('full_recovery: HEALTHY')
-        return True
+            logger.warning(f'full_recovery: emulator_start_watch returned False (attempt {attempt + 1}/2)')
+
+        return False
 
     def _resolve_emulator_instance(self):
         """查找模拟器实例，必要时重新发现"""

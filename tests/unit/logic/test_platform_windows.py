@@ -41,15 +41,18 @@ def build_platform(state):
     return platform
 
 
+DEFAULT_REACHED_SCHEDULE = {
+    180: [False, False, False],
+    10: [False, True],
+    15: [True, True],
+    90: [False, False],
+    30: [False, False],
+}
+
+
 class FakeTimer:
     instances = []
-    reached_schedule = {
-        300: [False, False, False],
-        10: [False, True],
-        15: [True, True],
-        120: [False, False],
-        180: [False, True],
-    }
+    reached_schedule = DEFAULT_REACHED_SCHEDULE
 
     def __init__(self, limit, count=0):
         self.limit = limit
@@ -111,8 +114,49 @@ class FakeDevice:
         return f"AdbDevice({self.serial}, {self.status})"
 
 
-def test_emulator_start_watch_keeps_waiting_during_mumu_startup_grace(monkeypatch):
+def reset_fake_timer():
+    """重置 FakeTimer，避免单测之间共享计时状态。"""
+    FakeTimer.reached_schedule = {
+        limit: values.copy()
+        for limit, values in DEFAULT_REACHED_SCHEDULE.items()
+    }
     FakeTimer.instances = []
+
+
+def test_emulator_start_watch_uses_180s_recovery_time_budget(monkeypatch):
+    reset_fake_timer()
+    state = {
+        "devices": FakeSelectedDevices(FakeDevice("127.0.0.1:16608", "device")),
+        "mumu_states": [
+            {
+                "player_state": "starting",
+                "is_process_started": True,
+            }
+        ],
+        "connect_calls": [],
+        "disconnect_calls": [],
+    }
+    platform = build_platform(state)
+
+    monkeypatch.setattr("module.device.platform2.platform_windows.Timer", FakeTimer)
+    monkeypatch.setattr("module.device.platform2.platform_windows.get_focused_window", lambda: 0)
+    monkeypatch.setattr("module.device.platform2.platform_windows.set_focus_window", lambda hwnd: None)
+    monkeypatch.setattr("module.device.platform2.platform_windows.Handle.handle_has_children", lambda hwnd: True)
+
+    assert platform.emulator_start_watch() is True
+    limits = [timer.limit for timer in FakeTimer.instances]
+    assert 180 in limits
+    assert 90 in limits
+    assert 45 in limits
+    assert 30 in limits
+    assert 300 not in limits
+    assert 200 not in limits
+    assert 100 not in limits
+    assert 60 not in limits
+
+
+def test_emulator_start_watch_keeps_waiting_during_mumu_startup_grace(monkeypatch):
+    reset_fake_timer()
     state = {
         "devices": FakeSelectedDevices(FakeDevice("127.0.0.1:16608", "offline")),
         "mumu_states": [
@@ -138,5 +182,87 @@ def test_emulator_start_watch_keeps_waiting_during_mumu_startup_grace(monkeypatc
     assert platform.emulator_start_watch() is True
     assert state["disconnect_calls"] == ["127.0.0.1:16608"]
     assert state["connect_calls"] == ["127.0.0.1:16608"]
-    startup_grace_timer = next(timer for timer in FakeTimer.instances if timer.limit == 200)
+    startup_grace_timer = next(timer for timer in FakeTimer.instances if timer.limit == 90)
     assert startup_grace_timer.calls == 1
+
+
+def test_emulator_start_watch_accepts_ready_adb_when_mumu_state_stays_starting(monkeypatch):
+    reset_fake_timer()
+    state = {
+        "devices": FakeSelectedDevices(FakeDevice("127.0.0.1:16608", "device")),
+        # MuMuManager 偶发持续返回 starting；ADB、包和窗口都已可用时不应阻塞恢复。
+        "mumu_states": [
+            {
+                "player_state": "starting",
+                "is_process_started": True,
+            }
+        ],
+        "connect_calls": [],
+        "disconnect_calls": [],
+    }
+    platform = build_platform(state)
+
+    monkeypatch.setattr("module.device.platform2.platform_windows.Timer", FakeTimer)
+    monkeypatch.setattr("module.device.platform2.platform_windows.get_focused_window", lambda: 0)
+    monkeypatch.setattr("module.device.platform2.platform_windows.set_focus_window", lambda hwnd: None)
+    monkeypatch.setattr("module.device.platform2.platform_windows.Handle.handle_has_children", lambda hwnd: True)
+
+    assert platform.emulator_start_watch() is True
+
+
+def test_emulator_start_watch_accepts_ready_adb_after_mumu_stuck_grace_expires(monkeypatch):
+    reset_fake_timer()
+    # stuck_grace 到期时仍应先尝试实际可用性验证，而不是只凭 MuMuManager 状态失败。
+    FakeTimer.reached_schedule[45] = [True]
+    state = {
+        "devices": FakeSelectedDevices(FakeDevice("127.0.0.1:16608", "device")),
+        "mumu_states": [
+            {
+                "player_state": "starting",
+                "is_process_started": True,
+            }
+        ],
+        "connect_calls": [],
+        "disconnect_calls": [],
+    }
+    platform = build_platform(state)
+
+    monkeypatch.setattr("module.device.platform2.platform_windows.Timer", FakeTimer)
+    monkeypatch.setattr("module.device.platform2.platform_windows.get_focused_window", lambda: 0)
+    monkeypatch.setattr("module.device.platform2.platform_windows.set_focus_window", lambda hwnd: None)
+    monkeypatch.setattr("module.device.platform2.platform_windows.Handle.handle_has_children", lambda hwnd: True)
+
+    assert platform.emulator_start_watch() is True
+
+
+def test_emulator_start_watch_fails_when_mumu_stuck_and_packages_not_ready(monkeypatch):
+    reset_fake_timer()
+    # 第一轮建立 ADB 并启动 stuck_grace；第二轮状态超时且包不可用，验证失败分支可达。
+    FakeTimer.reached_schedule[45] = [False, True]
+    state = {
+        "devices": FakeSelectedDevices(FakeDevice("127.0.0.1:16608", "device")),
+        "mumu_states": [
+            {
+                "player_state": "starting",
+                "is_process_started": True,
+            }
+        ],
+        "connect_calls": [],
+        "disconnect_calls": [],
+    }
+    platform = build_platform(state)
+    package_calls = {"count": 0}
+
+    def list_app_packages(show_log=False):
+        package_calls["count"] += 1
+        # 第一轮让流程继续等待窗口；第二轮在 mumu_state_stuck=True 时触发失败。
+        return ["com.netease.onmyoji"] if package_calls["count"] == 1 else []
+
+    platform.list_app_packages = list_app_packages
+
+    monkeypatch.setattr("module.device.platform2.platform_windows.Timer", FakeTimer)
+    monkeypatch.setattr("module.device.platform2.platform_windows.get_focused_window", lambda: 0)
+    monkeypatch.setattr("module.device.platform2.platform_windows.set_focus_window", lambda hwnd: None)
+    monkeypatch.setattr("module.device.platform2.platform_windows.Handle.handle_has_children", lambda hwnd: True)
+
+    assert platform.emulator_start_watch() is False
