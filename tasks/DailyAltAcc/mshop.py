@@ -69,7 +69,7 @@ class Mshop(Mall, DailyAltAccBase):
                 break
 
     def MsFind(self):
-        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
+        """ while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
                                 money_ocr=self.O_MALL_RESOURCE_5, buy_money=80):
             pass
         while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
@@ -80,7 +80,7 @@ class Mshop(Mall, DailyAltAccBase):
             pass
         while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_3, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_3,
                                     money_ocr=self.O_MALL_RESOURCE_5, buy_money=45):
-            pass
+            pass """
         
         all_info_list = []
         cointype_and_coinNum_list=self.FindCoinTypeAndCoinNum()

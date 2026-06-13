@@ -27,6 +27,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     def run_alliedteam_ap(self):    
         logger.info('开始执行补体力任务')
         start_time = time.time()
+        count_i_ensure_ap=0
         while time.time()-start_time < 5:
             self.screenshot()
             if self.appear_then_click(self.I_TO_TEAM, interval=1):
@@ -37,8 +38,11 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 continue
             if self.appear(self.I_ENSURE_AP):
                 self.ui_click_until_disappear(self.I_ENSURE_AP, interval=1)
+                count_i_ensure_ap+=1
                 start_time = time.time()
-                break
+                if count_i_ensure_ap>1:
+                    break
+                continue
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 start_time = time.time()
                 continue
