@@ -165,9 +165,11 @@ class PlatformBase(EmulatorManagerBase):
         # Search by serial
         select = instances.select(**search_args)
         if select.count == 0:
-            logger.warning(f'No emulator instance with {search_args}, serial invalid')
-            return None
-        if select.count == 1:
+            # 桥接模式下 serial 可能为局域网 IP，与实例记录的 NAT serial 不匹配
+            # 回退到使用 name/path/emulator 匹配
+            logger.info(f'No emulator instance with {search_args}, trying to match by name/path/emulator')
+            search_args = dict()
+        elif select.count == 1:
             instance = select[0]
             logger.hr('Emulator instance', level=2)
             logger.info(f'Found emulator instance: {instance}')
