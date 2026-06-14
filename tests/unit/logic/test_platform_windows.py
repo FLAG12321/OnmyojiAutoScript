@@ -1,7 +1,14 @@
 import types
 
+from module.device.platform2.emulator_base import EmulatorInstanceBase
 from module.device.platform2.emulator_windows import Emulator
 from module.device.platform2.platform_windows import PlatformWindows
+
+
+class FakeEmulatorInstance(EmulatorInstanceBase):
+    @property
+    def type(self):
+        return "MuMuPlayer12"
 
 
 def build_platform(state):
@@ -121,6 +128,73 @@ def reset_fake_timer():
         for limit, values in DEFAULT_REACHED_SCHEDULE.items()
     }
     FakeTimer.instances = []
+
+
+def test_find_emulator_instance_uses_config_for_bridged_mumu12():
+    # 桥接模式: serial 为局域网 IP, 配置填全时直接用配置构造实例, 完全不依赖本机枚举
+    platform = object.__new__(PlatformWindows)
+    platform.serial = "192.168.1.214:5555"
+    # 故意置空枚举结果, 证明桥接场景不读取 all_emulator_instances
+    platform.all_emulator_instances = []
+
+    instance = platform.find_emulator_instance(
+        serial="192.168.1.214:5555",
+        name="MuMuPlayer-12.0-0",
+        path="I:/Program Files/Netease/MuMu/nx_main/MuMuNxMain.exe",
+        emulator="MuMuPlayer12",
+    )
+
+    assert instance.serial == "192.168.1.214:5555"
+    assert instance.name == "MuMuPlayer-12.0-0"
+    assert instance.path == "I:/Program Files/Netease/MuMu/nx_main/MuMuNxMain.exe"
+    assert instance.type == Emulator.MuMuPlayer12
+    assert instance.MuMuPlayer12_id == 0
+
+
+def test_find_emulator_instance_uses_config_for_local_nat_mumu12():
+    # 本机 NAT(127.0.0.1) 同样信任配置: 类型非 auto 且 name/path 填全即直接构造, 不枚举
+    platform = object.__new__(PlatformWindows)
+    platform.serial = "127.0.0.1:16384"
+    platform.all_emulator_instances = []
+
+    instance = platform.find_emulator_instance(
+        serial="127.0.0.1:16384",
+        name="MuMuPlayer-12.0-1",
+        path="I:/Program Files/Netease/MuMu/nx_main/MuMuNxMain.exe",
+        emulator="MuMuPlayer12",
+    )
+
+    assert instance.serial == "127.0.0.1:16384"
+    assert instance.name == "MuMuPlayer-12.0-1"
+    assert instance.type == Emulator.MuMuPlayer12
+    assert instance.MuMuPlayer12_id == 1
+
+
+def test_find_emulator_instance_falls_back_to_enumeration_when_auto():
+    # 类型为 auto(emulator 为空)时回退到原有枚举探测, 按 serial/id 匹配已枚举实例
+    platform = object.__new__(PlatformWindows)
+    platform.serial = "127.0.0.1:16384"
+    platform.all_emulator_instances = [
+        FakeEmulatorInstance(
+            serial="127.0.0.1:16384",
+            name="MuMuPlayer-12.0-0",
+            path="I:/Program Files/Netease/MuMu/nx_main/MuMuNxMain.exe",
+        ),
+        FakeEmulatorInstance(
+            serial="127.0.0.1:16416",
+            name="MuMuPlayer-12.0-1",
+            path="I:/Program Files/Netease/MuMu/nx_main/MuMuNxMain.exe",
+        ),
+    ]
+
+    instance = platform.find_emulator_instance(
+        serial="127.0.0.1:16384",
+        name=None,
+        path=None,
+        emulator=None,
+    )
+
+    assert instance is platform.all_emulator_instances[0]
 
 
 def test_emulator_start_watch_uses_180s_recovery_time_budget(monkeypatch):

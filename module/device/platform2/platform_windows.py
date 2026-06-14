@@ -166,6 +166,24 @@ class PlatformWindows(PlatformBase, EmulatorManager):
 
         return count
 
+    def find_emulator_instance(self, serial: str, name: str = None, path: str = None, emulator: str = None):
+        """
+        桥接/远程模拟器优先信任 OAS 配置。
+
+        当配置中明确指定了模拟器类型(非 auto)且填写了实例 name 与 path 时,
+        直接据此构造实例并返回, 跳过依赖本机 vbox/NAT 端口映射的枚举匹配。
+        原因: MuMu12 等模拟器的启动/停止只需要 path 与从 name 解析出的实例 id,
+        并不需要 serial; 桥接模式下模拟器使用局域网 IP, 枚举出的 NAT serial
+        与配置 serial 永远无法匹配, 跨机器时本机更是枚举不到任何实例。
+        仅当类型为 auto 或 name/path 缺失时, 才回退到原有的自动枚举探测。
+        """
+        if emulator and emulator != 'auto' and name and path:
+            instance = EmulatorInstance(serial=serial, name=name, path=path)
+            logger.hr('Emulator instance', level=2)
+            logger.info(f'Using emulator instance from config: {instance}')
+            return instance
+        return super().find_emulator_instance(serial=serial, name=name, path=path, emulator=emulator)
+
     def _emulator_start(self, instance: EmulatorInstance):
         """
         Start a emulator without error handling
