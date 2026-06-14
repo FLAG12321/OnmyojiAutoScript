@@ -63,3 +63,19 @@ def test_precheck_passes_when_process_probe_unavailable():
     # 平台不支持进程探测(非 Windows, 无 _is_emulator_process_alive 方法) → 放行
     fake = _make_self("192.168.1.214:5555", has_probe=False)
     assert Connection._precheck_network_emulator_alive(fake) is None
+
+
+def test_adb_connect_treats_connection_reset_as_emulator_not_running():
+    # 桥接 ADB 可能直接抛 10054, 应进入恢复流程而不是冒泡为未处理异常。
+    fake = types.SimpleNamespace(
+        config=types.SimpleNamespace(DEVICE_OVER_HTTP=False),
+        adb_client=types.SimpleNamespace(
+            connect=lambda serial: (_ for _ in ()).throw(
+                ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。')
+            )
+        ),
+        list_device=lambda: [],
+    )
+
+    with pytest.raises(EmulatorNotRunningError):
+        Connection.adb_connect(fake, "192.168.1.211:5555")

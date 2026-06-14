@@ -585,7 +585,12 @@ class Connection(ConnectionAttr):
 
         # Try to connect
         for _ in range(3):
-            msg = self.adb_client.connect(serial)
+            try:
+                msg = self.adb_client.connect(serial)
+            except ConnectionResetError as e:
+                # 桥接 ADB 可能在连接阶段直接重置连接，应触发模拟器恢复流程
+                logger.warning(f'Connection reset while connecting to {serial}: {e}')
+                raise EmulatorNotRunningError
             logger.info(msg)
             if 'connected' in msg:
                 return True
