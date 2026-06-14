@@ -98,6 +98,10 @@ class Connection(ConnectionAttr):
         if not self.is_over_http:
             self.detect_device()
 
+        # 桥接/远程模拟器未启动时 adb connect 会阻塞约 21s 才超时；
+        # 这里先用进程探测判断模拟器是否在运行，未运行则提前触发恢复，省去空等。
+        self._precheck_network_emulator_alive()
+
         # Connect
         self.adb_connect(self.serial)
         logger.attr('AdbDevice', self.adb)
@@ -513,6 +517,38 @@ class Connection(ConnectionAttr):
         """
         cmd = ['push', local, remote]
         return self.adb_command(cmd)
+
+    def _precheck_network_emulator_alive(self):
+        """
+        连接前预检测：网络型本地模拟器进程是否存在。
+
+        桥接模式下模拟器使用局域网 IP，若模拟器未启动，adb connect 要等约 21s
+        TCP 超时(10060)才会抛 EmulatorNotRunningError。这里改为先用进程探测，
+        进程确实不存在时立即抛出，让上层 full_recovery 直接启动模拟器，省去空等。
+
+        仅在以下条件全部满足时才生效，任何不确定都放行走原 adb connect：
+        - 配置了确切 serial（非 auto）且为局域网 IP（桥接特征，排除 127.0.0.1 本机 NAT）
+        - 平台实现了 _is_emulator_process_alive（仅 Windows）
+        - 能解析到模拟器实例（拿得到 exe path 才能可靠匹配进程）
+        """
+        # 仅处理非 auto 的局域网 IP serial（桥接），本机 NAT 的 connect 失败是瞬时的，无需预检
+        if self.config.script.device.serial == 'auto':
+            return
+        if not self.is_network_device or self.serial.startswith('127.0.0.1'):
+            return
+        # 进程探测能力由 PlatformWindows 提供，非 Windows 平台直接放行
+        process_alive = getattr(self, '_is_emulator_process_alive', None)
+        if process_alive is None:
+            return
+        # 拿不到模拟器实例（无 path）时无法可靠匹配进程，放行交给原 adb connect
+        if getattr(self, 'emulator_instance', None) is None:
+            return
+        if not process_alive():
+            logger.warning(
+                f'Emulator process for {self.serial} not running, '
+                f'skip adb connect timeout and trigger recovery directly'
+            )
+            raise EmulatorNotRunningError
 
     @Config.when(DEVICE_OVER_HTTP=False)
     def adb_connect(self, serial):
