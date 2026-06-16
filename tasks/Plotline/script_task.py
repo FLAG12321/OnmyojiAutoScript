@@ -458,8 +458,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     while time.time()-start_time<5:
                         self.screenshot()
                         if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE_2, interval=1):
-                            logger.info("点击式神借用按钮")
-                            self._enable_first_battle_shikigami_switch()
+                            logger.info("点击式神借用页签")
+                            # 点击页签只是进入借用页面，必须识别到 I_FLAG_LEASE 才算借用成功
                             self.level_low = False
                             start_time=time.time()
                             break
