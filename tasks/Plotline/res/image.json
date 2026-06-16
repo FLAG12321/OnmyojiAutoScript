@@ -172,12 +172,12 @@
   },
   {
     "itemName": "click_to_privileges",
-    "roiFront": "248,325,37,41",
-    "roiBack": "82,166,495,349",
+    "roiFront": "338,325,41,39",
+    "roiBack": "75,159,733,312",
     "description": "description",
     "imageName": "click_to_privileges.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": "0.65"
   },
   {
     "itemName": "page_privileges",
@@ -410,6 +410,15 @@
     "roiBack": "0,0,1280,720",
     "description": "description",
     "imageName": "click_attack3.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "page_collet",
+    "roiFront": "103,609,41,38",
+    "roiBack": "18,577,936,130",
+    "description": "description",
+    "imageName": "page_collet.png",
     "method": "Template matching",
     "threshold": "0.7"
   }

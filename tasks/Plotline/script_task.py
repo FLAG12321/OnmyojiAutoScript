@@ -272,10 +272,13 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.page_main_timeout=0
                 return
         self.page_main_timeout+=1
-        if self.page_main_timeout/5==0:
-            self.click(self.C_CLICK_TIMEOUT)
+        logger.info("TO I_PAGE_COLLET%02d", self.page_main_timeout)
+        if self.page_main_timeout%3==0:
+            logger.info("TO page_main_timeout")
+            self.appear_then_click(self.I_PAGE_COLLET,interval=1)
+            logger.info("TO I_PAGE_COLLET2")
             sleep(1)
-            if self.page_main_timeout >15:
+            if self.page_main_timeout >9:
                 raise TaskEnd(Plotline)
 
 

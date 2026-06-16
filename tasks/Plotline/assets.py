@@ -69,7 +69,7 @@ class PlotlineAssets:
 	# description 
 	I_PAGE_MAIN = RuleImage(roi_front=(370,37,19,39), roi_back=(18,19,507,94), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_main.png")
 	# description 
-	I_CLICK_TO_PRIVILEGES = RuleImage(roi_front=(248,325,37,41), roi_back=(82,166,495,349), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_to_privileges.png")
+	I_CLICK_TO_PRIVILEGES = RuleImage(roi_front=(338,325,41,39), roi_back=(75,159,733,312), threshold=0.65, method="Template matching", file="./tasks/Plotline/res/click_to_privileges.png")
 	# description 
 	I_PAGE_PRIVILEGES = RuleImage(roi_front=(92,17,159,43), roi_back=(18,5,363,92), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_privileges.png")
 	# description 
@@ -122,6 +122,8 @@ class PlotlineAssets:
 	I_CLICK_ATTACK2 = RuleImage(roi_front=(712,111,30,14), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack2.png")
 	# description 
 	I_CLICK_ATTACK3 = RuleImage(roi_front=(577,111,33,19), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack3.png")
+	# description 
+	I_PAGE_COLLET = RuleImage(roi_front=(103,609,41,38), roi_back=(18,577,936,130), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_collet.png")
 
 
 	# Ocr Rule Assets
