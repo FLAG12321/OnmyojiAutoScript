@@ -35,7 +35,7 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_JUMP = RuleImage(roi_front=(846,559,51,29), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/click_jump.png")
 	# description 
-	I_PAGE_CLICK_ANY = RuleImage(roi_front=(540,508,213,27), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_click_any.png")
+	I_PAGE_CLICK_ANY = RuleImage(roi_front=(540,508,213,27), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_click_any.png")
 	# description 
 	I_CLICK_CURSOR = RuleImage(roi_front=(640,617,23,31), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_cursor.png")
 	# description 
@@ -116,6 +116,12 @@ class PlotlineAssets:
 	I_PLOTLINE_NEW_MAIN_CHECK = RuleImage(roi_front=(805,107,103,50), roi_back=(718,67,312,143), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/plotline_new_main_check.png")
 	# Plotline 新庭院进入探索入口资源 
 	I_PLOTLINE_NEW_MAIN_GOTO_EXPLORATION = RuleImage(roi_front=(656,142,37,63), roi_back=(305,106,725,211), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/plotline_new_main_goto_exploration.png")
+	# description 
+	I_CLICK_ATTACK1 = RuleImage(roi_front=(694,112,33,14), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack1.png")
+	# description 
+	I_CLICK_ATTACK2 = RuleImage(roi_front=(712,111,30,14), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack2.png")
+	# description 
+	I_CLICK_ATTACK3 = RuleImage(roi_front=(577,111,33,19), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack3.png")
 
 
 	# Ocr Rule Assets

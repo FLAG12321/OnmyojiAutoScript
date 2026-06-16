@@ -24,7 +24,7 @@
     "description": "description",
     "imageName": "page_click_any.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": "0.7"
   },
   {
     "itemName": "click_cursor",
@@ -385,5 +385,32 @@
     "imageName": "plotline_new_main_goto_exploration.png",
     "method": "Template matching",
     "threshold": 0.8
+  },
+  {
+    "itemName": "click_attack1",
+    "roiFront": "694,112,33,14",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "click_attack1.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "click_attack2",
+    "roiFront": "712,111,30,14",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "click_attack2.png",
+    "method": "Template matching",
+    "threshold": "0.7"
+  },
+  {
+    "itemName": "click_attack3",
+    "roiFront": "577,111,33,19",
+    "roiBack": "0,0,1280,720",
+    "description": "description",
+    "imageName": "click_attack3.png",
+    "method": "Template matching",
+    "threshold": "0.7"
   }
 ]

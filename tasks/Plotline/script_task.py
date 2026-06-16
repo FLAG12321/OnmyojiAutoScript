@@ -633,7 +633,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         confed = False
         while not timeout_timer.reached():
             self.screenshot()
-            if self.is_in_real_battle(False) or self.appear_rgb(self.I_CLICK_ATTACK) or self.appear_rgb(self.I_CLICK_SKILL):  # 战斗阶段
+            if self.is_in_real_battle(False) or self.appear_rgb(self.I_CLICK_ATTACK) or self.appear_rgb(self.I_CLICK_ATTACK1) or self.appear_rgb(self.I_CLICK_ATTACK2) or self.appear_rgb(self.I_CLICK_ATTACK3) or self.appear_rgb(self.I_CLICK_SKILL):  # 战斗阶段
                 return True
             if self.appear_then_click(self.I_DISABLE_7DAYS_DIFF_SOUL, interval=0.6):  # 关闭御魂不一致提示
                 continue
@@ -713,6 +713,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             
         click_timer = Timer(5)
         swipe_timer = Timer(10)
+        attack_click_timer = Timer(1)
         while 1:
             self.screenshot()
             self.device.click_record_clear()
@@ -733,8 +734,21 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     self.swipe(random.choice(list(swipe_list)),interval=5, duration=1.0) 
                     sleep(1.5)
                     continue
-                if  self.appear_then_click(self.I_CLICK_ATTACK, interval=0.3):
-                    continue
+                # 四个攻击点击共用冷却，任意一个点击成功后都等待 1 秒再检查下一次攻击点击
+                if attack_click_timer.reached():
+                    attack_clicked = False
+                    for attack_button in (
+                        self.I_CLICK_ATTACK1,
+                        self.I_CLICK_ATTACK2,
+                        self.I_CLICK_ATTACK3,
+                        self.I_CLICK_ATTACK,
+                    ):
+                        if self.appear_then_click(attack_button):
+                            attack_click_timer.reset()
+                            attack_clicked = True
+                            break
+                    if attack_clicked:
+                        continue
                 if  self.appear_then_click(self.I_CLICK_SKILL, interval=1):
                     continue
             # 如果出现赢 就点击, 第二个是针对封魔的图片
