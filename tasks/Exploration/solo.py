@@ -31,6 +31,7 @@ class SoloExploration(BaseExploration):
         logger.hr('solo')
         explore_init = False
         search_fail_cnt = 0
+        last_lock_team_enable = None
 
         while 1:
             self.screenshot()
@@ -77,12 +78,24 @@ class SoloExploration(BaseExploration):
                                         retry_count = 3
                                 continue
                     else:
-                        if self._config.general_battle_config.lock_team_enable == True: 
+                        last_lock_team_enable = self._config.general_battle_config.lock_team_enable
+                        if last_lock_team_enable == True:
                             logger.info(self._config)
                             self.ui_click(self.I_E_UNLOCK, stop=self.I_E_LOCK, interval=2)
                         else:
-                            self.ui_click(self.I_E_LOCK, stop=self.I_E_UNLOCK, interval=2)  
+                            self.ui_click(self.I_E_LOCK, stop=self.I_E_UNLOCK, interval=2)
                     explore_init = True
+                    continue
+                if (self._config.exploration_config.auto_rotate != AutoRotate.yes
+                        and self._config.general_battle_config.lock_team_enable != last_lock_team_enable):
+                    # 借用式神切换后可能动态恢复锁定配置，回到探索主界面时需要实际点锁。
+                    last_lock_team_enable = self._config.general_battle_config.lock_team_enable
+                    if last_lock_team_enable == True:
+                        logger.info("Exploration lock config changed, lock team")
+                        self.ui_click(self.I_E_UNLOCK, stop=self.I_E_LOCK, interval=2)
+                    else:
+                        logger.info("Exploration lock config changed, unlock team")
+                        self.ui_click(self.I_E_LOCK, stop=self.I_E_UNLOCK, interval=2)
                     continue
                 # 兜底检查：每次循环都检查是否达到退出条件
                 if self.check_exit():

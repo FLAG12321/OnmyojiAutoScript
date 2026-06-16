@@ -64,16 +64,20 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         if not reuse_screenshot:
             self.screenshot()
 
-        if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
+        if self.appear(self.I_E_ENTRANCE) and self.appear(self.I_E_EXPLORATION_CLICK):
+            logger.info("In entrance")
+            return Scene.ENTRANCE
+        elif self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
             from time import sleep
             sleep(1.5)
             self.screenshot()
+            # 前往探索动画较长，可能先短暂识别为探索大世界，再加载到章节入口。
+            if self.appear(self.I_E_ENTRANCE) and self.appear(self.I_E_EXPLORATION_CLICK):
+                logger.info("In entrance after exploration transition")
+                return Scene.ENTRANCE
             if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
                 logger.info("In world")
                 return Scene.WORLD
-        elif self.appear(self.I_E_ENTRANCE) and self.appear(self.I_E_EXPLORATION_CLICK):
-            logger.info("In entrance")
-            return Scene.ENTRANCE
         elif self.appear(self.I_E_SETTINGS_BUTTON) or self.appear(self.I_E_AUTO_ROTATE_ON) or self.appear(self.I_E_AUTO_ROTATE_OFF) or self.appear(self.I_E_MAIN_FLAG):
             logger.info("In main scene")
             return Scene.MAIN
@@ -140,6 +144,10 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd('Exploration')
 
+    def reward_click_actions(self):
+        # 探索结算禁用 reward_1，避免点到左侧异常区域。
+        return [self.C_REWARD_2, self.C_REWARD_3]
+
     def _chapter_level_values(self) -> list[ExplorationLevel]:
         return [level for level in ExplorationLevel if level != ExplorationLevel.AUTO]
 
@@ -203,38 +211,50 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.ui_get_current_page()
         self.ui_goto(page_exploration)
 
-        previous_names = None
+        previous_level = None
+        best_level = None
         stable_count = 0
         max_checks = 8
 
         while max_checks > 0:
             self.screenshot()
+            # 识别过程中如果误触进入章节入口，说明章节已经打开，直接沿用已识别到的最高章节。
+            if self.appear(self.I_E_EXPLORATION_CLICK) or self.is_in_room():
+                resolved_level = best_level or ExplorationLevel.EXPLORATION_1
+                logger.warning(f'Chapter page entered during OCR, use detected chapter: {resolved_level}')
+                return resolved_level
+
             roi_image = self.get_level_roi_image()
             enhanced = self.enhance_chapter_text(roi_image)
             results = self._detect_levels_from_enhanced_image(enhanced)
             current_names = self.normalize_detected_levels(results)
             logger.info(f'Enhanced OCR levels: {current_names}')
 
-            if current_names and current_names == previous_names:
-                stable_count += 1
-            elif current_names:
-                stable_count = 1
+            if current_names:
+                current_level = self.max_level_from_names(current_names)
+                if best_level is None or self._chapter_level_index(current_level) > self._chapter_level_index(best_level):
+                    best_level = current_level
+
+                # OCR 列表可能少识别一项，但最高章节连续一致即可认为已稳定，避免继续滑动误入章节入口。
+                if current_level == previous_level:
+                    stable_count += 1
+                else:
+                    stable_count = 1
+                previous_level = current_level
             else:
                 stable_count = 0
             logger.info(f'Stable count: {stable_count}')
 
-            if stable_count >= 2 and current_names:
-                resolved_level = self.max_level_from_names(current_names)
-                logger.info(f'Resolved max chapter: {resolved_level}')
-                return resolved_level
+            if stable_count >= 2 and previous_level is not None:
+                logger.info(f'Resolved max chapter: {previous_level}')
+                return previous_level
 
-            previous_names = current_names
             self.swipe(self.S_SWIPE_LEVEL_DOWN, interval=1)
             max_checks -= 1
 
-        if not previous_names:
+        if best_level is None:
             logger.warning('No valid chapter found after enhanced OCR, defaulting to chapter 1')
-        resolved_level = self.max_level_from_names(previous_names or [])
+        resolved_level = best_level or ExplorationLevel.EXPLORATION_1
         logger.info(f'Resolved max chapter: {resolved_level}')
         return resolved_level
 
@@ -247,6 +267,11 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
         for attempt in range(max_swipe):
             self.screenshot()
+            # 已经进入章节入口时不再按章节列表识别，避免把剧情文案页误判为“无可见章节”。
+            if self.appear(self.I_E_EXPLORATION_CLICK) or self.is_in_room():
+                logger.warning(f'Already in exploration entrance while looking for {target_name}')
+                return True
+
             roi_image = self.get_level_roi_image()
             enhanced = self.enhance_chapter_text(roi_image)
             results = self._detect_levels_from_enhanced_image(enhanced)
@@ -289,6 +314,19 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
         raise GameStuckError(f'Could not find exploration level with enhanced OCR: {target_name}')
 
+    def target_level_visible_with_enhanced_ocr(self, target_level) -> bool:
+        target_level = self.level_name_to_enum(target_level) if isinstance(target_level, str) else target_level
+        if target_level is None:
+            raise GameStuckError('Invalid exploration level')
+        target_name = target_level.value
+
+        roi_image = self.get_level_roi_image()
+        enhanced = self.enhance_chapter_text(roi_image)
+        results = self._detect_levels_from_enhanced_image(enhanced)
+        normalized_names = self.normalize_detected_levels(results)
+        logger.info(f'Visible levels after chapter click: {normalized_names}')
+        return target_name in normalized_names
+
     # 打开指定的章节：
     def open_expect_level(self):
         explorationConfig = self.config.exploration
@@ -297,21 +335,29 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             target_level = self.find_max_chapter()
             logger.info(f'Resolved AUTO exploration level to: {target_level}')
 
-        if not self.click_level_with_enhanced_ocr(target_level, max_swipe=40):
-            raise GameStuckError(f'Could not find exploration level with enhanced OCR: {target_level}')
+        for click_retry in range(8):
+            if not self.click_level_with_enhanced_ocr(target_level, max_swipe=40):
+                raise GameStuckError(f'Could not find exploration level with enhanced OCR: {target_level}')
 
-        while 1:
-            self.screenshot()
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+            for _ in range(6):
+                time.sleep(1.5)
+                self.screenshot()
+                if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+                    continue
+                if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
+                    continue
+                if self.appear(self.I_E_EXPLORATION_CLICK):
+                    return True
+                if self.is_in_room():
+                    return True
+                # 章节点击偶发无效时，仍停留在章节列表且目标章节可见就重新点击
+                if self.appear(self.I_CHECK_EXPLORATION) and self.target_level_visible_with_enhanced_ocr(target_level):
+                    logger.warning(f'Chapter click did not enter page, retry click: {click_retry + 1}')
+                    break
+            else:
                 continue
-            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
-                continue
-            if self.appear(self.I_E_EXPLORATION_CLICK):
-                break
-            if self.is_in_room():
-                break
 
-        return True
+        raise GameStuckError(f'Could not enter exploration level after repeated clicks: {target_level}')
 
     # 候补：
     def enter_settings_and_do_operations(self):

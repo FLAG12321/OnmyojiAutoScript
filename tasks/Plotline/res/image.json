@@ -10,7 +10,7 @@
   },
   {
     "itemName": "click_jump",
-    "roiFront": "848,526,59,27",
+    "roiFront": "846,559,51,29",
     "roiBack": "0,0,1280,720",
     "description": "description",
     "imageName": "click_jump.png",
@@ -28,7 +28,7 @@
   },
   {
     "itemName": "click_cursor",
-    "roiFront": "1141,273,41,27",
+    "roiFront": "640,617,23,31",
     "roiBack": "0,0,1280,720",
     "description": "description",
     "imageName": "click_cursor.png",
@@ -244,12 +244,12 @@
   },
   {
     "itemName": "click_cv",
-    "roiFront": "1057,646,31,27",
+    "roiFront": "264,116,29,17",
     "roiBack": "0,0,1280,720",
     "description": "description",
     "imageName": "click_cv.png",
     "method": "Template matching",
-    "threshold": "0.65"
+    "threshold": "0.80"
   },
   {
     "itemName": "click_eye_2",
@@ -358,5 +358,32 @@
     "imageName": "click_battle.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "click_jump2",
+    "roiFront": "720,446,120,33",
+    "roiBack": "637,407,277,110",
+    "description": "description",
+    "imageName": "click_jump2.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "plotline_new_main_check",
+    "roiFront": "805,107,103,50",
+    "roiBack": "718,67,312,143",
+    "description": "Plotline 新庭院 main 页面检测资源",
+    "imageName": "plotline_new_main_check.png",
+    "method": "Template matching",
+    "threshold": 0.8
+  },
+  {
+    "itemName": "plotline_new_main_goto_exploration",
+    "roiFront": "656,142,37,63",
+    "roiBack": "305,106,725,211",
+    "description": "Plotline 新庭院进入探索入口资源",
+    "imageName": "plotline_new_main_goto_exploration.png",
+    "method": "Template matching",
+    "threshold": 0.8
   }
 ]

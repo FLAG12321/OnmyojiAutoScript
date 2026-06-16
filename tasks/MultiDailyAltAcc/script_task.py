@@ -586,7 +586,7 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
 
-        self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=20))
+        self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=3))
         self.save_config()
 
     def _schedule_evening(self, start_time: datetime):

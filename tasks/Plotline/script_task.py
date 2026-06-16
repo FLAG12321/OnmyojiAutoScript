@@ -50,15 +50,62 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     exploration_shikigami_switch: bool = True
     _current_battle_type: str = 'plotline'  # 'plotline' or 'exploration'
     _solo_exploration = None
+    _plotline_page_links_backup = None
     mail_flag: bool = True
     page_main_timeout: int = 0
     unknow_cnt: int = 0
+
+    def _apply_plotline_page_links(self):
+        self._plotline_page_links_backup = {
+            'page_main_check_button': page_main.check_button,
+            'main_to_exploration': page_main.links.get(page_exploration),
+        }
+        # Plotline 是新号练级任务，运行期间用新庭院专用资源识别 main，不改 self.I_PAGE_MAIN
+        page_main.check_button = self.I_PLOTLINE_NEW_MAIN_CHECK
+        # Plotline 是新号练级任务，运行期间用新庭院专用资源替换全局庭院入口
+        page_main.link(button=self.I_PLOTLINE_NEW_MAIN_GOTO_EXPLORATION, destination=page_exploration)
+
+    def _restore_plotline_page_links(self):
+        if self._plotline_page_links_backup is None:
+            return
+        page_main.check_button = self._plotline_page_links_backup.get('page_main_check_button')
+        main_to_exploration = self._plotline_page_links_backup.get('main_to_exploration')
+        if main_to_exploration is None:
+            if page_exploration in page_main.links:
+                del page_main.links[page_exploration]
+        else:
+            page_main.link(button=main_to_exploration, destination=page_exploration)
+        self._plotline_page_links_backup = None
+
+    def _reset_shikigami_switch_flags(self, switch_system_shikigami: bool):
+        self.privileges_flag = not switch_system_shikigami
+        # 任务启动时按 switch_system_shikigami 决定两类首次战斗是否需要借用式神上场
+        self.plotline_shikigami_switch = switch_system_shikigami
+        self.exploration_shikigami_switch = switch_system_shikigami
+
+    def _enable_first_battle_shikigami_switch(self):
+        # 成功开启借用后，剧情战斗和探索战斗各自的第一次战斗都需要切换借用式神
+        self.privileges_flag = True
+        self.plotline_shikigami_switch = True
+        self.exploration_shikigami_switch = True
+
+    def _wait_exploration_entrance_after_click(self):
+        wait_timer = Timer(8).start()
+        while not wait_timer.reached():
+            sleep(0.5)
+            self.screenshot()
+            # 前往探索动画会短暂出现探索大世界标识，必须等最终章节入口出现再交给 Exploration。
+            if self.appear(ExplorationAssets.I_E_ENTRANCE) and self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK):
+                logger.info("前往探索动画结束，已进入章节入口")
+                return True
+        logger.warning("前往探索后未等到章节入口，交由场景识别继续处理")
+        return False
+
     def run(self):
-        self.plotline_conf = self.config.plotline 
-        self.privileges_flag=not self.plotline_conf.plotline_config.switch_system_shikigami
-        self.plotline_shikigami_switch = not self.privileges_flag  # 需要借用时才需要切换
-        self.exploration_shikigami_switch = not self.privileges_flag
+        self.plotline_conf = self.config.plotline
+        self._reset_shikigami_switch_flags(self.plotline_conf.plotline_config.switch_system_shikigami)
         self.experience_youkai_battle = self.plotline_conf.plotline_config.experience_youkai_battle
+        self._apply_plotline_page_links()
         logger.info(f'Start plotline{self.privileges_flag}')
         """ while True:
             self.click_dialogue()
@@ -73,16 +120,19 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     self.unknow_cnt=0
                 self.handle_scene(current_scene)
             except TaskEnd as e:
+                self._restore_plotline_page_links()
                 self.set_next_run(task='Plotline',success=True)
                 logger.info("任务结束")
                 raise  e
             except GameStuckError as e:
+                self._restore_plotline_page_links()
                 logger.error(f"等待超时: {e}")
                 # 一分钟后再重启
                 self.custom_next_run(task='Plotline', custom_time=(datetime.now() + timedelta(minutes=1)), time_delta=0)
                 self.config.task_call('Restart')
                 raise e
             except Exception as e:
+                self._restore_plotline_page_links()
                 self.set_next_run(task='Plotline',success=False)
                 raise e
             
@@ -216,6 +266,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 return 
             if self.appear_then_click(self.I_CLICK_TO_EXPLORATION, interval=1):
                 logger.info("点击前往探索按钮")
+                self.exploration_flag = True
+                # 前往探索会直接加载到章节入口，等待动画结束后再进入 Exploration 逻辑。
+                self._wait_exploration_entrance_after_click()
                 self.page_main_timeout=0
                 return
         self.page_main_timeout+=1
@@ -265,12 +318,18 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         solo_exploration.config.model.exploration.exploration_config.exploration_level = ExplorationLevel.AUTO
         logger.info("设置探索章节为: AUTO")
         
-        solo_exploration._config.general_battle_config.lock_team_enable = self.plotline_conf.plotline_config.exploration_battle_lock
+        need_switch_exploration_shikigami = self.privileges_flag and self.exploration_shikigami_switch
+        # 探索首战需要切换借用式神时，先临时解锁阵容，切换完成后再恢复锁定。
+        solo_exploration._config.general_battle_config.lock_team_enable = (
+            self.plotline_conf.plotline_config.exploration_battle_lock and not need_switch_exploration_shikigami
+        )
+        if need_switch_exploration_shikigami and self.plotline_conf.plotline_config.exploration_battle_lock:
+            logger.info("探索首战需要切换借用式神，战前临时解除阵容锁定")
         solo_exploration._config.exploration_config.minions_cnt=5
         solo_exploration._config.exploration_config.limit_time = dtime(0, 10, 0)  # 10分钟上限兜底
         solo_exploration._config.exploration_config.up_type=UpType.ALL
         solo_exploration._config.scrolls.scrolls_enable=False
-        logger.info("已取消探索任务中的队伍锁定")
+        logger.info(f"探索队伍锁定配置: {solo_exploration._config.general_battle_config.lock_team_enable}")
         
         # 临时替换battle_wait和battle_before方法为当前类的实现
         original_battle_wait = solo_exploration.battle_wait
@@ -339,9 +398,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if self.appear(self.I_CLICK_CURSOR, interval=1):
                 current_image=self.device.image
                 click_cursor=self.I_CLICK_CURSOR.match_all_any(current_image)
+                1125,294
+                1083,213
                 if len(click_cursor) ==1:
-                    self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
-                    self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
+                    self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-5,click_cursor[0][2]-5,20,20)
+                    self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-5,click_cursor[0][2]-5,20,20)
                     self.click(self.C_CLICK_CURSOR)
                 start_time=time.time()
                 continue
@@ -390,7 +451,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 break
             if not self.privileges_flag:
                 if self.appear(self.I_FLAG_LEASE):
-                    self.privileges_flag = True
+                    self._enable_first_battle_shikigami_switch()
                     continue
                 if self.appear(self.I_PAGE_PRIVILEGES_2):
                     self.level_low = True
@@ -398,6 +459,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                         self.screenshot()
                         if self.appear_then_click(self.I_CLICK_PRIVILEGES_SUBPAGE_2, interval=1):
                             logger.info("点击式神借用按钮")
+                            self._enable_first_battle_shikigami_switch()
                             self.level_low = False
                             start_time=time.time()
                             break
@@ -478,8 +540,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             current_image=self.device.image
             click_cursor=self.I_CLICK_CURSOR.match_all_any(current_image)
             if len(click_cursor) ==1:
-                self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
-                self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-43,click_cursor[0][2]-65,20,20)
+                self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-5,click_cursor[0][2]-5,20,20)
+                self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-5,click_cursor[0][2]-5,20,20)
                 self.click(self.C_CLICK_CURSOR)
         elif self.appear_then_click(self.I_PAGE_CLICK_ANY2, interval=1):
             pass
@@ -489,6 +551,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             self.appear_then_click(self.I_CLICK_EYE_2, interval=1):
             pass
         elif self.appear_then_click(self.I_CLICK_JUMP, interval=1):
+            pass
+        elif self.appear_then_click(self.I_CLICK_JUMP2, interval=1):
             pass
         elif self.appear_then_click(self.I_CLICK_SPEED_X2, interval=1):
             pass
@@ -535,6 +599,12 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         return True
 
     from tasks.Component.GeneralBuff.config_buff import BuffClass
+    def reward_click_actions(self):
+        if self._current_battle_type == 'exploration':
+            # Exploration 战斗结算禁用 reward_1，避免点到左侧异常区域。
+            return [self.C_REWARD_2, self.C_REWARD_3]
+        return super().reward_click_actions()
+
     def _need_switch_shikigami(self) -> bool:
         """判断当前场景是否需要切换借用式神"""
         if self._current_battle_type == 'plotline':
@@ -549,10 +619,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             self.plotline_shikigami_switch = False
         elif self._current_battle_type == 'exploration':
             self.exploration_shikigami_switch = False
-            # 切换式神成功后锁定探索队伍，防止后续战斗替换借用式神
+            # 借用式神切换成功后，后续探索战斗按锁定阵容处理。
             if self.privileges_flag and self._solo_exploration is not None:
                 self._solo_exploration._config.general_battle_config.lock_team_enable = True
-                logger.info("借用式神切换成功，锁定探索队伍")
+                logger.info("借用式神切换成功，后续探索队伍保持锁定")
         self.system_shikigami_detect = False
 
     def battle_before(self, buff: BuffClass | list[BuffClass], config: GeneralBattleConfig, timeout: float = 10) -> bool:
@@ -738,7 +808,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 or self.appear(self.I_CLICK_EYE_2,interval=1.5):
                 win = True
                 return win
-            action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
+            action_click = random.choice(self.reward_click_actions())
             if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
                 self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)
                 ):
@@ -790,7 +860,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('OAS2')
+    c = Config('QMUMU3')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()

@@ -157,6 +157,10 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         return True
 
+    def reward_click_actions(self):
+        # 默认奖励结算随机点击三个安全区域，具体任务可覆盖以排除特殊区域。
+        return [self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3]
+
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
         等待战斗结束 ！！！
@@ -228,7 +232,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         while 1:
             self.screenshot()
             # 如果出现领奖励
-            action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
+            action_click = random.choice(self.reward_click_actions())
             if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
                 self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)  #  or
                 # self.appear_then_click(self.I_REWARD_STATISTICS, action=action_click, interval=1.5) or
