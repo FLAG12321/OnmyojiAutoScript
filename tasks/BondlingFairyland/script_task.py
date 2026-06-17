@@ -546,8 +546,8 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul,
         if mode == BondlingMode.MODE3:
             target_true = self.I_C_MIDUM_TRUE
             target_false = self.I_C_MIDUM_FALSE
-            target_first = self.I_C_FIRST_ENABLE
-            target_continuous = self.I_C_CONTINUOUS_ENABLE
+            target_first = self.I_C_FIRST_DISABLE  # 中级盘子不连接式神，与低级盘子一致
+            target_continuous = self.I_C_CONTINUOUS_DISABLE  # 中级盘子不连续结契，与低级盘子一致
         elif mode == BondlingMode.MODE2:
             target_true = self.I_C_LOW_TRUE
             target_false = self.I_C_LOW_FALSE
