@@ -531,9 +531,9 @@ class Connection(ConnectionAttr):
         - 平台实现了 _is_emulator_process_alive（仅 Windows）
         - 能解析到模拟器实例（拿得到 exe path 才能可靠匹配进程）
         """
-        # 仅处理非 auto 的局域网 IP serial（桥接），本机 NAT 的 connect 失败是瞬时的，无需预检
-        if self.config.script.device.serial == 'auto':
-            return
+        # 仅处理局域网 IP serial（桥接），本机 NAT 的 connect 失败是瞬时的，无需预检
+        # 注意：detect_device() 可能在前面已把 serial 从 auto 更新为实际值，
+        # 所以这里直接用 self.serial 而非 config 里的值来判断
         if not self.is_network_device or self.serial.startswith('127.0.0.1'):
             return
         # 进程探测能力由 PlatformWindows 提供，非 Windows 平台直接放行

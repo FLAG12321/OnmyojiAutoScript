@@ -6,21 +6,14 @@ from module.device.connection import Connection
 from module.exception import EmulatorNotRunningError
 
 
-def _make_self(serial, *, config_serial=None, is_network_device=True,
+def _make_self(serial, *, is_network_device=True,
                process_alive=False, emulator_instance="instance",
                has_probe=True):
     """构造调用 _precheck_network_emulator_alive 所需的最小 self。"""
-    if config_serial is None:
-        config_serial = serial
     ns = types.SimpleNamespace(
         serial=serial,
         is_network_device=is_network_device,
         emulator_instance=emulator_instance,
-        config=types.SimpleNamespace(
-            script=types.SimpleNamespace(
-                device=types.SimpleNamespace(serial=config_serial)
-            )
-        ),
     )
     # 仅在需要时挂载进程探测方法, 缺失即模拟非 Windows 平台
     if has_probe:
@@ -48,8 +41,11 @@ def test_precheck_skips_local_nat_serial():
 
 
 def test_precheck_skips_auto_serial():
-    # auto 由 detect_device 负责选取已连接设备, 跳过预检
-    fake = _make_self("192.168.1.214:5555", config_serial="auto", process_alive=False)
+    # auto 由 detect_device 负责选取已连接设备, detect_device 后 serial 已是实际设备 serial,
+    # 不再是 'auto', 所以 auto 场景下 serial 会是本机 NAT(127.0.0.1:xxxx),
+    # is_network_device=False 或 serial.startswith('127.0.0.1'), 自然跳过预检
+    # 此测试改为验证 auto 场景下 serial 变成本机 NAT 时确实跳过
+    fake = _make_self("127.0.0.1:16384", process_alive=False)
     assert Connection._precheck_network_emulator_alive(fake) is None
 
 
