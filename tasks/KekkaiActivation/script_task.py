@@ -43,6 +43,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
 
         if con.exchange_before:
             self.check_max_lv(con.shikigami_class)
+        time.sleep(1)
         # 收取经验
         self.harvest_card()
         # 开始挂卡
@@ -172,6 +173,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
                 break
             if self.appear(self.I_A_AUTO_INVITE):
                 break
+            self.harvest_card()
             if self.appear_then_click_multi_scale(self.I_SHI_CARD, interval=1):
                 continue
         logger.info('Enter card page')
@@ -216,9 +218,10 @@ class ScriptTask(KU, KekkaiActivationAssets):
             logger.warning('OCR error')
             return None
         if delta == timedelta(0):
-            logger.error('The remaining time detected for this card is 0')
-            logger.error('This may be due to the fact that the card has not yet been collected')
-            raise GameStuckError
+            logger.warning('The remaining time detected for this card is 0')
+            logger.warning('This may be due to the fact that the card has not yet been collected')
+            self.set_next_run("KekkaiActivation", target=datetime.now())
+            raise TaskEnd('KekkaiActivation')
         return delta
 
     def screening_card(self, rule: str):
@@ -415,16 +418,14 @@ class ScriptTask(KU, KekkaiActivationAssets):
         收卡的经验
         :return:
         """
-        self.appear_then_click(self.I_A_HARVEST_EXP)  # 如果到最后没有领的话有下面的一些图片
-        self.appear_then_click(self.I_A_HARVEST_FISH4)  # 斗鱼4/5区别不大 斗鱼的如果一直没有领的话
-        self.appear_then_click(self.I_A_HARVEST_KAIKO_4)  # 太鼓4
-        self.appear_then_click(self.I_A_HARVEST_KAIKO_3)  # 太鼓3
-        self.appear_then_click(self.I_A_HARVEST_KAIKO_6)  # 太鼓6
-        self.appear_then_click(self.I_A_HARVEST_FISH_6)  # 斗鱼6
-        self.appear_then_click(self.I_A_HARVEST_MOON_3)  # 太阴3
-        self.appear_then_click(self.I_A_HARVEST_FISH_3)  # 斗鱼三
-
-
+        self.appear_then_click(self.I_A_HARVEST_EXP, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_FISH4, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_KAIKO_4, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_KAIKO_3, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_KAIKO_6, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_FISH_6, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_MOON_3, interval=1)\
+        or self.appear_then_click(self.I_A_HARVEST_FISH_3, interval=1)
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
