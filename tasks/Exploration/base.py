@@ -592,6 +592,13 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3.5):
                 continue
 
+    def _hook_special_reward(self) -> bool:
+        if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD) and not self.appear(self.I_WIN):
+            if self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL):
+                return True
+            self.click(self.C_RANDOM_CLICK, interval=1.5)
+        return False
+
     def fire(self, button) -> bool:
         self.appear_then_click(button, interval=3)
         # 短暂等待场景切换，避免截图过早导致误判仍在探索场景
@@ -608,6 +615,22 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.run_general_battle(self._config.general_battle_config)
         self.minions_cnt += 1
         return True
+
+    def wait_world_stable(self) -> bool:
+        """
+        # 打开右边箭头 and https://github.com/runhey/OnmyojiAutoScript/pull/1589/
+        https://github.com/runhey/OnmyojiAutoScript/issues/1588
+        @return:
+        """
+        while 1:
+            scene = self.get_current_scene(reuse_screenshot=False)
+            if scene == Scene.WORLD and self.appear(self.I_EXP_ARROW_RIGHT):
+                return True
+            if scene == Scene.ENTRANCE:
+                logger.warning('World scene unstable, possibly transient frame after paper doll collection')
+                return False
+            if self.appear_then_click(self.I_EXP_ARROW_LEFT, interval=2):
+                continue
 
 
 if __name__ == "__main__":
