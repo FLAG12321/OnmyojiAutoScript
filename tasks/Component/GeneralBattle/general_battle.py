@@ -73,7 +73,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                     continue
                 continue
             # 未知界面, 既不是准备界面也不是战斗界面
-            logger.info('Wait for preparation page')
+            # logger.info('Wait for preparation page')  # 这玩意刷屏
             sleep(random.uniform(0.4, 0.8))
         return False
 
@@ -266,6 +266,12 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 break
 
         return win
+
+    def _hook_special_reward(self) -> bool:
+        """
+        For overwrite https://github.com/runhey/OnmyojiAutoScript/issues/1580
+        """
+        return False
 
     def green_mark(self, enable: bool = False, mark_mode: GreenMarkType = GreenMarkType.GREEN_MAIN):
         """
