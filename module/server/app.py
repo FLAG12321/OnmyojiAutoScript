@@ -4,6 +4,7 @@
 from contextlib import asynccontextmanager
 
 import argparse
+import time
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +53,25 @@ app.include_router(tool_app)
 annotator_static_dir = Path(__file__).resolve().parent / "web" / "annotator" / "static"
 if annotator_static_dir.exists():
     app.mount("/tool/annotator/static", StaticFiles(directory=str(annotator_static_dir)), name="annotator_static")
+
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    """记录 server 端 HTTP 请求状态和耗时。"""
+    start_time = time.perf_counter()
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        status_code = response.status_code if response else 500
+        client_host = request.client.host if request.client else "unknown"
+        # 中间件统一记录请求结果，便于排查前端 API 调用问题。
+        logger.info(
+            f"{request.method} {request.url.path} {status_code} "
+            f"{elapsed_ms:.2f}ms from {client_host}"
+        )
 
 
 async def on_startup():

@@ -28,6 +28,7 @@ import threading
 
 from module.logger import logger
 from module.server.setting import State
+from module.server.server_logging import setup_server_logging
 from module.ocr.rpc import ensure_ocr_server_started, shutdown_ocr_server
 
 
@@ -76,10 +77,13 @@ def fun(ev: threading.Event):
     port = args.port or int(State.deploy_config.WebuiPort) or 22270
     os.environ["OAS_WEBUI_PORT"] = str(port)  # 子脚本进程通过该端口主动请求 server 级重启。
 
+    setup_server_logging()
+
     logger.hr("Launcher config")
     logger.attr("Host", host)
     logger.attr("Port", port)
     logger.attr("Reload", ev is not None)
+    logger.attr("Log file", logger.log_file)
 
     ensure_ocr_server_started()
 
@@ -87,7 +91,8 @@ def fun(ev: threading.Event):
         uvicorn.run("module.server.app:fastapi_app",
                     host=host,
                     port=port,
-                    factory=True)
+                    factory=True,
+                    log_config=None)
     finally:
         shutdown_ocr_server()
 
