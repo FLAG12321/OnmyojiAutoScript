@@ -228,6 +228,20 @@ async def script_stop(script_name: str):
     await mm.script_process[script_name].stop()
     return
 
+async def _restart_from_instance(script_name: str):
+    # 实例主动请求重启时，由 server 统一执行 stop/start，避免子进程自杀后无法继续 start。
+    script_process = mm.script_process[script_name]
+    await script_process.stop()
+    await script_process.start()
+
+@script_app.get('/{script_name}/restart_from_instance')
+async def script_restart_from_instance(script_name: str):
+    if script_name not in mm.script_process:
+        logger.warning(f'[{script_name}] script process does not exist, skip restart_from_instance')
+        return {'restarting': False}
+    asyncio.create_task(_restart_from_instance(script_name))
+    return {'restarting': True}
+
 @script_app.get('/{script_name}/{task}/args')
 async def script_task(script_name: str, task: str):
     return mm.config_cache(script_name).model.script_task(task)

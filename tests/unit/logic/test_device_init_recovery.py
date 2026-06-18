@@ -104,7 +104,8 @@ def test_full_recovery_returns_false_after_two_watch_failures():
     device = build_recovery_device([False, False])
 
     assert Device.full_recovery(device) is False
-    assert device.reset_calls == 2
+    # 两次启动前各清理一次，最终失败返回前再清理一次，确保进程退出前模拟器已被 kill。
+    assert device.reset_calls == 3
     assert device.start_calls == 2
     assert device.watch_calls == 2
 

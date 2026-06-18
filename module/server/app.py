@@ -80,8 +80,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             'message': message
         },
     )
-
-
+ 
 def fastapi_app():
     parser = argparse.ArgumentParser(description="OAS web service")
     parser.add_argument(

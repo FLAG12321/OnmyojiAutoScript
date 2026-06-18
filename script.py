@@ -14,6 +14,7 @@ import inflection
 import asyncio
 import json
 import threading
+import urllib.request
 from typing import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,6 +34,7 @@ from module.logger import logger
 from module.exception import *
 from module.server.i18n import I18n
 from module.ocr.rpc import ensure_ocr_server_started
+from module.server.setting import State
 
 
 
@@ -104,8 +106,9 @@ class Script:
             device = Device(config=self.config)
             return device
         except RequestHumanTakeover:
-            logger.critical('Request human takeover')
-            exit(1)
+            # 初始化阶段 full_recovery 失败，主动请求 server 级重启并退出。
+            logger.critical('Request human takeover during device init, request server restart')
+            self._exit_for_server_restart()
         except Exception as e:
             logger.exception(e)
             exit(1)
@@ -501,6 +504,23 @@ class Script:
             self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> Exception occured")
             exit(1)
 
+    def _server_restart_port(self) -> int:
+        """获取当前 WebUI 端口，用于实例主动请求 server 级重启。"""
+        return int(os.environ.get('OAS_WEBUI_PORT') or State.deploy_config.WebuiPort)
+
+    def _request_server_restart_from_instance(self) -> None:
+        """请求 server 执行 stop/start；失败也不兜底，随后由调用方直接退出进程。"""
+        port = self._server_restart_port()
+        url = f'http://127.0.0.1:{port}/{self.config_name}/restart_from_instance'
+        logger.warning(f'Request server restart from instance: {url}')
+        with urllib.request.urlopen(url, timeout=3) as response:
+            response.read()
+
+    def _exit_for_server_restart(self) -> None:
+        """full_recovery 失败后主动触发 server 重启，并立即强制退出当前脚本进程。"""
+        self._request_server_restart_from_instance()
+        os._exit(1)
+
     def loop(self):
         """
         Main loop of scheduler.
@@ -543,16 +563,9 @@ class Script:
             if self._needs_recovery:
                 logger.warning('Emulator recovery requested, running full_recovery before task')
                 if not self.device.full_recovery():
-                    self.recovery_failure_count += 1
-                    logger.warning(
-                        f'full_recovery failed ({self.recovery_failure_count}/3)'
-                    )
-                    if self.recovery_failure_count >= 3:
-                        logger.critical(
-                            'Recovery failed 3 times consecutively, request human takeover'
-                        )
-                        exit(1)
-                    continue  # next loop iteration retries the pending Restart/task
+                    # full_recovery 失败后不再兜底，由当前实例主动请求 server 级 stop/start 并退出。
+                    logger.critical('full_recovery failed, request server-side restart from instance')
+                    self._exit_for_server_restart()
                 self._needs_recovery = False
 
             # Run

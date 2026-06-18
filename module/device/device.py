@@ -146,6 +146,9 @@ class Device(Platform, Screenshot, Control, AppControl):
 
             logger.warning(f'full_recovery: emulator_start_watch returned False (attempt {attempt + 1}/2)')
 
+        logger.warning('full_recovery: all attempts failed, kill emulator before returning False')
+        # full_recovery 最终失败时再强杀一次，确保脚本进程退出前模拟器进程已被清理。
+        self.reset.execute()
         return False
 
     def _resolve_emulator_instance(self):

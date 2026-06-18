@@ -74,6 +74,7 @@ def fun(ev: threading.Event):
 
     host = args.host or State.deploy_config.WebuiHost or "0.0.0.0"
     port = args.port or int(State.deploy_config.WebuiPort) or 22270
+    os.environ["OAS_WEBUI_PORT"] = str(port)  # 子脚本进程通过该端口主动请求 server 级重启。
 
     logger.hr("Launcher config")
     logger.attr("Host", host)
