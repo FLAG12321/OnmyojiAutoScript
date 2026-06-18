@@ -1,4 +1,5 @@
 import types
+from unittest.mock import MagicMock, patch
 
 from module.device.platform2.emulator_base import EmulatorInstanceBase
 from module.device.platform2.emulator_windows import Emulator
@@ -340,3 +341,81 @@ def test_emulator_start_watch_fails_when_mumu_stuck_and_packages_not_ready(monke
     monkeypatch.setattr("module.device.platform2.platform_windows.Handle.handle_has_children", lambda hwnd: True)
 
     assert platform.emulator_start_watch() is False
+
+
+def _build_handle_platform(handle):
+    """构造仅用于测试 _is_configured_handle_alive / _is_emulator_process_alive 的 PlatformWindows。"""
+    platform = object.__new__(PlatformWindows)
+    platform.serial = "192.168.1.211:5555"
+    platform.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(
+            device=types.SimpleNamespace(handle=handle)
+        )
+    )
+    return platform
+
+
+def test_is_configured_handle_alive_returns_none_when_handle_empty():
+    # 没配 handle 或为 auto → 返回 None，回退到进程名匹配
+    platform = _build_handle_platform("")
+    assert platform._is_configured_handle_alive() is None
+    platform = _build_handle_platform("auto")
+    assert platform._is_configured_handle_alive() is None
+
+
+def test_is_configured_handle_alive_returns_true_when_numeric_handle_valid():
+    # 数字句柄且窗口存在 → True
+    platform = _build_handle_platform("123456")
+    with patch("module.device.platform2.platform_windows.ctypes") as mock_ctypes:
+        mock_ctypes.windll.user32.IsWindow.return_value = True
+        assert platform._is_configured_handle_alive() is True
+
+
+def test_is_configured_handle_alive_returns_false_when_numeric_handle_invalid():
+    # 数字句柄但窗口不存在 → False
+    platform = _build_handle_platform("999999")
+    with patch("module.device.platform2.platform_windows.ctypes") as mock_ctypes:
+        mock_ctypes.windll.user32.IsWindow.return_value = False
+        assert platform._is_configured_handle_alive() is False
+
+
+def test_is_configured_handle_alive_returns_true_when_title_matches():
+    # 标题句柄且能找到对应窗口 → True
+    platform = _build_handle_platform("MuMuPlayer-12.0-2")
+    with patch("module.device.platform2.platform_windows.find_hwnd_by_name", return_value=65535), \
+         patch("module.device.platform2.platform_windows.ctypes") as mock_ctypes:
+        mock_ctypes.windll.user32.IsWindow.return_value = True
+        assert platform._is_configured_handle_alive() is True
+
+
+def test_is_configured_handle_alive_returns_false_when_title_not_found():
+    # 标题句柄但找不到窗口 → False
+    platform = _build_handle_platform("MuMuPlayer-12.0-2")
+    with patch("module.device.platform2.platform_windows.find_hwnd_by_name", return_value=None), \
+         patch("module.device.platform2.platform_windows.ctypes") as mock_ctypes:
+        mock_ctypes.windll.user32.IsWindow.return_value = False
+        assert platform._is_configured_handle_alive() is False
+
+
+def test_is_emulator_process_alive_prefers_configured_handle():
+    # 配置了 handle 时，_is_emulator_process_alive 直接用 handle 判断，不查进程
+    platform = _build_handle_platform("123456")
+    platform.emulator_instance = Emulator.MuMuPlayer12
+    with patch.object(platform, "_is_configured_handle_alive", return_value=True) as mock_handle_check, \
+         patch("module.device.platform2.platform_windows.psutil.process_iter") as mock_iter:
+        mock_iter.side_effect = AssertionError("psutil should not be called when handle is configured")
+        assert platform._is_emulator_process_alive() is True
+        mock_handle_check.assert_called_once()
+
+
+def test_is_emulator_process_alive_falls_back_to_process_name_when_no_handle():
+    # 没配 handle 时回退到原进程名匹配逻辑
+    platform = _build_handle_platform("")
+    platform.emulator_instance = MagicMock()
+    platform.emulator_instance.emulator.path = "I:/Program Files/Netease/MuMu/nx_main/MuMuNxMain.exe"
+
+    fake_proc = MagicMock()
+    fake_proc.info = {"name": "MuMuNxMain.exe", "pid": 1234}
+
+    with patch("module.device.platform2.platform_windows.psutil.process_iter", return_value=[fake_proc]):
+        assert platform._is_emulator_process_alive() is True

@@ -305,11 +305,43 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         logger.error(f'Emulator function {func.__name__}() failed')
         return False
 
+    def _is_configured_handle_alive(self) -> bool:
+        """
+        检查配置里的 Handle 是否对应一个仍存在的窗口。
+
+        多开模拟器通常共用同一个 exe 进程名，仅靠进程名会把其他实例误判为当前实例；
+        用户为每个实例配置唯一 Handle 时，优先用窗口句柄/标题判断目标实例是否存在。
+        """
+        handle = getattr(self.config.script.device, 'handle', '')
+        if not handle or handle == 'auto':
+            return None
+
+        handle_text = str(handle).strip()
+        if not handle_text:
+            return None
+
+        try:
+            hwnd = int(handle_text)
+            alive = bool(ctypes.windll.user32.IsWindow(hwnd))
+            logger.info(f'Configured handle num {hwnd} alive: {alive}')
+            return alive
+        except ValueError:
+            pass
+
+        hwnd = find_hwnd_by_name(handle_text)
+        alive = hwnd is not None and bool(ctypes.windll.user32.IsWindow(hwnd))
+        logger.info(f'Configured handle title "{handle_text}" matched hwnd={hwnd}, alive: {alive}')
+        return alive
+
     def _is_emulator_process_alive(self) -> bool:
         """
-        Generic check: is the emulator process still running?
-        Uses psutil to find a process matching the emulator executable.
+        Generic check: is the target emulator instance still running?
+        Prefer configured Handle matching, then fall back to process name matching.
         """
+        handle_alive = self._is_configured_handle_alive()
+        if handle_alive is not None:
+            return handle_alive
+
         instance = self.emulator_instance
         if instance is None:
             return False

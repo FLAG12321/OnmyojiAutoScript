@@ -526,29 +526,77 @@ class Connection(ConnectionAttr):
         TCP 超时(10060)才会抛 EmulatorNotRunningError。这里改为先用进程探测，
         进程确实不存在时立即抛出，让上层 full_recovery 直接启动模拟器，省去空等。
 
+        检测优先级：
+        1. 有 emulator_instance 时：用进程名匹配（_is_emulator_process_alive）
+        2. 无 emulator_instance 时：用短超时 TCP socket 探测 IP:port 是否可达
+
         仅在以下条件全部满足时才生效，任何不确定都放行走原 adb connect：
         - 配置了确切 serial（非 auto）且为局域网 IP（桥接特征，排除 127.0.0.1 本机 NAT）
-        - 平台实现了 _is_emulator_process_alive（仅 Windows）
-        - 能解析到模拟器实例（拿得到 exe path 才能可靠匹配进程）
+        - (有进程探测能力 + 有模拟器实例) 或 (能用 TCP 短超时探测)
         """
         # 仅处理局域网 IP serial（桥接），本机 NAT 的 connect 失败是瞬时的，无需预检
         # 注意：detect_device() 可能在前面已把 serial 从 auto 更新为实际值，
         # 所以这里直接用 self.serial 而非 config 里的值来判断
         if not self.is_network_device or self.serial.startswith('127.0.0.1'):
             return
-        # 进程探测能力由 PlatformWindows 提供，非 Windows 平台直接放行
+
+        # 优先使用进程探测（需要实例 + 平台支持）
         process_alive = getattr(self, '_is_emulator_process_alive', None)
-        if process_alive is None:
+        if process_alive is not None and getattr(self, 'emulator_instance', None) is not None:
+            if not process_alive():
+                logger.warning(
+                    f'Emulator process for {self.serial} not running, '
+                    f'skip adb connect timeout and trigger recovery directly'
+                )
+                raise EmulatorNotRunningError
+            # 进程存在，放行交给 adb connect
             return
-        # 拿不到模拟器实例（无 path）时无法可靠匹配进程，放行交给原 adb connect
-        if getattr(self, 'emulator_instance', None) is None:
+
+        # 无 instance 或无进程探测能力时，用短超时 TCP socket 探测替代
+        # 桥接模式下模拟器的 ADB 端口若不可达，说明模拟器未启动
+        self._precheck_tcp_reachable()
+
+    def _precheck_tcp_reachable(self, timeout=3):
+        """
+        用短超时 TCP 连接探测 serial 的 IP:port 是否可达。
+
+        桥接模式下若模拟器未启动，目标端口不可达，adb connect 会等约 21s 才超时；
+        这里用 3s 短超时提前判定，不可达时直接抛 EmulatorNotRunningError，
+        避免空等。若端口可达但不能完成 ADB 握手（如模拟器正在启动中），
+        则放行交给原 adb connect 处理。
+        """
+        try:
+            ip, port_str = self.serial.split(':')
+            port = int(port_str)
+        except (ValueError, IndexError):
+            # serial 格式异常，放行走原 adb connect
             return
-        if not process_alive():
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect((ip, port))
+            # 端口可达，说明模拟器进程至少已启动，放行交给 adb connect
+            logger.info(f'TCP precheck: {self.serial} reachable, proceeding with adb connect')
+        except ConnectionRefusedError:
+            # 端口未监听（10061），模拟器未启动
             logger.warning(
-                f'Emulator process for {self.serial} not running, '
-                f'skip adb connect timeout and trigger recovery directly'
+                f'TCP precheck: {self.serial} connection refused, '
+                f'emulator not running, skip adb connect timeout'
             )
             raise EmulatorNotRunningError
+        except socket.timeout:
+            # 连接超时（10060），模拟器所在主机不可达
+            logger.warning(
+                f'TCP precheck: {self.serial} connection timed out ({timeout}s), '
+                f'emulator likely not running, skip adb connect timeout'
+            )
+            raise EmulatorNotRunningError
+        except OSError as e:
+            # 其他网络错误（如主机不可达），保守放行
+            logger.info(f'TCP precheck: {self.serial} got {e}, falling back to adb connect')
+        finally:
+            sock.close()
 
     @Config.when(DEVICE_OVER_HTTP=False)
     def adb_connect(self, serial):
