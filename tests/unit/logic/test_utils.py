@@ -1,5 +1,8 @@
+import builtins
+import json
+
 import pytest
-from module.config.utils import deep_get
+from module.config.utils import deep_get, read_file, write_file
 
 
 class TestDeepGet:
@@ -77,3 +80,42 @@ class TestFutureTime:
         result = past_time("00:01")
         # 00:01 通常在当天更早或昨天
         assert result < now or result.hour == 0
+
+
+class TestConfigFileIo:
+    @pytest.mark.unit
+    def test_read_file_ignores_console_output_oserror(self, tmp_path, monkeypatch):
+        """即使控制台输出失败，读取配置文件也不应中断。"""
+        data_path = tmp_path / "sample.json"
+        data_path.write_text(json.dumps({"name": "oas"}), encoding="utf-8")
+
+        original_print = builtins.print
+
+        def flaky_print(*args, **kwargs):
+            text = " ".join(str(arg) for arg in args)
+            if text.startswith("read: "):
+                raise OSError(22, "Invalid argument")
+            return original_print(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "print", flaky_print)
+
+        assert read_file(str(data_path)) == {"name": "oas"}
+
+    @pytest.mark.unit
+    def test_write_file_ignores_console_output_oserror(self, tmp_path, monkeypatch):
+        """即使控制台输出失败，写入配置文件也不应中断。"""
+        data_path = tmp_path / "sample.json"
+
+        original_print = builtins.print
+
+        def flaky_print(*args, **kwargs):
+            text = " ".join(str(arg) for arg in args)
+            if text.startswith("write: "):
+                raise OSError(22, "Invalid argument")
+            return original_print(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "print", flaky_print)
+
+        write_file(str(data_path), {"name": "oas"})
+
+        assert json.loads(data_path.read_text(encoding="utf-8")) == {"name": "oas"}
