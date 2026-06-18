@@ -17,21 +17,45 @@ jobs:
         run: |
           git remote add upstream https://github.com/runhey/OnmyojiAutoScript.git || true
           git fetch upstream master
+          git fetch origin run_now
           git fetch origin run_now_2
 
       - name: Compare commits
         id: compare
         run: |
-          # 检查 upstream/master 的最新 commit 是否已被合并到 run_now_2
-          UPSTREAM_HEAD=$(git rev-parse upstream/master)
-          if git merge-base --is-ancestor $UPSTREAM_HEAD origin/run_now_2; then
-            echo "behind=0" >> $GITHUB_OUTPUT
+          get_behind() {
+            local branch="$1"
+            local upstream_head
+            upstream_head=$(git rev-parse upstream/master)
+
+            if git merge-base --is-ancestor "$upstream_head" "origin/$branch"; then
+              echo 0
+            else
+              local merge_base
+              merge_base=$(git merge-base "origin/$branch" upstream/master)
+              git rev-list --count "$merge_base"..upstream/master
+            fi
+          }
+
+          RUN_NOW_BEHIND=$(get_behind run_now)
+          RUN_NOW_2_BEHIND=$(get_behind run_now_2)
+
+          if [ "$RUN_NOW_BEHIND" -le "$RUN_NOW_2_BEHIND" ]; then
+            TARGET_BRANCH=run_now
+            TARGET_BEHIND=$RUN_NOW_BEHIND
           else
-            # 找到上次合并点之后 upstream 新增的 commit
-            MERGE_BASE=$(git merge-base origin/run_now_2 upstream/master)
-            BEHIND=$(git rev-list --count $MERGE_BASE..upstream/master)
-            echo "behind=$BEHIND" >> $GITHUB_OUTPUT
-            COMMITS=$(git log --oneline $MERGE_BASE..upstream/master | head -20)
+            TARGET_BRANCH=run_now_2
+            TARGET_BEHIND=$RUN_NOW_2_BEHIND
+          fi
+
+          echo "run_now_behind=$RUN_NOW_BEHIND" >> $GITHUB_OUTPUT
+          echo "run_now_2_behind=$RUN_NOW_2_BEHIND" >> $GITHUB_OUTPUT
+          echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          echo "behind=$TARGET_BEHIND" >> $GITHUB_OUTPUT
+
+          if [ "$TARGET_BEHIND" -gt 0 ]; then
+            MERGE_BASE=$(git merge-base "origin/$TARGET_BRANCH" upstream/master)
+            COMMITS=$(git log --oneline "$MERGE_BASE"..upstream/master | head -20)
             echo "commits<<EOF" >> $GITHUB_OUTPUT
             echo "$COMMITS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
@@ -42,14 +66,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const targetBranch = '${{ steps.compare.outputs.target_branch }}';
             const behind = '${{ steps.compare.outputs.behind }}';
+            const runNowBehind = '${{ steps.compare.outputs.run_now_behind }}';
+            const runNow2Behind = '${{ steps.compare.outputs.run_now_2_behind }}';
             const commits = `${{ steps.compare.outputs.commits }}`;
 
-            // 通过创建一个 repository dispatch 事件触发 GitHub 通知邮件
-            // 使用 commit status 来触发邮件通知
             await github.rest.repos.createCommitComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
-              body: `## [Upstream Sync] master 有 ${behind} 个新 commit 待同步到 run_now_2\n\n最新提交：\n\`\`\`\n${commits}\n\`\`\``
+              body: `## [Upstream Sync] ${targetBranch} 落后 upstream/master ${behind} 个 commit，需要 merge\n\nrun_now 落后：${runNowBehind}\nrun_now_2 落后：${runNow2Behind}\n\n最新提交：\n\`\`\`\n${commits}\n\`\`\``
             });
