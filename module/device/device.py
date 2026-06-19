@@ -110,8 +110,10 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.emulator_state = target
 
     def _is_cancelled(self) -> bool:
-        # 仅当注入了 cancel_event 且已被置位时返回 True；未注入时恒为 False（零回归）
-        return self._cancel_event is not None and self._cancel_event.is_set()
+        # 仅当注入了 cancel_event 且已被置位时返回 True；未注入时恒为 False（零回归）。
+        # 用 getattr 兜底：防御未经 __init__ 构造的实例（如测试夹具），避免 AttributeError。
+        cancel_event = getattr(self, '_cancel_event', None)
+        return cancel_event is not None and cancel_event.is_set()
 
     def full_recovery(self) -> bool:
         """
@@ -134,6 +136,11 @@ class Device(Platform, Screenshot, Control, AppControl):
             return False
 
         for attempt in range(2):
+            # 取消检查点：标注采集线程断开后置位 cancel_event，此处尽快放弃拉起，
+            # 不再执行新一轮 reset/start，也不杀用户已运行的模拟器进程。
+            if self._is_cancelled():
+                logger.info('full_recovery: cancelled before attempt, abort launch')
+                return False
             # 每轮启动前都强杀一次，确保上轮 180s 超时后的 MuMu 残留被清掉。
             self.reset.execute()
             if self.emulator_state != EmulatorState.COLD:
