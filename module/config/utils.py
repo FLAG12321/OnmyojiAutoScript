@@ -1,7 +1,6 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-import builtins
 import os
 import json
 import yaml
@@ -10,18 +9,9 @@ from filelock import FileLock
 from datetime import datetime, timedelta, timezone, time
 
 from module.config.atomicwrites import atomic_write
+from module.logger import logger
 
 DEFAULT_TIME = datetime(2023, 1, 1, 0, 0)
-
-
-def safe_print(*args, **kwargs):
-    """安全输出调试信息，避免控制台异常中断配置读写。"""
-    try:
-        builtins.print(*args, **kwargs)
-    except OSError:
-        # Windows 控制台在部分运行环境下 flush 可能抛出 Invalid argument。
-        pass
-
 
 def filepath_config(filename, mod_name='script') -> str:
     """
@@ -61,7 +51,7 @@ def read_file(file: str):
     _, ext = os.path.splitext(file)
     lock = FileLock(f"{file}.lock")
     with lock:
-        safe_print(f'read: {file}')
+        logger.debug(f'read: {file}')
         if ext == '.yaml':
             with open(file, mode='r', encoding='utf-8') as f:
                 s = f.read()
@@ -76,7 +66,7 @@ def read_file(file: str):
                 s = f.read()
                 return json.loads(s)
         else:
-            safe_print(f'Unsupported config file extension: {ext}')
+            logger.warning(f'Unsupported config file extension: {ext}')
             return {}
 
 def write_file(file: str, data):
@@ -94,7 +84,7 @@ def write_file(file: str, data):
     _, ext = os.path.splitext(file)
     lock = FileLock(f"{file}.lock")
     with lock:
-        safe_print(f'write: {file}')
+        logger.debug(f'write: {file}')
         if ext == '.yaml':
             with atomic_write(file, overwrite=True, encoding='utf-8', newline='') as f:
                 if isinstance(data, list):
@@ -108,7 +98,7 @@ def write_file(file: str, data):
                 s = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=False, default=str)
                 f.write(s)
         else:
-            safe_print(f'Unsupported config file extension: {ext}')
+            logger.warning(f'Unsupported config file extension: {ext}')
 
 
 def deep_iter(data, depth=0, current_depth=1):
@@ -342,4 +332,4 @@ def deep_pop(d, keys, default=None):
 
 
 if __name__ == '__main__':
-    safe_print(parse_tomorrow_server("09:01:00"))
+    print(parse_tomorrow_server("09:01:00"))
