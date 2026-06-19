@@ -140,7 +140,9 @@ class EmulatorCaptureSession:
                 self._last_error_at = 0.0
 
     def _build_device(self, config: Config, interval: float) -> Device:
-        device = Device(config=config)
+        # 注入采集线程自身的 _stop_event 作为取消信号：断开（stop）后置位，
+        # Device 拉起链路（full_recovery / emulator_start_watch）在检查点尽快放弃拉起。
+        device = Device(config=config, cancel_event=self._stop_event)
         device.disable_stuck_detection()
         device.screenshot_interval_set(interval)
         logger.info(
