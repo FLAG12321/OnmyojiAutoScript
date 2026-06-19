@@ -46,7 +46,10 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_timer_long = Timer(300, count=300).start()
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
     retry_times :int = 0
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, cancel_event=None, **kwargs):
+        # cancel_event: 可选取消信号（threading.Event）。Web 标注采集线程断开时置位，
+        # 用于在模拟器拉起链路的检查点尽快放弃拉起。默认 None 表示从不取消，行为与原先一致。
+        self._cancel_event = cancel_event
         self.emulator_state = EmulatorState.COLD
         from module.device.emulator_health import EmulatorHealth
         self.health = EmulatorHealth(self)
@@ -105,6 +108,10 @@ class Device(Platform, Screenshot, Control, AppControl):
             )
         logger.info(f'EmulatorState: {self.emulator_state.name} → {target.name}')
         self.emulator_state = target
+
+    def _is_cancelled(self) -> bool:
+        # 仅当注入了 cancel_event 且已被置位时返回 True；未注入时恒为 False（零回归）
+        return self._cancel_event is not None and self._cancel_event.is_set()
 
     def full_recovery(self) -> bool:
         """
