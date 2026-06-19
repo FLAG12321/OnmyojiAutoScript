@@ -31,6 +31,17 @@ class PlatformBase(EmulatorManagerBase):
     - emulator_stop()
     """
 
+    # cancel_event: 可选取消信号（threading.Event）。Web 标注采集线程断开时置位，
+    # 用于在模拟器拉起链路（full_recovery / emulator_start_watch）的检查点尽快放弃拉起。
+    # 默认 None 表示从不取消，行为与原先一致。
+    _cancel_event = None
+
+    def _is_cancelled(self) -> bool:
+        # 仅当注入了 cancel_event 且已被置位时返回 True；未注入时恒为 False（零回归）。
+        # 用 getattr 兜底，防御未经 __init__ 构造的实例（如测试夹具）。
+        cancel_event = getattr(self, '_cancel_event', None)
+        return cancel_event is not None and cancel_event.is_set()
+
     def emulator_start(self):
         """
         Start a emulator, until startup completed.

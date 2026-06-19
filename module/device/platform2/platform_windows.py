@@ -433,6 +433,11 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         state_finished_seen = False  # Bug 1 fix: packages_timeout only starts after state==start_finished
 
         while 1:
+            # 取消检查点：标注采集线程断开后置位 cancel_event，立即结束轮询，
+            # 不再等待剩余的 180s 超时，也不杀用户已运行的模拟器进程。
+            if self._is_cancelled():
+                logger.info('emulator_start_watch: cancelled, abort watch')
+                return False
             interval.wait()
             interval.reset()
             mumu_state_stuck = False

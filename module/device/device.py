@@ -109,12 +109,6 @@ class Device(Platform, Screenshot, Control, AppControl):
         logger.info(f'EmulatorState: {self.emulator_state.name} → {target.name}')
         self.emulator_state = target
 
-    def _is_cancelled(self) -> bool:
-        # 仅当注入了 cancel_event 且已被置位时返回 True；未注入时恒为 False（零回归）。
-        # 用 getattr 兜底：防御未经 __init__ 构造的实例（如测试夹具），避免 AttributeError。
-        cancel_event = getattr(self, '_cancel_event', None)
-        return cancel_event is not None and cancel_event.is_set()
-
     def full_recovery(self) -> bool:
         """
         ZOMBIE/COLD → HEALTHY recovery.
