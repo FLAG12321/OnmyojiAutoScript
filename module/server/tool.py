@@ -140,7 +140,14 @@ class EmulatorCaptureSession:
                 self._last_error_at = 0.0
 
     def _build_device(self, config: Config, interval: float) -> Device:
-        device = Device(config=config)
+        # [diag] 标注采集线程在子线程里构造 Device；打点区分是构造还是后续阶段失败
+        logger.info(
+            f"[diag][annotator] begin _build_device, session={self.session_id}, "
+            f"config={self.config_name}, thread={threading.current_thread().name}"
+        )
+        # 注入采集线程自身的 _stop_event 作为取消信号：断开（stop）后置位，
+        # Device 拉起链路（full_recovery / emulator_start_watch）在检查点尽快放弃拉起。
+        device = Device(config=config, cancel_event=self._stop_event)
         device.disable_stuck_detection()
         device.screenshot_interval_set(interval)
         logger.info(
@@ -198,6 +205,13 @@ class EmulatorCaptureSession:
                         with self._frame_lock:
                             self.state = "running"
                     except Exception as e:
+                        # [diag] 连接阶段：打印完整异常类型、repr 与堆栈，定位 [Errno 22] 真实抛出点
+                        logger.error(
+                            f"[diag][annotator] connect stage exception, "
+                            f"session={self.session_id}, config={self.config_name}, "
+                            f"type={type(e).__name__}, repr={e!r}"
+                        )
+                        logger.exception(f"[diag][annotator] connect stage traceback, config={self.config_name}")
                         should_retry, attempt, _ = self._mark_capture_failure("connect", e)
                         if not should_retry:
                             break
@@ -208,6 +222,13 @@ class EmulatorCaptureSession:
                 try:
                     frame = device.screenshot()
                 except Exception as e:
+                    # [diag] 截图阶段：打印完整异常类型、repr 与堆栈
+                    logger.error(
+                        f"[diag][annotator] capture stage exception, "
+                        f"session={self.session_id}, config={self.config_name}, "
+                        f"type={type(e).__name__}, repr={e!r}"
+                    )
+                    logger.exception(f"[diag][annotator] capture stage traceback, config={self.config_name}")
                     self._release_device(device)
                     device = None
                     should_retry, attempt, _ = self._mark_capture_failure("capture", e)

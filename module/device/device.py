@@ -46,7 +46,10 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_timer_long = Timer(300, count=300).start()
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
     retry_times :int = 0
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, cancel_event=None, **kwargs):
+        # cancel_event: 可选取消信号（threading.Event）。Web 标注采集线程断开时置位，
+        # 用于在模拟器拉起链路的检查点尽快放弃拉起。默认 None 表示从不取消，行为与原先一致。
+        self._cancel_event = cancel_event
         self.emulator_state = EmulatorState.COLD
         from module.device.emulator_health import EmulatorHealth
         self.health = EmulatorHealth(self)
@@ -127,6 +130,11 @@ class Device(Platform, Screenshot, Control, AppControl):
             return False
 
         for attempt in range(2):
+            # 取消检查点：标注采集线程断开后置位 cancel_event，此处尽快放弃拉起，
+            # 不再执行新一轮 reset/start，也不杀用户已运行的模拟器进程。
+            if self._is_cancelled():
+                logger.info('full_recovery: cancelled before attempt, abort launch')
+                return False
             # 每轮启动前都强杀一次，确保上轮 180s 超时后的 MuMu 残留被清掉。
             self.reset.execute()
             if self.emulator_state != EmulatorState.COLD:

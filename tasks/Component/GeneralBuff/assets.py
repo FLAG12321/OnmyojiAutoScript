@@ -35,9 +35,9 @@ class GeneralBuffAssets:
 
 	# Ocr Rule Assets
 	# Ocr-description 
-	O_GOLD_50 = RuleOcr(roi=(428,120,338,389), area=(0,0,100,100), mode="Full", method="Default", keyword="战斗胜利获得的金币增加50%", name="gold_50")
+	O_GOLD_50 = RuleOcr(roi=(428,120,338,389), area=(0,0,100,100), mode="Full", method="Default", keyword="金币增加50%", name="gold_50")
 	# Ocr-description 
-	O_GOLD_100 = RuleOcr(roi=(425,118,342,397), area=(0,0,100,100), mode="Full", method="Default", keyword="战斗胜利获得的金币增加100%", name="gold_100")
+	O_GOLD_100 = RuleOcr(roi=(425,118,342,397), area=(0,0,100,100), mode="Full", method="Default", keyword="金币增加100%", name="gold_100")
 	# Ocr-description 
 	O_EXP_50 = RuleOcr(roi=(426,119,335,394), area=(0,0,100,100), mode="Full", method="Default", keyword="经验增加50%", name="exp_50")
 	# Ocr-description 
