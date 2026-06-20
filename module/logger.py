@@ -104,7 +104,11 @@ flutter_formatter = logging.Formatter(
 # ======================================================================================================================
 console_hdlr = RichHandler(
     console=Console(
-        width=120
+        width=120,
+        # force_terminal=False：明确告知 rich 目标不是真实终端，
+        # 避免在 mshta 隐藏窗口/后台服务等场景下走 Win32 legacy 控制台渲染，
+        # 否则 WriteConsole 会因控制台句柄处于退化状态抛 [Errno 22] Invalid argument
+        force_terminal=False
     ),
     show_path=False,
     show_time=False,
