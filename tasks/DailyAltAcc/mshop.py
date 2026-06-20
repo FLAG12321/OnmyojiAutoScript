@@ -7,6 +7,7 @@ from tasks.RichMan.mall.mall import Mall
 from tasks.RichMan.config import Consignment
 from tasks.MysteryShop.assets import MysteryShopAssets
 from tasks.DailyAltAcc.config import GoodsType, CoinType, MSGType
+from tasks.DailyAltAcc.stat_log import StatEvent
 
 
 class Mshop(Mall, DailyAltAccBase):
@@ -156,6 +157,14 @@ class Mshop(Mall, DailyAltAccBase):
                     flag=True
                     logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
                     self.msg.append([MSGType.mshop,f"发现{info[2]}金币 {info[0]}"])
+                    # 统计只关注金币蛇皮和逢魔，黑碎仍保留原通知但不进入 mshop 明细。
+                    emit_stat = getattr(self, "emit_stat", None)
+                    if emit_stat:
+                        emit_stat(
+                            StatEvent.MSHOP,
+                            goods=info[0].name,
+                            price=info[2],
+                        )
                     #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}金币 {info[0]}", title="神秘商店提醒")
             if info[1]==CoinType.jade: 
                  if info[0]==GoodsType.heisui: 

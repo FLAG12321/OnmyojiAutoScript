@@ -10,6 +10,7 @@ from tasks.GameUi.page import page_main, page_team, page_friends
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
+from tasks.DailyAltAcc.stat_log import StatEvent
 
 
 class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
@@ -18,11 +19,20 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_team)
+        before_count = getattr(self, "current_count", 0)
         if ap_enable:
             self.run_alliedteam_ap()
         if battle_enable:
             self.run_alliedteam_battle()
+            # 只统计本次同心战斗新增场数，不统计胜负结果。
+            emit_stat = getattr(self, "emit_stat", None)
+            if emit_stat:
+                emit_stat(StatEvent.BATTLE, count=getattr(self, "current_count", 0) - before_count)
             self.return_to_main()
+        elif ap_enable:
+            emit_stat = getattr(self, "emit_stat", None)
+            if emit_stat:
+                emit_stat(StatEvent.BATTLE, count=0)
 
     def run_alliedteam_ap(self):    
         logger.info('开始执行补体力任务')

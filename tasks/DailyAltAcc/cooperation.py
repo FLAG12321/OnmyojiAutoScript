@@ -7,6 +7,7 @@ from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.WantedQuests.config import CooperationType
 from tasks.DailyAltAcc.config import MSGType
+from tasks.DailyAltAcc.stat_log import StatEvent
 
 
 class Cooperation(DailyAltAccBase):
@@ -101,7 +102,7 @@ class Cooperation(DailyAltAccBase):
             if not normal_flag and not real_flag:
                 break
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_JADE_" + str(index + 1))):
-                retList.append({'type': CooperationType.Jade, 'inviteBtn': btn})
+                retList.append({'type': CooperationType.Jade, 'inviteBtn': btn, 'real': real_flag})
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
                     self.push_notify(content=f"    发现现世勾协", title="协作任务提醒")
@@ -112,15 +113,15 @@ class Cooperation(DailyAltAccBase):
                     self.msg.append([MSGType.cooperation,"发现普通勾协"])
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
-                retList.append({'type': CooperationType.Food, 'inviteBtn': btn})
+                retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
                 logger.info(f"find dog food cooperation ")
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_CAT_FOOD_" + str(index + 1))):
-                retList.append({'type': CooperationType.Food, 'inviteBtn': btn})
+                retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
                 logger.info(f"find cat food cooperation ")
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_SUSHI_" + str(index + 1))):
-                retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn})
+                retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn, 'real': real_flag})
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")
                     self.msg.append([MSGType.cooperation,"发现现世体协"])
@@ -132,10 +133,21 @@ class Cooperation(DailyAltAccBase):
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):
-                retList.append({'type': CooperationType.Gold, 'inviteBtn': btn})
+                retList.append({'type': CooperationType.Gold, 'inviteBtn': btn, 'real': real_flag})
                 logger.info(f"find gold cooperation ")
                 continue
         logger.info(f"get cooperation size {len(retList)}")
+        # 将本轮识别到的协作按明细写入 STAT，便于前端区分类型和现世标记。
+        emit_stat = getattr(self, "emit_stat", None)
+        total = len(retList)
+        if emit_stat:
+            for item in retList:
+                emit_stat(
+                    StatEvent.COOP,
+                    ctype=item["type"].name.lower(),
+                    real=bool(item.get("real", False)),
+                    total=total,
+                )
         return retList
 
 
