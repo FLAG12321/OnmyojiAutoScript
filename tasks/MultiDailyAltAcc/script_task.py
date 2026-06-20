@@ -13,10 +13,11 @@ from tasks.MultiDailyAltAcc.assets import MultiDailyAltAccAssets
 from tasks.MultiDailyAltAcc.config import AccountInfo, MultiDailyAltAcc, ExtendedAccountInfo
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyAltAcc.config import MSGType
-from script import Script 
+from tasks.DailyAltAcc.stat_log import StatEvent, StatLogMixin
+from script import Script
 
 
-class ScriptTask(GameUi, MultiDailyAltAccAssets):
+class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     daily_conf: MultiDailyAltAcc = None
     # 添加一个类级别的锁，用于同步关机操作
     _shutdown_lock = threading.Lock()
@@ -332,7 +333,15 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         # 切换账号
         if not self._switch_to_account(account_info):
             return False
-            
+
+        self.emit_stat(
+            StatEvent.ACC_START,
+            acc=account_info.account,
+            char=account_info.character,
+            svr=account_info.svr,
+            tasks=self._enabled_task_keys(config),
+        )
+
         # 执行任务
         return self._execute_daily_tasks(config, account_info)
 
@@ -364,11 +373,61 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
 
         return config
 
+    @staticmethod
+    def _enabled_task_keys(config):
+        """按实际开启状态返回本账号会执行的子任务键。"""
+        task_flags = [
+            ("courtyard", config.courtyard_enable),
+            ("mail", config.mail_enable),
+            ("cooperation", config.cooperation_enable),
+            ("donatejade", config.donatejade_enable),
+            ("returngift", config.returngift_enable),
+            ("weekaward", config.weekaward_enable),
+            ("mysteryshop", config.mysteryshop_enable),
+            ("kekkaiActivation", config.kekkaiActivation_enable),
+            ("KekkaiUtilize", config.KekkaiUtilize_enable),
+            ("tree", config.tree_planting_enable > 0),
+            ("trialbattle", config.trialbattle_enable),
+            ("summon_up", config.summon_up_enable),
+            ("publish_sr", config.publish_sr_enable),
+            ("alliedteam", config.alliedteam_battle_enable or config.alliedteam_ap_enable),
+        ]
+        return [task for task, enabled in task_flags if enabled]
+
+    def _emit_account_error(self, account_info, task, error):
+        """记录账号级异常，保留异常类型和首行错误消息。"""
+        self.emit_stat(
+            StatEvent.ERROR,
+            acc=account_info.account,
+            char=account_info.character,
+            svr=account_info.svr,
+            task=task,
+            etype=error.__class__.__name__,
+            emsg=str(error).splitlines()[0] if str(error) else "",
+        )
+
+    def _emit_account_end(self, account_info, err_count: int):
+        """记录账号运行结束，供后端计算账号总耗时。"""
+        self.emit_stat(
+            StatEvent.ACC_END,
+            acc=account_info.account,
+            char=account_info.character,
+            svr=account_info.svr,
+            err_count=err_count,
+        )
+
     def _switch_to_account(self, account_info):
         """切换到指定账号"""
         # 在切换账号前，重置检测记录，避免影响后续账号
         self.device.stuck_record_clear()
         success = SwitchAccount(self.config, self.device, account_info).switchAccount()
+        self.emit_stat(
+            StatEvent.SWITCH,
+            acc=account_info.account,
+            char=account_info.character,
+            svr=account_info.svr,
+            ok=success,
+        )
         if not success:
             logger.warning("Switch to %s-%s Failed", account_info.character, account_info.svr)
             self.config.notifier.push(
@@ -380,18 +439,25 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
     def _execute_daily_tasks(self, config, account_info):
         """执行日常任务"""
         # 创建子任务实例
-        dff = self._create_task_instance(config)
-        
+        dff = self._create_task_instance(config, account_info)
+
         try:
             dff.run()
+            self._emit_account_end(account_info, err_count=0)
             return True
         except TaskEnd as msg:
-            return self._handle_task_end(msg, account_info)
+            success = self._handle_task_end(msg, account_info)
+            self._emit_account_end(account_info, err_count=0 if success else 1)
+            return success
         except RequestHumanTakeover:
+            self._emit_account_error(account_info, None, RequestHumanTakeover("RequestHumanTakeover"))
+            self._emit_account_end(account_info, err_count=1)
             Script.save_error_log(self)
             raise RequestHumanTakeover
         except Exception as e:
             logger.error(f"Error in daily tasks for {account_info.character}: {e}")
+            self._emit_account_error(account_info, None, e)
+            self._emit_account_end(account_info, err_count=1)
             Script.save_error_log(self)
             return False
 
@@ -409,11 +475,16 @@ class ScriptTask(GameUi, MultiDailyAltAccAssets):
         })
         wq = WQEX(**kwargs)
         return wq
-    def _create_task_instance(self, config):
-        """创建任务实例"""
+    def _create_task_instance(self, config, source_account_info):
+        """创建任务实例，并注入统计日志的账号上下文。"""
         dff = self.CreatObjectFromModule("DailyAltAcc", config=self.config, device=self.device)
         dff.daily_conf = self.daily_conf
         dff.account_info = config
+        dff._stat_ctx = {
+            "acc": source_account_info.account,
+            "char": source_account_info.character,
+            "svr": source_account_info.svr,
+        }
         return dff
     def _handle_task_end(self, msg, account_info):
         """处理任务结束消息"""

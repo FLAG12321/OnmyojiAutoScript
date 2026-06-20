@@ -18,6 +18,7 @@ from tasks.KekkaiUtilize.script_task import ScriptTask as KekkaiUtilize
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiActivation.config import CardType
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
+from tasks.DailyAltAcc.stat_log import StatEvent, StatLogMixin
 
 # Sub-tasks
 from tasks.DailyAltAcc.courtyard import Courtyard
@@ -33,12 +34,49 @@ from tasks.DailyAltAcc.trialbattle import Trialbattle
 from tasks.DailyAltAcc.publish_sr import PublishSr
 
 
-class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
+class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                  Returngift, Alliedteam, Mshop, Tree,
                  SummonUp, Trialbattle, PublishSr,
                  Guild, WeeklyTrifles):
     account_info: dict = None
-    
+
+    def _run_with_stat(self, task_key: str, func, *args, **kwargs):
+        """记录子任务起止；异常时补充统计日志但不改变原控制流。"""
+        start_time = time.time()
+        self.emit_stat(StatEvent.TASK_START, task=task_key)
+        try:
+            result = func(*args, **kwargs)
+        except TaskEnd:
+            # TaskEnd 是部分子任务的正常结束信号，交给原有外层逻辑处理。
+            self.emit_stat(
+                StatEvent.TASK_END,
+                task=task_key,
+                ok=True,
+                dur=round(time.time() - start_time, 3),
+            )
+            raise
+        except Exception as e:
+            self.emit_stat(
+                StatEvent.ERROR,
+                task=task_key,
+                etype=e.__class__.__name__,
+                emsg=str(e).splitlines()[0] if str(e) else "",
+            )
+            self.emit_stat(
+                StatEvent.TASK_END,
+                task=task_key,
+                ok=False,
+                dur=round(time.time() - start_time, 3),
+            )
+            raise
+        self.emit_stat(
+            StatEvent.TASK_END,
+            task=task_key,
+            ok=True,
+            dur=round(time.time() - start_time, 3),
+        )
+        return result
+
     def run(self):
         
  
@@ -75,7 +113,7 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
             self.ui_goto(page_main)
 
         if con.daily_alt_acc_config.courtyard_enable:
-            if not self.run_courtyard():
+            if not self._run_with_stat("courtyard", self.run_courtyard):
                 while 1:
                     self.screenshot()
                     if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
@@ -90,34 +128,37 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                 
             delay_time += 10
         if con.daily_alt_acc_config.mail_enable:
-            self.run_mail()
+            self._run_with_stat("mail", self.run_mail)
             delay_time += 5
         if con.daily_alt_acc_config.cooperation_enable:
-            self.run_cooperation()
+            self._run_with_stat("cooperation", self.run_cooperation)
             delay_time += 3
         if con.daily_alt_acc_config.donatejade_enable:
-            self.run_donatejade()
+            self._run_with_stat("donatejade", self.run_donatejade)
             delay_time += 10
         if con.daily_alt_acc_config.returngift_enable:
             if delay_time < 10:
                 time.sleep(10-delay_time)
-            self.run_returngift()
+            self._run_with_stat("returngift", self.run_returngift)
         if con.daily_alt_acc_config.weekaward_enable:
-            xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
-            self.execute_guild(xzconfig)
-            self.execute_mall()
-            self._share_collect()
+            def run_weekaward():
+                """执行寮商店、寮商城和分享领取，作为 weekaward 统计单元。"""
+                xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
+                self.execute_guild(xzconfig)
+                self.execute_mall()
+                self._share_collect()
+            self._run_with_stat("weekaward", run_weekaward)
         if con.daily_alt_acc_config.mysteryshop_enable:
-            self.run_mysteryshop()
+            self._run_with_stat("mysteryshop", self.run_mysteryshop)
             # 执行挂卡（只执行核心逻辑，避免TaskEnd）
         if con.daily_alt_acc_config.tree_planting_enable > 0:
-            self.run_tree_planting()
+            self._run_with_stat("tree", self.run_tree_planting)
         if con.daily_alt_acc_config.trialbattle_enable:
-            self.run_trialbattle()
+            self._run_with_stat("trialbattle", self.run_trialbattle)
         if con.daily_alt_acc_config.summon_up_enable:
-            self.run_summon_up()
+            self._run_with_stat("summon_up", self.run_summon_up)
         if con.daily_alt_acc_config.publish_sr_enable:
-            self.run_publish_sr()
+            self._run_with_stat("publish_sr", self.run_publish_sr)
 
         if con.daily_alt_acc_config.kekkaiActivation_enable:
             try:
@@ -129,7 +170,7 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                 activation_conf.exchange_max=False
                 activation_conf.card_not_found_count=0
                 activation_conf.shikigami_class=ShikigamiClass.MATERIAL
-                activation_task.run()
+                self._run_with_stat("kekkaiActivation", activation_task.run)
             except TaskEnd:
                 pass  # 忽略挂卡任务的结束信号
         if con.daily_alt_acc_config.KekkaiUtilize_enable:    
@@ -150,7 +191,7 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                 utilize_task.config.kekkai_utilize.utilize_config.box_exp_enable = False
                 utilize_task.config.kekkai_utilize.utilize_config.box_exp_waste = False
                 utilize_task.config.kekkai_utilize.utilize_config.exchange_before = False
-                utilize_task.run()
+                self._run_with_stat("KekkaiUtilize", utilize_task.run)
             except TaskEnd as msg:
                 # 直接将KekkaiUtilize的消息透传给Daily，不做额外处理
                 if msg.args and msg.args[0]:  # 如果TaskEnd带有参数且不为空
@@ -159,7 +200,7 @@ class ScriptTask(Courtyard, Mail, Donatejade, Cooperation,
                         self.msg.append(msg_item)
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
         if con.daily_alt_acc_config.alliedteam_battle_enable or con.daily_alt_acc_config.alliedteam_ap_enable:
-            self.run_alliedteam(con.daily_alt_acc_config.alliedteam_battle_enable,con.daily_alt_acc_config.alliedteam_ap_enable)
+            self._run_with_stat("alliedteam", self.run_alliedteam, con.daily_alt_acc_config.alliedteam_battle_enable, con.daily_alt_acc_config.alliedteam_ap_enable)
 
         self.set_next_run(task='DailyAltAcc', finish=True, success=True)
         logger.info(self.msg)
