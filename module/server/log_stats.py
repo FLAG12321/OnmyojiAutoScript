@@ -23,6 +23,47 @@ _EQ_LINE_RE = re.compile(r"^═{15,}\s*$")
 _TITLE_LINE_RE = re.compile(r"^─{10,}\s*(?P<title>.*?)\s*─{10,}\s*$")
 _BATTLE_TITLE = "GENERAL BATTLE START"
 _START_TITLE = "START"
+_STAT_PREFIX = "[STAT] "
+
+
+@dataclass
+class MultiAccountState:
+    """多账号统计中间状态，聚合单个账号在一次运行周期内的 STAT 事件。"""
+    account: str = ""
+    character: str = ""
+    svr: str = ""
+    start_time: datetime | None = None
+    last_time: datetime | None = None
+    switch_ok: bool | None = None
+    error_count: int = 0
+    battle_count: int = 0
+    coop_total: int = 0
+    tasks: list[dict] = field(default_factory=list)
+    errors: list[dict] = field(default_factory=list)
+    coops: list[dict] = field(default_factory=list)
+    mshops: list[dict] = field(default_factory=list)
+
+    def to_payload(self) -> dict[str, Any]:
+        """将账号中间状态转换为对外输出的字典格式。"""
+        duration = 0.0
+        if self.start_time is not None and self.last_time is not None and self.last_time >= self.start_time:
+            duration = round(
+                (self.last_time - self.start_time).total_seconds(), 3
+            )
+        return {
+            "account": self.account,
+            "character": self.character,
+            "svr": self.svr,
+            "switch_ok": self.switch_ok,
+            "duration_seconds": duration,
+            "error_count": self.error_count,
+            "battle_count": self.battle_count,
+            "coop_total": self.coop_total,
+            "tasks": self.tasks,
+            "errors": self.errors,
+            "coops": self.coops,
+            "mshops": self.mshops,
+        }
 
 
 @dataclass
@@ -307,6 +348,130 @@ class LogStatsParser:
         return round(total_duration + (end_time - start_time).total_seconds(), 3)
 
 
+class MultiStatAggregator:
+    """解析日志中的 [STAT] 单行事件，聚合成多账号统计。"""
+
+    def __init__(self) -> None:
+        self._accounts: dict[tuple[str, str], MultiAccountState] = {}
+        self._active_key: tuple[str, str] | None = None
+
+    def consume_lines(self, lines: list[str]) -> None:
+        """逐行扫描，提取 [STAT] JSON 事件并分发处理。"""
+        for line in lines:
+            line = line.rstrip("\r\n")
+            ts = LogStatsParser._extract_timestamp(line)
+            if ts is None:
+                continue
+            payload = self._extract_payload(line)
+            if payload is None:
+                continue
+            self._consume_event(payload, ts)
+
+    def snapshot(
+        self, tail_lines: list[str] | None = None
+    ) -> dict[str, Any] | None:
+        """返回当前多账号统计快照，无账号数据时返回 None。"""
+        aggregator = copy.deepcopy(self)
+        if tail_lines:
+            aggregator.consume_lines(tail_lines)
+        if not aggregator._accounts:
+            return None
+        accounts = [ac.to_payload() for ac in aggregator._accounts.values()]
+        accounts.sort(key=lambda item: (item.get("account", ""), item.get("character", "")))
+        return {
+            "accounts": accounts,
+        }
+
+    @staticmethod
+    def _extract_payload(line: str) -> dict[str, Any] | None:
+        """从日志行中提取 [STAT] 后的 JSON 负载，非法 JSON 静默忽略。"""
+        idx = line.find(_STAT_PREFIX)
+        if idx == -1:
+            return None
+        json_str = line[idx + len(_STAT_PREFIX):]
+        try:
+            payload = json.loads(json_str)
+        except json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _event_key(payload: dict[str, Any]) -> tuple[str, str]:
+        """按账号邮箱和角色名定位同一账号的统计段。"""
+        return (str(payload.get("acc", "")), str(payload.get("char", "")))
+
+    def _account_for_event(self, payload: dict[str, Any]) -> MultiAccountState | None:
+        """获取当前事件所属账号；缺少账号字段时回退到当前活动账号。"""
+        key = self._event_key(payload)
+        if key in self._accounts:
+            self._active_key = key
+            return self._accounts[key]
+        if self._active_key is not None:
+            return self._accounts.get(self._active_key)
+        return None
+
+    def _consume_event(self, payload: dict[str, Any], ts: datetime) -> None:
+        """根据 STAT 事件类型更新账号聚合状态。"""
+        ev = str(payload.get("ev", ""))
+
+        if ev == "acc_start":
+            # 新账号段开始：按 (acc, char) 建立或重置该账号的聚合状态。
+            key = self._event_key(payload)
+            state = MultiAccountState(
+                account=key[0],
+                character=key[1],
+                svr=str(payload.get("svr", "")),
+                start_time=ts,
+                last_time=ts,
+            )
+            self._accounts[key] = state
+            self._active_key = key
+            return
+
+        account = self._account_for_event(payload)
+        if account is None:
+            return
+
+        if ev == "switch":
+            account.switch_ok = payload.get("ok")
+            account.last_time = ts
+        elif ev == "task_end":
+            account.tasks.append({
+                "task": str(payload.get("task", "")),
+                "ok": bool(payload.get("ok", False)),
+                "duration_seconds": float(payload.get("dur", 0.0) or 0.0),
+            })
+            account.last_time = ts
+        elif ev == "error":
+            account.errors.append({
+                "task": str(payload.get("task", "")),
+                "etype": str(payload.get("etype", "")),
+                "emsg": str(payload.get("emsg", "")),
+            })
+            account.error_count += 1
+            account.last_time = ts
+        elif ev == "battle":
+            account.battle_count = int(payload.get("count", 0) or 0)
+            account.last_time = ts
+        elif ev == "coop":
+            account.coops.append({
+                "ctype": str(payload.get("ctype", "")),
+                "real": bool(payload.get("real", False)),
+            })
+            total = int(payload.get("total", 0) or 0)
+            if total > account.coop_total:
+                account.coop_total = total
+            account.last_time = ts
+        elif ev == "mshop":
+            account.mshops.append({
+                "goods": str(payload.get("goods", "")),
+                "price": payload.get("price", 0),
+            })
+            account.last_time = ts
+        elif ev == "acc_end":
+            account.last_time = ts
+
+
 @dataclass
 class TodayLogCache:
     day: str
@@ -314,6 +479,7 @@ class TodayLogCache:
     position: int = 0
     signature: tuple[int, int] = (0, 0)
     parser: LogStatsParser = field(default_factory=LogStatsParser)
+    multi_aggregator: MultiStatAggregator = field(default_factory=MultiStatAggregator)
     tail_lines: list[str] = field(default_factory=list)
     snapshot: dict[str, Any] = field(default_factory=dict)
 
@@ -428,7 +594,8 @@ class LogStatsService:
             previous_snapshot.get(field) != current_snapshot.get(field)
             for field in ("total_runtime_seconds", "total_task_run_count", "total_battle_count")
         )
-        if not totals_changed and not changed_tasks and not removed_tasks:
+        multi_changed = previous_snapshot.get("multi") != current_snapshot.get("multi")
+        if not totals_changed and not changed_tasks and not removed_tasks and not multi_changed:
             return None
 
         return {
@@ -438,6 +605,7 @@ class LogStatsService:
             "total_battle_count": current_snapshot.get("total_battle_count", 0),
             "changed_tasks": changed_tasks,
             "removed_tasks": removed_tasks,
+            "multi": current_snapshot.get("multi"),
         }
 
     def _parse_log_file(self, path: Path) -> dict[str, Any]:
@@ -457,12 +625,17 @@ class LogStatsService:
     @staticmethod
     def _parse_lines(lines: list[str], script_name: str = "") -> dict[str, Any]:
         payload = LogStatsParser.parse_lines(lines, script_name=script_name)
+        # 同时解析多账号 STAT 行
+        multi_aggregator = MultiStatAggregator()
+        multi_aggregator.consume_lines(lines)
+        multi = multi_aggregator.snapshot()
         return {
             "script_name": payload.get("script_name", script_name),
             "total_runtime_seconds": round(float(payload.get("total_runtime_seconds", 0.0)), 3),
             "total_task_run_count": int(payload.get("total_task_run_count", 0)),
             "total_battle_count": int(payload.get("total_battle_count", 0)),
             "tasks": payload.get("tasks", {}),
+            "multi": multi,
         }
 
     def _today_log_signature(self, script_name: str) -> tuple[int, int]:
@@ -515,17 +688,20 @@ class LogStatsService:
         confirmed_lines, cache.tail_lines = self._split_confirmed_lines(merged_lines)
         if confirmed_lines:
             cache.parser.consume_lines(confirmed_lines)
+            cache.multi_aggregator.consume_lines(confirmed_lines)
 
         cache.signature = signature
         cache.snapshot = cache.parser.snapshot(script_name=script_name, tail_lines=cache.tail_lines)
+        cache.snapshot["multi"] = cache.multi_aggregator.snapshot(cache.tail_lines)
         self._today_cache[script_name] = cache
         return cache
 
     def _new_today_cache(self, today: str, today_file: Path, script_name: str) -> TodayLogCache:
+        snapshot = self._empty_stats(script_name)
         return TodayLogCache(
             day=today,
             path=today_file,
-            snapshot=self._empty_stats(script_name),
+            snapshot=snapshot,
         )
 
     @staticmethod
@@ -558,6 +734,7 @@ class LogStatsService:
             "total_task_run_count": 0,
             "total_battle_count": 0,
             "tasks": {},
+            "multi": None,
         }
 
     @staticmethod

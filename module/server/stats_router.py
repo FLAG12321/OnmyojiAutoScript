@@ -34,12 +34,54 @@ class TaskStatsResponse(BaseModel):
     runs: list[TaskRunStatsResponse] = Field(default_factory=list)
 
 
+class MultiTaskResponse(BaseModel):
+    task: str
+    ok: bool
+    duration_seconds: float | None = None
+
+
+class MultiErrorResponse(BaseModel):
+    task: str | None = None
+    etype: str
+    emsg: str
+
+
+class MultiCoopResponse(BaseModel):
+    ctype: str
+    real: bool = False
+
+
+class MultiMshopResponse(BaseModel):
+    goods: str
+    price: int | float | None = None
+
+
+class MultiAccountResponse(BaseModel):
+    account: str
+    character: str
+    svr: str
+    switch_ok: bool | None = None
+    duration_seconds: float
+    error_count: int
+    battle_count: int
+    coop_total: int
+    tasks: list[MultiTaskResponse] = Field(default_factory=list)
+    errors: list[MultiErrorResponse] = Field(default_factory=list)
+    coops: list[MultiCoopResponse] = Field(default_factory=list)
+    mshops: list[MultiMshopResponse] = Field(default_factory=list)
+
+
+class MultiStatsResponse(BaseModel):
+    accounts: list[MultiAccountResponse] = Field(default_factory=list)
+
+
 class StatsResponse(BaseModel):
     script_name: str
     total_runtime_seconds: float
     total_task_run_count: int
     total_battle_count: int
     tasks: dict[str, TaskStatsResponse] = Field(default_factory=dict)
+    multi: MultiStatsResponse | None = None
 
 
 class StatsAvailableDatesResponse(BaseModel):
@@ -54,6 +96,7 @@ class StatsUpdateResponse(BaseModel):
     total_battle_count: int
     changed_tasks: dict[str, TaskStatsResponse] = Field(default_factory=dict)
     removed_tasks: list[str] = Field(default_factory=list)
+    multi: MultiStatsResponse | None = None
 
 
 def _parse_target_date(date_text: str) -> date:
