@@ -96,8 +96,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         # get_current_scene 主循环里 appear(I_PAGE_MAIN, interval=1) 的节流。
         self.screenshot()
         if self.appear(self.I_PAGE_MAIN, interval=None):
-            # 命中新庭院才重链；初始庭院保留默认 page_main（check_button 本就是 G.I_CHECK_MAIN）
-            if self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK, interval=None):
+            # 用「去探索」入口图判断是否新庭院：该入口为新庭院特有，旧庭院不会命中。
+            # 不用 I_PLOTLINE_NEW_MAIN_CHECK（右上角标识）：实测它在旧庭院可能误匹配，
+            # 导致误判为新庭院并 apply，旧庭院用新庭院探索入口图会 Failed recognize 而卡住。
+            if self.appear(self.I_PLOTLINE_NEW_MAIN_GOTO_EXPLORATION, interval=None):
                 self._apply_plotline_page_links()
             # 确定在庭院即锁定，避免重复探测让 _apply 的 backup 被二次覆盖
             self._plotline_courtyard_linked = True
