@@ -51,6 +51,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     _current_battle_type: str = 'plotline'  # 'plotline' or 'exploration'
     _solo_exploration = None
     _plotline_page_links_backup = None
+    # 庭院类型自动识别的一次性锁定标记：True 表示本次运行已完成识别并（按需）重链。
+    # 采用类属性默认值 + 运行时实例赋值，保证每轮 new 出的 ScriptTask 实例互不污染。
+    _plotline_courtyard_linked = False
     mail_flag: bool = True
     page_main_timeout: int = 0
     unknow_cnt: int = 0
@@ -76,6 +79,31 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         else:
             page_main.link(button=main_to_exploration, destination=page_exploration)
         self._plotline_page_links_backup = None
+
+    def ui_get_current_page(self, skip_first_screenshot=True):
+        """覆写父类：首次调用时按当前实际庭院类型自动识别并按需重链 page_main。
+
+        拦截点选在这里是因为 ui_goto 内部首行就会调用 ui_get_current_page，
+        覆写它可以覆盖 ui_goto / ui_goto_page / 直接调用三条 page 类导航路径。
+        庭院类型在一次运行内固定，故只探测一次（_plotline_courtyard_linked 一次锁定）。
+        """
+        # 已锁定：纯转发父类，零额外开销
+        if self._plotline_courtyard_linked:
+            return super().ui_get_current_page(skip_first_screenshot)
+
+        # 首次进入：独立取一帧探测当前庭院类型
+        # 注意 appear 用 interval=None，不写 interval_timer，避免污染
+        # get_current_scene 主循环里 appear(I_PAGE_MAIN, interval=1) 的节流。
+        self.screenshot()
+        if self.appear(self.I_PAGE_MAIN, interval=None):
+            # 命中新庭院才重链；初始庭院保留默认 page_main（check_button 本就是 G.I_CHECK_MAIN）
+            if self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK, interval=None):
+                self._apply_plotline_page_links()
+            # 确定在庭院即锁定，避免重复探测让 _apply 的 backup 被二次覆盖
+            self._plotline_courtyard_linked = True
+
+        # skip_first_screenshot 原样透传父类，由父类按既有逻辑决定是否复用刚截的帧
+        return super().ui_get_current_page(skip_first_screenshot)
 
     def _reset_shikigami_switch_flags(self, switch_system_shikigami: bool):
         self.privileges_flag = not switch_system_shikigami
@@ -105,7 +133,6 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         self.plotline_conf = self.config.plotline
         self._reset_shikigami_switch_flags(self.plotline_conf.plotline_config.switch_system_shikigami)
         self.experience_youkai_battle = self.plotline_conf.plotline_config.experience_youkai_battle
-        self._apply_plotline_page_links()
         logger.info(f'Start plotline{self.privileges_flag}')
         """ while True:
             self.click_dialogue()
