@@ -1,7 +1,9 @@
 # This Python file uses the following encoding: utf-8
 import os
 import time
+import random
 from datetime import datetime
+from time import sleep
 from module.base.timer import Timer
 from module.base.utils import save_image
 from module.logger import logger
@@ -9,11 +11,20 @@ from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.page import page_main, page_team, page_friends
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.DailyAltAcc.stat_log import StatEvent
+from tasks.Plotline.assets import PlotlineAssets
+from tasks.MasterDisciple.assets import MasterDiscipleAssets
 
 
 class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
+    # 仅 alliedteam_limit_count==13 的账号启用「准备界面切换援助式神」战斗准备流程
+    _need_switch_help_shikigami: bool = False
+    # 援助式神切换标记，仅首场战斗切换一次，切换后置 False（后续场次直接点准备）
+    _help_shikigami_detect: bool = True
+
     def run_alliedteam(self, battle_enable, ap_enable):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
@@ -220,7 +231,14 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         logger.info('Start run alone')
         alliedteam_limit_count=self.get_config().daily_alt_acc_config.alliedteam_limit_count
         logger.info(f' alliedteam_limit_count: {alliedteam_limit_count}')
-        self.check_lock(True)
+        # 次数为 13 的账号：改为在准备界面切换援助式神，因此此处必须先解锁阵容
+        # （若保持锁定状态，准备界面将无法切换援助式神）。其余次数维持原锁定阵容流程。
+        if alliedteam_limit_count == 13:
+            self.check_lock(False)
+            self._need_switch_help_shikigami = True
+            self._help_shikigami_detect = True
+        else:
+            self.check_lock(True)
         while 1:
             self.screenshot()
             if self.current_count >= alliedteam_limit_count:
@@ -236,6 +254,61 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 if not self.appear(self.I_BATTLE):
                     self.run_general_battle(config=self.config.daily_alt_acc.general_battle_config)
                     break
+
+    def battle_before(self, buff: BuffClass | list[BuffClass], config: GeneralBattleConfig, timeout: float = 5) -> bool:
+        """战斗前设置
+        次数为 13 的账号走「切换援助式神 → 准备」流程（参照 MasterDisciple 的
+        _disciple_exploration_battle_before）；其余账号沿用父类原有的战斗准备逻辑。
+        :return: True:进入战斗或点击了准备按钮且识别不到准备按钮了 False:超过timeout还没进入战斗且没点过准备
+        """
+        # 非 13 账号：维持原有通用战斗准备流程
+        if not self._need_switch_help_shikigami:
+            return super().battle_before(buff, config, timeout)
+
+        # 13 账号：在准备界面切换援助式神后再点准备（不锁定阵容，仅首场切换）
+        timeout_timer = Timer(timeout).start()
+        while not timeout_timer.reached():
+            self.screenshot()
+            if self.is_in_real_battle(False):  # 已进入战斗阶段
+                return True
+            if self.appear_then_click(self.I_DISABLE_7DAYS_DIFF_SOUL, interval=0.6):  # 关闭御魂不一致提示
+                continue
+            if self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL, interval=0.6):  # 确认关闭御魂不一致提示
+                continue
+            if self.is_in_prepare(False):  # 战斗准备阶段
+                timeout_timer.reset()
+                # 切换援助式神逻辑（参照 Plotline / MasterDisciple）
+                if self._help_shikigami_detect:
+                    if not self.appear(PlotlineAssets.I_FLAG_CHANGE):
+                        # 未展开助战列表，先点击切换按钮
+                        self.click(PlotlineAssets.C_CLICK_CHANGE)
+                        sleep(2)
+                        continue
+                    else:
+                        # 已展开助战列表，OCR 定位助战位并确保援助式神上场
+                        self.screenshot()
+                        roi = list(MasterDiscipleAssets.O_FIND_SHIKIGAMI_HELP.ocr(self.device.image))
+                        if not roi == [0, 0, 0, 0]:
+                            PlotlineAssets.I_FLAG_ON_FIELD.roi_back = (
+                                roi[0] + roi[2] - 81, roi[1] + roi[3] - 160, 130, 160
+                            )
+                            logger.info(f"I_FLAG_ON_FIELD.roi_back ={PlotlineAssets.I_FLAG_ON_FIELD.roi_back}")
+                            if not self.appear(PlotlineAssets.I_FLAG_ON_FIELD):
+                                # 援助式神未上场，滑动将其拖入出战位
+                                PlotlineAssets.S_SWIPE_SHIKIGAMI.roi_front = (
+                                    roi[0], roi[1], roi[2], roi[3]
+                                )
+                                self.swipe(PlotlineAssets.S_SWIPE_SHIKIGAMI, 4)
+                                sleep(2)
+                                continue
+                # 点击准备，切换完成后置标记为 False（后续场次不再切换）
+                if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
+                    self._help_shikigami_detect = False
+                    continue
+                continue
+            logger.info('Wait for preparation page')
+            sleep(random.uniform(0.4, 0.8))
+        return False
 
 
 if __name__ == "__main__":
