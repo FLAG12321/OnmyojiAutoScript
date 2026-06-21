@@ -351,21 +351,52 @@ class LogStatsParser:
 class MultiStatAggregator:
     """解析日志中的 [STAT] 单行事件，聚合成多账号统计。"""
 
+    _TRACKED_EVENTS = frozenset({
+        "acc_start",
+        "acc_end",
+        "switch",
+        "task_start",
+        "task_end",
+        "error",
+        "battle",
+        "coop",
+        "mshop",
+    })
+
     def __init__(self) -> None:
-        self._accounts: dict[tuple[str, str], MultiAccountState] = {}
-        self._active_key: tuple[str, str] | None = None
+        self._accounts: dict[tuple[str, str, str], MultiAccountState] = {}
+        self._active_key: tuple[str, str, str] | None = None
+        self._pending_account: MultiAccountState | None = None
 
     def consume_lines(self, lines: list[str]) -> None:
-        """逐行扫描，提取 [STAT] JSON 事件并分发处理。"""
-        for line in lines:
-            line = line.rstrip("\r\n")
-            ts = LogStatsParser._extract_timestamp(line)
+        """逐行扫描，提取 [STAT] JSON 事件并分发处理。
+
+        RichHandler 把一次 logger.info("[STAT] "+json) 写成相邻两行：
+        第一行是 ``时间戳 | stat_log.py | INFO | [STAT]``（无 JSON，行尾无多余空格），
+        第二行才是纯 JSON（无时间戳）。因此需要把前缀行与续行合并后解析；
+        旧格式（前缀行内自带 JSON）仍兼容。
+        """
+        index = 0
+        total = len(lines)
+        while index < total:
+            raw = lines[index].rstrip("\r\n")
+            ts = LogStatsParser._extract_timestamp(raw)
             if ts is None:
+                index += 1
                 continue
-            payload = self._extract_payload(line)
-            if payload is None:
+            # 命中 [STAT]（带或不带尾随空格/JSON）
+            prefix_idx = raw.find("[STAT]")
+            if prefix_idx == -1:
+                index += 1
                 continue
-            self._consume_event(payload, ts)
+            # 先尝试前缀行内自带的 JSON（非 Rich 换行的旧格式）
+            payload = self._extract_payload(raw)
+            if payload is None and index + 1 < total:
+                # JSON 被 RichHandler 换行到了下一行，作为续行合并解析
+                payload = self._parse_json_line(lines[index + 1])
+            if payload is not None:
+                self._consume_event(payload, ts)
+            index += 1
 
     def snapshot(
         self, tail_lines: list[str] | None = None
@@ -377,7 +408,13 @@ class MultiStatAggregator:
         if not aggregator._accounts:
             return None
         accounts = [ac.to_payload() for ac in aggregator._accounts.values()]
-        accounts.sort(key=lambda item: (item.get("account", ""), item.get("character", "")))
+        accounts.sort(
+            key=lambda item: (
+                item.get("character", ""),
+                item.get("account", ""),
+                item.get("svr", ""),
+            )
+        )
         return {
             "accounts": accounts,
         }
@@ -389,25 +426,117 @@ class MultiStatAggregator:
         if idx == -1:
             return None
         json_str = line[idx + len(_STAT_PREFIX):]
+        return MultiStatAggregator._parse_json_line(json_str)
+
+    @staticmethod
+    def _parse_json_line(text: str) -> dict[str, Any] | None:
+        """尝试把一行文本解析成 JSON 字典，失败或非 dict 时返回 None。"""
+        candidate = text.strip()
+        # RichHandler 的续行是纯 JSON，定位首个 ``{`` 到行尾即可。
+        brace = candidate.find("{")
+        if brace == -1:
+            return None
         try:
-            payload = json.loads(json_str)
+            payload = json.loads(candidate[brace:])
         except json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
 
     @staticmethod
-    def _event_key(payload: dict[str, Any]) -> tuple[str, str]:
-        """按账号邮箱和角色名定位同一账号的统计段。"""
-        return (str(payload.get("acc", "")), str(payload.get("char", "")))
+    def _event_key(payload: dict[str, Any]) -> tuple[str, str, str]:
+        """按角色、账号、区服定位同一账号的统计段。"""
+        return (
+            str(payload.get("char", "") or "").strip(),
+            str(payload.get("acc", "") or "").strip(),
+            str(payload.get("svr", "") or "").strip(),
+        )
 
-    def _account_for_event(self, payload: dict[str, Any]) -> MultiAccountState | None:
-        """获取当前事件所属账号；缺少账号字段时回退到当前活动账号。"""
+    @classmethod
+    def _has_complete_identity(cls, payload: dict[str, Any]) -> bool:
+        """最小可展示账号统计必须同时具备角色、账号和区服。"""
+        char, acc, svr = cls._event_key(payload)
+        return bool(char and acc and svr)
+
+    @classmethod
+    def _should_track_event(cls, payload: dict[str, Any]) -> bool:
+        """只对多账号统计相关事件建立账号聚合状态。"""
+        return str(payload.get("ev", "") or "").strip() in cls._TRACKED_EVENTS
+
+    def _store_account_state(
+        self,
+        key: tuple[str, str, str],
+        state: MultiAccountState,
+    ) -> MultiAccountState:
+        """保存正式账号状态并刷新当前活动账号指针。"""
+        self._accounts[key] = state
+        self._active_key = key
+        self._pending_account = None
+        return state
+
+    def _create_account_state(
+        self,
+        payload: dict[str, Any],
+        ts: datetime,
+        key: tuple[str, str, str] | None = None,
+    ) -> MultiAccountState:
+        """为一个账号事件创建最小聚合状态，缺失字段时使用默认值。"""
+        resolved_key = key or self._event_key(payload)
+        state = MultiAccountState(
+            account=resolved_key[1],
+            character=resolved_key[0],
+            svr=resolved_key[2],
+            start_time=ts,
+            last_time=ts,
+        )
+        if self._has_complete_identity(payload):
+            return self._store_account_state(resolved_key, state)
+        self._pending_account = state
+        return state
+
+    def _promote_pending_account(
+        self,
+        payload: dict[str, Any],
+        key: tuple[str, str, str],
+    ) -> MultiAccountState | None:
+        """把匿名待定账号提升为携带完整身份信息的正式账号。"""
+        pending = self._pending_account
+        if pending is None:
+            return None
+        if not self._has_complete_identity(payload):
+            return None
+        pending.character = key[0]
+        pending.account = key[1]
+        pending.svr = key[2]
+        return self._store_account_state(key, pending)
+
+    def _account_for_event(
+        self,
+        payload: dict[str, Any],
+        ts: datetime,
+        *,
+        create_placeholder: bool = False,
+    ) -> MultiAccountState | None:
+        """获取当前事件所属账号；必要时为不完整事件缓存最小待定状态。"""
         key = self._event_key(payload)
         if key in self._accounts:
             self._active_key = key
+            self._pending_account = None
             return self._accounts[key]
-        if self._active_key is not None:
-            return self._accounts.get(self._active_key)
+
+        promoted_account = self._promote_pending_account(payload, key)
+        if promoted_account is not None:
+            return promoted_account
+
+        has_identity = any(key)
+        if not has_identity:
+            if self._active_key is not None:
+                return self._accounts.get(self._active_key)
+            if create_placeholder and self._should_track_event(payload):
+                return self._create_account_state(payload, ts, key=key)
+            return self._pending_account
+
+        if create_placeholder and self._should_track_event(payload):
+            return self._create_account_state(payload, ts, key=key)
         return None
 
     def _consume_event(self, payload: dict[str, Any], ts: datetime) -> None:
@@ -416,19 +545,10 @@ class MultiStatAggregator:
 
         if ev == "acc_start":
             # 新账号段开始：按 (acc, char) 建立或重置该账号的聚合状态。
-            key = self._event_key(payload)
-            state = MultiAccountState(
-                account=key[0],
-                character=key[1],
-                svr=str(payload.get("svr", "")),
-                start_time=ts,
-                last_time=ts,
-            )
-            self._accounts[key] = state
-            self._active_key = key
+            self._create_account_state(payload, ts)
             return
 
-        account = self._account_for_event(payload)
+        account = self._account_for_event(payload, ts, create_placeholder=True)
         if account is None:
             return
 

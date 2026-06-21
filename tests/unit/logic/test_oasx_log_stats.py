@@ -106,3 +106,115 @@ def test_multi_stats_unclosed_account_uses_last_stat_timestamp(tmp_path, monkeyp
     account = result["multi"]["accounts"][0]
     assert account["duration_seconds"] == 3.0
     assert account["tasks"][0]["task"] == "mail"
+
+
+def test_multi_stats_without_acc_start_and_identity_is_none(tmp_path, monkeypatch):
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"switch","ok":false}',
+            '2026-06-20 06:00:02.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","task":"mail","ok":false,"dur":0.0}',
+            '2026-06-20 06:00:03.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"error","task":"mail","etype":"RuntimeError","emsg":"boom"}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+
+    assert result["multi"] is None
+
+
+def test_multi_stats_with_partial_identity_promotes_pending_account(tmp_path, monkeypatch):
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"switch","ok":true}',
+            '2026-06-20 06:00:02.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","acc":"mail@example.com","char":"角色A","svr":"一区","task":"mail","ok":true,"dur":2.0}',
+            '2026-06-20 06:00:04.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"mail@example.com","char":"角色A","svr":"一区"}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+
+    assert result["multi"] is not None
+    accounts = result["multi"]["accounts"]
+    assert len(accounts) == 1
+    account = accounts[0]
+
+
+def test_multi_stats_identity_key_uses_char_acc_svr(tmp_path, monkeypatch):
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"acc-a@example.com","char":"角色A","svr":"一区"}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_end","acc":"acc-a@example.com","char":"角色A","svr":"一区"}',
+            '2026-06-20 06:00:02.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_start","acc":"acc-b@example.com","char":"角色A","svr":"一区"}',
+            '2026-06-20 06:00:03.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"acc-b@example.com","char":"角色A","svr":"一区"}',
+            '2026-06-20 06:00:04.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"acc_start","acc":"acc-b@example.com","char":"角色A","svr":"二区"}',
+            '2026-06-20 06:00:05.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"acc_end","acc":"acc-b@example.com","char":"角色A","svr":"二区"}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+
+    assert result["multi"] is not None
+    accounts = result["multi"]["accounts"]
+    assert len(accounts) == 3
+    assert [
+        (item["character"], item["account"], item["svr"])
+        for item in accounts
+    ] == [
+        ("角色A", "acc-a@example.com", "一区"),
+        ("角色A", "acc-b@example.com", "一区"),
+        ("角色A", "acc-b@example.com", "二区"),
+    ]
+
+
+def test_multi_stats_handles_rich_split_stat_lines(tmp_path, monkeypatch):
+    """RichHandler 会把 [STAT] 前缀与 JSON 拆成相邻两行，必须合并解析。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | stat_log.py:0034 |     INFO | [STAT]',
+            '{"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["cooperation"]}',
+            '2026-06-20 06:00:01.000 | cooperation.py:0100 |     INFO | [STAT]',
+            '{"ev":"coop","acc":"a@x.com","char":"角色A","svr":"一区","ctype":"jade","real":true,"total":1}',
+            '2026-06-20 06:00:05.000 | script_task.py:0004 |     INFO | [STAT]',
+            '{"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"cooperation","ok":true,"dur":4.0}',
+            '2026-06-20 06:00:06.000 | script_task.py:0006 |     INFO | [STAT]',
+            '{"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+
+    assert result["multi"] is not None
+    accounts = result["multi"]["accounts"]
+    assert len(accounts) == 1
+    account = accounts[0]
+    # 跨行后耗时、协作、子任务均须正确入账
+    assert account["coop_total"] == 1
+    assert account["coops"] == [{"ctype": "jade", "real": True}]
+    assert account["tasks"] == [
+        {"task": "cooperation", "ok": True, "duration_seconds": 4.0}
+    ]
+    assert account["duration_seconds"] > 0
