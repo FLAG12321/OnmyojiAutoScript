@@ -38,6 +38,9 @@ class MultiTaskResponse(BaseModel):
     task: str
     ok: bool
     duration_seconds: float | None = None
+    battle_count: int = 0
+    battle_total_duration_seconds: float = 0.0
+    battle_avg_duration_seconds: float = 0.0
 
 
 class MultiErrorResponse(BaseModel):
@@ -64,6 +67,8 @@ class MultiAccountResponse(BaseModel):
     duration_seconds: float
     error_count: int
     battle_count: int
+    battle_total_duration_seconds: float = 0.0
+    battle_avg_duration_seconds: float = 0.0
     coop_total: int
     tasks: list[MultiTaskResponse] = Field(default_factory=list)
     errors: list[MultiErrorResponse] = Field(default_factory=list)

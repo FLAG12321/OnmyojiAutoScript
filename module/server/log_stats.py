@@ -37,6 +37,8 @@ class MultiAccountState:
     switch_ok: bool | None = None
     error_count: int = 0
     battle_count: int = 0
+    battle_total_duration_seconds: float = 0.0
+    boundary_battle_count: int = 0  # 边界计时器累加的战斗次数，用于弥补无 STAT 事件时的战斗计数
     coop_total: int = 0
     tasks: list[dict] = field(default_factory=list)
     errors: list[dict] = field(default_factory=list)
@@ -50,6 +52,13 @@ class MultiAccountState:
             duration = round(
                 (self.last_time - self.start_time).total_seconds(), 3
             )
+        # 按战斗边界计算的真实战斗耗时，与前端 snake_case 契约一致
+        # 战斗次数取 STAT 事件与边界计时两者的最大值，确保无 STAT 事件时仍能反映真实战斗次数
+        effective_battle_count = max(self.battle_count, self.boundary_battle_count)
+        battle_avg = (
+            round(self.battle_total_duration_seconds / effective_battle_count, 3)
+            if effective_battle_count > 0 else 0.0
+        )
         return {
             "account": self.account,
             "character": self.character,
@@ -57,7 +66,9 @@ class MultiAccountState:
             "switch_ok": self.switch_ok,
             "duration_seconds": duration,
             "error_count": self.error_count,
-            "battle_count": self.battle_count,
+            "battle_count": effective_battle_count,
+            "battle_total_duration_seconds": self.battle_total_duration_seconds,
+            "battle_avg_duration_seconds": battle_avg,
             "coop_total": self.coop_total,
             "tasks": self.tasks,
             "errors": self.errors,
@@ -367,6 +378,14 @@ class MultiStatAggregator:
         self._accounts: dict[tuple[str, str, str], MultiAccountState] = {}
         self._active_key: tuple[str, str, str] | None = None
         self._pending_account: MultiAccountState | None = None
+        # 战斗边界计时上下文：复用 LogStatsParser 的 BattleState 结构
+        self._active_battle: BattleState | None = None
+        self._pending_battle_start: bool = False
+        self._current_task_name: str | None = None
+        self._current_task_battle_count: int = 0
+        self._current_task_battle_duration: float = 0.0
+        # 战斗开始时的账号归属快照：防止战斗中途 acc_start 切换 _active_key 导致耗时错账
+        self._battle_owner_key: tuple[str, str, str] | None = None
 
     def consume_lines(self, lines: list[str]) -> None:
         """逐行扫描，提取 [STAT] JSON 事件并分发处理。
@@ -375,15 +394,28 @@ class MultiStatAggregator:
         第一行是 ``时间戳 | stat_log.py | INFO | [STAT]``（无 JSON，行尾无多余空格），
         第二行才是纯 JSON（无时间戳）。因此需要把前缀行与续行合并后解析；
         旧格式（前缀行内自带 JSON）仍兼容。
+
+        同时检测战斗边界线（GENERAL BATTLE START），按时间戳行计算真实战斗耗时。
         """
         index = 0
         total = len(lines)
         while index < total:
             raw = lines[index].rstrip("\r\n")
+
+            # 检测战斗边界 ───────────── GENERAL BATTLE START ─────────────
+            if LogStatsParser._is_battle_boundary(raw):
+                self._handle_battle_boundary()
+                index += 1
+                continue
+
             ts = LogStatsParser._extract_timestamp(raw)
             if ts is None:
                 index += 1
                 continue
+
+            # 任一含时间戳的行都更新战斗计时（无论是否 STAT 行）
+            self._update_battle_timestamp(ts)
+
             # 命中 [STAT]（带或不带尾随空格/JSON）
             prefix_idx = raw.find("[STAT]")
             if prefix_idx == -1:
@@ -398,6 +430,56 @@ class MultiStatAggregator:
                 self._consume_event(payload, ts)
             index += 1
 
+    def _handle_battle_boundary(self) -> None:
+        """处理战斗边界线：关闭前一个战斗，标记下一个战斗待开始（仅当前有活跃子任务时）。"""
+        self._close_active_battle()
+        if self._current_task_name is not None:
+            self._pending_battle_start = True
+
+    def _update_battle_timestamp(self, ts: datetime) -> None:
+        """根据时间戳启动或更新活跃战斗计时。"""
+        if self._pending_battle_start:
+            self._active_battle = BattleState(start_time=ts, last_time=ts)
+            self._pending_battle_start = False
+            # 快照战斗开始时的活跃账号，防止战斗中途 acc_start 切换归属
+            self._battle_owner_key = self._active_key
+        elif self._active_battle is not None:
+            self._active_battle.last_time = ts
+
+    def _close_active_battle(self) -> None:
+        """关闭当前活跃战斗，将耗时累加到战斗开始时的账号与当前子任务。"""
+        if self._active_battle is None:
+            self._pending_battle_start = False
+            return
+
+        start_time = self._active_battle.start_time
+        end_time = self._active_battle.last_time
+        # 仅正耗时战斗计入统计，避免边界后紧接 task_end 等零耗时"空战斗"
+        if start_time is not None and end_time is not None and end_time > start_time:
+            duration = round((end_time - start_time).total_seconds(), 3)
+            self._accumulate_battle_duration(duration)
+
+        self._active_battle = None
+        self._pending_battle_start = False
+        self._battle_owner_key = None
+
+    def _accumulate_battle_duration(self, duration: float) -> None:
+        """将一次战斗耗时累加到战斗开始时的账号（而非当前活跃账号）与当前子任务计数器。"""
+        if self._battle_owner_key is None:
+            return
+        account = self._accounts.get(self._battle_owner_key)
+        if account is None:
+            return
+        account.battle_total_duration_seconds = round(
+            account.battle_total_duration_seconds + duration, 3
+        )
+        # 边界计时同步累加账号级战斗次数，弥补无 STAT battle 事件时的计数缺失
+        account.boundary_battle_count += 1
+        self._current_task_battle_count += 1
+        self._current_task_battle_duration = round(
+            self._current_task_battle_duration + duration, 3
+        )
+
     def snapshot(
         self, tail_lines: list[str] | None = None
     ) -> dict[str, Any] | None:
@@ -405,6 +487,8 @@ class MultiStatAggregator:
         aggregator = copy.deepcopy(self)
         if tail_lines:
             aggregator.consume_lines(tail_lines)
+        # 关闭正在进行的战斗，确保不计时的战斗被清理
+        aggregator._close_active_battle()
         if not aggregator._accounts:
             return None
         accounts = [ac.to_payload() for ac in aggregator._accounts.values()]
@@ -544,7 +628,15 @@ class MultiStatAggregator:
         ev = str(payload.get("ev", ""))
 
         if ev == "acc_start":
-            # 新账号段开始：按 (acc, char) 建立或重置该账号的聚合状态。
+            # 若该账号已存在聚合状态（重复 acc_start，例如切任务类型），
+            # 则复用已有状态，只更新最后事件时间，不清零累加字段。
+            key = self._event_key(payload)
+            if key in self._accounts:
+                existing = self._accounts[key]
+                existing.last_time = ts
+                self._active_key = key
+                self._pending_account = None
+                return
             self._create_account_state(payload, ts)
             return
 
@@ -555,13 +647,31 @@ class MultiStatAggregator:
         if ev == "switch":
             account.switch_ok = payload.get("ok")
             account.last_time = ts
+        elif ev == "task_start":
+            # 记录当前子任务名，重置任务级战斗计数器
+            self._current_task_name = str(payload.get("task", ""))
+            self._current_task_battle_count = 0
+            self._current_task_battle_duration = 0.0
+            account.last_time = ts
         elif ev == "task_end":
+            # 关闭可能仍在进行的战斗，将耗时归入当前子任务
+            self._close_active_battle()
+            task_battle_avg = (
+                round(self._current_task_battle_duration / self._current_task_battle_count, 3)
+                if self._current_task_battle_count > 0 else 0.0
+            )
             account.tasks.append({
                 "task": str(payload.get("task", "")),
                 "ok": bool(payload.get("ok", False)),
                 "duration_seconds": float(payload.get("dur", 0.0) or 0.0),
+                "battle_count": self._current_task_battle_count,
+                "battle_total_duration_seconds": self._current_task_battle_duration,
+                "battle_avg_duration_seconds": task_battle_avg,
             })
             account.last_time = ts
+            self._current_task_name = None
+            self._current_task_battle_count = 0
+            self._current_task_battle_duration = 0.0
         elif ev == "error":
             account.errors.append({
                 "task": str(payload.get("task", "")),
@@ -571,7 +681,10 @@ class MultiStatAggregator:
             account.error_count += 1
             account.last_time = ts
         elif ev == "battle":
-            account.battle_count = int(payload.get("count", 0) or 0)
+            # 只在有效计数时覆盖，忽略 count=0 的清理事件，避免清零导致除零
+            new_count = int(payload.get("count", 0) or 0)
+            if new_count > 0:
+                account.battle_count = new_count
             account.last_time = ts
         elif ev == "coop":
             account.coops.append({

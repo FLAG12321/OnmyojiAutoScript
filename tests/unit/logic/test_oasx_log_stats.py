@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 
 def test_stats_dates_from_log_files(tmp_path, monkeypatch):
     from module.server import log_stats
@@ -66,7 +68,7 @@ def test_multi_stats_from_stat_lines(tmp_path, monkeypatch):
     assert account["error_count"] == 0
     assert account["battle_count"] == 3
     assert account["coop_total"] == 1
-    assert account["tasks"][0] == {"task": "cooperation", "ok": True, "duration_seconds": 4.0}
+    assert account["tasks"][0] == {"task": "cooperation", "ok": True, "duration_seconds": 4.0, "battle_count": 0, "battle_total_duration_seconds": 0.0, "battle_avg_duration_seconds": 0.0}
     assert account["coops"] == [{"ctype": "jade", "real": True}]
     assert account["mshops"] == [{"goods": "shepi", "price": 88}]
 
@@ -184,6 +186,44 @@ def test_multi_stats_identity_key_uses_char_acc_svr(tmp_path, monkeypatch):
     ]
 
 
+def test_multi_stats_tracks_battle_duration_by_account_and_task(tmp_path, monkeypatch):
+    """多号统计应从战斗边界计算真实战斗耗时，并同时输出到账号和子任务两级。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    log_file = log_root / "2026-06-22_QMUMU1.txt"
+    log_file.write_text(
+        "\n".join(
+            [
+                '2026-06-22 10:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@example.com","char":"角色A","svr":"区服A","tasks":["mail"]}',
+                '2026-06-22 10:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_start","acc":"a@example.com","char":"角色A","svr":"区服A","task":"mail"}',
+                "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+                '2026-06-22 10:00:02.000 | coop.py:0100 |     INFO | [STAT] {"ev":"coop","acc":"a@example.com","char":"角色A","svr":"区服A","ctype":"jade","real":true,"total":1}',
+                '2026-06-22 10:00:07.000 | battle.py:0001 |     INFO | [STAT] {"ev":"battle","acc":"a@example.com","char":"角色A","svr":"区服A","count":1}',
+                "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+                '2026-06-22 10:00:10.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"task_end","acc":"a@example.com","char":"角色A","svr":"区服A","task":"mail","ok":true,"dur":9.0}',
+                '2026-06-22 10:00:11.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"acc_end","acc":"a@example.com","char":"角色A","svr":"区服A","err_count":0}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    stats = log_stats.LogStatsService().build_stats("QMUMU1", date(2026, 6, 22))
+    account = stats["multi"]["accounts"][0]
+    task = account["tasks"][0]
+
+    # 战斗边界计时：首条时间戳行 (10:00:02) 到第二条边界前末行 (10:00:07)，耗时 5 秒。
+    assert account["battle_count"] == 1
+    assert account["battle_total_duration_seconds"] == pytest.approx(5.0)
+    assert account["battle_avg_duration_seconds"] == pytest.approx(5.0)
+    assert task["battle_count"] == 1
+    assert task["battle_total_duration_seconds"] == pytest.approx(5.0)
+    assert task["battle_avg_duration_seconds"] == pytest.approx(5.0)
+
+
 def test_multi_stats_handles_rich_split_stat_lines(tmp_path, monkeypatch):
     """RichHandler 会把 [STAT] 前缀与 JSON 拆成相邻两行，必须合并解析。"""
     from module.server import log_stats
@@ -215,6 +255,134 @@ def test_multi_stats_handles_rich_split_stat_lines(tmp_path, monkeypatch):
     assert account["coop_total"] == 1
     assert account["coops"] == [{"ctype": "jade", "real": True}]
     assert account["tasks"] == [
-        {"task": "cooperation", "ok": True, "duration_seconds": 4.0}
+        {"task": "cooperation", "ok": True, "duration_seconds": 4.0, "battle_count": 0, "battle_total_duration_seconds": 0.0, "battle_avg_duration_seconds": 0.0}
     ]
     assert account["duration_seconds"] > 0
+
+
+def test_multi_stats_battle_duration_survives_repeated_acc_start(tmp_path, monkeypatch):
+    """回归测试：重复 acc_start（模拟切任务类型）不清零已累加的战斗耗时和战斗次数。
+
+    - Bug A：第二次 acc_start 覆盖已有账号状态，battle_total_duration_seconds 被清零
+    - Bug B：count=0 的 battle 清理事件将 battle_count 清零，导致平均耗时除零
+
+    场景：同一账号，两次 acc_start（第一次 mail 任务，第二次 explore 任务），
+    每轮各有一个战斗边界段，最后紧跟 count=0 清理事件。
+    """
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            # 第一轮：mail 任务
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail"}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:02.000 | battle.py:0100 |     INFO | inside battle 1',
+            '2026-06-20 06:00:07.000 | battle.py:0100 |     INFO | [STAT] {"ev":"battle","acc":"a@x.com","char":"角色A","svr":"一区","count":1}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:08.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail","ok":true,"dur":7.0}',
+            # 第二轮：切换任务类型，同一账号再次 acc_start
+            '2026-06-20 06:00:10.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["explore"]}',
+            '2026-06-20 06:00:11.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"explore"}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:12.000 | explore.py:0100 |     INFO | inside battle 2',
+            '2026-06-20 06:00:22.000 | explore.py:0100 |     INFO | [STAT] {"ev":"battle","acc":"a@x.com","char":"角色A","svr":"一区","count":2}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:23.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"explore","ok":true,"dur":12.0}',
+            # count=0 清理事件 —— 不应清零 battle_count
+            '2026-06-20 06:00:25.000 | script_task.py:0007 |     INFO | [STAT] {"ev":"battle","acc":"a@x.com","char":"角色A","svr":"一区","count":0}',
+            '2026-06-20 06:00:26.000 | script_task.py:0008 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+
+    assert result["multi"] is not None
+    accounts = result["multi"]["accounts"]
+    assert len(accounts) == 1
+    account = accounts[0]
+
+    # Bug A 断言：战斗总耗时应为两轮战斗之和（5 + 10 = 15），而非第二轮单独的值
+    assert account["battle_total_duration_seconds"] == pytest.approx(15.0)
+    # Bug B 断言：count=0 不应清零战斗次数，应保留最后有效值 2
+    assert account["battle_count"] == 2
+    assert account["battle_avg_duration_seconds"] == pytest.approx(7.5)
+
+    # start_time 应保留首次 acc_start 的时间，delta = 26 秒
+    assert account["duration_seconds"] == pytest.approx(26.0)
+
+    # 子任务级别校验
+    assert len(account["tasks"]) == 2
+    mail_task = account["tasks"][0]
+    assert mail_task["task"] == "mail"
+    assert mail_task["battle_count"] == 1
+    assert mail_task["battle_total_duration_seconds"] == pytest.approx(5.0)
+
+    explore_task = account["tasks"][1]
+    assert explore_task["task"] == "explore"
+    assert explore_task["battle_count"] == 1
+    assert explore_task["battle_total_duration_seconds"] == pytest.approx(10.0)
+
+
+def test_multi_stats_battle_duration_attributed_to_correct_account(tmp_path, monkeypatch):
+    """回归测试：战斗耗时必须归属到战斗开始时的账号，而非战斗结束时被 acc_start 切换后的账号。
+
+    场景：账号 A 的战斗段中途发生账号 B 的 acc_start，_active_key 被切换到 B。
+    战斗关闭时耗时归属应使用战斗开始时的账号 A，而非 _active_key 指向的 B。
+    """
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    log_file = log_root / "2026-06-22_QMUMU2.txt"
+    log_file.write_text(
+        "\n".join([
+            # 账号 A 启动并开始子任务
+            '2026-06-22 10:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-22 10:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail"}',
+            # 战斗段开始（属于账号 A 的战斗）
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-22 10:00:02.000 | battle.py:0100 |     INFO | inside battle',
+            # 战斗进行中，账号 B 启动 —— 触发 _active_key 切换到 B
+            '2026-06-22 10:00:05.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_start","acc":"b@x.com","char":"角色B","svr":"二区","tasks":["explore"]}',
+            '2026-06-22 10:00:06.000 | battle.py:0100 |     INFO | still in battle',
+            # 战斗段结束 —— 此时 _active_key 是 B，但耗时应归属到 A
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-22 10:00:07.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail","ok":true,"dur":7.0}',
+            '2026-06-22 10:00:08.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+            '2026-06-22 10:00:09.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"task_start","acc":"b@x.com","char":"角色B","svr":"二区","task":"explore"}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-22 10:00:10.000 | explore.py:0100 |     INFO | B battle',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-22 10:00:11.000 | script_task.py:0007 |     INFO | [STAT] {"ev":"task_end","acc":"b@x.com","char":"角色B","svr":"二区","task":"explore","ok":true,"dur":2.0}',
+            '2026-06-22 10:00:12.000 | script_task.py:0008 |     INFO | [STAT] {"ev":"acc_end","acc":"b@x.com","char":"角色B","svr":"二区","err_count":0}',
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    stats = log_stats.LogStatsService().build_stats("QMUMU2", date(2026, 6, 22))
+    accounts = stats["multi"]["accounts"]
+    assert len(accounts) == 2
+
+    account_a = next(ac for ac in accounts if ac["character"] == "角色A")
+    account_b = next(ac for ac in accounts if ac["character"] == "角色B")
+
+    # 账号 A 的战斗耗时：10:00:02 → 10:00:06 = 4 秒
+    # 当前 bug（修复前）：耗时被错误归属到 B（战斗关闭时 _active_key 指向 B）
+    assert account_a["battle_total_duration_seconds"] == pytest.approx(4.0)
+    assert account_a["battle_count"] == 1
+
+    # 账号 B 的战斗耗时：10:00:10 → 边界关闭（无中间时间戳）= 0 秒（未计入）
+    assert account_b["battle_total_duration_seconds"] == pytest.approx(0.0)
+    assert account_b["battle_count"] == 0
+
+    # A 的子任务 mail 应含边界计时战斗数据
+    mail_task = account_a["tasks"][0]
+    assert mail_task["task"] == "mail"
+    assert mail_task["battle_count"] == 1
+    assert mail_task["battle_total_duration_seconds"] == pytest.approx(4.0)
