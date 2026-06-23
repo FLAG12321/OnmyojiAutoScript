@@ -4,5 +4,11 @@
     "roiFront": "224,496,41,61",
     "roiBack": "223,495,43,63",
     "description": "description"
+  },
+  {
+    "itemName": "to_trialbattle",
+    "roiFront": "933,245,71,55",
+    "roiBack": "932,244,74,58",
+    "description": "description"
   }
 ]

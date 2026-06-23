@@ -27,7 +27,7 @@ class Trialbattle(DailyAltAccBase):
             if self.appear_then_click(self.I_TO_TRIALBATTLE_2,interval=1):
                 start_time = time.time()
                 continue
-            if self.appear_then_click(self.I_TO_TRIALBATTLE,interval=1):
+            if self.appear_then_click(self.I_TO_TRIALBATTLE,action=self.C_TO_TRIALBATTLE,interval=1):
                 start_time = time.time()
                 continue
             if self.appear_then_click(self.I_TRIALBATTLE_START,action=self.C_TRIALBATTLE_START,interval=1):
@@ -51,7 +51,7 @@ class Trialbattle(DailyAltAccBase):
             if self.appear_then_click(self.I_TO_TRIALBATTLE_2,interval=1):
                 start_time = time.time()
                 continue
-            if self.appear_then_click(self.I_TO_TRIALBATTLE,interval=1):
+            if self.appear_then_click(self.I_TO_TRIALBATTLE,action=self.C_TO_TRIALBATTLE,interval=1):
                 start_time = time.time()
                 continue
             

@@ -446,6 +446,8 @@ class DailyAltAccAssets:
 	# Click Rule Assets
 	# description 
 	C_TRIALBATTLE_START = RuleClick(roi_front=(224,496,41,61), roi_back=(223,495,43,63), name="trialbattle_start")
+	# description 
+	C_TO_TRIALBATTLE = RuleClick(roi_front=(933,245,71,55), roi_back=(932,244,74,58), name="to_trialbattle")
 
 
 	# Image Rule Assets
