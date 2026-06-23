@@ -68,9 +68,19 @@ def test_multi_stats_from_stat_lines(tmp_path, monkeypatch):
     assert account["error_count"] == 0
     assert account["battle_count"] == 3
     assert account["coop_total"] == 1
-    assert account["tasks"][0] == {"task": "cooperation", "ok": True, "duration_seconds": 4.0, "battle_count": 0, "battle_total_duration_seconds": 0.0, "battle_avg_duration_seconds": 0.0}
-    assert account["coops"] == [{"ctype": "jade", "real": True}]
-    assert account["mshops"] == [{"goods": "shepi", "price": 88}]
+    assert account["tasks"][0] == {"task": "cooperation", "ok": True, "start_time": "2026-06-20 06:00:02.000", "duration_seconds": 4.0, "battle_count": 0, "battle_total_duration_seconds": 0.0, "battle_avg_duration_seconds": 0.0}
+    assert account["coops"] == [{"ctype": "jade", "real": True, "time": "2026-06-20 06:00:05.000"}]
+    assert account["mshops"] == [{"goods": "shepi", "price": 88, "time": "2026-06-20 06:00:08.000"}]
+    # change-B 需求6：账号耗时按运行段累加，acc_start→acc_end 单段 = 10 秒
+    assert account["segments"] == [
+        {"start_time": "2026-06-20 06:00:00.000", "end_time": "2026-06-20 06:00:10.000", "duration_seconds": 10.0, "session": 0}
+    ]
+    # change-B 需求6：全天总耗时由后端汇总，前端不再自行 fold 累加
+    assert result["multi"]["total_duration_seconds"] == 10.0
+    # change-B 需求2：单次运行汇总为 1 个会话
+    assert result["multi"]["sessions"] == [
+        {"index": 0, "start_time": "2026-06-20 06:00:00.000", "end_time": "2026-06-20 06:00:10.000", "duration_seconds": 10.0, "account_count": 1}
+    ]
 
 
 def test_multi_stats_without_stat_lines_is_none(tmp_path, monkeypatch):
@@ -253,9 +263,9 @@ def test_multi_stats_handles_rich_split_stat_lines(tmp_path, monkeypatch):
     account = accounts[0]
     # 跨行后耗时、协作、子任务均须正确入账
     assert account["coop_total"] == 1
-    assert account["coops"] == [{"ctype": "jade", "real": True}]
+    assert account["coops"] == [{"ctype": "jade", "real": True, "time": "2026-06-20 06:00:01.000"}]
     assert account["tasks"] == [
-        {"task": "cooperation", "ok": True, "duration_seconds": 4.0, "battle_count": 0, "battle_total_duration_seconds": 0.0, "battle_avg_duration_seconds": 0.0}
+        {"task": "cooperation", "ok": True, "start_time": None, "duration_seconds": 4.0, "battle_count": 0, "battle_total_duration_seconds": 0.0, "battle_avg_duration_seconds": 0.0}
     ]
     assert account["duration_seconds"] > 0
 
@@ -386,3 +396,101 @@ def test_multi_stats_battle_duration_attributed_to_correct_account(tmp_path, mon
     assert mail_task["task"] == "mail"
     assert mail_task["battle_count"] == 1
     assert mail_task["battle_total_duration_seconds"] == pytest.approx(4.0)
+
+
+def test_multi_stats_duration_sums_segments_across_separate_runs(tmp_path, monkeypatch):
+    """change-B 需求6：同一账号一天内多次独立运行，总耗时应为各运行段之和，
+    而非首末事件的单一跨度（避免跨空闲间隙重复计算）。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            # 第一次运行 06:00:00 → 06:10:00（10 分钟）
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:10:00.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+            # 第二次运行 14:00:00 → 14:10:00（10 分钟），间隔远超会话阈值
+            '2026-06-20 14:00:00.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 14:10:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    # 旧口径（首末跨度）会是 8 小时 = 28800 秒；新口径应为两段各 600 秒 = 1200 秒
+    assert account["duration_seconds"] == pytest.approx(1200.0)
+    assert len(account["segments"]) == 2
+    assert account["segments"][0]["duration_seconds"] == pytest.approx(600.0)
+    assert account["segments"][1]["duration_seconds"] == pytest.approx(600.0)
+    # 总耗时同样为两段之和，而非 8 小时
+    assert result["multi"]["total_duration_seconds"] == pytest.approx(1200.0)
+
+
+def test_multi_stats_cross_account_preempt_closes_prior_segment(tmp_path, monkeypatch):
+    """change-B 需求6：上一账号未发 acc_end 时，下一账号 acc_start 应以本次起点
+    闭合上一账号的运行段。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:00:05.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail","ok":true,"dur":5.0}',
+            # 账号 A 未发 acc_end，账号 B 直接开始 —— 应在 06:00:10 闭合 A 的段
+            '2026-06-20 06:00:10.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_start","acc":"b@x.com","char":"角色B","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:00:20.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"b@x.com","char":"角色B","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    accounts = result["multi"]["accounts"]
+    account_a = next(ac for ac in accounts if ac["character"] == "角色A")
+    account_b = next(ac for ac in accounts if ac["character"] == "角色B")
+
+    # A 的段在 B 开始时刻（06:00:10）闭合：00:00 → 00:10 = 10 秒
+    assert account_a["duration_seconds"] == pytest.approx(10.0)
+    assert len(account_a["segments"]) == 1
+    # B 的段正常 acc_end 闭合：10 秒
+    assert account_b["duration_seconds"] == pytest.approx(10.0)
+    # 两账号顺序执行，总会话耗时 = 20 秒
+    assert result["multi"]["total_duration_seconds"] == pytest.approx(20.0)
+
+
+def test_multi_stats_splits_sessions_by_gap(tmp_path, monkeypatch):
+    """change-B 需求2：相邻事件间隔超过阈值应切分为多次 MultiAcc 运行会话。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            # 会话 0：账号 A
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:05:00.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+            # 会话 1：间隔 20 分钟后再次运行
+            '2026-06-20 06:25:00.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:30:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    sessions = result["multi"]["sessions"]
+
+    assert len(sessions) == 2
+    assert sessions[0]["index"] == 0
+    assert sessions[0]["start_time"] == "2026-06-20 06:00:00.000"
+    assert sessions[0]["end_time"] == "2026-06-20 06:05:00.000"
+    assert sessions[0]["duration_seconds"] == pytest.approx(300.0)
+    assert sessions[0]["account_count"] == 1
+    assert sessions[1]["index"] == 1
+    assert sessions[1]["start_time"] == "2026-06-20 06:25:00.000"
+    assert sessions[1]["account_count"] == 1

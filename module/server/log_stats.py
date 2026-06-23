@@ -24,6 +24,16 @@ _TITLE_LINE_RE = re.compile(r"^─{10,}\s*(?P<title>.*?)\s*─{10,}\s*$")
 _BATTLE_TITLE = "GENERAL BATTLE START"
 _START_TITLE = "START"
 _STAT_PREFIX = "[STAT] "
+# 多号统计的会话切分阈值：相邻事件间隔超过该秒数视为一次新的 MultiAcc 运行会话。
+# 账号在会话内顺序切换间隔通常以秒计，跨会话手动重跑间隔通常在分钟以上，故取 10 分钟。
+MULTI_SESSION_GAP_SECONDS = 600.0
+
+
+def _format_multi_ts(ts: datetime | None) -> str | None:
+    """把时间戳格式化为前端可读的毫秒级字符串，None 原样返回。"""
+    if ts is None:
+        return None
+    return ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
 @dataclass
@@ -44,14 +54,25 @@ class MultiAccountState:
     errors: list[dict] = field(default_factory=list)
     coops: list[dict] = field(default_factory=list)
     mshops: list[dict] = field(default_factory=list)
+    # 运行段（change-B 需求6）：按账号切换/任务结束标志切分，避免跨空闲段重复计算耗时。
+    # 每段为 {"start": datetime, "end": datetime, "duration": float, "session": int}
+    segments: list[dict] = field(default_factory=list)
+    # 当前未闭合运行段的起点与其所属会话索引，None 表示无未闭合段
+    segment_open_start: datetime | None = None
+    segment_open_session: int | None = None
 
     def to_payload(self) -> dict[str, Any]:
         """将账号中间状态转换为对外输出的字典格式。"""
-        duration = 0.0
-        if self.start_time is not None and self.last_time is not None and self.last_time >= self.start_time:
-            duration = round(
-                (self.last_time - self.start_time).total_seconds(), 3
-            )
+        # 账号总耗时 = 所有运行段耗时之和（需求6 新口径）
+        duration = round(sum(seg["duration"] for seg in self.segments), 3)
+        # 兜底：无运行段时（例如仅被占位创建、未经历 acc_start）回退到首末事件跨度
+        if (
+            not self.segments
+            and self.start_time is not None
+            and self.last_time is not None
+            and self.last_time >= self.start_time
+        ):
+            duration = round((self.last_time - self.start_time).total_seconds(), 3)
         # 按战斗边界计算的真实战斗耗时，与前端 snake_case 契约一致
         # 战斗次数取 STAT 事件与边界计时两者的最大值，确保无 STAT 事件时仍能反映真实战斗次数
         effective_battle_count = max(self.battle_count, self.boundary_battle_count)
@@ -74,6 +95,16 @@ class MultiAccountState:
             "errors": self.errors,
             "coops": self.coops,
             "mshops": self.mshops,
+            # 运行段明细：供前端按会话时间窗筛选（需求2）及展示每次运行（需求3）
+            "segments": [
+                {
+                    "start_time": _format_multi_ts(seg["start"]),
+                    "end_time": _format_multi_ts(seg["end"]),
+                    "duration_seconds": seg["duration"],
+                    "session": seg["session"],
+                }
+                for seg in self.segments
+            ],
         }
 
 
@@ -382,10 +413,16 @@ class MultiStatAggregator:
         self._active_battle: BattleState | None = None
         self._pending_battle_start: bool = False
         self._current_task_name: str | None = None
+        self._current_task_start_ts: datetime | None = None  # 当前子任务起点时间戳，供任务记录输出开始时间（需求3）
         self._current_task_battle_count: int = 0
         self._current_task_battle_duration: float = 0.0
         # 战斗开始时的账号归属快照：防止战斗中途 acc_start 切换 _active_key 导致耗时错账
         self._battle_owner_key: tuple[str, str, str] | None = None
+        # 运行段/会话追踪（change-B 需求6/需求2）
+        self._open_account_key: tuple[str, str, str] | None = None  # 当前有未闭合运行段的账号
+        self._last_event_ts: datetime | None = None  # 上一条事件的时刻，用于会话间隔判定
+        self._session_index: int = 0  # 当前会话索引
+        self._session_started: bool = False  # 是否已开启过会话
 
     def consume_lines(self, lines: list[str]) -> None:
         """逐行扫描，提取 [STAT] JSON 事件并分发处理。
@@ -480,6 +517,71 @@ class MultiStatAggregator:
             self._current_task_battle_duration + duration, 3
         )
 
+    def _close_open_segment(self, end_ts: datetime) -> None:
+        """以给定终点时间闭合当前未闭合的运行段，并计入对应账号的运行段列表。"""
+        key = self._open_account_key
+        if key is None:
+            return
+        account = self._accounts.get(key)
+        if account is not None and account.segment_open_start is not None:
+            start = account.segment_open_start
+            if end_ts >= start:
+                duration = round((end_ts - start).total_seconds(), 3)
+                account.segments.append(
+                    {
+                        "start": start,
+                        "end": end_ts,
+                        "duration": duration,
+                        "session": account.segment_open_session,
+                    }
+                )
+            account.segment_open_start = None
+            account.segment_open_session = None
+        self._open_account_key = None
+
+    def _close_open_segment_pending(self) -> None:
+        """快照收尾：用未闭合段所属账号的最后事件时刻闭合该段。"""
+        if self._open_account_key is None:
+            return
+        account = self._accounts.get(self._open_account_key)
+        end_ts = account.last_time if account is not None else None
+        if end_ts is None:
+            self._open_account_key = None
+            return
+        self._close_open_segment(end_ts)
+
+    def _build_sessions_payload(self) -> list[dict[str, Any]]:
+        """按运行段的会话索引聚合出每次 MultiAcc 运行会话的元数据（需求2）。"""
+        grouped: dict[int, dict[str, Any]] = {}
+        for account in self._accounts.values():
+            for seg in account.segments:
+                idx = seg["session"]
+                group = grouped.setdefault(
+                    idx,
+                    {"start": None, "end": None, "duration": 0.0, "accounts": set()},
+                )
+                if group["start"] is None or seg["start"] < group["start"]:
+                    group["start"] = seg["start"]
+                if group["end"] is None or seg["end"] > group["end"]:
+                    group["end"] = seg["end"]
+                group["duration"] = round(group["duration"] + seg["duration"], 3)
+                group["accounts"].add(
+                    (account.character, account.account, account.svr)
+                )
+        sessions: list[dict[str, Any]] = []
+        for idx in sorted(grouped):
+            group = grouped[idx]
+            sessions.append(
+                {
+                    "index": idx,
+                    "start_time": _format_multi_ts(group["start"]),
+                    "end_time": _format_multi_ts(group["end"]),
+                    "duration_seconds": group["duration"],
+                    "account_count": len(group["accounts"]),
+                }
+            )
+        return sessions
+
     def snapshot(
         self, tail_lines: list[str] | None = None
     ) -> dict[str, Any] | None:
@@ -489,6 +591,8 @@ class MultiStatAggregator:
             aggregator.consume_lines(tail_lines)
         # 关闭正在进行的战斗，确保不计时的战斗被清理
         aggregator._close_active_battle()
+        # 关闭尚未闭合的运行段（以该账号最后事件时刻为终点），确保耗时入账
+        aggregator._close_open_segment_pending()
         if not aggregator._accounts:
             return None
         accounts = [ac.to_payload() for ac in aggregator._accounts.values()]
@@ -499,8 +603,12 @@ class MultiStatAggregator:
                 item.get("svr", ""),
             )
         )
+        # 总耗时 = 各账号运行段耗时之和（账号在会话内顺序执行，累加即真实运行时长）
+        total_duration = round(sum(ac["duration_seconds"] for ac in accounts), 3)
         return {
             "accounts": accounts,
+            "sessions": aggregator._build_sessions_payload(),
+            "total_duration_seconds": total_duration,
         }
 
     @staticmethod
@@ -627,17 +735,38 @@ class MultiStatAggregator:
         """根据 STAT 事件类型更新账号聚合状态。"""
         ev = str(payload.get("ev", ""))
 
+        # 会话边界：任意事件与上一事件间隔超过阈值视为新的 MultiAcc 运行会话（需求2）。
+        # 检测放在每种事件之前，避免空闲后首个事件不是 acc_start 时把间隔提前刷新掉。
+        if (
+            self._session_started
+            and self._last_event_ts is not None
+            and (ts - self._last_event_ts).total_seconds() > MULTI_SESSION_GAP_SECONDS
+        ):
+            # 上一会话遗留的未闭合段以其最后活动时刻闭合，避免跨空闲段计入新会话
+            self._close_open_segment_pending()
+            self._session_index += 1
+        self._last_event_ts = ts
+        self._session_started = True
+
         if ev == "acc_start":
-            # 若该账号已存在聚合状态（重复 acc_start，例如切任务类型），
-            # 则复用已有状态，只更新最后事件时间，不清零累加字段。
             key = self._event_key(payload)
+            # 抢占闭合：若有未闭合运行段（本账号上一段或上一账号未结束），以本次 acc_start 时刻为终点闭合
+            # 对应"下一个账号开始切换但没看到结束标志，也应结束上个账号耗时"的口径（需求6）
+            self._close_open_segment(end_ts=ts)
+            # 确保账号聚合状态存在；重复 acc_start 仅新增运行段，不清零已累加的战斗/协作等字段
             if key in self._accounts:
-                existing = self._accounts[key]
-                existing.last_time = ts
+                account = self._accounts[key]
                 self._active_key = key
                 self._pending_account = None
-                return
-            self._create_account_state(payload, ts)
+            else:
+                account = self._create_account_state(payload, ts)
+            # 开启新运行段
+            account.segment_open_start = ts
+            account.segment_open_session = self._session_index
+            account.last_time = ts
+            if account.start_time is None:
+                account.start_time = ts
+            self._open_account_key = key
             return
 
         account = self._account_for_event(payload, ts, create_placeholder=True)
@@ -648,8 +777,9 @@ class MultiStatAggregator:
             account.switch_ok = payload.get("ok")
             account.last_time = ts
         elif ev == "task_start":
-            # 记录当前子任务名，重置任务级战斗计数器
+            # 记录当前子任务名与起点时间，重置任务级战斗计数器
             self._current_task_name = str(payload.get("task", ""))
+            self._current_task_start_ts = ts
             self._current_task_battle_count = 0
             self._current_task_battle_duration = 0.0
             account.last_time = ts
@@ -663,6 +793,7 @@ class MultiStatAggregator:
             account.tasks.append({
                 "task": str(payload.get("task", "")),
                 "ok": bool(payload.get("ok", False)),
+                "start_time": _format_multi_ts(self._current_task_start_ts),  # 子任务起点（需求3 hover 展示）
                 "duration_seconds": float(payload.get("dur", 0.0) or 0.0),
                 "battle_count": self._current_task_battle_count,
                 "battle_total_duration_seconds": self._current_task_battle_duration,
@@ -670,6 +801,7 @@ class MultiStatAggregator:
             })
             account.last_time = ts
             self._current_task_name = None
+            self._current_task_start_ts = None
             self._current_task_battle_count = 0
             self._current_task_battle_duration = 0.0
         elif ev == "error":
@@ -690,6 +822,7 @@ class MultiStatAggregator:
             account.coops.append({
                 "ctype": str(payload.get("ctype", "")),
                 "real": bool(payload.get("real", False)),
+                "time": _format_multi_ts(ts),  # 事件时刻，供前端按会话筛选（需求2）
             })
             total = int(payload.get("total", 0) or 0)
             if total > account.coop_total:
@@ -699,10 +832,14 @@ class MultiStatAggregator:
             account.mshops.append({
                 "goods": str(payload.get("goods", "")),
                 "price": payload.get("price", 0),
+                "time": _format_multi_ts(ts),  # 事件时刻，供前端按会话筛选（需求2）
             })
             account.last_time = ts
         elif ev == "acc_end":
             account.last_time = ts
+            # 正常结束：以 acc_end 时刻闭合本账号运行段
+            if self._open_account_key == self._event_key(payload):
+                self._close_open_segment(end_ts=ts)
 
 
 @dataclass

@@ -37,6 +37,7 @@ class TaskStatsResponse(BaseModel):
 class MultiTaskResponse(BaseModel):
     task: str
     ok: bool
+    start_time: str | None = None  # 子任务起点时间（需求3 hover 展示）
     duration_seconds: float | None = None
     battle_count: int = 0
     battle_total_duration_seconds: float = 0.0
@@ -52,11 +53,22 @@ class MultiErrorResponse(BaseModel):
 class MultiCoopResponse(BaseModel):
     ctype: str
     real: bool = False
+    time: str | None = None  # 事件时刻，供前端按会话筛选（需求2）
 
 
 class MultiMshopResponse(BaseModel):
     goods: str
     price: int | float | None = None
+    time: str | None = None  # 事件时刻，供前端按会话筛选（需求2）
+
+
+class MultiSegmentResponse(BaseModel):
+    """账号单次运行段：按账号切换/任务结束标志切分的连续运行区间（需求6）。"""
+
+    start_time: str | None = None
+    end_time: str | None = None
+    duration_seconds: float = 0.0
+    session: int = 0  # 所属 MultiAcc 会话索引
 
 
 class MultiAccountResponse(BaseModel):
@@ -74,10 +86,23 @@ class MultiAccountResponse(BaseModel):
     errors: list[MultiErrorResponse] = Field(default_factory=list)
     coops: list[MultiCoopResponse] = Field(default_factory=list)
     mshops: list[MultiMshopResponse] = Field(default_factory=list)
+    segments: list[MultiSegmentResponse] = Field(default_factory=list)
+
+
+class MultiSessionResponse(BaseModel):
+    """每次 MultiAcc 运行会话的元数据（需求2 时间筛选）。"""
+
+    index: int
+    start_time: str | None = None
+    end_time: str | None = None
+    duration_seconds: float = 0.0
+    account_count: int = 0
 
 
 class MultiStatsResponse(BaseModel):
     accounts: list[MultiAccountResponse] = Field(default_factory=list)
+    sessions: list[MultiSessionResponse] = Field(default_factory=list)  # 每次运行会话（需求2）
+    total_duration_seconds: float = 0.0  # 全天总耗时 = 各账号运行段耗时之和（需求6）
 
 
 class StatsResponse(BaseModel):
