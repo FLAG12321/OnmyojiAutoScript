@@ -83,9 +83,9 @@ class ActivityShikigamiAssets:
 	# 红色退出 
 	I_RED_EXIT = RuleImage(roi_front=(1162,96,39,38), roi_back=(1029,53,216,159), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_red_exit.png")
 	# 进入主要的战斗界面 
-	I_TO_BATTLE_MAIN = RuleImage(roi_front=(402,308,39,128), roi_back=(336,205,195,326), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
+	I_TO_BATTLE_MAIN = RuleImage(roi_front=(243,297,39,128), roi_back=(183,198,195,326), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
 	# 点击进入boss战斗页面 
-	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1084,282,34,122), roi_back=(1038,228,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
+	I_TO_BATTLE_BOSS = RuleImage(roi_front=(937,249,34,122), roi_back=(878,153,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
 	# description 
 	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(148,17,135,39), roi_back=(78,5,260,107), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_main.png")
 	# description 
@@ -125,11 +125,11 @@ class ActivityShikigamiAssets:
 
 	# Ocr Rule Assets
 	# 挑战 
-	O_FIRE = RuleOcr(roi=(1141,605,75,41), area=(1165,609,31,26), mode="Single", method="Default", keyword="挑战", name="fire")
+	O_FIRE = RuleOcr(roi=(1133,605,83,41), area=(1165,609,31,26), mode="Single", method="Default", keyword="挑战", name="fire")
 	# 体力的数量检测 
-	O_REMAIN_AP = RuleOcr(roi=(584,17,71,31), area=(583,14,70,34), mode="DigitCounter", method="Default", keyword="", name="remain_ap")
+	O_REMAIN_AP = RuleOcr(roi=(774,16,71,31), area=(773,16,70,34), mode="DigitCounter", method="Default", keyword="", name="remain_ap")
 	# 活动体力的剩余检测 
-	O_REMAIN_PASS = RuleOcr(roi=(787,13,57,35), area=(753,2,102,54), mode="DigitCounter", method="Default", keyword="", name="remain_pass")
+	O_REMAIN_PASS = RuleOcr(roi=(593,14,57,35), area=(586,17,66,30), mode="DigitCounter", method="Default", keyword="", name="remain_pass")
 	# 还有多少次购买体力的机会 
 	O_REMAIN_BUY = RuleOcr(roi=(808,531,39,42), area=(808,531,39,42), mode="DigitCounter", method="Default", keyword="", name="remain_buy")
 	# 活动票数（没有百分比） 

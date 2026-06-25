@@ -268,11 +268,15 @@ def _get_renderables(
 
 def print(*objects: ConsoleRenderable, **kwargs):
     for hdlr in logger.handlers:
-        if isinstance(hdlr, FlutterHandler):
-            for renderable in _get_renderables(hdlr.console, *objects, **kwargs):
-                hdlr.console.file._func(str(renderable))
-        elif isinstance(hdlr, RichHandler):
-            hdlr.console.print(*objects)
+        try:
+            if isinstance(hdlr, FlutterHandler):
+                for renderable in _get_renderables(hdlr.console, *objects, **kwargs):
+                    hdlr.console.file._func(str(renderable))
+            elif isinstance(hdlr, RichHandler):
+                hdlr.console.print(*objects)
+        except OSError:
+            # 控制台句柄失效时不能让日志输出中断业务流程，文件日志会继续由其他 handler 记录。
+            continue
 
 
 class GuiRule(Rule):

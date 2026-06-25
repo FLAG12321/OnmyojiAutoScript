@@ -110,10 +110,21 @@ class EmulatorCaptureSession:
             }
 
     def start(self, config_name: str, frame_rate: int) -> int:
+        applied_rate = max(1, min(int(frame_rate), 10))
+        with self._frame_lock:
+            # 同一会话同参数重复启动时复用现有采集线程，避免前端连点导致后台线程反复重建。
+            if (
+                self._thread
+                and self._thread.is_alive()
+                and self.state in {"starting", "running"}
+                and self.config_name == config_name
+                and self.frame_rate == applied_rate
+            ):
+                return self.frame_rate
         self.stop(clear_error=True)
         with self._frame_lock:
             self.config_name = config_name
-            self.frame_rate = max(1, min(int(frame_rate), 10))
+            self.frame_rate = applied_rate
             self.state = "starting"
             self.error = ""
             self._updated_at = 0.0

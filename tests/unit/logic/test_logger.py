@@ -39,3 +39,21 @@ def test_file_logger_preserves_underscores_in_explicit_name(tmp_path):
 
     assert result.returncode == 0
     assert "_get_images.txt" in result.stdout
+
+
+def test_rich_console_write_error_does_not_escape_logger_print(tmp_path):
+    snippet = r'''
+import module.logger as m
+
+class BrokenConsole:
+    def print(self, *objects):
+        raise OSError(22, "Invalid argument")
+
+m.console_hdlr.console = BrokenConsole()
+m.rule("Device")
+print("survived")
+'''
+    result = run_logger_snippet(tmp_path, snippet)
+
+    assert result.returncode == 0
+    assert "survived" in result.stdout
