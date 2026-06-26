@@ -24,17 +24,34 @@
       </div>
     </div>
   </div>
-  <div class="roi-values">
-    <label>roiFront<input id="roiFrontValue" type="text"></label>
-    <label>roiBack<input id="roiBackValue" type="text"></label>
-  </div>
-
+  <!-- 输出区左侧显示日志，右侧显示当前框选和已有截图对比。 -->
   <section class="panel output-panel center-output-panel" id="centerOutputPanel">
-    <div class="output-header">
-      <h3>输出</h3>
-      <button id="clearOutputBtn" type="button">清空输出</button>
+    <div class="output-preview-layout">
+      <div class="output-log-column">
+        <div class="output-header">
+          <h3>输出</h3>
+          <button id="clearOutputBtn" type="button">清空输出</button>
+        </div>
+        <pre id="outputLog" class="output-log"></pre>
+      </div>
+      <div class="roi-preview-compare" id="roiPreviewCompare">
+        <div class="output-header preview-header">
+          <h3>预览对比</h3>
+        </div>
+        <div class="roi-preview-grid">
+          <figure class="roi-preview-card">
+            <figcaption>当前框选</figcaption>
+            <canvas id="roiPreviewCurrent" class="roi-preview-canvas"></canvas>
+            <div id="roiPreviewCurrentEmpty" class="roi-preview-empty">请选择图片和规则</div>
+          </figure>
+          <figure class="roi-preview-card">
+            <figcaption>已有截图</figcaption>
+            <img id="roiPreviewSaved" class="roi-preview-image" alt="已有截图预览" />
+            <div id="roiPreviewSavedEmpty" class="roi-preview-empty">未保存截图</div>
+          </figure>
+        </div>
+      </div>
     </div>
-    <pre id="outputLog" class="output-log"></pre>
   </section>
 </section>
 

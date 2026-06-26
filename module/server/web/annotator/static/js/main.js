@@ -1,5 +1,6 @@
 (function () {
   const STATIC_PREFIX = "/tool/annotator/static";
+  const STATIC_VERSION = "20260627-annotator-preview";
 
   const widgets = [
     { mountId: "topbarMount", name: "topbar", script: "topbar.js" },
@@ -16,7 +17,7 @@
   }
 
   async function fetchWidget(name) {
-    const response = await fetch(`${STATIC_PREFIX}/widget/${name}.html`, { cache: "no-cache" });
+    const response = await fetch(`${STATIC_PREFIX}/widget/${name}.html?v=${STATIC_VERSION}`, { cache: "no-cache" });
     if (!response.ok) {
       throw new Error(`加载组件失败: ${name} (${response.status})`);
     }
@@ -46,7 +47,7 @@
 
   async function loadComponentScripts() {
     for (const widget of widgets) {
-      await loadScript(`${STATIC_PREFIX}/js/${widget.script}`);
+      await loadScript(`${STATIC_PREFIX}/js/${widget.script}?v=${STATIC_VERSION}`);
     }
 
     const registry = ensureRegistry();
@@ -60,8 +61,8 @@
 
   async function loadRuntimeScripts() {
     // 保持原有初始化顺序：先布局脚本，再业务脚本。
-    await loadScript(`${STATIC_PREFIX}/js/layout-ui.js`);
-    await loadScript(`${STATIC_PREFIX}/js/app.js`);
+    await loadScript(`${STATIC_PREFIX}/js/layout-ui.js?v=${STATIC_VERSION}`);
+    await loadScript(`${STATIC_PREFIX}/js/app.js?v=${STATIC_VERSION}`);
   }
 
   function showBootError(error) {

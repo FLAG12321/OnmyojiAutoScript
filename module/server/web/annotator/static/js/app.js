@@ -98,6 +98,10 @@
     testRoiBack: document.getElementById("testRoiBack"),
     outputLog: document.getElementById("outputLog"),
     clearOutputBtn: document.getElementById("clearOutputBtn"),
+    roiPreviewCurrent: document.getElementById("roiPreviewCurrent"),
+    roiPreviewCurrentEmpty: document.getElementById("roiPreviewCurrentEmpty"),
+    roiPreviewSaved: document.getElementById("roiPreviewSaved"),
+    roiPreviewSavedEmpty: document.getElementById("roiPreviewSavedEmpty"),
 
     dirSelectors: document.getElementById("dirSelectors"),
     currentDir: document.getElementById("currentDir"),
@@ -745,6 +749,74 @@
     return `${Math.round(x)},${Math.round(y)},${Math.max(1, Math.round(w))},${Math.max(1, Math.round(h))}`;
   }
 
+  // 切换预览卡片空态，避免无图时残留旧画面。
+  function setPreviewCardState(node, hasPreview) {
+    const card = node ? node.closest(".roi-preview-card") : null;
+    if (card) {
+      card.classList.toggle("has-preview", Boolean(hasPreview));
+    }
+  }
+
+  function clearCurrentRoiPreview() {
+    if (!el.roiPreviewCurrent) {
+      return;
+    }
+    const context = el.roiPreviewCurrent.getContext("2d");
+    context.clearRect(0, 0, el.roiPreviewCurrent.width || 1, el.roiPreviewCurrent.height || 1);
+    setPreviewCardState(el.roiPreviewCurrent, false);
+  }
+
+  function refreshCurrentRoiPreview() {
+    if (!el.roiPreviewCurrent || !el.mainImage.complete || !el.mainImage.naturalWidth) {
+      clearCurrentRoiPreview();
+      return;
+    }
+    const rule = getCurrentRule();
+    if (!rule || !state.currentImageId) {
+      clearCurrentRoiPreview();
+      return;
+    }
+
+    const [x, y, w, h] = parseRoi(rule.roiFront || el.roiFrontValue.value || "");
+    const naturalW = el.mainImage.naturalWidth;
+    const naturalH = el.mainImage.naturalHeight;
+    const cropX = Math.max(0, Math.min(Math.round(x), naturalW - 1));
+    const cropY = Math.max(0, Math.min(Math.round(y), naturalH - 1));
+    const cropW = Math.max(1, Math.min(Math.round(w), naturalW - cropX));
+    const cropH = Math.max(1, Math.min(Math.round(h), naturalH - cropY));
+
+    el.roiPreviewCurrent.width = cropW;
+    el.roiPreviewCurrent.height = cropH;
+    const context = el.roiPreviewCurrent.getContext("2d");
+    context.clearRect(0, 0, cropW, cropH);
+    context.drawImage(el.mainImage, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    setPreviewCardState(el.roiPreviewCurrent, true);
+  }
+
+  function refreshSavedRoiPreview() {
+    if (!el.roiPreviewSaved) {
+      return;
+    }
+    const rule = getCurrentRule();
+    const url = rule ? currentRulePreviewUrl(rule) : "";
+    if (!url) {
+      el.roiPreviewSaved.removeAttribute("src");
+      setPreviewCardState(el.roiPreviewSaved, false);
+      return;
+    }
+    el.roiPreviewSaved.onload = () => setPreviewCardState(el.roiPreviewSaved, true);
+    el.roiPreviewSaved.onerror = () => {
+      el.roiPreviewSaved.removeAttribute("src");
+      setPreviewCardState(el.roiPreviewSaved, false);
+    };
+    el.roiPreviewSaved.src = `${url}&t=${Date.now()}`;
+  }
+
+  function refreshRoiPreviewCompare() {
+    refreshCurrentRoiPreview();
+    refreshSavedRoiPreview();
+  }
+
   function applyBoxFromRoi(box, roiText) {
     const viewport = getRoiViewport();
     const [x, y, w, h] = parseRoi(roiText);
@@ -831,6 +903,7 @@
       el.testRoiFront.classList.add("hidden");
       el.testRoiBack.classList.add("hidden");
       updateRoiViewport();
+      clearCurrentRoiPreview();
       return;
     }
     el.mainImage.src = url;
@@ -1189,6 +1262,7 @@
     el.roiFrontValue.value = front;
     el.roiBackValue.value = back;
     markDirty();
+    refreshCurrentRoiPreview();
   }
 
   function captureCurrentCanvasRois() {
@@ -1259,6 +1333,7 @@
     }
 
     markDirty();
+    refreshCurrentRoiPreview();
   }
 
   function refreshRoiLayoutFromRule() {
@@ -1379,16 +1454,9 @@
     const naturalW = el.mainImage.naturalWidth || 1280;
     const naturalH = el.mainImage.naturalHeight || 720;
 
-    const containerW = el.stageWrap && el.stageWrap.parentElement
-      ? (el.stageWrap.parentElement.clientWidth - 28)
-      : 940;
-
-    const stageBaseH = window.innerWidth <= 1320
-      ? 520
-      : Math.min(window.innerHeight * 0.62, 640);
-
-    const maxW = Math.max(320, containerW);
-    const maxH = Math.max(240, stageBaseH - 20);
+    const wrapRect = el.stageWrap ? el.stageWrap.getBoundingClientRect() : null;
+    const maxW = Math.max(1, (wrapRect && wrapRect.width ? wrapRect.width : 940) - 28);
+    const maxH = Math.max(1, (wrapRect && wrapRect.height ? wrapRect.height : 560) - 28);
     const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
 
     const stageScale = scale || 1;
@@ -1734,6 +1802,7 @@
     refreshRoiLayoutFromRule();
     clearTestOverlay();
     updateFieldVisibility();
+    refreshRoiPreviewCompare();
   }
 
   function fillListMetaForm() {
@@ -1773,6 +1842,7 @@
 
     fillListMetaForm();
     updateFieldVisibility();
+    refreshRoiPreviewCompare();
   }
 
   function updateRuleFromForm(changedField = "") {
@@ -1836,6 +1906,7 @@
       refreshActiveRuleItem();
     }
     markDirty();
+    refreshRoiPreviewCompare();
     refreshActiveRuleImageExists().catch(() => {
       // ignore
     });
@@ -2166,6 +2237,7 @@
     showMessage(`已加载 ${state.taskName}/${state.jsonRelPath} (${state.ruleType})`, "ok");
 
     await refreshActiveRuleImageExists();
+    refreshRoiPreviewCompare();
   }
 
   function collectRulesPayload() {
@@ -2299,6 +2371,7 @@
     }
 
     refreshActiveRuleItem();
+    refreshRoiPreviewCompare();
     await refreshActiveRuleImageExists();
   }
 
@@ -2718,7 +2791,10 @@
     el.stopEmulatorBtn.addEventListener("click", withError(stopEmulator));
     el.captureBtn.addEventListener("click", withError(captureEmulatorFrame));
 
-    el.mainImage.addEventListener("load", adjustStageByImage);
+    el.mainImage.addEventListener("load", () => {
+      adjustStageByImage();
+      refreshCurrentRoiPreview();
+    });
 
     const applyFrontInput = () => applyRoiInputToRule("front");
     const applyBackInput = () => applyRoiInputToRule("back");

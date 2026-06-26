@@ -42,6 +42,11 @@
 
           <div class="rule-detail-scroll">
             <div class="form-grid" id="ruleFields"></div>
+            <!-- ROI 输入放在规则字段后，保留原 id 供脚本绑定。 -->
+            <div class="form-grid roi-values" id="roiFields">
+              <label>roiFront<input id="roiFrontValue" type="text"></label>
+              <label>roiBack<input id="roiBackValue" type="text"></label>
+            </div>
 
             <div class="row action-row">
               <button id="saveImageBtn" type="button" class="hidden">裁剪</button>

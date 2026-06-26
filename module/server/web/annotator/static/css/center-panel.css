@@ -67,13 +67,16 @@
   overflow: hidden;
 }
 
+/* 固定画布视口，缩放只改变内部图片和 ROI 显示。 */
 .stage-wrap {
   flex: 1 1 auto;
   min-height: 180px;
   height: auto;
   max-height: none;
-  display: block;
-  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   border: 1px solid var(--line-main);
   border-radius: 8px;
   background:
@@ -84,18 +87,16 @@
 }
 
 .stage-canvas-holder {
-  min-width: 100%;
-  width: max-content;
+  min-width: 0;
+  width: 100%;
   text-align: center;
 }
 
 .image-stage {
   position: relative;
   display: inline-block;
-  width: auto !important;
-  height: auto !important;
-  min-width: 320px;
-  min-height: 180px;
+  width: auto;
+  height: auto;
   border: 1px solid var(--line-main);
   border-radius: 6px;
   overflow: hidden;
@@ -108,8 +109,8 @@
 #mainImage {
   position: relative;
   display: block;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   max-width: none;
   max-height: none;
   object-fit: fill;
@@ -120,6 +121,12 @@
 #mainImage:not([src]),
 #mainImage[src=""] {
   display: none;
+}
+
+.image-stage:has(#mainImage:not([src])),
+.image-stage:has(#mainImage[src=""]) {
+  min-width: 320px;
+  min-height: 180px;
 }
 
 .no-image {
@@ -231,8 +238,6 @@ html[data-theme="light"] .roi .tag {
   border: 1px solid var(--line-main);
   border-radius: 8px;
   background: var(--bg-subpanel);
-  display: flex;
-  flex-direction: column;
   min-height: 120px;
   max-height: 240px;
   flex: 0 0 auto;
@@ -246,12 +251,35 @@ html[data-theme="light"] .roi .tag {
   max-height: 240px;
 }
 
+.output-preview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.output-log-column,
+.roi-preview-compare {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.output-log-column {
+  border-right: 1px solid var(--line-main);
+}
+
 .output-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--line-main);
   padding: 8px 10px;
+}
+
+.preview-header {
+  justify-content: flex-start;
 }
 
 .output-log {
@@ -265,6 +293,67 @@ html[data-theme="light"] .roi .tag {
   flex: 1;
   color: var(--text-main);
   background: var(--bg-output);
+}
+
+.roi-preview-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-output);
+}
+
+.roi-preview-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  border: 1px solid var(--line-input);
+  border-radius: 6px;
+  background: var(--bg-stage-inner);
+  overflow: hidden;
+}
+
+.roi-preview-card figcaption {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line-input);
+}
+
+.roi-preview-canvas,
+.roi-preview-image {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--bg-stage-inner);
+}
+
+.roi-preview-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-stage-inner);
+}
+
+.roi-preview-card.has-preview .roi-preview-empty {
+  display: none;
 }
 
 @media (max-width: 1800px) {

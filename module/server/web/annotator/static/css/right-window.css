@@ -222,6 +222,13 @@
   grid-column: 1 / -1;
 }
 
+/* ROI 输入跟随规则详情，方便和 itemName 一起编辑。 */
+.rule-detail-scroll .roi-values {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-main);
+}
+
 .action-row {
   align-items: center;
 }
