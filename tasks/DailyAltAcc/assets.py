@@ -368,6 +368,8 @@ class DailyAltAccAssets:
 	I_H_BACK_RED2 = RuleImage(roi_front=(933,88,44,39), roi_back=(906,55,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/returngift/returngift_h_back_red2.png")
 	# description 
 	I_SUDDEN = RuleImage(roi_front=(534,179,63,22), roi_back=(430,160,419,98), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/returngift/sudden.png")
+	#  
+	I_PAGE_TK = RuleImage(roi_front=(724,284,105,46), roi_back=(706,246,144,283), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/returngift/returngift_page_tk.png")
 
 
 	# Click Rule Assets

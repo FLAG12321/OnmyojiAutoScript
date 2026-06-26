@@ -16,7 +16,7 @@ class Returngift(DailyAltAccBase):
             if retry_count >= 3:
                 self.appear_then_click(self.I_TO_THINK, threshold=0.9, interval=1)
                 break
-            if self.appear_then_click(self.I_SUDDEN,action=self.C_BACK_RED, interval=1):
+            if self.appear_then_click(self.I_SUDDEN, action=self.C_BACK_RED, interval=1):
                 logger.info(f"I_SUDDEN found ")
                 continue
             """ if self.appear_then_click(self.I_H_BACK_RED, interval=1):
@@ -27,18 +27,21 @@ class Returngift(DailyAltAccBase):
                 logger.info(f"I_TO_THINK found ")
                 continue
             if self.appear_then_click(self.I_QIYUAN, interval=1):
-                #self.wait_until_appear_then_click(self.I_BACK_RED,wait_time=1)
                 continue
         retry_count = 0
         while 1:
             self.screenshot()
             logger.info(f"screenshot found ")
+            # 祈愿界面可能随机弹出 I_PAGE_TK，优先点返回红键跳过。
+            if self.appear_then_click(self.I_PAGE_TK, action=self.C_BACK_RED, interval=1):
+                logger.info(f"I_PAGE_TK found ")
+                continue
             if retry_count >= 3:
                 break
             if not self.appear(self.I_FLAG_THINK) and self.appear(self.I_TO_THINK,):
                 self.appear_then_click(self.I_TO_THINK, interval=3)
                 continue
-            if  self.appear(self.I_BTN_ENSURE):
+            if self.appear(self.I_BTN_ENSURE):
                 self.ui_click_until_disappear(self.I_BTN_ENSURE, interval=1)
                 break
             if self.appear_then_click(self.I_BTN_THINK, interval=1):
@@ -46,7 +49,7 @@ class Returngift(DailyAltAccBase):
             if self.appear(self.I_FLAG_THINK):
                 retry_count += 1
                 continue
-            if self.appear_then_click(self.I_SUDDEN,action=self.C_BACK_RED, interval=1):
+            if self.appear_then_click(self.I_SUDDEN, action=self.C_BACK_RED, interval=1):
                 continue
         while 1:
             self.screenshot()
@@ -54,7 +57,7 @@ class Returngift(DailyAltAccBase):
                 continue
             if self.appear_then_click(self.I_BACK_YELLOW, interval=1):
                 continue
-            if self.appear_then_click(self.I_SUDDEN,action=self.C_BACK_RED, interval=1):
+            if self.appear_then_click(self.I_SUDDEN, action=self.C_BACK_RED, interval=1):
                 logger.info(f"I_SUDDEN found ")
                 continue
             if self.ui_get_current_page() == page_main:

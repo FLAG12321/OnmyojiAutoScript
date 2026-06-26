@@ -64,11 +64,20 @@
   },
   {
     "itemName": "sudden",
+    "imageName": "sudden.png",
     "roiFront": "534,179,63,22",
     "roiBack": "430,160,419,98",
-    "description": "description",
-    "imageName": "sudden.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
+  },
+  {
+    "itemName": "page_tk",
+    "imageName": "returngift_page_tk.png",
+    "roiFront": "724,284,105,46",
+    "roiBack": "706,246,144,283",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
   }
 ]
