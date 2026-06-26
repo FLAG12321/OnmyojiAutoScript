@@ -150,7 +150,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear_then_click(self.I_FORM_TEAM, interval=1):
                 continue
         # 创建房间
-        self.create_room()
+        if not self.create_room():
+            return False
         self.ensure_private()
         self.create_ensure()
 

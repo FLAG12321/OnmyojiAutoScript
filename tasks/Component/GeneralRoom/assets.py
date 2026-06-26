@@ -23,9 +23,9 @@ class GeneralRoomAssets:
 
 	# Image Rule Assets
 	# description 
-	I_CREATE_ROOM = RuleImage(roi_front=(1001,607,142,38), roi_back=(396,569,813,100), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/gr/create_room.png")
+	I_CREATE_ROOM = RuleImage(roi_front=(1007,607,136,40), roi_back=(782,572,406,103), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/gr/create_room.png")
 	# description 
-	I_CREATE_ENSURE = RuleImage(roi_front=(840,573,74,37), roi_back=(787,543,187,78), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/gr/create_ensure.png")
+	I_CREATE_ENSURE = RuleImage(roi_front=(843,576,71,31), roi_back=(787,553,176,75), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/gr/create_ensure.png")
 	# 勾选不公开的图 
 	I_ENSURE_PRIVATE = RuleImage(roi_front=(748,489,36,40), roi_back=(748,489,36,40), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/gr/gr_ensure_private.png")
 	# 这个是还没勾选的图 

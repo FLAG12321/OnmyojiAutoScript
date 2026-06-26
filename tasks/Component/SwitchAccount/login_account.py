@@ -8,6 +8,7 @@ from module.atom.click import RuleClick
 from module.atom.gif import RuleGif
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
+from module.exception import GameNotRunningError
 from module.logger import logger
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
@@ -220,6 +221,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         logger.info("start selectAccount")
         self.O_SA_ACCOUNT_ACCOUNT_LIST.keyword = accountInfo.account
         self.O_SA_ACCOUNT_ACCOUNT_SELECTED.keyword = accountInfo.account
+        account_list_swipe_start = None
         # 正常情况一次就行,但防住OCR搞幺子 多来几次保险起见 反正挂机不差这点
         for i in range(3):
             while 1:
@@ -328,14 +330,22 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     retry_count =0
                     while 1:
                         if retry_count > 3:
-                            return False                            
+                            return False
                         self.screenshot()
                         if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                             break
                         self.click(self.C_SA_LOGIN_FORM_DROPDOWN_BTN)
                         retry_count += 1
                         time.sleep(1.5)
-                    break    
+                    break
+                if account_list_swipe_start is None:
+                    account_list_swipe_start = time.time()
+                elif time.time() - account_list_swipe_start >= 60:
+                    # 账号列表长时间无法收敛时，确认游戏是否仍在前台运行
+                    if not self.device.app_is_running():
+                        logger.warning("Game disappeared while swiping account list")
+                        raise GameNotRunningError("Game disappeared while swiping account list")
+                    account_list_swipe_start = time.time()
                 self.swipe(self.S_SA_ACCOUNT_LIST_UP, 1.5)
                 time.sleep(0.5)
                 continue  # 继续while循环，重新OCR识别

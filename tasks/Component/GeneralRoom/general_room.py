@@ -24,7 +24,7 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
         :return:
         """
         logger.info('Create room')
-        if not self.appear(self.I_CREATE_ROOM):
+        if not self.wait_until_appear(self.I_CREATE_ROOM):
             logger.warning('No create room button')
             return False
         click_number = 0

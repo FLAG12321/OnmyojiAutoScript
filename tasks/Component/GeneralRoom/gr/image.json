@@ -2,8 +2,8 @@
   {
     "itemName": "create_room",
     "imageName": "create_room.png",
-    "roiFront": "1001,607,142,38",
-    "roiBack": "396,569,813,100",
+    "roiFront": "1007,607,136,40",
+    "roiBack": "782,572,406,103",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -11,8 +11,8 @@
   {
     "itemName": "create_ensure",
     "imageName": "create_ensure.png",
-    "roiFront": "840,573,74,37",
-    "roiBack": "787,543,187,78",
+    "roiFront": "843,576,71,31",
+    "roiBack": "787,553,176,75",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
