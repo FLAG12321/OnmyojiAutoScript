@@ -217,6 +217,13 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 self.click(self.C_SA_LOGIN_FORM_USER_CENTER, 1.5)
                 continue
         return
+
+    def _ensure_game_alive(self):
+        # 切换账号过程中，若检测到MuMu桌面壁纸，则判定游戏已闪退到桌面，抛异常交由恢复逻辑处理
+        if self.appear(self.I_PAGE_DESKTOP):
+            logger.warning("Detected MuMu desktop, game crashed to desktop while switching account")
+            raise GameNotRunningError("Game crashed to desktop while switching account")
+
     def selectAccount(self, accountInfo: AccountInfo):
         logger.info("start selectAccount")
         self.O_SA_ACCOUNT_ACCOUNT_LIST.keyword = accountInfo.account
@@ -226,7 +233,6 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         for i in range(3):
             while 1:
                 self.screenshot()
-                
                 # 优先检查是否已经出现登录按钮（即账号已选中）
                 if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                     # 验证选中的账号是否正确
@@ -261,13 +267,13 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     retry_count =0
                     while 1:
                         if retry_count > 3:
-                            return False                            
+                            return False
                         self.screenshot()
                         if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                             break
                         self.click(self.C_SA_LOGIN_FORM_ENTER_GAME_BTN)
                         retry_count += 1
-                        time.sleep(1.5)         
+                        time.sleep(1.5)
                     continue
 
                 # 账号列表已打开状态
@@ -308,7 +314,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     retry_count=0
                     while 1:
                         if retry_count > 4:
-                            break                            
+                            break
                         self.screenshot()
                         if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                             break
@@ -341,10 +347,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 if account_list_swipe_start is None:
                     account_list_swipe_start = time.time()
                 elif time.time() - account_list_swipe_start >= 60:
-                    # 账号列表长时间无法收敛时，确认游戏是否仍在前台运行
-                    if not self.device.app_is_running():
-                        logger.warning("Game disappeared while swiping account list")
-                        raise GameNotRunningError("Game disappeared while swiping account list")
+                    # 连续滑动60秒未收敛时，检测是否闪退到MuMu桌面，避免在桌面上持续滑动
+                    self._ensure_game_alive()
                     account_list_swipe_start = time.time()
                 self.swipe(self.S_SA_ACCOUNT_LIST_UP, 1.5)
                 time.sleep(0.5)

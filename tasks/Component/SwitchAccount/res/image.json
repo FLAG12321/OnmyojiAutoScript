@@ -68,7 +68,7 @@
     "roiFront": "427,552,163,39",
     "roiBack": "400,540,220,60",
     "method": "Template matching",
-    "threshold": "0.7",
+    "threshold": 0.7,
     "description": "登录界面-选取账号界面-账号下拉菜单-添加新账号."
   },
   {
@@ -118,20 +118,29 @@
   },
   {
     "itemName": "sa_account_drop_down_opened",
+    "imageName": "sa_account_drop_down_opened.png",
     "roiFront": "866,581,26,17",
     "roiBack": "859,578,38,23",
-    "description": "description",
-    "imageName": "sa_account_drop_down_opened.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "sa_apple_back",
+    "imageName": "sa_apple_back.png",
     "roiFront": "898,169,22,22",
     "roiBack": "869,149,73,62",
-    "description": "description",
-    "imageName": "sa_apple_back.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "page_desktop",
+    "imageName": "res_page_desktop.png",
+    "roiFront": "1171,5,71,25",
+    "roiBack": "1081,0,199,86",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "mumu桌面"
   }
 ]
