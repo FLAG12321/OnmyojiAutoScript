@@ -14,6 +14,11 @@ class MasterDiscipleMode(str, Enum):
     MASTER = 'master'
     DISCIPLE = 'disciple'
 
+class MasterBattleMode(str, Enum):
+    """师父金币/经验妖怪战斗模式"""
+    BATTLE_THEN_EXIT = 'battle_then_exit'    # 进入后退出（默认）
+    NORMAL_BATTLE = 'normal_battle'          # 正常完成战斗
+
 class MasterPresetConfig(BaseModel):
     """师父模式单组御魂预设配置，任务开始前一次性切换"""
     # 是否启用该组预设
@@ -50,6 +55,17 @@ class MasterDiscipleConfig(ConfigBase):
     cycle_all_disciples: bool = Field(default=False, description='cycle_all_disciples_help')
     # 邀请师父超时时间（秒）
     invite_timeout: int = Field(default=60, description='invite_timeout_help')
+    # 师父金币/经验妖怪战斗模式（进入后退出 or 正常完成战斗）
+    master_battle_mode: MasterBattleMode = Field(
+        default=MasterBattleMode.BATTLE_THEN_EXIT,
+        description='master_battle_mode_help'
+    )
+    # 是否在任务开始时检测并购买体力
+    buy_ap_when_low: bool = Field(default=False, description='buy_ap_when_low_help')
+    # 体力阈值，低于等于此值时购买一次体力
+    ap_threshold: int = Field(default=200, description='ap_threshold_help')
+    # 是否执行百鬼夜行任务
+    run_hyakkiyakou: bool = Field(default=False, description='run_hyakkiyakou_help')
 
 
 class MasterDisciple(ConfigBase):
