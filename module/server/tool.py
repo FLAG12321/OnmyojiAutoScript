@@ -681,6 +681,10 @@ class AnnotatorManager:
         target = session.capture_dir / f"capture_{int(time.time() * 1000)}.png"
         session.capture_session.capture_latest_frame(target)
         image = session.add_image(target, "capture", target.name)
+        # 将截图永久保留一份到 log/screenshots/，避免会话过期后丢失
+        persistent_dir = Path("./log/screenshots")
+        persistent_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, persistent_dir / target.name)
         logger.info(f"[annotator] capture frame, session={session_id}, target={target}")
         return image.to_dict(session_id)
 
