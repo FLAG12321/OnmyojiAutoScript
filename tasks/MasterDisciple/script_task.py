@@ -223,10 +223,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if enter_timer.reached():
                     logger.warning("[体力检测] 进入Special页面超时，跳过")
                     return
-                if self.appear_then_click(RichManAssets.I_MALL_SUNDRY, interval=1):
-                    continue
                 if self.appear_then_click(RichManAssets.I_SIDE_SURE_SPECIAL, interval=1):
                     continue
+                if self.appear_then_click(RichManAssets.I_MALL_SUNDRY, interval=1):
+                    continue
+                
 
             # 通过体力购买价格推断已购买次数，间接判断体力是否充足
             # 价格公式：首次60勾玉，每购买一次增加20，即 price = 60 + count * 20

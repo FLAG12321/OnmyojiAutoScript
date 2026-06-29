@@ -2,8 +2,8 @@
   {
     "itemName": "side_sure_special",
     "imageName": "navbar_side_sure_special.png",
-    "roiFront": "1172,91,70,74",
-    "roiBack": "1172,91,70,74",
+    "roiFront": "1178,192,55,76",
+    "roiBack": "1154,77,118,216",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "特殊"
