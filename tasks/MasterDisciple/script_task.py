@@ -15,7 +15,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
-from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode
+from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode, MasterBattleMode
 from tasks.Exploration.solo import SoloExploration
 from tasks.Exploration.config import ExplorationLevel, UpType
 from tasks.Plotline.assets import PlotlineAssets
@@ -241,13 +241,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             logger.info(f"Successfully switched to disciple account: {account_info.character}-{account_info.svr}")
 
         return success
-    def _get_add_count(self)->int:  
+    def _get_add_count(self, consecutive_count: int = 2) -> int:
+        """
+        连续采集加号图标数量，直到连续 consecutive_count 次结果相同时返回该数量
+
+        :param consecutive_count: 需要连续多少次采集结果相同才返回，默认 3
+        :return: 稳定的加号图标数量
+        """
         self.device.stuck_record_add('BATTLE_STATUS_S')
+
         def reject_invite():
             from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
             while 1:
                 self.screenshot()
-                if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2) or self.appear(gia.I_I_REJECT_3)or self.appear(gia.I_I_REJECT_4)):
+                if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2) or self.appear(gia.I_I_REJECT_3) or self.appear(gia.I_I_REJECT_4)):
                     break
                 if self.appear(gia.I_I_REJECT_4):
                     self.click(gia.I_I_REJECT_4, 1)
@@ -265,21 +272,24 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.click(gia.I_I_REJECT_1, 1)
                     continue
             return True
-        list_add_count=[99,99,99]
-        index=0
+
+        list_add_count = [99] * consecutive_count
+        index = 0
         while 1:
             self.screenshot()
-            if list_add_count[0]==list_add_count[1]==list_add_count[2] and list_add_count[0]!=99:
+            # 所有采集值相等且不为初始值 99 时，认为已稳定，返回该数量
+            if len(set(list_add_count)) == 1 and list_add_count[0] != 99:
                 logger.info(f'获取加号数量:[{list_add_count[0]}]')
                 return list_add_count[0]
-            if index>=3:
-                index=0
+            if index >= consecutive_count:
+                index = 0
             reject_invite()
-            list_add_count[index]=len(self.I_CLICK_INVITE_ADD.match_all_any(self.device.image))
-            index+=1
+            list_add_count[index] = len(self.I_CLICK_INVITE_ADD.match_all_any(self.device.image))
+            index += 1
             time.sleep(0.5)
+
     def _create_room_and_invite(self, task_name: str, room_type: RoomType = RoomType.NORMAL_5,
-                                 navigate_and_create_func=None) -> bool:
+                                 navigate_and_create_func=None, invite_timeout: int = None) -> bool:
         """
         创建房间并邀请师父/好友的通用流程
         通用流程：导航并创建房间 → 等待进入房间 → 记录加号状态 → 邀请师父 → 等待师父进入
@@ -288,10 +298,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :param room_type: 房间类型，决定加号图标和邀请逻辑
         :param navigate_and_create_func: 导航并创建房间的函数，无参数，返回bool（True=成功进入房间）
             若为None，则使用默认流程：ui_goto(page_team) → check_zones(task_name) → create_room → ensure_private → create_ensure
+        :param invite_timeout: 等待师父进入房间的超时时间（秒），None时使用全局配置 invite_timeout
         :return: True 师父已进入房间，False 邀请失败或超时
         """
         master_name = self.config.master_disciple.master_disciple_config.master_name
-        invite_timeout = self.config.master_disciple.master_disciple_config.invite_timeout
+        # 未指定超时时回退到全局配置，保证守护历练等既有调用行为不变
+        if invite_timeout is None:
+            invite_timeout = self.config.master_disciple.master_disciple_config.invite_timeout
 
         if navigate_and_create_func is not None:
             # 使用自定义的导航+创建房间函数
@@ -538,8 +551,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         count = 0
         while count < battle_count:
             self.device.stuck_record_clear()
-            # 创建私人房间并邀请师父
-            if not self._create_room_and_invite(zones_name, room_type=room_type):
+            # 创建私人房间并邀请师父（石距/金币/经验固定等待4分钟）
+            if not self._create_room_and_invite(zones_name, room_type=room_type, invite_timeout=240):
                 # 邀请失败，跳过该任务
                 logger.warning(f"Skip {zones_name} due to invite failure")
                 break
@@ -1323,16 +1336,36 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if self.wait_battle(wait_time=dtime(minute=2)):
                       
                     # 进入战斗，run_general_battle内部已自增current_count
+                    # 读取师父战斗模式配置
+                    battle_mode = self.config.master_disciple.master_disciple_config.master_battle_mode
                     if battle_type == 8:
+                        # 守护历练：始终正常完成战斗
                         self.run_general_battle(config=GeneralBattleConfig())
                     elif battle_type == 5:
-                        # 使用通用battle_before处理准备阶段，再用自定义battle_wait处理结算
-                        battle_config = GeneralBattleConfig(lock_team_enable=True)
-                        self.battle_before(buff=None, config=battle_config)
-                        self._gold_youkai_battle_wait()
+                        # 金币妖怪：根据战斗模式分流
+                        if battle_mode == MasterBattleMode.NORMAL_BATTLE:
+                            # 正常完成战斗
+                            battle_config = GeneralBattleConfig(lock_team_enable=True)
+                            self.battle_before(buff=None, config=battle_config)
+                            self._gold_youkai_battle_wait()
+                        else:
+                            # 进入后退出
+                            self.master_run_battle_back(config=GeneralBattleConfig())
+                    elif battle_type == 6:
+                        # 经验妖怪：根据战斗模式分流
+                        if battle_mode == MasterBattleMode.NORMAL_BATTLE:
+                            # 正常完成战斗
+                            battle_config = GeneralBattleConfig(lock_team_enable=True)
+                            self.battle_before(buff=None, config=battle_config)
+                            self._exp_youkai_battle_wait()
+                        else:
+                            # 进入后退出
+                            self.master_run_battle_back(config=GeneralBattleConfig())
                     elif battle_type == 7:
+                        # 石距：始终进入后退出
                         self.master_run_battle_back_stone(config=GeneralBattleConfig())
                     else:
+                        # 未知类型：进入后退出
                         self.master_run_battle_back(config=GeneralBattleConfig())
                     # 经验妖怪(battle_type==6)退出后计数，达到2次则结束任务
                     if battle_type == 6:
