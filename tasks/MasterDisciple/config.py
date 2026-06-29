@@ -62,10 +62,8 @@ class MasterDiscipleConfig(ConfigBase):
     )
     # 是否在任务开始时检测并购买体力
     buy_ap_when_low: bool = Field(default=False, description='buy_ap_when_low_help')
-    # 体力阈值，低于等于此值时购买一次体力
+    # 目标体力，每次调用购买 ceil(目标体力/100) 次，每次获得100体力
     ap_threshold: int = Field(default=200, description='ap_threshold_help')
-    # 是否执行百鬼夜行任务
-    run_hyakkiyakou: bool = Field(default=False, description='run_hyakkiyakou_help')
 
 
 class MasterDisciple(ConfigBase):

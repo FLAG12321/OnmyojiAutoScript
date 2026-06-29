@@ -84,8 +84,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.set_next_run('Tako', success=True)
                 if config.master_disciple_config.run_coin_monster:
                     self.set_next_run('GoldYoukai', success=True)
-                if config.master_disciple_config.run_hyakkiyakou:
-                    self.set_next_run('Hyakkiyakou', success=True)
                 if config.master_disciple_config.run_guard:
                     pass
             else:
@@ -196,19 +194,33 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
     def _check_and_buy_ap(self):
         """
-        徒弟模式：检测体力并购买
-        导航到商店Special页面，OCR读取当前体力数值，
-        如果体力 <= ap_threshold 则购买一次体力，然后返回庭院
+        徒弟模式：在庭院检测体力，不足则进商店购买
+        流程：庭院OCR读取体力(O_SUSHI_NUM) → 计算需购买次数 → 进商店购买 → 回庭院
         """
-        import copy
+        import math
         ap_threshold = self.config.master_disciple.master_disciple_config.ap_threshold
-        logger.info(f"[体力检测] 开始检测体力，阈值: {ap_threshold}")
+        logger.info(f"[体力购买] 目标体力: {ap_threshold}")
 
         try:
             # 确保在庭院
             self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_main)
+
+            # 在庭院OCR读取当前体力
+            self.screenshot()
+            current_ap = self.O_SUSHI_NUM.ocr_digit(self.device.image)
+            logger.info(f"[体力购买] 当前体力: {current_ap}, 目标: {ap_threshold}")
+
+            # 体力已足够，不需要购买
+            if current_ap >= ap_threshold:
+                logger.info(f"[体力购买] 当前体力 {current_ap} >= {ap_threshold}，无需购买")
+                return
+
+            # 计算需要购买的次数，每次购买获得100体力
+            need_ap = ap_threshold - current_ap
+            buy_count = math.ceil(need_ap / 100)
+            logger.info(f"[体力购买] 还需 {need_ap} 体力，需购买 {buy_count} 次")
 
             # 导航到商店
             self.ui_goto(page_mall, confirm_wait=3)
@@ -221,73 +233,46 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if self.appear(RichManAssets.I_SIDE_CHECK_SPECIAL):
                     break
                 if enter_timer.reached():
-                    logger.warning("[体力检测] 进入Special页面超时，跳过")
+                    logger.warning("[体力购买] 进入Special页面超时，跳过")
                     return
                 if self.appear_then_click(RichManAssets.I_SIDE_SURE_SPECIAL, interval=1):
                     continue
                 if self.appear_then_click(RichManAssets.I_MALL_SUNDRY, interval=1):
                     continue
-                
 
-            # 通过体力购买价格推断已购买次数，间接判断体力是否充足
-            # 价格公式：首次60勾玉，每购买一次增加20，即 price = 60 + count * 20
-            def detect_buy_count(base_element) -> (int, int):
-                """返回 (已购买次数, 当前价格)"""
-                MAX_PRICE = 9999
-                roi = copy.deepcopy(base_element.roi_front)
-                roi[0] = roi[0] + roi[2]
-                roi[1] = roi[1] + roi[3] - 30
-                roi[2] = 60
-                roi[3] = 30
-                # 使用 deepcopy 避免修改类级别共享的 OCR 规则对象
-                ocr_rule = copy.deepcopy(DailyTriflesAssets.O_STORE_SUSHI_PRICE)
-                ocr_rule.roi = roi
-                _price = ocr_rule.detect_text(self.device.image)
-                try:
-                    _price = int(_price)
-                except Exception:
-                    _price = MAX_PRICE
-                if _price < 60:
-                    return 0, MAX_PRICE
-                _count = (_price - 60) / 20
-                return _count, _price
-
-            # 检测当前体力购买状态
-            self.screenshot()
-            if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
-                count, price = detect_buy_count(DailyTriflesAssets.I_STORE_COST_TYPE_JADE)
-            elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
-                count, price = detect_buy_count(DailyTriflesAssets.I_SPECIAL_SUSHI)
-            else:
-                logger.warning("[体力检测] 未找到体力购买项，跳过")
-                return
-
-            logger.info(f"[体力检测] 已购买次数: {count}, 当前价格: {price}")
-
-            # 每次购买获得约100体力，通过已购买次数粗略推算当前体力
-            # 如果 count > 0 说明今天已经购买过，体力可能已经充足
-            # 这里直接用 ap_threshold 作为判断：只在 count == 0 时购买（即今天还没买过）
-            # 用户可通过 ap_threshold 配置来控制行为，ap_threshold=200 表示希望保持较高体力
-            if count > 0:
-                logger.info(f"[体力检测] 今日已购买过 {int(count)} 次体力，跳过")
-                return
-
-            # 购买一次体力
-            logger.info(f"[体力检测] 体力不足，开始购买")
-            if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
-                self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
-                logger.info(f"[体力检测] 购买体力成功，花费 {price} 勾玉")
-            elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
-                self.ui_click(DailyTriflesAssets.I_SPECIAL_SUSHI, stop=DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
+            # 循环购买指定次数的体力
+            bought = 0
+            buy_loop_timer = Timer(60)
+            buy_loop_timer.start()
+            while bought < buy_count and not buy_loop_timer.reached():
                 self.screenshot()
+
+                # 执行一次购买
+                logger.info(f"[体力购买] 正在购买第 {bought + 1}/{buy_count} 次")
                 if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
                     self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
-                    logger.info("[体力检测] 购买体力成功")
+                    bought += 1
+                    logger.info(f"[体力购买] 第 {bought} 次购买成功")
+                elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
+                    self.ui_click(DailyTriflesAssets.I_SPECIAL_SUSHI, stop=DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
+                    self.screenshot()
+                    if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
+                        self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
+                        bought += 1
+                        logger.info(f"[体力购买] 第 {bought} 次购买成功")
+                else:
+                    logger.warning("[体力购买] 未找到体力购买项，跳过")
+                    return
+                # 购买后等待页面刷新
+                sleep(1)
+
+            if bought >= buy_count:
+                logger.info(f"[体力购买] 完成，共购买 {bought} 次，获得 {bought * 100} 体力")
             else:
-                logger.warning("[体力检测] 无法购买体力，跳过")
+                logger.warning(f"[体力购买] 购买循环超时，已购买 {bought} 次")
 
         except Exception as e:
-            logger.warning(f"[体力检测] 执行异常: {e}，跳过购买")
+            logger.warning(f"[体力购买] 执行异常: {e}，跳过购买")
         finally:
             # 确保回到庭院
             try:
@@ -295,7 +280,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.ui_get_current_page()
                 self.ui_goto(page_main)
             except Exception:
-                logger.warning("[体力检测] 返回庭院失败")
+                logger.warning("[体力购买] 返回庭院失败")
 
     def _execute_disciple_tasks(self):
         """
@@ -318,9 +303,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         if self.config.master_disciple.master_disciple_config.run_exp_monster:
             self._run_task_with_retry(self.run_exp_monster_as_disciple, "经验妖怪")
 
-        # 执行百鬼夜行任务（在探索之前）
-        if self.config.master_disciple.master_disciple_config.run_hyakkiyakou:
-            self._run_task_with_retry(self.run_hyakkiyakou_as_disciple, "百鬼夜行")
         # 执行探索任务
         if self.config.master_disciple.master_disciple_config.run_exploration:
             self._run_task_with_retry(self.run_exploration_as_disciple, "探索")
@@ -1232,49 +1214,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.ui_goto(page_main) 
         logger.info(f'Guard: completed {count} battles')
         raise TaskEnd ("Guard: completed")
-
-    def run_hyakkiyakou_as_disciple(self):
-        """
-        徒弟模式 - 百鬼夜行（固定3次，不邀请好友，师父无感知）
-        复用用户已有的 Hyakkiyakou 配置，仅覆写次数和邀请设置
-        使用 lazy import 避免 oashya 库缺失时影响整个模块
-        """
-        logger.info("Running hyakkiyakou as disciple")
-
-        try:
-            # lazy import 避免 oashya 未安装时影响 MasterDisciple 模块加载
-            from tasks.Hyakkiyakou.script_task import ScriptTask as HyakkiyakouScriptTask
-        except ImportError as e:
-            logger.error(f"[百鬼夜行] 无法导入 Hyakkiyakou 模块（可能 oashya 未安装）: {e}")
-            return
-
-        # 创建百鬼夜行实例，复用用户已有配置
-        hya_task = HyakkiyakouScriptTask(self.config, self.device)
-
-        # 覆写关键配置：固定3次、不邀请好友、15分钟上限兜底
-        hya_task.config.hyakkiyakou.hyakkiyakou_config.hya_limit_count = 3
-        hya_task.config.hyakkiyakou.hyakkiyakou_config.hya_invite_friend = False
-        hya_task.config.hyakkiyakou.hyakkiyakou_config.hya_limit_time = dtime(minute=15)
-
-        try:
-            hya_task.run()
-        except TaskEnd:
-            # 百鬼夜行正常结束时抛出 TaskEnd
-            logger.info("[百鬼夜行] 正常结束")
-        except RequestHumanTakeover:
-            # 配置非法等严重错误，向上抛出
-            raise
-        except Exception as e:
-            logger.error(f"[百鬼夜行] 执行异常: {e}")
-            self.config.notifier.push(content=f'百鬼夜行任务异常: {e}', title='MasterDisciple')
-        finally:
-            # 确保回到庭院
-            try:
-                self.screenshot()
-                self.ui_get_current_page()
-                self.ui_goto(page_main)
-            except Exception:
-                logger.warning("[百鬼夜行] 返回庭院失败")
 
     def run_exploration_as_disciple(self):
         """
