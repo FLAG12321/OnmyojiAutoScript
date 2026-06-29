@@ -13,7 +13,7 @@ from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki
+from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
 from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode, MasterBattleMode
 from tasks.Exploration.solo import SoloExploration
@@ -22,6 +22,8 @@ from tasks.Plotline.assets import PlotlineAssets
 from tasks.ExperienceYoukai.assets import ExperienceYoukaiAssets
 from tasks.GoldYoukai.assets import GoldYoukaiAssets
 from tasks.Restart.assets import RestartAssets
+from tasks.DailyTrifles.assets import DailyTriflesAssets
+from tasks.RichMan.assets import RichManAssets
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
@@ -190,10 +192,115 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         return all_success
 
+    def _check_and_buy_ap(self):
+        """
+        徒弟模式：检测体力并购买
+        导航到商店Special页面，OCR读取当前体力数值，
+        如果体力 <= ap_threshold 则购买一次体力，然后返回庭院
+        """
+        import copy
+        ap_threshold = self.config.master_disciple.master_disciple_config.ap_threshold
+        logger.info(f"[体力检测] 开始检测体力，阈值: {ap_threshold}")
+
+        try:
+            # 确保在庭院
+            self.screenshot()
+            self.ui_get_current_page()
+            self.ui_goto(page_main)
+
+            # 导航到商店
+            self.ui_goto(page_mall, confirm_wait=3)
+
+            # 进入Special页面（带超时保护）
+            enter_timer = Timer(30)
+            enter_timer.start()
+            while 1:
+                self.screenshot()
+                if self.appear(RichManAssets.I_SIDE_CHECK_SPECIAL):
+                    break
+                if enter_timer.reached():
+                    logger.warning("[体力检测] 进入Special页面超时，跳过")
+                    return
+                if self.appear_then_click(RichManAssets.I_MALL_SUNDRY, interval=1):
+                    continue
+                if self.appear_then_click(RichManAssets.I_SIDE_SURE_SPECIAL, interval=1):
+                    continue
+
+            # 通过体力购买价格推断已购买次数，间接判断体力是否充足
+            # 价格公式：首次60勾玉，每购买一次增加20，即 price = 60 + count * 20
+            def detect_buy_count(base_element) -> (int, int):
+                """返回 (已购买次数, 当前价格)"""
+                MAX_PRICE = 9999
+                roi = copy.deepcopy(base_element.roi_front)
+                roi[0] = roi[0] + roi[2]
+                roi[1] = roi[1] + roi[3] - 30
+                roi[2] = 60
+                roi[3] = 30
+                # 使用 deepcopy 避免修改类级别共享的 OCR 规则对象
+                ocr_rule = copy.deepcopy(DailyTriflesAssets.O_STORE_SUSHI_PRICE)
+                ocr_rule.roi = roi
+                _price = ocr_rule.detect_text(self.device.image)
+                try:
+                    _price = int(_price)
+                except Exception:
+                    _price = MAX_PRICE
+                if _price < 60:
+                    return 0, MAX_PRICE
+                _count = (_price - 60) / 20
+                return _count, _price
+
+            # 检测当前体力购买状态
+            self.screenshot()
+            if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
+                count, price = detect_buy_count(DailyTriflesAssets.I_STORE_COST_TYPE_JADE)
+            elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
+                count, price = detect_buy_count(DailyTriflesAssets.I_SPECIAL_SUSHI)
+            else:
+                logger.warning("[体力检测] 未找到体力购买项，跳过")
+                return
+
+            logger.info(f"[体力检测] 已购买次数: {count}, 当前价格: {price}")
+
+            # 每次购买获得约100体力，通过已购买次数粗略推算当前体力
+            # 如果 count > 0 说明今天已经购买过，体力可能已经充足
+            # 这里直接用 ap_threshold 作为判断：只在 count == 0 时购买（即今天还没买过）
+            # 用户可通过 ap_threshold 配置来控制行为，ap_threshold=200 表示希望保持较高体力
+            if count > 0:
+                logger.info(f"[体力检测] 今日已购买过 {int(count)} 次体力，跳过")
+                return
+
+            # 购买一次体力
+            logger.info(f"[体力检测] 体力不足，开始购买")
+            if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
+                self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
+                logger.info(f"[体力检测] 购买体力成功，花费 {price} 勾玉")
+            elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
+                self.ui_click(DailyTriflesAssets.I_SPECIAL_SUSHI, stop=DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
+                self.screenshot()
+                if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
+                    self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
+                    logger.info("[体力检测] 购买体力成功")
+            else:
+                logger.warning("[体力检测] 无法购买体力，跳过")
+
+        except Exception as e:
+            logger.warning(f"[体力检测] 执行异常: {e}，跳过购买")
+        finally:
+            # 确保回到庭院
+            try:
+                self.screenshot()
+                self.ui_get_current_page()
+                self.ui_goto(page_main)
+            except Exception:
+                logger.warning("[体力检测] 返回庭院失败")
+
     def _execute_disciple_tasks(self):
         """
         在当前徒弟账号上执行所有已启用的任务
         """
+        # 体力检测与购买
+        if self.config.master_disciple.master_disciple_config.buy_ap_when_low:
+            self._run_task_with_retry(self._check_and_buy_ap, "体力检测购买")
         # 执行守护历练任务
         if self.config.master_disciple.master_disciple_config.run_guard:
             self._run_task_with_retry(self.run_guard_as_disciple, "守护历练")
