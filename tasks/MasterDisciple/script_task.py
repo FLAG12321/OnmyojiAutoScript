@@ -289,7 +289,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             time.sleep(0.5)
 
     def _create_room_and_invite(self, task_name: str, room_type: RoomType = RoomType.NORMAL_5,
-                                 navigate_and_create_func=None, invite_timeout: int = None) -> bool:
+                                 navigate_and_create_func=None, invite_timeout: int = None,
+                                 wait_for_others: bool = True) -> bool:
         """
         创建房间并邀请师父/好友的通用流程
         通用流程：导航并创建房间 → 等待进入房间 → 记录加号状态 → 邀请师父 → 等待师父进入
@@ -299,6 +300,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :param navigate_and_create_func: 导航并创建房间的函数，无参数，返回bool（True=成功进入房间）
             若为None，则使用默认流程：ui_goto(page_team) → check_zones(task_name) → create_room → ensure_private → create_ensure
         :param invite_timeout: 等待师父进入房间的超时时间（秒），None时使用全局配置 invite_timeout
+        :param wait_for_others: 师父进入后是否公开房间并等待其他人（默认True保持现有行为）
         :return: True 师父已进入房间，False 邀请失败或超时
         """
         master_name = self.config.master_disciple.master_disciple_config.master_name
@@ -339,7 +341,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         # 根据房间类型选择需要检测的加号图标数量
         add_num = self._get_add_icons(room_type)
-        if add_num == 4:
+        # wait_for_others=False 时跳过公开房间和等待他人步骤
+        if add_num == 4 and wait_for_others:
             add_other=True
         else:
             add_other=False
@@ -516,10 +519,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         return True
 
-    def _run_battle_with_invite(self, zones_name: str, battle_count: int = 2, 
+    def _run_battle_with_invite(self, zones_name: str, battle_count: int = 2,
                                  buff_open_func=None, buff_close_func=None,
                                  battle_wait_func=None,
-                                 room_type: RoomType = RoomType.NORMAL_5) -> bool:
+                                 room_type: RoomType = RoomType.NORMAL_5,
+                                 wait_for_others: bool = True) -> bool:
         """
         徒弟模式下带师父邀请的战斗通用流程
 
@@ -529,6 +533,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :param buff_close_func: 关buff的函数
         :param battle_wait_func: 战斗等待函数（默认使用 run_general_battle）
         :param room_type: 房间类型，5人房(NORMAL_5)或3人房(NORMAL_3)
+        :param wait_for_others: 是否在师父进入后公开房间等待其他人（默认True）
         :return: 是否成功完成
         """
         
@@ -552,7 +557,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         while count < battle_count:
             self.device.stuck_record_clear()
             # 创建私人房间并邀请师父（石距/金币/经验固定等待4分钟）
-            if not self._create_room_and_invite(zones_name, room_type=room_type, invite_timeout=240):
+            if not self._create_room_and_invite(zones_name, room_type=room_type, invite_timeout=240, wait_for_others=wait_for_others):
                 # 邀请失败，跳过该任务
                 logger.warning(f"Skip {zones_name} due to invite failure")
                 break
@@ -732,11 +737,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         """
         logger.info("Running coin monster as disciple")
 
+        # 根据师父战斗模式决定是否公开房间等待他人
+        battle_mode = self.config.master_disciple.master_disciple_config.master_battle_mode
+        wait = battle_mode != MasterBattleMode.NORMAL_BATTLE
         self._run_battle_with_invite(
             zones_name='金币妖怪',
             battle_count=2,
             battle_wait_func=self._gold_youkai_battle_wait,
-            room_type=RoomType.NORMAL_5
+            room_type=RoomType.NORMAL_5,
+            wait_for_others=wait
         )
 
     def run_exp_monster_as_disciple(self):
@@ -759,13 +768,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.exp_100(False)
             self.close_buff()
 
+        # 根据师父战斗模式决定是否公开房间等待他人
+        battle_mode = self.config.master_disciple.master_disciple_config.master_battle_mode
+        wait = battle_mode != MasterBattleMode.NORMAL_BATTLE
         self._run_battle_with_invite(
             zones_name='经验妖怪',
             battle_count=2,
             buff_open_func=open_buff,
             buff_close_func=close_buff,
             battle_wait_func=self._exp_youkai_battle_wait,
-            room_type=RoomType.NORMAL_5
+            room_type=RoomType.NORMAL_5,
+            wait_for_others=wait
         )
 
     def run_stone_ju_as_disciple(self):
