@@ -84,6 +84,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.set_next_run('Tako', success=True)
                 if config.master_disciple_config.run_coin_monster:
                     self.set_next_run('GoldYoukai', success=True)
+                if config.master_disciple_config.run_hyakkiyakou:
+                    self.set_next_run('Hyakkiyakou', success=True)
                 if config.master_disciple_config.run_guard:
                     pass
             else:
@@ -314,7 +316,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 执行经验妖怪任务
         if self.config.master_disciple.master_disciple_config.run_exp_monster:
             self._run_task_with_retry(self.run_exp_monster_as_disciple, "经验妖怪")
-        
+
+        # 执行百鬼夜行任务（在探索之前）
+        if self.config.master_disciple.master_disciple_config.run_hyakkiyakou:
+            self._run_task_with_retry(self.run_hyakkiyakou_as_disciple, "百鬼夜行")
         # 执行探索任务
         if self.config.master_disciple.master_disciple_config.run_exploration:
             self._run_task_with_retry(self.run_exploration_as_disciple, "探索")
@@ -1226,6 +1231,49 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.ui_goto(page_main) 
         logger.info(f'Guard: completed {count} battles')
         raise TaskEnd ("Guard: completed")
+
+    def run_hyakkiyakou_as_disciple(self):
+        """
+        徒弟模式 - 百鬼夜行（固定3次，不邀请好友，师父无感知）
+        复用用户已有的 Hyakkiyakou 配置，仅覆写次数和邀请设置
+        使用 lazy import 避免 oashya 库缺失时影响整个模块
+        """
+        logger.info("Running hyakkiyakou as disciple")
+
+        try:
+            # lazy import 避免 oashya 未安装时影响 MasterDisciple 模块加载
+            from tasks.Hyakkiyakou.script_task import ScriptTask as HyakkiyakouScriptTask
+        except ImportError as e:
+            logger.error(f"[百鬼夜行] 无法导入 Hyakkiyakou 模块（可能 oashya 未安装）: {e}")
+            return
+
+        # 创建百鬼夜行实例，复用用户已有配置
+        hya_task = HyakkiyakouScriptTask(self.config, self.device)
+
+        # 覆写关键配置：固定3次、不邀请好友、15分钟上限兜底
+        hya_task.config.hyakkiyakou.hyakkiyakou_config.hya_limit_count = 3
+        hya_task.config.hyakkiyakou.hyakkiyakou_config.hya_invite_friend = False
+        hya_task.config.hyakkiyakou.hyakkiyakou_config.hya_limit_time = dtime(minute=15)
+
+        try:
+            hya_task.run()
+        except TaskEnd:
+            # 百鬼夜行正常结束时抛出 TaskEnd
+            logger.info("[百鬼夜行] 正常结束")
+        except RequestHumanTakeover:
+            # 配置非法等严重错误，向上抛出
+            raise
+        except Exception as e:
+            logger.error(f"[百鬼夜行] 执行异常: {e}")
+            self.config.notifier.push(content=f'百鬼夜行任务异常: {e}', title='MasterDisciple')
+        finally:
+            # 确保回到庭院
+            try:
+                self.screenshot()
+                self.ui_get_current_page()
+                self.ui_goto(page_main)
+            except Exception:
+                logger.warning("[百鬼夜行] 返回庭院失败")
 
     def run_exploration_as_disciple(self):
         """
