@@ -2,37 +2,46 @@
   {
     "itemName": "flag_task_guard",
     "roiFront": "799,183,253,505",
-    "roiBack": "797,182,256,508",
-    "description": "description",
-    "mode": "full",
+    "roiBack": "798,182,256,508",
+    "mode": "Full",
     "method": "Default",
-    "keyword": "守护历练"
+    "keyword": "守护历练",
+    "description": "description"
   },
   {
     "itemName": "find_shikigami_help",
     "roiFront": "228,605,874,87",
     "roiBack": "0,0,100,100",
-    "description": "description",
     "mode": "Full",
     "method": "Default",
-    "keyword": "15"
+    "keyword": "15",
+    "description": "description"
   },
   {
     "itemName": "accept_name",
     "roiFront": "115,256,300,47",
     "roiBack": "0,0,100,100",
-    "description": "description",
     "mode": "Single",
     "method": "Default",
-    "keyword": ""
+    "keyword": "",
+    "description": "description"
   },
   {
     "itemName": "add_all",
     "roiFront": "609,640,167,35",
     "roiBack": "0,0,100,100",
-    "description": "description",
     "mode": "Single",
     "method": "Default",
-    "keyword": "所有人"
+    "keyword": "所有人",
+    "description": "description"
+  },
+  {
+    "itemName": "sushi_num",
+    "roiFront": "881,18,103,31",
+    "roiBack": "0,0,100,100",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": ""
   }
 ]

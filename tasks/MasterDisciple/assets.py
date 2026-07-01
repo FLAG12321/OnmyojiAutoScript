@@ -39,13 +39,15 @@ class MasterDiscipleAssets:
 
 	# Ocr Rule Assets
 	# description 
-	O_FLAG_TASK_GUARD = RuleOcr(roi=(799,183,253,505), area=(797,182,256,508), mode="full", method="Default", keyword="守护历练", name="flag_task_guard")
+	O_FLAG_TASK_GUARD = RuleOcr(roi=(799,183,253,505), area=(798,182,256,508), mode="Full", method="Default", keyword="守护历练", name="flag_task_guard")
 	# description 
 	O_FIND_SHIKIGAMI_HELP = RuleOcr(roi=(228,605,874,87), area=(0,0,100,100), mode="Full", method="Default", keyword="15", name="find_shikigami_help")
 	# description 
 	O_ACCEPT_NAME = RuleOcr(roi=(115,256,300,47), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="accept_name")
 	# description 
 	O_ADD_ALL = RuleOcr(roi=(609,640,167,35), area=(0,0,100,100), mode="Single", method="Default", keyword="所有人", name="add_all")
+	#  
+	O_SUSHI_NUM = RuleOcr(roi=(881,18,103,31), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="sushi_num")
 
 
 	# Swipe Rule Assets

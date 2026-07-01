@@ -73,7 +73,7 @@
   },
   {
     "itemName": "fire2",
-    "roiFront": "1131,588,100,53",
+    "roiFront": "1142,589,96,50",
     "roiBack": "1167,601,35,27",
     "mode": "Single",
     "method": "Default",

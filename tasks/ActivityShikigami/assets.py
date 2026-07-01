@@ -141,7 +141,7 @@ class ActivityShikigamiAssets:
 	# 进入100体活动标识 
 	O_ENTER_AP100 = RuleOcr(roi=(73,98,95,32), area=(5,79,256,108), mode="Single", method="Default", keyword="将魂试炼", name="enter_ap100")
 	# description 
-	O_FIRE2 = RuleOcr(roi=(1131,588,100,53), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
+	O_FIRE2 = RuleOcr(roi=(1142,589,96,50), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
 
 
 	# Click Rule Assets
