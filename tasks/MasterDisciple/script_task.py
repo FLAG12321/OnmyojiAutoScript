@@ -1565,7 +1565,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
     def master_run_exp_battle_back(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
         """
-        经验妖怪进入战斗后等待O_KILL_CNT识别数字达到24再退出
+        经验妖怪进入战斗后先打开退出确认框，等待O_KILL_CNT识别数字达到30再确认退出
         :param config:
         :return:
         """
@@ -1575,24 +1575,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self.click(self.I_PREPARE_HIGHLIGHT)
         logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
 
-        # 使用O_KILL_CNT识别经验妖怪战斗中的击杀数量
-        wait_ocr_timer = Timer(120).start()
-        while not wait_ocr_timer.reached():
+        # 等待准备完成并真正进入战斗，避免还在准备界面就点击退出键
+        wait_battle_timer = Timer(30).start()
+        while not wait_battle_timer.reached():
             self.screenshot()
-            try:
-                value = self.O_KILL_CNT.ocr_digit(self.device.image)
-            except Exception as e:
-                logger.warning(f"[经验妖怪] O_KILL_CNT识别异常: {e}")
-                value = 0
-            logger.info(f"[经验妖怪] 击杀数量: {value}/24")
-            if value >= 24:
-                logger.info("[经验妖怪] 击杀数量已达到24，开始退出战斗")
+            if self.is_in_real_battle(False):
+                logger.info("[经验妖怪] 已进入真实战斗")
                 break
             sleep(1)
         else:
-            logger.warning("[经验妖怪] 等待OCR数字达到24超时，开始退出战斗")
+            logger.warning("[经验妖怪] 等待进入真实战斗超时，继续尝试退出")
 
-        # 点击返回
+        # 进入真实战斗后先点击退出键，让界面停在退出确认框，等击杀数达标后立刻确认退出
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_EXIT, interval=1.5):
@@ -1601,7 +1595,26 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 break
         logger.info(f"Click {self.I_EXIT.name}")
 
-        # 点击返回确认
+        # 使用O_KILL_CNT识别经验妖怪战斗中的击杀数量，达到30后点击确认退出
+        wait_ocr_timer = Timer(120).start()
+        while not wait_ocr_timer.reached():
+            self.screenshot()
+            try:
+                value = self.O_KILL_CNT.ocr_digit(self.device.image)
+            except Exception as e:
+                logger.warning(f"[经验妖怪] O_KILL_CNT识别异常: {e}")
+                value = 0
+            logger.info(f"[经验妖怪] 击杀数量: {value}/30")
+            if value >= 30:
+                logger.info("[经验妖怪] 击杀数量已达到30，确认退出战斗")
+                self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5)
+                break
+            sleep(1)
+        else:
+            logger.warning("[经验妖怪] 等待OCR数字达到30超时，确认退出战斗")
+            self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5)
+
+        # 等待退出结果，并处理失败确认
         while 1:
             self.screenshot()
             if self.appear(self.I_CHECK_MAIN):
