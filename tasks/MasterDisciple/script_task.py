@@ -15,7 +15,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
-from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode, MasterBattleMode
+from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode
 from tasks.Exploration.solo import SoloExploration
 from tasks.Exploration.config import ExplorationLevel, UpType
 from tasks.Plotline.assets import PlotlineAssets
@@ -200,6 +200,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         import math
         ap_threshold = self.config.master_disciple.master_disciple_config.ap_threshold
         logger.info(f"[体力购买] 目标体力: {ap_threshold}")
+        need_harvest_mail = False
 
         try:
             # 确保在庭院
@@ -252,6 +253,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
                     self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
                     bought += 1
+                    need_harvest_mail = True
                     logger.info(f"[体力购买] 第 {bought} 次购买成功")
                 elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
                     self.ui_click(DailyTriflesAssets.I_SPECIAL_SUSHI, stop=DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
@@ -279,8 +281,55 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.screenshot()
                 self.ui_get_current_page()
                 self.ui_goto(page_main)
+                if need_harvest_mail:
+                    self._harvest_mail_after_buy_ap()
+                    self.screenshot()
+                    self.ui_get_current_page()
+                    self.ui_goto(page_main)
             except Exception:
-                logger.warning("[体力购买] 返回庭院失败")
+                logger.warning("[体力购买] 返回庭院或领取邮件失败")
+
+    def _harvest_mail_after_buy_ap(self) -> bool:
+        """
+        购买体力后领取邮件中的体力
+        购买后的体力会进入邮箱，需要回到庭院后进入邮件并一键收取
+        """
+        self.screenshot()
+        if not self.appear_multi_scale(RestartAssets.I_HARVEST_MAIL, scale_range=(0.8, 1.1)) and \
+                not self.appear(RestartAssets.I_HARVEST_MAIL_COPY):
+            if not self.appear(RestartAssets.I_READ_ALL_MAIL):
+                logger.warning("[体力购买] 未发现邮箱入口，跳过邮件领取")
+                return False
+
+        logger.info("[体力购买] 开始领取邮箱体力")
+        open_timer = Timer(10).start()
+        while not open_timer.reached():
+            self.screenshot()
+            if self.appear(RestartAssets.I_READ_ALL_MAIL):
+                break
+            if self.appear_then_click_multi_scale(RestartAssets.I_HARVEST_MAIL, interval=1.5, scale_range=(0.8, 1.1)):
+                continue
+            if self.appear_then_click(RestartAssets.I_HARVEST_MAIL_COPY, interval=1.5):
+                continue
+        else:
+            logger.warning("[体力购买] 打开邮箱超时，跳过邮件领取")
+            return False
+
+        harvest_timer = Timer(5).start()
+        while not harvest_timer.reached():
+            self.screenshot()
+            if self.appear_then_click(RestartAssets.I_HARVEST_MAIL_CONFIRM, interval=0.8):
+                break
+            if self.appear_then_click(RestartAssets.I_READ_ALL_MAIL, interval=1.5):
+                continue
+            if self.appear_then_click(RestartAssets.I_HARVEST_MAIL_ALL, interval=1.5):
+                continue
+            if self.appear_then_click(RestartAssets.I_MAIL_RED_POINT, interval=1.5):
+                continue
+
+        self.ui_click_until_disappear(RestartAssets.I_LOGIN_RED_CLOSE)
+        logger.info("[体力购买] 邮箱体力领取完成")
+        return True
 
     def _execute_disciple_tasks(self):
         """
@@ -527,6 +576,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :param room_type: 房间类型
         :return: 是否邀请成功
         """
+        # 邀请前先关闭可能遮挡好友名字的拒绝按钮，金币妖怪房间中偶发出现
+        from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
+        reject_timer = Timer(3).start()
+        while not reject_timer.reached():
+            self.screenshot()
+            if self.appear_then_click(gia.I_I_REJECT_4, interval=0.5):
+                continue
         if room_type == RoomType.NORMAL_2 :
             return self._guard_invite_friend_no_tab(name)
         elif room_type == RoomType.NORMAL_3:
@@ -832,9 +888,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         """
         logger.info("Running coin monster as disciple")
 
-        # 根据师父战斗模式决定是否公开房间等待他人
-        battle_mode = self.config.master_disciple.master_disciple_config.master_battle_mode
-        wait = battle_mode != MasterBattleMode.NORMAL_BATTLE
+        # 金币妖怪师父准备后退出时，徒弟公开房间等待其他人补位
+        wait = self.config.master_disciple.master_disciple_config.master_coin_exit_after_prepare
         self._run_battle_with_invite(
             zones_name='金币妖怪',
             battle_count=2,
@@ -863,9 +918,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.exp_100(False)
             self.close_buff()
 
-        # 根据师父战斗模式决定是否公开房间等待他人
-        battle_mode = self.config.master_disciple.master_disciple_config.master_battle_mode
-        wait = battle_mode != MasterBattleMode.NORMAL_BATTLE
+        # 经验妖怪师父准备后退出时，徒弟公开房间等待其他人补位
+        wait = self.config.master_disciple.master_disciple_config.master_exp_exit_after_prepare
         self._run_battle_with_invite(
             zones_name='经验妖怪',
             battle_count=2,
@@ -1443,15 +1497,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.device.stuck_record_add('BATTLE_STATUS_S')
                 if self.wait_battle(wait_time=dtime(minute=2)):
                       
-                    # 进入战斗，run_general_battle内部已自增current_count
-                    # 读取师父战斗模式配置
-                    battle_mode = self.config.master_disciple.master_disciple_config.master_battle_mode
+                    # 进入战斗后根据金币/经验独立开关决定是否准备后退出
+                    master_config = self.config.master_disciple.master_disciple_config
                     if battle_type == 8:
                         # 守护历练：始终正常完成战斗
                         self.run_general_battle(config=GeneralBattleConfig())
                     elif battle_type == 5:
-                        # 金币妖怪：根据战斗模式分流
-                        if battle_mode == MasterBattleMode.NORMAL_BATTLE:
+                        # 金币妖怪：根据独立开关决定正常完成或准备后退出
+                        if not master_config.master_coin_exit_after_prepare:
                             # 正常完成战斗
                             battle_config = GeneralBattleConfig(lock_team_enable=True)
                             self.battle_before(buff=None, config=battle_config)
@@ -1460,15 +1513,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                             # 进入后退出
                             self.master_run_battle_back(config=GeneralBattleConfig())
                     elif battle_type == 6:
-                        # 经验妖怪：根据战斗模式分流
-                        if battle_mode == MasterBattleMode.NORMAL_BATTLE:
+                        # 经验妖怪：根据独立开关决定正常完成或准备后退出
+                        if not master_config.master_exp_exit_after_prepare:
                             # 正常完成战斗
                             battle_config = GeneralBattleConfig(lock_team_enable=True)
                             self.battle_before(buff=None, config=battle_config)
                             self._exp_youkai_battle_wait()
                         else:
-                            # 进入后退出
-                            self.master_run_battle_back(config=GeneralBattleConfig())
+                            # 进入战斗后等待OCR数字达到24再退出
+                            self.master_run_exp_battle_back(config=GeneralBattleConfig())
                     elif battle_type == 7:
                         # 石距：始终进入后退出
                         self.master_run_battle_back_stone(config=GeneralBattleConfig())
@@ -1509,6 +1562,68 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.ui_goto(page_main) 
                 continue
         raise TaskEnd
+
+    def master_run_exp_battle_back(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
+        """
+        经验妖怪进入战斗后等待O_KILL_CNT识别数字达到24再退出
+        :param config:
+        :return:
+        """
+        # 先点击准备进入战斗，保持师父模式原有“进入后退出”前置行为
+        sleep(5)
+        self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
+        self.click(self.I_PREPARE_HIGHLIGHT)
+        logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
+
+        # 使用O_KILL_CNT识别经验妖怪战斗中的击杀数量
+        wait_ocr_timer = Timer(120).start()
+        while not wait_ocr_timer.reached():
+            self.screenshot()
+            try:
+                value = self.O_KILL_CNT.ocr_digit(self.device.image)
+            except Exception as e:
+                logger.warning(f"[经验妖怪] O_KILL_CNT识别异常: {e}")
+                value = 0
+            logger.info(f"[经验妖怪] 击杀数量: {value}/24")
+            if value >= 24:
+                logger.info("[经验妖怪] 击杀数量已达到24，开始退出战斗")
+                break
+            sleep(1)
+        else:
+            logger.warning("[经验妖怪] 等待OCR数字达到24超时，开始退出战斗")
+
+        # 点击返回
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
+            if self.appear(self.I_EXIT_ENSURE):
+                break
+        logger.info(f"Click {self.I_EXIT.name}")
+
+        # 点击返回确认
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_MAIN):
+                return True
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
+            if self.appear(self.I_FALSE):
+                break
+        logger.info(f"Click {self.I_EXIT_ENSURE.name}")
+
+        # 点击失败确认
+        self.wait_until_appear(self.I_FALSE)
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_FALSE, interval=1.5):
+                continue
+            if not self.appear(self.I_FALSE):
+                break
+        logger.info(f"Click {self.I_FALSE.name}")
+
+        return True
+
     def master_run_battle_back_stone(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
         """
         进入挑战然后直接返回
