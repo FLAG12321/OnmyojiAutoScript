@@ -128,6 +128,8 @@ class GameUiAssets:
 	I_EXPLORATION_GOTO_YOUKI = RuleImage(roi_front=(734,638,52,40), roi_back=(56,612,1067,101), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/exploration_goto_youki.png")
 	# description 
 	I_CHECK_YOUKI = RuleImage(roi_front=(153,18,128,39), roi_back=(141,5,155,68), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/check_youki.png")
+	#  
+	I_CHECK_YARD = RuleImage(roi_front=(42,35,35,40), roi_back=(0,6,172,120), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/page_check_yard.png")
 
 
 	# Image Rule Assets

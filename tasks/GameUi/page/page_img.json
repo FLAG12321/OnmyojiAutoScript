@@ -5,7 +5,7 @@
     "roiFront": "807,108,76,45",
     "roiBack": "49,98,1033,61",
     "method": "Template matching",
-    "threshold": "0.8",
+    "threshold": 0.8,
     "description": "description"
   },
   {
@@ -253,20 +253,29 @@
   },
   {
     "itemName": "exploration_goto_youki",
+    "imageName": "exploration_goto_youki.png",
     "roiFront": "734,638,52,40",
     "roiBack": "56,612,1067,101",
-    "description": "description",
-    "imageName": "exploration_goto_youki.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "check_youki",
+    "imageName": "check_youki.png",
     "roiFront": "153,18,128,39",
     "roiBack": "141,5,155,68",
-    "description": "description",
-    "imageName": "check_youki.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "check_yard",
+    "imageName": "page_check_yard.png",
+    "roiFront": "42,35,35,40",
+    "roiBack": "0,6,172,120",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
   }
 ]

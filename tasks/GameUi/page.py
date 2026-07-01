@@ -62,7 +62,7 @@ page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
 page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
 # Main Home 主页
 page_main = Page(G.I_CHECK_MAIN)
-page_main.additional = [G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
+page_main.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
                         [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
                         [RestartAssets.I_LOGIN_COURTYARD2, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
                         [RestartAssets.I_LOGIN_SCROOLL_CLOSE, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
