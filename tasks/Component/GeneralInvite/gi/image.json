@@ -158,7 +158,7 @@
     "roiFront": "738,554,72,39",
     "roiBack": "710,544,132,60",
     "method": "Template matching",
-    "threshold": "0.7",
+    "threshold": 0.7,
     "description": "点击邀请"
   },
   {
@@ -379,20 +379,20 @@
   },
   {
     "itemName": "add_2_1",
+    "imageName": "add_2_1.png",
     "roiFront": "328,211,121,96",
     "roiBack": "243,153,288,215",
-    "description": "师徒的加号",
-    "imageName": "add_2_1.png",
     "method": "Template matching",
-    "threshold": "0.8"
+    "threshold": 0.8,
+    "description": "师徒的加号"
   },
   {
     "itemName": "i_reject_4",
-    "roiFront": "26,228,43,53",
-    "roiBack": "12,150,200,300",
-    "description": "description",
     "imageName": "i_reject_4.png",
+    "roiFront": "26,225,41,48",
+    "roiBack": "11,150,199,300",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   }
 ]

@@ -43,5 +43,14 @@
     "method": "Default",
     "keyword": "",
     "description": ""
+  },
+  {
+    "itemName": "kill_cnt",
+    "roiFront": "1089,165,127,31",
+    "roiBack": "1089,165,127,31",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": ""
   }
 ]

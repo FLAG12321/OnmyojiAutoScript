@@ -48,6 +48,8 @@ class MasterDiscipleAssets:
 	O_ADD_ALL = RuleOcr(roi=(609,640,167,35), area=(0,0,100,100), mode="Single", method="Default", keyword="所有人", name="add_all")
 	#  
 	O_SUSHI_NUM = RuleOcr(roi=(881,18,103,31), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="sushi_num")
+	#  
+	O_KILL_CNT = RuleOcr(roi=(1089,165,127,31), area=(1089,165,127,31), mode="Digit", method="Default", keyword="", name="kill_cnt")
 
 
 	# Swipe Rule Assets
