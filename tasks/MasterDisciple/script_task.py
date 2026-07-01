@@ -200,7 +200,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         import math
         ap_threshold = self.config.master_disciple.master_disciple_config.ap_threshold
         logger.info(f"[体力购买] 目标体力: {ap_threshold}")
-        need_harvest_mail = False
 
         try:
             # 确保在庭院
@@ -253,7 +252,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
                     self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
                     bought += 1
-                    need_harvest_mail = True
                     logger.info(f"[体力购买] 第 {bought} 次购买成功")
                 elif self.appear(DailyTriflesAssets.I_SPECIAL_SUSHI):
                     self.ui_click(DailyTriflesAssets.I_SPECIAL_SUSHI, stop=DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
@@ -261,6 +259,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     if self.appear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE):
                         self.ui_click_until_disappear(DailyTriflesAssets.I_STORE_COST_TYPE_JADE, interval=2)
                         bought += 1
+                        need_harvest_mail = True
                         logger.info(f"[体力购买] 第 {bought} 次购买成功")
                 else:
                     logger.warning("[体力购买] 未找到体力购买项，跳过")
@@ -281,55 +280,22 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self.screenshot()
                 self.ui_get_current_page()
                 self.ui_goto(page_main)
-                if need_harvest_mail:
-                    self._harvest_mail_after_buy_ap()
-                    self.screenshot()
-                    self.ui_get_current_page()
-                    self.ui_goto(page_main)
+                logger.info("[体力购买] 已回到庭院，开始领取一次邮件")
+                self._harvest_mail_after_buy_ap()
+                self.screenshot()
+                self.ui_get_current_page()
+                self.ui_goto(page_main)
             except Exception:
                 logger.warning("[体力购买] 返回庭院或领取邮件失败")
 
     def _harvest_mail_after_buy_ap(self) -> bool:
         """
-        购买体力后领取邮件中的体力
-        购买后的体力会进入邮箱，需要回到庭院后进入邮件并一键收取
+        体力检测流程结束后领取一次邮件
+        该方法由体力检测流程在回到庭院后调用，复用DailyAltAcc的邮件领取流程
         """
-        self.screenshot()
-        if not self.appear_multi_scale(RestartAssets.I_HARVEST_MAIL, scale_range=(0.8, 1.1)) and \
-                not self.appear(RestartAssets.I_HARVEST_MAIL_COPY):
-            if not self.appear(RestartAssets.I_READ_ALL_MAIL):
-                logger.warning("[体力购买] 未发现邮箱入口，跳过邮件领取")
-                return False
-
-        logger.info("[体力购买] 开始领取邮箱体力")
-        open_timer = Timer(10).start()
-        while not open_timer.reached():
-            self.screenshot()
-            if self.appear(RestartAssets.I_READ_ALL_MAIL):
-                break
-            if self.appear_then_click_multi_scale(RestartAssets.I_HARVEST_MAIL, interval=1.5, scale_range=(0.8, 1.1)):
-                continue
-            if self.appear_then_click(RestartAssets.I_HARVEST_MAIL_COPY, interval=1.5):
-                continue
-        else:
-            logger.warning("[体力购买] 打开邮箱超时，跳过邮件领取")
-            return False
-
-        harvest_timer = Timer(5).start()
-        while not harvest_timer.reached():
-            self.screenshot()
-            if self.appear_then_click(RestartAssets.I_HARVEST_MAIL_CONFIRM, interval=0.8):
-                break
-            if self.appear_then_click(RestartAssets.I_READ_ALL_MAIL, interval=1.5):
-                continue
-            if self.appear_then_click(RestartAssets.I_HARVEST_MAIL_ALL, interval=1.5):
-                continue
-            if self.appear_then_click(RestartAssets.I_MAIL_RED_POINT, interval=1.5):
-                continue
-
-        self.ui_click_until_disappear(RestartAssets.I_LOGIN_RED_CLOSE)
-        logger.info("[体力购买] 邮箱体力领取完成")
-        return True
+        logger.info("[体力购买] 体力检测流程结束后领取一次邮件")
+        from tasks.DailyAltAcc.mail import Mail
+        return Mail(self.config, self.device).run_mail()
 
     def _execute_disciple_tasks(self):
         """
@@ -1570,21 +1536,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :return:
         """
         # 先点击准备进入战斗，保持师父模式原有“进入后退出”前置行为
-        sleep(5)
-        self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
-        self.click(self.I_PREPARE_HIGHLIGHT)
-        logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
-
-        # 等待准备完成并真正进入战斗，避免还在准备界面就点击退出键
-        wait_battle_timer = Timer(30).start()
-        while not wait_battle_timer.reached():
+        #self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
+        while 1:
             self.screenshot()
-            if self.is_in_real_battle(False):
-                logger.info("[经验妖怪] 已进入真实战斗")
+            if self.appear(self.I_EXIT):
                 break
-            sleep(1)
-        else:
-            logger.warning("[经验妖怪] 等待进入真实战斗超时，继续尝试退出")
+            if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1):
+                continue
+        logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
 
         # 进入真实战斗后先点击退出键，让界面停在退出确认框，等击杀数达标后立刻确认退出
         while 1:
