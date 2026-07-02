@@ -144,3 +144,18 @@ class PlotlineAssets:
 	S_SWIPE_FIND_FLAG = RuleSwipe(roi_front=(1067,618,141,47), roi_back=(104,616,178,52), mode="default", name="swipe_find_flag")
 
 
+	# Image Rule Assets
+	#  
+	I_TO_COLLET = RuleImage(roi_front=(122,636,48,46), roi_back=(20,575,1138,137), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_to_collet.png")
+	#  
+	I_TO_COLLET_2 = RuleImage(roi_front=(852,659,55,46), roi_back=(447,437,760,283), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_to_collet_2.png")
+	#  
+	I_TO_MAIN_CHANGE = RuleImage(roi_front=(122,452,146,47), roi_back=(20,24,308,687), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_to_main_change.png")
+	#  
+	I_MAIN_SELECT = RuleImage(roi_front=(883,506,146,47), roi_back=(729,52,470,635), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_main_select.png")
+	#  
+	I_FLAG_USED = RuleImage(roi_front=(958,611,132,37), roi_back=(729,52,470,635), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_flag_used.png")
+	#  
+	I_FLAG_NOT_USE = RuleImage(roi_front=(999,609,132,37), roi_back=(729,52,470,635), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_flag_not_use.png")
+
+

@@ -50,62 +50,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     exploration_shikigami_switch: bool = True
     _current_battle_type: str = 'plotline'  # 'plotline' or 'exploration'
     _solo_exploration = None
-    _plotline_page_links_backup = None
-    # 庭院类型自动识别的一次性锁定标记：True 表示本次运行已完成识别并（按需）重链。
-    # 采用类属性默认值 + 运行时实例赋值，保证每轮 new 出的 ScriptTask 实例互不污染。
-    _plotline_courtyard_linked = False
     mail_flag: bool = True
     page_main_timeout: int = 0
     unknow_cnt: int = 0
-
-    def _apply_plotline_page_links(self):
-        self._plotline_page_links_backup = {
-            'page_main_check_button': page_main.check_button,
-            'main_to_exploration': page_main.links.get(page_exploration),
-        }
-        # Plotline 是新号练级任务，运行期间用新庭院专用资源识别 main，不改 self.I_PAGE_MAIN
-        page_main.check_button = self.I_PLOTLINE_NEW_MAIN_CHECK
-        # Plotline 是新号练级任务，运行期间用新庭院专用资源替换全局庭院入口
-        page_main.link(button=self.I_PLOTLINE_NEW_MAIN_GOTO_EXPLORATION, destination=page_exploration)
-
-    def _restore_plotline_page_links(self):
-        if self._plotline_page_links_backup is None:
-            return
-        page_main.check_button = self._plotline_page_links_backup.get('page_main_check_button')
-        main_to_exploration = self._plotline_page_links_backup.get('main_to_exploration')
-        if main_to_exploration is None:
-            if page_exploration in page_main.links:
-                del page_main.links[page_exploration]
-        else:
-            page_main.link(button=main_to_exploration, destination=page_exploration)
-        self._plotline_page_links_backup = None
-
-    def ui_get_current_page(self, skip_first_screenshot=True):
-        """覆写父类：首次调用时按当前实际庭院类型自动识别并按需重链 page_main。
-
-        拦截点选在这里是因为 ui_goto 内部首行就会调用 ui_get_current_page，
-        覆写它可以覆盖 ui_goto / ui_goto_page / 直接调用三条 page 类导航路径。
-        庭院类型在一次运行内固定，故只探测一次（_plotline_courtyard_linked 一次锁定）。
-        """
-        # 已锁定：纯转发父类，零额外开销
-        if self._plotline_courtyard_linked:
-            return super().ui_get_current_page(skip_first_screenshot)
-
-        # 首次进入：独立取一帧探测当前庭院类型
-        # 注意 appear 用 interval=None，不写 interval_timer，避免污染
-        # get_current_scene 主循环里 appear(I_PAGE_MAIN, interval=1) 的节流。
-        self.screenshot()
-        if self.appear(self.I_PAGE_MAIN, interval=None):
-            # 用「去探索」入口图判断是否新庭院：该入口为新庭院特有，旧庭院不会命中。
-            # 不用 I_PLOTLINE_NEW_MAIN_CHECK（右上角标识）：实测它在旧庭院可能误匹配，
-            # 导致误判为新庭院并 apply，旧庭院用新庭院探索入口图会 Failed recognize 而卡住。
-            if self.appear(self.I_PLOTLINE_NEW_MAIN_GOTO_EXPLORATION, interval=None):
-                self._apply_plotline_page_links()
-            # 确定在庭院即锁定，避免重复探测让 _apply 的 backup 被二次覆盖
-            self._plotline_courtyard_linked = True
-
-        # skip_first_screenshot 原样透传父类，由父类按既有逻辑决定是否复用刚截的帧
-        return super().ui_get_current_page(skip_first_screenshot)
 
     def _reset_shikigami_switch_flags(self, switch_system_shikigami: bool):
         self.privileges_flag = not switch_system_shikigami
@@ -215,62 +162,117 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
 
         handler = scene_handlers.get(scene, self.handle_unknown_scene)
         handler()
+    
+    def change_main_scene(self):
+        "切换庭院场景"
+        def change_main_scene():
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_FLAG_NOT_USE):
+                    break
+                if self.appear_then_click(self.I_MAIN_SELECT,interval=1):
+                    continue
+                if self.appear_then_click(self.I_TO_MAIN_CHANGE,interval=1):
+                    continue
+                if self.appear_then_click(self.I_TO_MAIN_CHANGE,interval=1):
+                    continue
+                if self.appear_then_click(self.I_TO_COLLET_2,interval=1):
+                    continue
+                if self.appear_then_click(self.I_TO_COLLET,interval=1):
+                    continue
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_FLAG_USED):
+                    break
+                if self.appear_then_click(self.I_FLAG_NOT_USE,interval=1):
+                    continue
+            while 1:
+                self.screenshot()
+                if self.appear(page_main.check_button):
+                    break
+                if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
+                    continue
+        
+        
+        if self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK) and (self.get_character_level_with_multiple_attempts() >= 7):
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_TO_COLLET):
+                    change_main_scene()
+                    break
+                if self.appear_then_click(RestartAssets.I_LOGIN_COURTYARD, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
+                    continue
+                if self.appear_then_click(RestartAssets.I_LOGIN_COURTYARD2, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
+                    continue
+                if self.appear_then_click(RestartAssets.I_LOGIN_SCROOLL_CLOSE, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
+                    continue
+        
 
+            
+    
     def handle_main_scene(self) -> None:
         """ 处理主界面场景 """
-        logger.info("当前在主线剧情主界面场景")
-        import time
-        start_time = time.time()
-        if not self.privileges_flag and (self.get_character_level_with_multiple_attempts() >= 7):
-            self.level_low=False
-            while time.time()-start_time<3:
+        def check_privileges():
+            if not self.privileges_flag and (self.get_character_level_with_multiple_attempts() >= 7):
+                self.level_low=False
+                while time.time()-start_time<3:
+                    self.screenshot()
+                    if self.appear_then_click(self.I_CLICK_TO_PRIVILEGES,interval=0.7):
+                        return True
+        def check_experience_youkai_battle():
+            if self.experience_youkai_battle and (self.get_character_level_with_multiple_attempts() >= 15):
                 self.screenshot()
-                if self.appear_then_click(self.I_CLICK_TO_PRIVILEGES,interval=0.7):
-                    return
-        if self.experience_youkai_battle and (self.get_character_level_with_multiple_attempts() >= 15):
-            self.screenshot()
-            if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
-                self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
-                self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
-                if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
-                    logger.info('Click scroll close area because courtyard appears')
-                    self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
-                    return
-            if self.mail_flag:
-                from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
-                daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
-                if  daily_alt_acc_task.harvest_mail():
-                    self.mail_flag=False
-                sleep(1)
-            self.screenshot()
-            if self.ui_get_current_page()!=page_main:
-                self.ui_goto(page_main)
-            else :
-                self.ui_goto(page_exploration)
-                self.screenshot()
-                self.ui_get_current_page()
-                self.ui_goto(page_team)
-            self.screenshot()
-            start_time = time.time()
-            while time.time()-start_time<3:
-                self.screenshot()
-                if self.appear(self.I_PAGE_CLICK_ANY2,interval=0.7) or \
-                    self.appear(self.I_CLICK_CURSOR,interval=0.7):
-                    return
-            # 调用经验妖怪任务
-            from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiScriptTask
-            experience_youkai_task = ExperienceYoukaiScriptTask(self.config, self.device)
-            try:
+                if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
+                    self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
+                    self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
+                    if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
+                        logger.info('Click scroll close area because courtyard appears')
+                        self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
+                        return True
+                if self.mail_flag:
+                    from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
+                    daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
+                    if  daily_alt_acc_task.harvest_mail():
+                        self.mail_flag=False
+                    sleep(1)
                 self.screenshot()
                 if self.ui_get_current_page()!=page_main:
                     self.ui_goto(page_main)
-                experience_youkai_task.run()                
-            except TaskEnd as e:
-                self.experience_youkai_battle=False
-                logger.info("任务结束")
-            except Exception as e:
-                logger.error(f"经验妖怪任务执行异常: {e}")
-                # 继续执行剧情任务
+                else :
+                    self.ui_goto(page_exploration)
+                    self.screenshot()
+                    self.ui_get_current_page()
+                    self.ui_goto(page_team)
+                self.screenshot()
+                start_time = time.time()
+                while time.time()-start_time<3:
+                    self.screenshot()
+                    if self.appear(self.I_PAGE_CLICK_ANY2,interval=0.7) or \
+                        self.appear(self.I_CLICK_CURSOR,interval=0.7):
+                        return True
+                # 调用经验妖怪任务
+                from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiScriptTask
+                experience_youkai_task = ExperienceYoukaiScriptTask(self.config, self.device)
+                try:
+                    self.screenshot()
+                    if self.ui_get_current_page()!=page_main:
+                        self.ui_goto(page_main)
+                    experience_youkai_task.run()                
+                except TaskEnd as e:
+                    self.experience_youkai_battle=False
+                    logger.info("任务结束")
+                except Exception as e:
+                    logger.error(f"经验妖怪任务执行异常: {e}")
+                    # 继续执行剧情任务
+                    
+        logger.info("当前在主线剧情主界面场景")
+        import time
+        start_time = time.time()
+        self.change_main_scene()
+        if check_privileges():
+            return
+        if check_experience_youkai_battle():
+            return
         start_time = time.time()
         while time.time()-start_time<3:
             #logger.info(f"{start_time}")
@@ -906,7 +908,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('QMUMU3')
+    c = Config('oas3')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()
