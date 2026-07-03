@@ -96,19 +96,16 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     self.unknow_cnt=0
                 self.handle_scene(current_scene)
             except TaskEnd as e:
-                self._restore_plotline_page_links()
                 self.set_next_run(task='Plotline',success=True)
                 logger.info("任务结束")
                 raise  e
             except GameStuckError as e:
-                self._restore_plotline_page_links()
                 logger.error(f"等待超时: {e}")
                 # 一分钟后再重启
                 self.custom_next_run(task='Plotline', custom_time=(datetime.now() + timedelta(minutes=1)), time_delta=0)
                 self.config.task_call('Restart')
                 raise e
             except Exception as e:
-                self._restore_plotline_page_links()
                 self.set_next_run(task='Plotline',success=False)
                 raise e
             
@@ -268,9 +265,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         logger.info("当前在主线剧情主界面场景")
         import time
         start_time = time.time()
-        self.change_main_scene()
         if check_privileges():
             return
+        self.change_main_scene()
         if check_experience_youkai_battle():
             return
         start_time = time.time()
@@ -747,7 +744,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             
         click_timer = Timer(5)
         swipe_timer = Timer(10)
-        attack_click_timer = Timer(1)
+        attack_click_timer = Timer(0.5)
         while 1:
             self.screenshot()
             self.device.click_record_clear()
@@ -772,10 +769,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if attack_click_timer.reached():
                     attack_clicked = False
                     for attack_button in (
+                        self.I_CLICK_ATTACK,
                         self.I_CLICK_ATTACK1,
                         self.I_CLICK_ATTACK2,
                         self.I_CLICK_ATTACK3,
-                        self.I_CLICK_ATTACK,
+                        
                     ):
                         if self.appear_then_click(attack_button):
                             attack_click_timer.reset()
@@ -908,7 +906,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('oas3')
+    c = Config('QMUMU3')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()

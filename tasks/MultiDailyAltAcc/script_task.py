@@ -56,8 +56,22 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                                 logger.info(f"Account {accountInfo.character} failed, retrying ({retry_count}/{max_retries})...")
                             else:
                                 logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")            
-                    except GameNotRunningError:
-                        raise   GameNotRunningError("Game Not Running")
+                    except GameNotRunningError as e:
+                        if "Game crashed to desktop while switching account" not in str(e):
+                            raise GameNotRunningError("Game Not Running")
+                        logger.error(f"Error processing account {accountInfo.character}: {e}")
+                        self.config.notifier.push(
+                            content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",
+                            title="ERROR"
+                        )
+                        # 仅切换账号测活失败按账号任务失败处理，避免影响任务开始前的全局游戏未启动检测
+                        self.daily_conf.multi_daily_alt_acc_config.need_login = False
+                        if not self.daily_conf.multi_daily_alt_acc_config.need_login_time == self.start_time:
+                            self.daily_conf.multi_daily_alt_acc_config.need_login_time = login_time
+                        self.save_config()
+                        self.next_run("MultiDailyAltAcc", success=False)
+                        Script.save_error_log(self)
+                        break
                     except Exception as e:
                         logger.error(f"Error processing account {accountInfo.character}: {e}")
                         self.config.notifier.push(

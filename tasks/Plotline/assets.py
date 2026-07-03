@@ -85,7 +85,7 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_SKILL = RuleImage(roi_front=(1057,656,17,23), roi_back=(834,591,441,120), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_skill.png")
 	# description 
-	I_CLICK_CV = RuleImage(roi_front=(264,116,29,17), roi_back=(0,0,1280,720), threshold=0.80, method="Template matching", file="./tasks/Plotline/res/click_cv.png")
+	I_CLICK_CV = RuleImage(roi_front=(264,116,29,17), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/click_cv.png")
 	# description 
 	I_CLICK_EYE_2 = RuleImage(roi_front=(599,108,87,35), roi_back=(0,0,1278,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/click_eye_2.png")
 	# description 
@@ -113,7 +113,7 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_JUMP2 = RuleImage(roi_front=(720,446,120,33), roi_back=(637,407,277,110), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/click_jump2.png")
 	# Plotline 新庭院 main 页面检测资源 
-	I_PLOTLINE_NEW_MAIN_CHECK = RuleImage(roi_front=(805,107,103,50), roi_back=(718,67,312,143), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/plotline_new_main_check.png")
+	I_PLOTLINE_NEW_MAIN_CHECK = RuleImage(roi_front=(1076,71,73,51), roi_back=(896,61,312,143), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/plotline_new_main_check.png")
 	# Plotline 新庭院进入探索入口资源 
 	I_PLOTLINE_NEW_MAIN_GOTO_EXPLORATION = RuleImage(roi_front=(656,142,37,63), roi_back=(305,106,725,211), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/plotline_new_main_goto_exploration.png")
 	# description 
