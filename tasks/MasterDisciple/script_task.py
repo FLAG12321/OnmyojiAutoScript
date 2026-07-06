@@ -1536,7 +1536,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :return:
         """
         # 先点击准备进入战斗，保持师父模式原有“进入后退出”前置行为
-        #self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
+        self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
         while 1:
             self.screenshot()
             if self.appear(self.I_EXIT):

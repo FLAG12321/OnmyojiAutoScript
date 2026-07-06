@@ -89,6 +89,6 @@ class SwitchAccountAssets:
 	# description 
 	I_SA_APPLE_BACK = RuleImage(roi_front=(898,169,22,22), roi_back=(869,149,73,62), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_apple_back.png")
 	# mumu桌面 
-	I_PAGE_DESKTOP = RuleImage(roi_front=(1171,5,71,25), roi_back=(1081,0,199,86), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_page_desktop.png")
+	I_PAGE_DESKTOP = RuleImage(roi_front=(942,177,46,25), roi_back=(651,6,614,708), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_page_desktop.png")
 
 

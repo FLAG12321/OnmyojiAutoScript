@@ -137,8 +137,8 @@
   {
     "itemName": "page_desktop",
     "imageName": "res_page_desktop.png",
-    "roiFront": "1171,5,71,25",
-    "roiBack": "1081,0,199,86",
+    "roiFront": "942,177,46,25",
+    "roiBack": "651,6,614,708",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "mumu桌面"

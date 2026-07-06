@@ -219,20 +219,21 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         def check_experience_youkai_battle():
             if self.experience_youkai_battle and (self.get_character_level_with_multiple_attempts() >= 15):
                 self.screenshot()
-                if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
+                self.ui_goto(page_main)
+                self.screenshot()
+                """ if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
                     self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
                     self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
                     if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                         logger.info('Click scroll close area because courtyard appears')
                         self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
-                        return True
+                        return True """
                 if self.mail_flag:
                     from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
                     daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
                     if  daily_alt_acc_task.harvest_mail():
                         self.mail_flag=False
                     sleep(1)
-                self.screenshot()
                 if self.ui_get_current_page()!=page_main:
                     self.ui_goto(page_main)
                 else :
@@ -386,7 +387,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             logger.info(f'探索任务异常{e.args[0]}')
             if e.args[0] == 'Insufficient AP' and self.mail_flag:
                 self.screenshot()
-                if self.appear(self.I_PAGE_MAIN):
+                if self.appear(self.I_PAGE_MAIN) :
+                    if self.get_character_level_with_multiple_attempts() >= 15:
+                        self.screenshot()
+                        self.ui_goto(page_main)
+                        self.screenshot()
                     from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
                     daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
                     daily_alt_acc_task.harvest_mail()

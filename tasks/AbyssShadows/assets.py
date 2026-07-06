@@ -139,6 +139,11 @@ class AbyssShadowsAssets:
 	O_LEOPARD_DONE = RuleOcr(roi=(1000,160,180,360), area=(1000,160,180,360), mode="Single", method="CF_RGB(CCCCCC,FFFFFF)", keyword="封印", name="leopard_done")
 
 
+	# Image Rule Assets
+	#  
+	I_SNAKE1 = RuleImage(roi_front=(933,407,94,65), roi_back=(196,63,1027,657), threshold=0.7, method="Template matching", file="./tasks/AbyssShadows/res/res_snake1.png")
+
+
 	# Swipe Rule Assets
 	# 滑到狭间 
 	S_TO_ABBSY_SHADOWS = RuleSwipe(roi_front=(752,395,62,66), roi_back=(758,193,62,48), mode="default", name="to_abbsy_shadows")

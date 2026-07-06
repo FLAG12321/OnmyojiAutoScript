@@ -10,46 +10,6 @@ from module.atom.list import RuleList
 class BondlingFairylandAssets: 
 
 
-	# Click Rule Assets
-	# description 
-	C_STONE_1 = RuleClick(roi_front=(228,502,26,58), roi_back=(0,0,100,100), name="stone_1")
-	# description 
-	C_STONE_2 = RuleClick(roi_front=(439,528,25,62), roi_back=(0,0,100,100), name="stone_2")
-	# description 
-	C_STONE_3 = RuleClick(roi_front=(687,505,26,56), roi_back=(0,0,100,100), name="stone_3")
-	# description 
-	C_STONE_4 = RuleClick(roi_front=(944,497,22,50), roi_back=(0,0,100,100), name="stone_4")
-	# description 
-	C_STONE_5 = RuleClick(roi_front=(1041,494,25,25), roi_back=(0,0,100,100), name="stone_5")
-	# description 
-	C_CAP_SUCCESS = RuleClick(roi_front=(317,102,378,363), roi_back=(0,0,100,100), name="cap_success")
-	# 逢魔之原地域 
-	C_AREA_2 = RuleClick(roi_front=(689,118,121,77), roi_back=(0,0,100,100), name="area_2")
-	# 平安京地域 
-	C_AREA_1 = RuleClick(roi_front=(628,314,108,137), roi_back=(0,0,100,100), name="area_1")
-
-
-	# Ocr Rule Assets
-	# Ocr-description 
-	O_B_BONDLING_CLASS = RuleOcr(roi=(266,271,79,112), area=(287,271,36,112), mode="Single", method="Default", keyword="", name="b_bondling_class")
-	# 小盘子 
-	O_B_LOW_NUMBER = RuleOcr(roi=(543,14,96,33), area=(543,14,96,33), mode="DigitCounter", method="Default", keyword="", name="b_low_number")
-	# 中盘子 
-	O_B_MEDIUM_NUMBER = RuleOcr(roi=(734,19,99,25), area=(734,19,99,25), mode="DigitCounter", method="Default", keyword="", name="b_medium_number")
-	# 大盘子 
-	O_B_HIGH_NUMBER = RuleOcr(roi=(928,17,94,30), area=(928,17,94,30), mode="DigitCounter", method="Default", keyword="", name="b_high_number")
-	# 鸣契石 
-	O_B_STONE_NUMBER = RuleOcr(roi=(1135,16,78,32), area=(1135,16,78,32), mode="DigitCounter", method="Default", keyword="", name="b_stone_number")
-	# 召唤契灵数量 
-	O_B_SUMMON_BALL_NUMBER = RuleOcr(roi=(546,540,100,45), area=(546,540,100,45), mode="Single", method="Default", keyword="", name="b_summon_ball_number")
-	# 抓捕契灵剩余数量 
-	O_B_BALL_NUMBER = RuleOcr(roi=(1186,666,65,26), area=(1186,666,65,26), mode="DigitCounter", method="Default", keyword="", name="b_ball_number")
-	# 好友邀请 
-	O_FRIEND = RuleOcr(roi=(357,89,100,54), area=(357,89,100,54), mode="Single", method="Default", keyword="", name="friend")
-	# 跨区邀请 
-	O_KUAQU = RuleOcr(roi=(472,88,100,54), area=(472,88,100,54), mode="Single", method="Default", keyword="", name="kuaqu")
-
-
 	# Image Rule Assets
 	# 挑战 
 	I_BALL_FIRE = RuleImage(roi_front=(1140,575,100,100), roi_back=(1140,575,100,100), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/ball/ball_ball_fire.png")
@@ -163,6 +123,46 @@ class BondlingFairylandAssets:
 	I_SELECT_FRIEND_ON = RuleImage(roi_front=(376,121,63,38), roi_back=(376,121,63,38), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/invite/select_friend_on.png")
 	# description 
 	I_SELECT_KUAQU_OFF = RuleImage(roi_front=(490,119,68,33), roi_back=(490,119,68,33), threshold=0.8, method="Template matching", file="./tasks/BondlingFairyland/invite/select_kuaqu_off.png")
+
+
+	# Click Rule Assets
+	# description 
+	C_STONE_1 = RuleClick(roi_front=(230,483,26,58), roi_back=(0,0,100,100), name="stone_1")
+	# description 
+	C_STONE_2 = RuleClick(roi_front=(441,505,25,63), roi_back=(0,0,100,100), name="stone_2")
+	# description 
+	C_STONE_3 = RuleClick(roi_front=(684,483,26,55), roi_back=(0,0,100,100), name="stone_3")
+	# description 
+	C_STONE_4 = RuleClick(roi_front=(944,483,22,50), roi_back=(0,0,100,100), name="stone_4")
+	# description 
+	C_STONE_5 = RuleClick(roi_front=(1041,494,25,25), roi_back=(0,0,100,100), name="stone_5")
+	# description 
+	C_CAP_SUCCESS = RuleClick(roi_front=(317,102,378,363), roi_back=(0,0,100,100), name="cap_success")
+	# 逢魔之原地域 
+	C_AREA_2 = RuleClick(roi_front=(689,118,121,77), roi_back=(0,0,100,100), name="area_2")
+	# 平安京地域 
+	C_AREA_1 = RuleClick(roi_front=(628,314,108,137), roi_back=(0,0,100,100), name="area_1")
+
+
+	# Ocr Rule Assets
+	# Ocr-description 
+	O_B_BONDLING_CLASS = RuleOcr(roi=(266,271,79,112), area=(287,271,36,112), mode="Single", method="Default", keyword="", name="b_bondling_class")
+	# 小盘子 
+	O_B_LOW_NUMBER = RuleOcr(roi=(543,14,96,33), area=(543,14,96,33), mode="DigitCounter", method="Default", keyword="", name="b_low_number")
+	# 中盘子 
+	O_B_MEDIUM_NUMBER = RuleOcr(roi=(734,19,99,25), area=(734,19,99,25), mode="DigitCounter", method="Default", keyword="", name="b_medium_number")
+	# 大盘子 
+	O_B_HIGH_NUMBER = RuleOcr(roi=(928,17,94,30), area=(928,17,94,30), mode="DigitCounter", method="Default", keyword="", name="b_high_number")
+	# 鸣契石 
+	O_B_STONE_NUMBER = RuleOcr(roi=(1135,16,78,32), area=(1135,16,78,32), mode="DigitCounter", method="Default", keyword="", name="b_stone_number")
+	# 召唤契灵数量 
+	O_B_SUMMON_BALL_NUMBER = RuleOcr(roi=(546,540,100,45), area=(546,540,100,45), mode="Single", method="Default", keyword="", name="b_summon_ball_number")
+	# 抓捕契灵剩余数量 
+	O_B_BALL_NUMBER = RuleOcr(roi=(1186,666,65,26), area=(1186,666,65,26), mode="DigitCounter", method="Default", keyword="", name="b_ball_number")
+	# 好友邀请 
+	O_FRIEND = RuleOcr(roi=(357,89,100,54), area=(357,89,100,54), mode="Single", method="Default", keyword="", name="friend")
+	# 跨区邀请 
+	O_KUAQU = RuleOcr(roi=(472,88,100,54), area=(472,88,100,54), mode="Single", method="Default", keyword="", name="kuaqu")
 
 
 	# Click Rule Assets

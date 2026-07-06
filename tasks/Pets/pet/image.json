@@ -65,109 +65,109 @@
   {
     "itemName": "pet_exit",
     "imageName": "pet_pet_exit.png",
-    "roiFront": "37,22,43,43",
-    "roiBack": "7,6,102,82",
+    "roiFront": "37,24,39,39",
+    "roiBack": "7,6,102,81",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "退出"
   },
   {
     "itemName": "pet_to_yard",
+    "imageName": "pet_to_yard.png",
     "roiFront": "34,628,49,47",
     "roiBack": "7,585,138,118",
-    "description": "description",
-    "imageName": "pet_to_yard.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_yard",
+    "imageName": "pet_yard.png",
     "roiFront": "17,633,65,77",
     "roiBack": "3,560,144,151",
-    "description": "description",
-    "imageName": "pet_yard.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_to_feed",
+    "imageName": "pet_to_feed.png",
     "roiFront": "807,241,59,67",
     "roiBack": "83,159,997,484",
-    "description": "description",
-    "imageName": "pet_to_feed.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_sort",
+    "imageName": "pet_sort.png",
     "roiFront": "382,95,54,34",
     "roiBack": "260,85,213,59",
-    "description": "description",
-    "imageName": "pet_sort.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_sort_reverse",
+    "imageName": "pet_sort_reverse.png",
     "roiFront": "382,95,54,34",
     "roiBack": "260,85,213,59",
-    "description": "description",
-    "imageName": "pet_sort_reverse.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_find_food",
+    "imageName": "pet_find_food.png",
     "roiFront": "383,192,46,37",
     "roiBack": "181,148,361,140",
-    "description": "description",
-    "imageName": "pet_find_food.png",
     "method": "Template matching",
-    "threshold": "0.8"
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_select_food",
+    "imageName": "pet_select_food.png",
     "roiFront": "383,192,46,37",
     "roiBack": "682,249,356,120",
-    "description": "description",
-    "imageName": "pet_select_food.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_ensure",
+    "imageName": "pet_ensure.png",
     "roiFront": "799,569,128,37",
     "roiBack": "757,539,219,96",
-    "description": "description",
-    "imageName": "pet_ensure.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_award",
-    "roiFront": "694,325,47,51",
-    "roiBack": "495,253,441,211",
-    "description": "description",
     "imageName": "pet_award.png",
+    "roiFront": "710,336,32,32",
+    "roiBack": "495,253,441,211",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "pet_flag_1",
-    "roiFront": "333,547,65,21",
-    "roiBack": "290,502,152,111",
-    "description": "description",
     "imageName": "pet_flag_1.png",
+    "roiFront": "335,544,63,20",
+    "roiBack": "290,502,152,111",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "pet_flag_2",
-    "roiFront": "805,382,62,14",
-    "roiBack": "729,341,191,102",
-    "description": "description",
     "imageName": "pet_flag_2.png",
+    "roiFront": "806,382,61,11",
+    "roiBack": "729,341,191,102",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.7,
+    "description": "description"
   }
 ]

@@ -43,7 +43,7 @@ class PetsAssets:
 	# 跳过 
 	I_PET_SKIP = RuleImage(roi_front=(1089,119,72,41), roi_back=(999,42,242,147), threshold=0.65, method="Template matching", file="./tasks/Pets/pet/pet_pet_skip.png")
 	# 退出 
-	I_PET_EXIT = RuleImage(roi_front=(37,22,43,43), roi_back=(7,6,102,82), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_pet_exit.png")
+	I_PET_EXIT = RuleImage(roi_front=(37,24,39,39), roi_back=(7,6,102,81), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_pet_exit.png")
 	# description 
 	I_PET_TO_YARD = RuleImage(roi_front=(34,628,49,47), roi_back=(7,585,138,118), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_to_yard.png")
 	# description 
@@ -61,11 +61,11 @@ class PetsAssets:
 	# description 
 	I_PET_ENSURE = RuleImage(roi_front=(799,569,128,37), roi_back=(757,539,219,96), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_ensure.png")
 	# description 
-	I_PET_AWARD = RuleImage(roi_front=(694,325,47,51), roi_back=(495,253,441,211), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_award.png")
+	I_PET_AWARD = RuleImage(roi_front=(710,336,32,32), roi_back=(495,253,441,211), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_award.png")
 	# description 
-	I_PET_FLAG_1 = RuleImage(roi_front=(333,547,65,21), roi_back=(290,502,152,111), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_flag_1.png")
+	I_PET_FLAG_1 = RuleImage(roi_front=(335,544,63,20), roi_back=(290,502,152,111), threshold=0.7, method="Template matching", file="./tasks/Pets/pet/pet_flag_1.png")
 	# description 
-	I_PET_FLAG_2 = RuleImage(roi_front=(805,382,62,14), roi_back=(729,341,191,102), threshold=0.8, method="Template matching", file="./tasks/Pets/pet/pet_flag_2.png")
+	I_PET_FLAG_2 = RuleImage(roi_front=(806,382,61,11), roi_back=(729,341,191,102), threshold=0.7, method="Template matching", file="./tasks/Pets/pet/pet_flag_2.png")
 
 
 	# Ocr Rule Assets
