@@ -959,12 +959,18 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             if self.appear(GeneralInviteAssets.I_I_ACCEPT):
                 continue
             if not self.open_welfare:
-                pos = self.O_DOKAN_MAP_2.ocr_full(self.device.image)
-                if pos == (0, 0, 0, 0):
-                    logger.info(f"failed to find {self.O_DOKAN_MAP_2.keyword}")
-                else:
-                    self.open_welfare = True
-                    logger.info(f" find {self.O_DOKAN_MAP_2.keyword}")
+                # 遍历配置的福利寮标签关键字，在地图中查找匹配
+                welfare_tag_list = [t.strip() for t in self.config.dokan.welfare_config.welfare_tags.split(',') if t.strip()]
+                found_tag = False
+                for tag in welfare_tag_list:
+                    pos = self.O_DOKAN_MAP_2.ocr_full(self.device.image, keyword=tag)
+                    if pos != (0, 0, 0, 0):
+                        self.open_welfare = True
+                        logger.info(f" find welfare tag: {tag}")
+                        found_tag = True
+                        break
+                if not found_tag:
+                    logger.info(f"failed to find welfare tags: {welfare_tag_list}")
 
             pos = self.O_DOKAN_MAP.ocr_full(self.device.image)
             if pos == (0, 0, 0, 0):
@@ -1062,12 +1068,15 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 if dokan_name == "" or dokan_tag == "":
                     continue
 
-                
-                if (dokan_name in self.welfare_names or "鑫鑫子" in dokan_name) and (dokan_tag == "鑫" or dokan_tag == "星"):
+                # 从配置中获取福利寮标签关键字列表
+                welfare_tag_list = [t.strip() for t in self.config.dokan.welfare_config.welfare_tags.split(',') if t.strip()]
+                tag_matched = dokan_tag in welfare_tag_list
+
+                if (dokan_name in self.welfare_names or "鑫鑫子" in dokan_name) and tag_matched:
                     self.dokan_quit = True
                     self.open_welfare = True
                 else:
-                    if (dokan_tag == "鑫" or dokan_tag == "星"):
+                    if tag_matched:
                         self.push_notify(content=f'{dokan_name}')
                         self.config.notifier.push(content=f'{dokan_name}', title='发现未收录的福利寮')
                     # 如果是要开启福利寮，但是此寮不是福利寮，则跳过
@@ -1187,7 +1196,17 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     return True
                 # 滑动道馆列表 最后一次不需要滑动直接刷新
                 if i < 2:
-                    self.swipe(self.S_DOKAN_LIST_UP, duration=1, interval=1)
+                    # 第二次滑动(i==1)起点再往下 50px, 增大滑动距离, 覆盖两次滑动之间的盲区
+                    if i == 1:
+                        fx, fy, fw, fh = self.S_DOKAN_LIST_UP.roi_front
+                        swipe_more = RuleSwipe(
+                            roi_front=(fx, fy + 50, fw, fh),
+                            roi_back=self.S_DOKAN_LIST_UP.roi_back,
+                            mode=self.S_DOKAN_LIST_UP.mode,
+                            name=self.S_DOKAN_LIST_UP.name)
+                        self.swipe(swipe_more, duration=1, interval=1)
+                    else:
+                        self.swipe(self.S_DOKAN_LIST_UP, duration=1, interval=1)
             # 恢复初始位置信息,防止下次使用出错
             restore_roi()
             num_fresh += 1
@@ -1522,7 +1541,38 @@ if __name__ == "__main__":
     # test_anti_detect_random_click()
     # test_goto_main()
 
-    # ===== 测试 NapCat 道馆触发流程 =====
+    # ===== 测试 find_dokan 寻找道馆流程 =====
+    # 前提: 需先手动将游戏切换到「寻找道馆」界面(右侧道馆列表可见),
+    #       否则 find_dokan 会在场景判断处直接返回。
+    from module.config.config import Config
+    from module.device.device import Device
+
+    print("=" * 60)
+    print("  find_dokan 测试 (配置: oas1)")
+    print("=" * 60)
+
+    c = Config('oas1')
+    d = Device(c)
+    self = ScriptTask(c, d)
+
+    # 加载福利寮名单(find_dokan 内部会用到 self.welfare_names)
+    self.welfare_names = self.welfare_name_str()
+
+    # welfare_flag=True: 使用福利寮配置寻找福利寮
+    # welfare_flag=False: 使用普通寮配置寻找普通寮
+    # 按需切换下面两行其一进行测试
+    result = self.find_dokan(c.dokan.welfare_config, welfare_flag=True)
+    # result = self.find_dokan(c.dokan.dokan_config, welfare_flag=False)
+
+    print("=" * 60)
+    print(f"  find_dokan 返回: {result}")
+    print("  道馆识别记录:")
+    for line in self.find_dokan_list:
+        print(f"    {line}")
+    print("=" * 60)
+
+    # ===== 以下为旧的 NapCat 道馆触发测试, 已注释保留 =====
+    """
     from module.config.config import Config
     from module.device.device import Device
 
@@ -1680,3 +1730,5 @@ if __name__ == "__main__":
     else:
         print("  >>> 结论: 未满足触发条件，不开启道馆任务")
     print("=" * 60)
+    """
+    

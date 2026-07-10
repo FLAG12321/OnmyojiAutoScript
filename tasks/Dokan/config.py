@@ -14,6 +14,8 @@ from tasks.Component.config_scheduler import Scheduler
 class WelfareConfig(BaseModel):
     # 是否只开福利寮
     welfare_enable: bool = Field(default=False, description='是否优先开启福利寮')
+    # 福利寮标签关键字，多个用逗号分隔，OCR 识别到的标签匹配其中任意一个即视为福利寮
+    welfare_tags: str = Field(default='鑫', description='福利寮标签关键字，多个用逗号分隔如鑫,星')
     # 福利寮刷新次数
     fresh_num: int = Field(default=5, description='福利寮刷新次数')
     # 福利寮最少人数限制
