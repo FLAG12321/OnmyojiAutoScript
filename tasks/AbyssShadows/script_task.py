@@ -41,6 +41,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         super().__init__(config, device)
         # 当前所用队伍预设
         self.cur_preset = None
+        # 当前所用队伍对应的敌人类型（用于判断类型变化时才切换队伍）
+        self.cur_enemy_type = None
         # process list
         self.ps_list: CodeList = CodeList('')
         # 已完成 列表
@@ -590,10 +592,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                     return self.config.model.abyss_shadows.process_manage.preset_elite
 
         preset = get_preset(enemy_type)
-        if preset != self.cur_preset:
-            logger.info(f"enemyType{enemy_type}--Switch preset to {preset} and {self.cur_preset=}")
+        # 按敌人类型是否变化来判断：只要本场类型与上一场不同，就执行队伍切换；
+        # 同一类型连续多场则不重复切换（即使各类型预设值相同，类型变化也会切换）
+        if enemy_type != self.cur_enemy_type:
+            logger.info(f"enemyType{enemy_type}--Switch preset to {preset} and {self.cur_enemy_type=}")
             self.switch_preset_team_with_str(preset)
             self.cur_preset = preset
+            self.cur_enemy_type = enemy_type
 
         # 点击准备
         _timer_battle = Timer(180)
