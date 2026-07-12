@@ -60,6 +60,7 @@ class AbyssShadowsDifficulty(str, Enum):
     EASY = "EASY"
     NORMAL = "NORMAL"
     HARD = "HARD"
+    EXTREME = "EXTREME"
 
 
 class MarkMainConfig(str, Enum):
@@ -286,7 +287,12 @@ class ProcessManage(ConfigBase):
     # 精英预设
     preset_elite: str = Field(default='6,3', description='preset_elite_help')
     # 小蛇预设
-    # preset_snake: str = Field(default='', description='preset_snake_help')
+    preset_snake: str = Field(default='6,4', description='preset_snake_help')
+
+    # 是否启用小蛇战斗
+    enable_snake: bool = Field(default=False, description='enable_snake_help')
+    # 小蛇战斗次数（四个区域共享该计数，默认20次）
+    snake_battle_count: int = Field(default=20, description='snake_battle_count_help')
 
     # 首领策略 秒退/直到消灭/时间到了退出/伤害足够退出
     # 可用值: 'TRUE', 'FALSE', 时间（秒）(1-999)，或最大伤害值(1000-)
@@ -296,6 +302,8 @@ class ProcessManage(ConfigBase):
     strategy_general: str = Field(default='30', description='strategy_general_help')
     # 精英策略
     strategy_elite: str = Field(default='4380000', description='strategy_elite_help')
+    # 小蛇策略（退出条件，格式同精英策略）
+    strategy_snake: str = Field(default='FALSE', description='strategy_snake_help')
 
     def is_need_mark_main(self, enemy_type: EnemyType) -> bool:
         strategy = self.mark_main  # 获取 MarkMainConfig 枚举值
@@ -331,14 +339,25 @@ class ProcessManage(ConfigBase):
             return False
         return Condition(strategy)
 
+    def generate_snake_quit_condition(self):
+        # 小蛇退出条件，与精英/副将等使用相同的 Condition 机制
+        # 未配置时回退为 'FALSE'（不主动退出，靠战斗胜利结束），避免返回裸 False 导致调用方 AttributeError
+        strategy = self.strategy_snake
+        if strategy is None or strategy == '':
+            strategy = 'FALSE'
+        return Condition(strategy)
+
 
 class SavedParams(ConfigBase):
     # 参数保存的时间,用于判断是不是当天的数据
     save_date: str = Field(default='', description='save_date_help')
-    # 已完成
-    done: str = Field(default='', description='done_help')
-    # 已知的已经打完的
-    unavailable: str = Field(default='', description='unavailable_help')
+    # 进度游标：attack_order 线性序列里最后完成的项，如 'SNAKE-15' / 'A-5'；空表示尚未开始
+    # 语义：游标 'C-1' 表示 attack_order 中排在 C 之前的区已全部完成 + C 也完成
+    progress_cursor: str = Field(default='', description='progress_cursor_help')
+    # 补全奖励用的真实战斗计数（仅真实打完时+1，跳过的怪不计入），供 try_complete_enemy_count 精确判断
+    done_boss: int = Field(default=0, description='done_boss_help')
+    done_general: int = Field(default=0, description='done_general_help')
+    done_elite: int = Field(default=0, description='done_elite_help')
 
 
 class AbyssShadows(ConfigBase):

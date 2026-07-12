@@ -105,11 +105,11 @@ class AbyssShadowsAssets:
 	# 选择难度按钮 
 	I_SELECT_DIFFICULTY = RuleImage(roi_front=(703,645,50,55), roi_back=(703,645,50,55), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_select_difficulty.png")
 	# 容易难度 
-	I_DIFFICULTY_EASY = RuleImage(roi_front=(620,445,90,210), roi_back=(620,445,90,210), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_easy.png")
+	I_DIFFICULTY_EASY = RuleImage(roi_front=(642,390,39,47), roi_back=(621,380,90,270), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_easy.png")
 	# 普通难度 
-	I_DIFFICULTY_NORMAL = RuleImage(roi_front=(620,445,90,210), roi_back=(620,445,90,210), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_normal.png")
+	I_DIFFICULTY_NORMAL = RuleImage(roi_front=(644,454,34,47), roi_back=(621,380,90,270), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_normal.png")
 	# 困难难度 
-	I_DIFFICULTY_HARD = RuleImage(roi_front=(620,445,90,210), roi_back=(620,445,90,210), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_hard.png")
+	I_DIFFICULTY_HARD = RuleImage(roi_front=(641,528,42,44), roi_back=(621,380,90,270), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_hard.png")
 	# 开启按钮 
 	I_BTN_START = RuleImage(roi_front=(1120,570,100,120), roi_back=(1120,570,100,120), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_btn_start.png")
 	# 开启确认按钮 
@@ -118,6 +118,16 @@ class AbyssShadowsAssets:
 	I_ABYSS_ENEMY_FIRE = RuleImage(roi_front=(1100,560,130,130), roi_back=(1100,560,130,130), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_abyss_enemy_fire.png")
 	# 红标主怪 
 	I_MARK_MAIN = RuleImage(roi_front=(375,40,60,30), roi_back=(375,40,60,30), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_mark_main.png")
+	# 极难难度 
+	I_DIFFICULTY_EXTREME = RuleImage(roi_front=(642,591,42,44), roi_back=(621,380,90,270), threshold=0.8, method="Template matching", file="./tasks/AbyssShadows/res/res_difficulty_extreme.png")
+	#  
+	I_A_BACK_RED = RuleImage(roi_front=(997,91,42,44), roi_back=(971,66,99,105), threshold=0.7, method="Template matching", file="./tasks/AbyssShadows/res/res_a_back_red.png")
+	# 第六个怪物战斗界面 
+	I_MONSTER_6 = RuleImage(roi_front=(407,142,34,73), roi_back=(388,127,67,99), threshold=0.7, method="Template matching", file="./tasks/AbyssShadows/res/res_monster_6.png")
+	# 875,271,65,39 +33 +148 
+	I_TO_SNAKE = RuleImage(roi_front=(873,274,65,39), roi_back=(429,201,788,392), threshold=0.7, method="Template matching", file="./tasks/AbyssShadows/res/res_to_snake.png")
+	# 再次确认to_snake 
+	I_TO_SNAKE2 = RuleImage(roi_front=(554,247,65,39), roi_back=(549,242,78,50), threshold=0.7, method="Template matching", file="./tasks/AbyssShadows/res/res_to_snake2.png")
 
 
 	# List Rule Assets

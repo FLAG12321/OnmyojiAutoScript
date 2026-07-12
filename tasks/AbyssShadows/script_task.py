@@ -3,6 +3,7 @@
 # @author   jackyhwei
 # @note     draft version without full test
 # github    https://github.com/roarhill/oas
+import time
 from time import sleep
 
 from datetime import datetime
@@ -43,12 +44,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.cur_preset = None
         # 当前所用队伍对应的敌人类型（用于判断类型变化时才切换队伍）
         self.cur_enemy_type = None
-        # process list
+        # process list：attack_order 展开的普通怪序列
         self.ps_list: CodeList = CodeList('')
-        # 已完成 列表
-        self.done_list: CodeList = CodeList('')
-        # 已知的 已经被打完的  列表
-        self.unavailable_list: CodeList = CodeList('')
+        # 进度游标：线性序列中最后完成的项（'SNAKE-<k>' 或 '<code>'），空表示尚未开始
+        self.progress_cursor: str = ''
+        # 补全奖励用的真实战斗计数（仅真打+1，跳过不计）
+        self.done_boss: int = 0
+        self.done_general: int = 0
+        self.done_elite: int = 0
         # 是否已经切换过御魂
         self.switch_soul_done = False
 
@@ -75,18 +78,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
 
         try:
             self.init_list_from_cfg()
-            # 判断各个区域是否可用
-            available_areas, unavailable_areas = self.detect_area_status()
-            for area in unavailable_areas:
-                self.unavailable_list += CodeList(IndexMap[area.name].value)
-            if unavailable_areas:
-                self.flash_list()
 
-            # 获取需要进入的区域类型
-            _next = self.get_next()
-            if _next is None:
+            # 根据游标决定首个要进入的区域（用于检测狭间是否开启）
+            area_enter = self.get_first_area_to_enter()
+            if area_enter is None:
                 raise AbyssShadowsFinished
-            area_enter = _next.get_areatype()
 
             # 通过能否进入，检测狭间是否开启
             if not self.select_boss(area_enter):
@@ -110,6 +106,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             self.wait_until_appear(self.I_IS_ATTACK, wait_time=180)
             self.device.stuck_record_clear()
             #
+            # 小蛇战斗永远在最开始执行，与普通怪物的攻打顺序无关
+            # 单独捕获 AbyssShadowsFinished：小蛇阶段结束不应跳过后续普通怪流程；
+            # 其它框架异常（如 GameStuckError/TaskEnd）继续向上抛，交由调度器处理
+            try:
+                self.run_snake_battles()
+            except AbyssShadowsFinished:
+                logger.info("Snake battle stage finished with AbyssShadowsFinished")
+            #
             self.process()
         except AbyssShadowsFinished:
             logger.info("Abyss shadows finished with Exception AbyssShadowsFinished")
@@ -132,30 +136,112 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             self.clear_saved_params()
         #
         self.ps_list = CodeList(self.config.model.abyss_shadows.process_manage.attack_order)
-        #
-        self.done_list = CodeList(self.config.model.abyss_shadows.saved_params.done)
-        #
-        self.unavailable_list = CodeList(self.config.model.abyss_shadows.saved_params.unavailable)
-        logger.info(f"update list done!{self.done_list=} {self.unavailable_list=}")
-
-    def flash_list(self):
-        """
-            NOTE 导致该任务运行过程中，从前端修改的配置将会丢失
-        @return:
-        """
-        # BUG 跨天会出问题
-        self.config.model.abyss_shadows.saved_params.save_date = datetime.today().strftime('%Y-%m-%d')
-        self.config.model.abyss_shadows.saved_params.done = self.done_list.parse2str()
-        self.config.model.abyss_shadows.saved_params.unavailable = self.unavailable_list.parse2str()
-
-        self.config.save()
-        logger.info(f"Flash list done!{self.done_list=} {self.unavailable_list=}")
+        # 从缓存读取游标与补全计数
+        sp = self.config.model.abyss_shadows.saved_params
+        self.progress_cursor = sp.progress_cursor
+        self.done_boss = sp.done_boss
+        self.done_general = sp.done_general
+        self.done_elite = sp.done_elite
+        logger.info(f"init from cfg done! cursor={self.progress_cursor!r} "
+                    f"boss={self.done_boss} general={self.done_general} elite={self.done_elite}")
 
     def clear_saved_params(self):
-        self.config.model.abyss_shadows.saved_params.done = ''
-        self.config.model.abyss_shadows.saved_params.unavailable = ''
+        sp = self.config.model.abyss_shadows.saved_params
+        sp.progress_cursor = ''
+        sp.done_boss = 0
+        sp.done_general = 0
+        sp.done_elite = 0
         self.config.save()
         logger.info("Clear saved params done")
+
+    def build_linear_sequence(self) -> list:
+        """ 构造整轮战斗的线性序列
+
+        序列 = 小蛇段（若启用，N 个 'SNAKE' 标记）+ attack_order 展开的普通怪 Code 序列。
+        小蛇用字符串 'SNAKE' 占位，普通怪用 Code 对象。
+        :return list，元素为 'SNAKE'(str) 或 Code
+        """
+        pm = self.config.model.abyss_shadows.process_manage
+        seq = []
+        if pm.enable_snake:
+            seq.extend(['SNAKE'] * pm.snake_battle_count)
+        seq.extend(list(CodeList(pm.attack_order)))
+        return seq
+
+    def get_resume_index(self, seq: list) -> int:
+        """ 根据游标定位续跑起点在 seq 中的下标
+
+        游标语义：游标是序列里“最后完成的项”，返回其下一项的下标。
+        - 空游标 -> 0（从头开始）
+        - 'SNAKE-<k>' -> 已完成 k 次小蛇，返回下标 k
+        - '<code>'（如 'A-5'）-> 返回该 code 在序列中的下标 +1；找不到则视为普通怪已全部完成，返回 len(seq)
+        :return int 续跑起点下标
+        """
+        cursor = self.progress_cursor
+        if not cursor:
+            return 0
+        if cursor.startswith('SNAKE-'):
+            try:
+                k = int(cursor.split('-', 1)[1])
+            except ValueError:
+                return 0
+            # 已完成 k 次小蛇，下一项就是下标 k
+            return min(k, len(seq))
+        # 普通怪游标：在序列里找到该 code，返回其后一位
+        for i, item in enumerate(seq):
+            # 注意 Code 是 str 子类，不能用 isinstance(item, str) 判别；SNAKE 标记是字面量 'SNAKE'
+            if item == 'SNAKE':
+                continue
+            if item.value == cursor:
+                return i + 1
+        # 游标对应的怪不在当前序列（如 attack_order 被改小/改动过）。
+        # 宁可从头重跑也不漏打：已打死的怪 execute 会因 goto 失败而跳过，代价可控。
+        logger.warning(f"cursor {cursor!r} not found in sequence, restart from 0 to avoid missing enemies")
+        return 0
+
+    def advance_cursor(self, item, real_battle: bool):
+        """ 前进游标并落盘；真打的普通怪累加对应补全计数
+
+        :param item: 'SNAKE'(此时需传 SNAKE 完成次数) 或 Code
+        :param real_battle: 是否真实进行了战斗（跳过的怪为 False，不计入补全计数）
+        """
+        sp = self.config.model.abyss_shadows.saved_params
+        sp.save_date = datetime.today().strftime('%Y-%m-%d')
+        sp.progress_cursor = self.progress_cursor
+        # 真打的普通怪累加补全计数（Code 是 str 子类，用 != 'SNAKE' 判别普通怪）
+        if real_battle and item != 'SNAKE':
+            enemy_type = item.get_enemy_type()
+            if enemy_type == EnemyType.BOSS:
+                self.done_boss += 1
+            elif enemy_type == EnemyType.GENERAL:
+                self.done_general += 1
+            elif enemy_type == EnemyType.ELITE:
+                self.done_elite += 1
+        sp.done_boss = self.done_boss
+        sp.done_general = self.done_general
+        sp.done_elite = self.done_elite
+        self.config.save()
+        logger.info(f"Advance cursor to {self.progress_cursor!r} "
+                    f"(real={real_battle}) boss={self.done_boss} general={self.done_general} elite={self.done_elite}")
+
+    def get_first_area_to_enter(self):
+        """ 根据游标决定首个要进入的区域（用于进入狭间时检测是否开启）
+
+        取线性序列续跑位置起第一个普通怪的区域；若续跑位置仍在 SNAKE 段或序列无普通怪，
+        回退到 attack_order 的第一个区域。
+        :return AreaType 或 None（序列为空且无 attack_order）
+        """
+        seq = self.build_linear_sequence()
+        idx = self.get_resume_index(seq)
+        for i in range(idx, len(seq)):
+            item = seq[i]
+            # Code 是 str 子类，用 != 'SNAKE' 判别普通怪
+            if item != 'SNAKE':
+                return item.get_areatype()
+        # 续跑位置之后没有普通怪，回退到 attack_order 首个区域
+        for ps in CodeList(self.config.model.abyss_shadows.process_manage.attack_order):
+            return ps.get_areatype()
+        return None
 
     def check_current_area(self) -> AreaType:
         """ 获取当前区域
@@ -230,19 +316,17 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         logger.info(f"enter change area page")
         # 判断区域是否可用，并进入一个区域
         available_areas, unavailable_areas = self.detect_area_status()
-        success = area_name in available_areas
-        if not success:
-            # 更新配置
-            for area in unavailable_areas:
-                self.unavailable_list += CodeList(IndexMap[area.name].value)
 
         if available_areas is None or available_areas == []:
             # 所有区域均不可用
             raise AbyssShadowsFinished
 
+        success = area_name in available_areas
         if not success:
-            # 原参数表示的 区域 已完成，则选择第一个未完成的区域
-            area_name = available_areas[0]
+            # 目标区不可用（已封印/已打完）：直接返回 False，由调用方（execute）按游标跳过该怪；
+            # 不再自动改去其它区，避免打乱 attack_order 顺序
+            logger.info(f"Target area {area_name.name} unavailable, skip")
+            return False
 
         self.select_boss(area_name)
         logger.info(f"Switch to {area_name.name}")
@@ -467,61 +551,99 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.ui_click_until_disappear(self.I_START_ENSURE, interval=2)
 
     def process(self):
-        while True:
-            self.init_list_from_cfg()
-            _next = self.get_next()
-            if _next is None:
-                break
-            self.execute(_next)
-            self.flash_list()
+        # 阶段一：按线性序列 + 游标续跑，逐项攻打普通怪
+        # （小蛇段已由 run_snake_battles 在本方法之前打完，游标通常已越过 SNAKE 段）
+        self.init_list_from_cfg()
+        seq = self.build_linear_sequence()
+        idx = self.get_resume_index(seq)
+        logger.info(f"process start at index {idx}/{len(seq)}")
+        while idx < len(seq):
+            item = seq[idx]
+            # Code 是 str 子类，用 == 'SNAKE' 判别小蛇占位项
+            if item == 'SNAKE':
+                # SNAKE 占位项：小蛇已在 process 前处理，这里仅推进游标越过
+                self.progress_cursor = f'SNAKE-{idx + 1}'
+                self.advance_cursor(item, real_battle=False)
+                idx += 1
+                continue
+            # 普通怪：真打或跳过都前进游标；real_battle 决定是否计入补全计数
+            real_battle = self.execute(item)
+            self.progress_cursor = item.value
+            self.advance_cursor(item, real_battle=real_battle)
+            idx += 1
 
-    def get_next(self) -> [Code, None]:
-        # 获取下一个任务目标
-        for ps in self.ps_list:
-            if ps not in self.done_list and ps not in self.unavailable_list:
-                return ps
+        # 阶段二：补全奖励（可选）
+        self.complete_rewards()
 
+    def complete_rewards(self):
+        """ 补全 2/4/6 奖励：主序列打完后，若开启补全且计数未满，按 A→B→C→D 找怪补打
+
+        仅在 try_complete_enemy_count 开启时生效。补全阶段靠“goto 失败自动跳过 + 真实计数”
+        驱动，不再推进游标（游标已到序列末尾）。用 tried 集合记住本轮已尝试过的节点，
+        每个节点最多打一次，避免“首候选不可达就停全部补全”或“在可复战节点上反复刷”。
+        """
         if not self.config.model.abyss_shadows.abyss_shadows_time.try_complete_enemy_count:
-            #
-            logger.info("All done, don`t need to fix 246")
+            logger.info("try_complete_enemy_count disabled, skip completion")
+            return
+        tried: set[str] = set()
+        while True:
+            target = self.get_completion_target(tried)
+            if target is None:
+                logger.info("Completion done or no more candidates")
+                break
+            # 无论真打还是不可达，都记为已尝试，下次找下一个候选
+            tried.add(target.value)
+            # 补全阶段的战斗，真打才累加计数
+            real_battle = self.execute(target)
+            if real_battle:
+                enemy_type = target.get_enemy_type()
+                if enemy_type == EnemyType.BOSS:
+                    self.done_boss += 1
+                elif enemy_type == EnemyType.GENERAL:
+                    self.done_general += 1
+                elif enemy_type == EnemyType.ELITE:
+                    self.done_elite += 1
+                self._save_completion_counts()
+            else:
+                # 该节点已被打完/不可达，跳过它继续找下一个候选
+                logger.info(f"Completion target {target} unreachable, skip and try next")
+
+    def _save_completion_counts(self):
+        sp = self.config.model.abyss_shadows.saved_params
+        sp.done_boss = self.done_boss
+        sp.done_general = self.done_general
+        sp.done_elite = self.done_elite
+        self.config.save()
+
+    def get_completion_target(self, tried: set = None):
+        """ 补全阶段：返回下一个需要补打的怪，没有则返回 None
+
+        用真实计数 done_boss/general/elite 判断还差哪类，
+        按 A→B→C→D 固定区域顺序、区内 6 只怪的顺序找第一个匹配类型、且不在 tried 里的怪。
+        :param tried: 本轮补全已尝试过的节点 value 集合，跳过它们继续找下一个
+        """
+        if tried is None:
+            tried = set()
+        need_boss = self.done_boss < self.min_count[EnemyType.BOSS]
+        need_general = self.done_general < self.min_count[EnemyType.GENERAL]
+        need_elite = self.done_elite < self.min_count[EnemyType.ELITE]
+        logger.info(f"Completion need boss={need_boss} general={need_general} elite={need_elite}")
+        if not (need_boss or need_general or need_elite):
             return None
 
-        # 已配置的已完成,若未打满奖励,尝试补全
-        # 统计已完成的各类型数量
-        done_counts = {
-            EnemyType.BOSS: 0,
-            EnemyType.GENERAL: 0,
-            EnemyType.ELITE: 0
-        }
-
-        for code in self.done_list:
-            enemy_type = code.get_enemy_type()
-            done_counts[enemy_type] += 1
-
-        need_boss = done_counts[EnemyType.BOSS] < self.min_count[EnemyType.BOSS]
-        need_general = done_counts[EnemyType.GENERAL] < self.min_count[EnemyType.GENERAL]
-        need_elite = done_counts[EnemyType.ELITE] < self.min_count[EnemyType.ELITE]
-
-        logger.info(f"Need boss: {need_boss}, need general: {need_general}, need elite: {need_elite}")
-        all_possible_codes = []
         for area in AreaType:
             area_code = IndexMap[area.name].value  # 如 DRAGON -> 'A'
             for num in ['1', '2', '3', '4', '5', '6']:
-                all_possible_codes.append(Code(f"{area_code}-{num}"))
-
-        for code in all_possible_codes:
-            if code in self.done_list or code in self.unavailable_list:
-                continue
-
-            enemy_type = code.get_enemy_type()
-
-            if enemy_type == EnemyType.BOSS and need_boss:
-                return code
-            elif enemy_type == EnemyType.GENERAL and need_general:
-                return code
-            elif enemy_type == EnemyType.ELITE and need_elite:
-                return code
-
+                code = Code(f"{area_code}-{num}")
+                if code.value in tried:
+                    continue
+                enemy_type = code.get_enemy_type()
+                if enemy_type == EnemyType.BOSS and need_boss:
+                    return code
+                elif enemy_type == EnemyType.GENERAL and need_general:
+                    return code
+                elif enemy_type == EnemyType.ELITE and need_elite:
+                    return code
         return None
 
     def open_navigation(self):
@@ -539,43 +661,46 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                 self.click(self.I_ABYSS_ENEMY_INFO_EXIT, interval=2)
                 continue
 
-    def execute(self, item_code: Code):
+    def execute(self, item_code: Code) -> bool:
+        """ 攻打单个普通怪。游标式下每个怪只处理一次、不重试。
+
+        :return bool 是否真实进行了战斗（True=真打，用于补全计数；False=被跳过/已死/无法前往）
+        """
         logger.info(f"Start to execute code {item_code}")
         area = item_code.get_areatype()
 
         if not self.change_area(area):
+            # 区域不可用，视为跳过
             return False
         # 当前应当在正确的区域
-        #
-        # if not self.check_available(item_code):
-        #     return
 
         if not self.goto_enemy(item_code):
-            # 前往失败，添加进unavailable_list
-            self.unavailable_list.append(item_code)
+            # 前往失败（已被打完/无法到达），视为跳过
+            logger.info(f"{item_code} unreachable, skip")
             return False
 
+        real_battle = False
         battle_count = MAX_BATTLE_COUNT
         while battle_count > 0:
             self.screenshot()
 
             if not self.attack_enemy():
-                # 根据战斗次数判断该 item_code 是否已被消灭
+                # 首次就没有战斗按钮 -> 该怪已死，视为跳过（不计数）
                 if battle_count == MAX_BATTLE_COUNT:
-                    # 没战斗过直接返回重试
-                    return
-                # 如果曾经战斗过，则认为该 item_code 已完成
+                    logger.info(f"{item_code} already dead, skip")
+                    return False
+                # 曾经战斗过，则认为该怪已完成
                 logger.info(f"{item_code} has been killed")
                 break
-            # 战斗
+            # 真实战斗
             suc = self.run_battle(item_code)
+            real_battle = True
             self.device.stuck_record_clear()
             if suc:
                 break
             battle_count -= 1
-        logger.info(f"{item_code} push into done_list")
-        self.done_list.append(item_code)
-        return True
+        logger.info(f"{item_code} done, real_battle={real_battle}")
+        return real_battle
 
     def run_battle(self, item_code: Code):
         success = False
@@ -668,6 +793,267 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         logger.info(f"{enemy_type.name} DONE")
         return success
 
+    def run_snake_battles(self):
+        """ 小蛇战斗主控制流程
+
+        小蛇战斗特点：
+        - 固定在 C 区（白藏主暗域）进行，与普通怪物的攻打顺序无关，永远在狭间最开始执行；
+        - 同一位置（6号怪处的小蛇）可无限次战斗，靠计数控制次数；
+        - 计数与区域无关（打满 snake_battle_count 次即停）；
+        - 进度并入 progress_cursor（'SNAKE-<k>'），支持中断后续跑。
+        """
+        pm = self.config.model.abyss_shadows.process_manage
+        if not pm.enable_snake:
+            logger.info("Snake battle disabled, skip")
+            return
+
+        target_count = pm.snake_battle_count
+        done_count = self.get_snake_done_from_cursor()
+        if done_count >= target_count:
+            logger.info(f"Snake battle already done ({done_count}/{target_count}), skip")
+            return
+
+        # 小蛇固定在 C 区（白藏主暗域，AreaType.FOX）进行，与 attack_order 无关
+        snake_area = AreaType.FOX
+        logger.info(f"Snake battle area: {snake_area.name}, progress {done_count}/{target_count}")
+
+        # 进入小蛇所在区域；C 区不可用（封印/未开启）则跳过小蛇
+        if not self.change_area(snake_area):
+            logger.warning(f"Snake area {snake_area.name} unavailable, skip snake battle")
+            return
+
+        # 定位小蛇：点击6号怪 -> 点固定坐标 -> 等待 I_ABYSS_ENEMY_FIRE 出现
+        if not self.goto_snake():
+            logger.warning("Failed to locate snake, skip snake battle")
+            return
+
+        # 循环战斗直到达到目标次数
+        # relocate_fail 记录“挑战按钮缺失并重新定位”的连续次数，超过阈值则放弃，避免无进展空转
+        relocate_fail = 0
+        while done_count < target_count:
+            self.screenshot()
+            # 战斗入口标志：小蛇挑战按钮
+            if not self.appear(self.I_ABYSS_ENEMY_FIRE):
+                # 挑战按钮未出现，尝试重新定位
+                logger.info("I_ABYSS_ENEMY_FIRE not found, try to relocate snake")
+                relocate_fail += 1
+                if relocate_fail >= 3 or not self.goto_snake():
+                    logger.warning("Relocate snake failed, stop snake battle")
+                    break
+                continue
+            # 成功出现挑战按钮，重置重定位计数
+            relocate_fail = 0
+            suc = self.run_snake_single()
+            # 无论本场成功与否，都清理战斗卡死记录，避免影响后续流程
+            self.device.stuck_record_clear()
+            if not suc:
+                logger.warning("Snake single battle not success, stop snake battle")
+                break
+
+            # 战斗完成，游标前进到 SNAKE-<k> 并落盘（保证中断可续跑；小蛇不计入补全三计数）
+            done_count += 1
+            self.progress_cursor = f'SNAKE-{done_count}'
+            self.advance_cursor('SNAKE', real_battle=False)
+            logger.info(f"Snake battle progress {done_count}/{target_count}")
+
+        logger.info(f"Snake battle finished, total {done_count}/{target_count}")
+
+    def get_snake_done_from_cursor(self) -> int:
+        """ 从游标推断小蛇已完成次数
+
+        - 空游标 -> 0
+        - 'SNAKE-<k>' -> k
+        - 普通怪游标（如 'A-5'）-> 小蛇段早已越过，视为已全部完成，返回 snake_battle_count
+        """
+        cursor = self.progress_cursor
+        target_count = self.config.model.abyss_shadows.process_manage.snake_battle_count
+        if not cursor:
+            return 0
+        if cursor.startswith('SNAKE-'):
+            try:
+                return int(cursor.split('-', 1)[1])
+            except ValueError:
+                return 0
+        # 游标已到普通怪，小蛇段必然已完成
+        return target_count
+
+    def goto_snake(self) -> bool:
+        """ 定位小蛇：点击6号怪 -> 点击固定坐标 -> 等待挑战按钮出现
+        :return bool 是否成功出现 I_ABYSS_ENEMY_FIRE
+        """
+        logger.info("Goto snake")
+        count_click_goto_enemy = 0
+        # 点击战报
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_ABYSS_FIRE):
+                break
+            # 尝试使用左下方摇杆移动
+            if count_click_goto_enemy > 0 and self.appear(self.I_ABYSS_NAVIGATION):
+                self.move_a_little()
+            # 打开导航页面
+            self.open_navigation()
+            # 点击攻打区域,直到出现"前往"字样
+            click_times = 0
+            while 1:
+                self.screenshot()
+                # 如果点3次还没进去就表示目标已死亡,跳过
+                if click_times >= 3:
+                    logger.warning(f"Failed to click {self.C_ELITE_3_CLICK_AREA}")
+                    return False
+                # 出现前往按钮就退出
+                if self.appear(self.I_ABYSS_GOTO_ENEMY):
+                    logger.info(f"{self.I_ABYSS_GOTO_ENEMY} appear")
+                    break
+                if self.click(self.C_ELITE_3_CLICK_AREA, interval=1.5):
+                    click_times += 1
+                    continue
+                if self.appear_then_click(self.I_ENSURE_BUTTON, interval=1):
+                    continue
+
+            # 点击前往按钮,知道该按钮消失或出现"挑战"字样
+
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_CHECK_FINISH):
+                    raise AbyssShadowsFinished
+                if self.appear(self.I_ABYSS_FIRE):
+                    logger.info(f"{self.I_ABYSS_FIRE} appear")
+                    break
+                if self.appear(self.I_ENSURE_BUTTON):
+                    self.click(self.I_ENSURE_BUTTON, interval=1)
+                    continue
+                if self.appear(self.I_ABYSS_GOTO_ENEMY):
+                    self.click(self.I_ABYSS_GOTO_ENEMY, interval=1)
+                    count_click_goto_enemy += 1
+                    continue
+                if not self.wait_until_appear(self.I_ABYSS_FIRE, wait_time=10):
+                    break
+            # 整个小蛇定位流程最多等待60秒，避免引导图异常时卡住
+            snake_flow_timer = Timer(60)
+            snake_flow_timer.start()
+            to_snake_flow_timer = Timer(5)
+            to_snake_flow_timer.start()
+            to_snake_flow_timer._current =time.time()-5
+            # 小蛇二阶段最多点击10次“中心下方148px”位置
+            while 1:
+                self.screenshot()
+                if snake_flow_timer.reached():
+                    logger.warning('Locate snake flow timeout')
+                    return False
+                if self.appear(self.I_MONSTER_6)and self.appear_then_click(self.I_A_BACK_RED, interval=1):
+                    logger.info('close monster6 info window')
+                    continue
+                # 发现二阶段引导图即表示已完成定位
+                if self.appear(self.I_TO_SNAKE2) and self.appear(self.I_ABYSS_ENEMY_FIRE):
+                    logger.info('finish locate snake')
+                    return True
+                if to_snake_flow_timer.reached() and self.appear(self.I_TO_SNAKE):
+                    # 发现引导图时点击正中心，等待5秒确认其是否消失
+                    while self.appear(self.I_TO_SNAKE):
+                        self.screenshot()
+                        x, y = self.I_TO_SNAKE.front_center()
+                        self.device.click(x=x, y=y)
+                        sleep(3)
+                    self.screenshot()
+                    # 点击绝对坐标前往两个小蛇之间
+                    self.device.click(x=731, y=622)
+                    sleep(3)
+                    to_snake_flow_timer.reset()
+                    continue
+
+    def run_snake_single(self):
+        """ 小蛇单场战斗：切队伍 -> 点挑战 -> 准备 -> 按策略退出 -> 等待胜利
+
+        战斗中段逻辑与精英一致，仅队伍预设与退出策略使用小蛇专属配置。
+        :return bool 本场战斗是否成功
+        """
+        success = False
+        pm = self.config.model.abyss_shadows.process_manage
+
+        # 切换小蛇队伍：用字符串 'SNAKE' 作为 cur_enemy_type 标记，
+        # 以便后续从小蛇切回普通怪（精英等）时能重新触发切队
+        preset = pm.preset_snake
+        if self.cur_enemy_type != 'SNAKE':
+            logger.info(f"Snake--Switch preset to {preset} and {self.cur_enemy_type=}")
+            self.switch_preset_team_with_str(preset)
+            self.cur_preset = preset
+            self.cur_enemy_type = 'SNAKE'
+
+        # 点击小蛇挑战按钮，进入战斗准备界面
+        # 加超时保护，避免既无挑战按钮也无准备按钮时死循环空转
+        _timer_enter = Timer(30)
+        _timer_enter.start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_FINISH):
+                raise AbyssShadowsFinished
+            if self.appear(self.I_PREPARE_HIGHLIGHT):
+                break
+            if _timer_enter.reached():
+                # 超时仍未进入准备界面，放弃本场，交由调用方停止
+                logger.warning("Enter snake prepare page timeout")
+                return False
+            # 奖励次数上限等确认框
+            if self.appear_then_click(self.I_ENSURE_BUTTON, interval=1):
+                continue
+            if self.appear(self.I_ABYSS_ENEMY_FIRE):
+                self.click(self.I_ABYSS_ENEMY_FIRE, interval=0.4)
+                self.wait_until_appear(self.I_PREPARE_HIGHLIGHT, wait_time=2)
+                continue
+            if self.appear(self.I_ABYSS_FIRE):
+                self.click(self.I_ABYSS_FIRE, interval=0.4)
+                self.wait_until_appear(self.I_PREPARE_HIGHLIGHT, wait_time=2)
+                continue
+
+        # 点击准备
+        _timer_battle = Timer(180)
+        self.wait_until_appear(self.I_PREPARE_HIGHLIGHT, wait_time=3)
+        self.ui_click_until_disappear(self.I_PREPARE_HIGHLIGHT, interval=0.6)
+        _timer_battle.start()
+
+        # 生成退出条件（小蛇专属策略）
+        condition = pm.generate_snake_quit_condition()
+        logger.info(f"Snake--{condition}")
+
+        _cur_damage = 0
+        need_check_damage = condition.is_need_damage_value()
+        self.device.screenshot_interval_set(1)
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        while True:
+            self.screenshot()
+            if need_check_damage:
+                _cur_damage = self.O_DAMAGE.ocr_digit(self.device.image)
+            if condition.is_valid(_cur_damage):
+                logger.info("Condition Validated,try to quit battle")
+                self.device.screenshot_interval_set()
+                self.quit_battle()
+                break
+            if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=3):
+                # 正常来讲，此处不应该出现准备按钮，以防万一
+                self.device.stuck_record_add("BATTLE_STATUS_S")
+                _timer_battle.reset()
+                continue
+            # 战斗胜利标志
+            if self.appear_then_click(self.I_WIN, interval=1):
+                self.device.screenshot_interval_set()
+                need_check_damage = False
+                continue
+            # 战斗奖励标志
+            if self.appear_then_click(self.I_REWARD, interval=1):
+                self.device.screenshot_interval_set()
+                need_check_damage = False
+                continue
+            if self.appear(self.I_ABYSS_NAVIGATION):
+                self.device.screenshot_interval_set()
+                break
+        if condition.is_passed() or (not _timer_battle.reached()):
+            logger.info("Snake battle result SUCCESS")
+            success = True
+
+        logger.info("Snake battle DONE")
+        return success
+
     def quit_battle(self):
         logger.info("Quitting battle")
         while True:
@@ -718,6 +1104,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         soul_set.add(self.config.model.abyss_shadows.process_manage.preset_boss)
         soul_set.add(self.config.model.abyss_shadows.process_manage.preset_general)
         soul_set.add(self.config.model.abyss_shadows.process_manage.preset_elite)
+        # 启用小蛇战斗时，一并预切换小蛇队伍的御魂
+        if self.config.model.abyss_shadows.process_manage.enable_snake:
+            soul_set.add(self.config.model.abyss_shadows.process_manage.preset_snake)
 
         for v in soul_set:
             switch_soul(v)
@@ -795,7 +1184,7 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
 
-    config = Config('oas')
+    config = Config('oas2')
     device = Device(config)
 
     # image = cv2.imread('E:/f.png')
@@ -812,6 +1201,8 @@ if __name__ == "__main__":
     # cv2.waitKey()
 
     t = ScriptTask(config, device)
+    #t.device.click(x=875, y=532)
+    t.goto_snake()
     radius = 150
     p1 = (197, 568)
     import random

@@ -245,8 +245,8 @@
   {
     "itemName": "difficulty_easy",
     "imageName": "res_difficulty_easy.png",
-    "roiFront": "620,445,90,210",
-    "roiBack": "620,445,90,210",
+    "roiFront": "642,390,39,47",
+    "roiBack": "621,380,90,270",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "容易难度"
@@ -254,8 +254,8 @@
   {
     "itemName": "difficulty_normal",
     "imageName": "res_difficulty_normal.png",
-    "roiFront": "620,445,90,210",
-    "roiBack": "620,445,90,210",
+    "roiFront": "644,454,34,47",
+    "roiBack": "621,380,90,270",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "普通难度"
@@ -263,8 +263,8 @@
   {
     "itemName": "difficulty_hard",
     "imageName": "res_difficulty_hard.png",
-    "roiFront": "620,445,90,210",
-    "roiBack": "620,445,90,210",
+    "roiFront": "641,528,42,44",
+    "roiBack": "621,380,90,270",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "困难难度"
@@ -304,5 +304,50 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "红标主怪"
+  },
+  {
+    "itemName": "difficulty_extreme",
+    "imageName": "res_difficulty_extreme.png",
+    "roiFront": "642,591,42,44",
+    "roiBack": "621,380,90,270",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "极难难度"
+  },
+  {
+    "itemName": "a_back_red",
+    "imageName": "res_a_back_red.png",
+    "roiFront": "997,91,42,44",
+    "roiBack": "971,66,99,105",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "monster_6",
+    "imageName": "res_monster_6.png",
+    "roiFront": "407,142,34,73",
+    "roiBack": "388,127,67,99",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "第六个怪物战斗界面"
+  },
+  {
+    "itemName": "to_snake",
+    "imageName": "res_to_snake.png",
+    "roiFront": "873,274,65,39",
+    "roiBack": "429,201,788,392",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "875,271,65,39 +33 +148"
+  },
+  {
+    "itemName": "to_snake2",
+    "imageName": "res_to_snake2.png",
+    "roiFront": "554,247,65,39",
+    "roiBack": "549,242,78,50",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "再次确认to_snake"
   }
 ]
