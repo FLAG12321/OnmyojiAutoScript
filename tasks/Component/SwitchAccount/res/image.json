@@ -142,5 +142,14 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "mumu桌面"
+  },
+  {
+    "itemName": "cancel_toinvite",
+    "imageName": "res_cancel_toinvite.png",
+    "roiFront": "504,430,63,41",
+    "roiBack": "474,424,118,52",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "取消集结"
   }
 ]

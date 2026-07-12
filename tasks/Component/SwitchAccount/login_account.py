@@ -159,6 +159,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         lastCharacterNameList = []
         while 1:
             self.screenshot()
+            if self.appear_then_click(self.I_CANCEL_TOINVITE,interval=1.5):
+                continue
             ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
             # 去除角色等级数字
             characterNameList =[ocrResItem.ocr_text for ocrResItem in ocrRes]
