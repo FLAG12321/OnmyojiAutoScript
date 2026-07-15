@@ -1537,14 +1537,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         """
         # 先点击准备进入战斗，保持师父模式原有“进入后退出”前置行为
         self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
+        prepare_timeout = Timer(5).start()
         while 1:
             self.screenshot()
-            if self.appear(self.I_EXIT):
+            if prepare_timeout.reached():
+                logger.warning(f"Timeout while waiting for {self.I_PREPARE_HIGHLIGHT.name}")
                 break
             if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1):
                 continue
         logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
-
         # 进入真实战斗后先点击退出键，让界面停在退出确认框，等击杀数达标后立刻确认退出
         while 1:
             self.screenshot()

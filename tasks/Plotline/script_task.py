@@ -53,6 +53,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     mail_flag: bool = True
     page_main_timeout: int = 0
     unknow_cnt: int = 0
+    plotline_main_flag=False
 
     def _reset_shikigami_switch_flags(self, switch_system_shikigami: bool):
         self.privileges_flag = not switch_system_shikigami
@@ -190,13 +191,14 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
                     continue
         
-        
+        if self.appear(self.I_CHECK_MAIN):
+            return True
         if self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK) and (self.get_character_level_with_multiple_attempts() >= 7):
             while 1:
                 self.screenshot()
                 if self.appear(self.I_TO_COLLET):
                     change_main_scene()
-                    break
+                    return True
                 if self.appear_then_click(RestartAssets.I_LOGIN_COURTYARD, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
                     continue
                 if self.appear_then_click(RestartAssets.I_LOGIN_COURTYARD2, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
@@ -268,7 +270,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         start_time = time.time()
         if check_privileges():
             return
-        self.change_main_scene()
+        if not self.plotline_main_flag and self.change_main_scene():
+            self.plotline_main_flag = True
         if check_experience_youkai_battle():
             return
         start_time = time.time()
