@@ -32,6 +32,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
 
     def run(self):
         con = self.config.kekkai_activation.activation_config
+        # 检查是否处于禁止运行时间段，命中则跳过本次运行
+        self.check_forbidden_time('KekkaiActivation', con.forbidden_time_enable, con.forbidden_time_range)
         self.ui_get_current_page()
         self.ui_goto(page_guild)
         logger.info(f'开始挂卡{self.config.kekkai_activation.activation_config.card_type}')

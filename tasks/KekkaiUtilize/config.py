@@ -41,6 +41,9 @@ class UtilizeConfig(BaseModel):
     box_exp_waste: bool = Field(default=False, description='box_exp_waste_help')
     exchange_before: bool = Field(default=True, description='exchange_before_help')
     pets_enable: bool = Field(default=False, description='pets_enable_help')
+    # 禁止运行时间段：命中时跳过本次运行并将下次时间设为区间结束时刻
+    forbidden_time_enable: bool = Field(default=False, description='是否启用禁止运行时间段')
+    forbidden_time_range: str = Field(default='', description='禁止运行的时间段，24小时制精确到分钟，多个用英文逗号分隔，如 01:00-02:00,02:30-04:00，支持跨天如 23:00-01:00')
 class KekkaiUtilize(ConfigBase):
     scheduler: UtilizeScheduler = Field(default_factory=UtilizeScheduler)
     utilize_config: UtilizeConfig = Field(default_factory=UtilizeConfig)

@@ -33,6 +33,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     msg: list = []
     def run(self):
         con = self.config.kekkai_utilize.utilize_config
+        # 检查是否处于禁止运行时间段，命中则跳过本次运行
+        self.check_forbidden_time('KekkaiUtilize', con.forbidden_time_enable, con.forbidden_time_range)
         self.msg = []
         self.ui_get_current_page()
         self.ui_goto(page_guild)

@@ -232,6 +232,101 @@ def nearest_future(future, interval=120):
     return next_run
 
 
+def parse_forbidden_ranges(text: str) -> list:
+    """
+    解析禁止运行时间段字符串，返回 (start_time, end_time) 元组列表。
+    格式为 24 小时制、精度到分钟，多个区间用英文逗号分隔，例如 "01:00-02:00,02:30-04:00"。
+    跨天区间（如 "23:00-01:00"）会被原样保留（start > end），由调用方处理跨天逻辑。
+
+    :param text: 时间段配置字符串
+    :return: [(time(1,0), time(2,0)), ...]，非法项会被跳过
+    """
+    ranges = []
+    if not text:
+        return ranges
+    for segment in text.split(','):
+        segment = segment.strip()
+        if not segment:
+            continue
+        parts = segment.split('-')
+        if len(parts) != 2:
+            logger.warning(f'非法的禁止时间段配置，已跳过: {segment}')
+            continue
+        try:
+            start = time.fromisoformat(parts[0].strip())
+            end = time.fromisoformat(parts[1].strip())
+        except ValueError:
+            logger.warning(f'非法的禁止时间段配置，已跳过: {segment}')
+            continue
+        ranges.append((start, end))
+    return ranges
+
+
+def _build_forbidden_intervals(now: datetime, ranges: list) -> list:
+    """
+    把每个 (start_time, end_time) 段展开为围绕 now 的具体 datetime 区间。
+    为覆盖跨天与合并场景，每个段都在 昨天/今天/明天 三个基准日各生成一份。
+    普通段（start < end）区间在同一天内；跨天段（start > end）结束时间落到基准日的次日。
+
+    :param now: 当前时间
+    :param ranges: parse_forbidden_ranges 的输出
+    :return: [(start_dt, end_dt), ...]
+    """
+    intervals = []
+    base_days = [now.date() + timedelta(days=d) for d in (-1, 0, 1)]
+    for start_t, end_t in ranges:
+        if start_t == end_t:
+            # 空区间，忽略
+            continue
+        for base in base_days:
+            start_dt = datetime.combine(base, start_t)
+            if start_t < end_t:
+                end_dt = datetime.combine(base, end_t)
+            else:
+                # 跨天段：结束时间在次日
+                end_dt = datetime.combine(base + timedelta(days=1), end_t)
+            intervals.append((start_dt, end_dt))
+    return intervals
+
+
+def _merge_intervals(intervals: list) -> list:
+    """
+    合并重叠或首尾相接的 datetime 区间。相接（next.start == prev.end）也会合并，
+    从而把 "01:00-02:00,02:00-03:00" 这类相邻段视为一个连续禁止区。
+
+    :param intervals: [(start_dt, end_dt), ...]
+    :return: 合并后的有序区间列表
+    """
+    intervals = sorted(intervals)
+    merged = []
+    for start_dt, end_dt in intervals:
+        if merged and start_dt <= merged[-1][1]:
+            # 与上一个区间重叠或相接，扩展其结束时间
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end_dt))
+        else:
+            merged.append((start_dt, end_dt))
+    return merged
+
+
+def forbidden_range_end(now: datetime, text: str):
+    """
+    判断 now 是否落在任一禁止运行时间段内，命中则返回该（合并后）区间结束对应的 datetime。
+    区间为左闭右开 [start, end)：等于 end 视为不在区间内，避免跳到区间末尾后又被判定命中。
+    相邻/重叠的段会先被合并成连续禁止区，跨天段（如 23:00-01:00）也在合并范围内，
+    因此命中后返回的是整段连续禁止区的最终结束时刻（可能落在次日）。
+
+    :param now: 当前时间
+    :param text: 禁止时间段配置字符串
+    :return: 命中则返回结束时刻的 datetime（含日期），否则返回 None
+    """
+    ranges = parse_forbidden_ranges(text)
+    if not ranges:
+        return None
+    for start_dt, end_dt in _merge_intervals(_build_forbidden_intervals(now, ranges)):
+        if start_dt <= now < end_dt:
+            return end_dt.replace(second=0, microsecond=0)
+    return None
+
 
 def dict_to_kv(dictionary, allow_none=True):
     """

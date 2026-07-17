@@ -19,7 +19,8 @@ from module.atom.input import RuleInput  # 新增导入
 from module.base.timer import Timer
 from module.config.config import Config
 from module.device.device import Device
-from module.exception import ScriptError
+from module.exception import ScriptError, TaskEnd
+from module.config.utils import forbidden_range_end
 from module.logger import logger
 from module.ocr.base_ocr import OcrMode
 from tasks.Component.Costume.costume_base import CostumeBase
@@ -702,6 +703,27 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                                                                             minute=custom_time.minute,
                                                                             second=custom_time.second)
         self.set_next_run(task, target=target_time)
+
+    def check_forbidden_time(self, task: str, enable: bool, time_range: str) -> None:
+        """
+        检查当前时间是否落在禁止运行时间段内。
+        命中则把下次运行时间设为该区间结束时刻，并抛出 TaskEnd 跳过本次运行。
+        跨天区间（如 23:00-01:00）命中后结束时间会落在次日，由 forbidden_range_end 处理。
+
+        :param task: 任务名称，大驼峰的，如 'KekkaiUtilize'
+        :param enable: 是否启用禁止时间段功能
+        :param time_range: 禁止时间段配置字符串，如 "01:00-02:00,02:30-04:00"
+        :return:
+        """
+        if not enable:
+            return
+        end_dt = forbidden_range_end(datetime.now(), time_range)
+        if end_dt is None:
+            return
+        logger.info(f'[{task}] 当前处于禁止运行时间段内，跳过本次运行，下次运行时间设为 {end_dt}')
+        self.set_next_run(task, target=end_dt, server=False)
+        raise TaskEnd(task)
+
     def next_run_week(self, target_day: int = 1, push_notify: bool = True):
         """
         计算下一次运行的时间，目标是每周的特定一天。
