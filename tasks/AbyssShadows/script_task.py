@@ -44,6 +44,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.cur_preset = None
         # 当前所用队伍对应的敌人类型（用于判断类型变化时才切换队伍）
         self.cur_enemy_type = None
+        # 当前已切换的御魂预设字符串（如 '6,3'），用于御魂懒切换：与本场预设相同则跳过
+        self.cur_soul_preset = None
         # process list：attack_order 展开的普通怪序列
         self.ps_list: CodeList = CodeList('')
         # 进度游标：线性序列中最后完成的项（'SNAKE-<k>' 或 '<code>'），空表示尚未开始
@@ -52,8 +54,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.done_boss: int = 0
         self.done_general: int = 0
         self.done_elite: int = 0
-        # 是否已经切换过御魂
-        self.switch_soul_done = False
 
     def run(self):
         """ 狭间暗域主函数
@@ -98,8 +98,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             if self.appear(self.I_CHECK_FINISH):
                 logger.info(f"{self.I_CHECK_FINISH} appear,abyss shadows finished")
                 raise AbyssShadowsFinished
-            # 切换御魂
-            self.switch_soul_in_as()
             #
             self.device.stuck_record_add('BATTLE_STATUS_S')
             # 等待战斗开始
@@ -672,7 +670,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         if not self.change_area(area):
             # 区域不可用，视为跳过
             return False
-        # 当前应当在正确的区域
+        # 当前应当在正确的区域（区域导航界面），此时式神录入口可用
+        # 按本场敌人类型的御魂预设懒切换：与上次相同则跳过，前往打怪前完成御魂切换
+        # 若退出式神录时退过头（已重进狭间），需重新定位到目标区域
+        if self.switch_soul_lazy(self.get_soul_preset(item_code.get_enemy_type())):
+            if not self.change_area(area):
+                # 重新定位时区域不可用，视为跳过
+                return False
 
         if not self.goto_enemy(item_code):
             # 前往失败（已被打完/无法到达），视为跳过
@@ -822,6 +826,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             logger.warning(f"Snake area {snake_area.name} unavailable, skip snake battle")
             return
 
+        # 定位小蛇前先按小蛇御魂预设懒切换（此时在区域导航界面，式神录入口可用）
+        # 若退出式神录时退过头（已重进狭间），需重新定位到小蛇所在区域
+        if self.switch_soul_lazy(self.get_soul_preset('SNAKE')):
+            if not self.change_area(snake_area):
+                logger.warning(f"Snake area {snake_area.name} unavailable after re-enter, skip snake battle")
+                return
+
         # 定位小蛇：点击6号怪 -> 点固定坐标 -> 等待 I_ABYSS_ENEMY_FIRE 出现
         if not self.goto_snake():
             logger.warning("Failed to locate snake, skip snake battle")
@@ -950,10 +961,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                     return True
                 if to_snake_flow_timer.reached() and self.appear(self.I_TO_SNAKE):
                     # 发现引导图时点击正中心，等待5秒确认其是否消失
-                    while self.appear(self.I_TO_SNAKE):
+                    while 1:
                         self.screenshot()
+                        if not self.appear(self.I_TO_SNAKE):
+                            break
                         x, y = self.I_TO_SNAKE.front_center()
                         self.device.click(x=x, y=y)
+                        logger.info(f"Click to snake flow at {x=}, {y=}")
                         sleep(3)
                     self.screenshot()
                     # 点击绝对坐标前往两个小蛇之间
@@ -974,11 +988,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         # 切换小蛇队伍：用字符串 'SNAKE' 作为 cur_enemy_type 标记，
         # 以便后续从小蛇切回普通怪（精英等）时能重新触发切队
         preset = pm.preset_snake
-        if self.cur_enemy_type != 'SNAKE':
-            logger.info(f"Snake--Switch preset to {preset} and {self.cur_enemy_type=}")
-            self.switch_preset_team_with_str(preset)
-            self.cur_preset = preset
-            self.cur_enemy_type = 'SNAKE'
+        
 
         # 点击小蛇挑战按钮，进入战斗准备界面
         # 加超时保护，避免既无挑战按钮也无准备按钮时死循环空转
@@ -986,6 +996,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         _timer_enter.start()
         while 1:
             self.screenshot()
+            
             if self.appear(self.I_CHECK_FINISH):
                 raise AbyssShadowsFinished
             if self.appear(self.I_PREPARE_HIGHLIGHT):
@@ -1005,7 +1016,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                 self.click(self.I_ABYSS_FIRE, interval=0.4)
                 self.wait_until_appear(self.I_PREPARE_HIGHLIGHT, wait_time=2)
                 continue
-
+        if self.cur_enemy_type != 'SNAKE':
+                logger.info(f"Snake--Switch preset to {preset} and {self.cur_enemy_type=}")
+                self.switch_preset_team_with_str(preset)
+                self.cur_preset = preset
+                self.cur_enemy_type = 'SNAKE'
         # 点击准备
         _timer_battle = Timer(180)
         self.wait_until_appear(self.I_PREPARE_HIGHLIGHT, wait_time=3)
@@ -1083,38 +1098,84 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             return
         self.switch_preset_team(True, int(tmp[0]), int(tmp[1]))
 
-    def switch_soul_in_as(self):
-        if self.switch_soul_done:
-            return
+    def get_soul_preset(self, enemy_type) -> str:
+        """ 按敌人类型返回对应的御魂预设字符串（如 '6,3'）
+
+        小蛇用字符串 'SNAKE' 标记；御魂预设与队伍预设共用同一组配置值。
+        :param enemy_type: EnemyType 或字符串 'SNAKE'
+        :return str 御魂预设 'group,team'
+        """
+        pm = self.config.model.abyss_shadows.process_manage
+        if enemy_type == 'SNAKE':
+            return pm.preset_snake
+        match enemy_type:
+            case EnemyType.BOSS:
+                return pm.preset_boss
+            case EnemyType.GENERAL:
+                return pm.preset_general
+            case EnemyType.ELITE:
+                return pm.preset_elite
+
+    def switch_soul_lazy(self, preset: str) -> bool:
+        """ 御魂懒切换：与队伍切换同样按需切换，仅当本场御魂预设与上次不同才切
+
+        - enable_switch_soul_in_as=False：不启用御魂切换，直接返回（此时仍会正常切队伍）
+        - preset 与 cur_soul_preset 相同：跳过，避免重复进出式神录
+        - 否则：进式神录 -> run_switch_soul -> 退出式神录 -> 记录 cur_soul_preset
+
+        调用前须处于区域导航界面（式神录入口 I_ABYSS_SHIKI 可见）。
+        :param preset: 御魂预设字符串 'group,team'
+        :return bool 退出式神录时是否退过头离开了区域（True=调用方需重新 change_area 定位区域）
+        """
         if not self.config.model.abyss_shadows.process_manage.enable_switch_soul_in_as:
-            self.switch_soul_done = True
-            return
+            # 未启用御魂切换，只切队伍不切御魂
+            return False
+        if preset == self.cur_soul_preset:
+            logger.info(f"Soul preset {preset} same as current, skip switch")
+            return False
 
-        logger.info("start switch soul...")
+        l = preset.split(',')
+        if len(l) != 2:
+            logger.error(f"Due to a configuration error (value: {preset}), an error occurred while switch soul.")
+            raise RequestHumanTakeover
 
-        def switch_soul(_v: str):
-            l = _v.split(',')
-            if len(l) != 2:
-                logger.error(f"Due to a configuration error (value: {_v}), an error occurred while switch soul.")
-                raise RequestHumanTakeover
-            self.run_switch_soul((int(l[0]), int(l[1])))
-
+        logger.info(f"Switch soul preset to {preset} (from {self.cur_soul_preset})")
+        # 进入式神录
         self.ui_click_until_disappear(self.I_ABYSS_SHIKI, interval=2)
-        soul_set: set[str] = set()
-        soul_set.add(self.config.model.abyss_shadows.process_manage.preset_boss)
-        soul_set.add(self.config.model.abyss_shadows.process_manage.preset_general)
-        soul_set.add(self.config.model.abyss_shadows.process_manage.preset_elite)
-        # 启用小蛇战斗时，一并预切换小蛇队伍的御魂
-        if self.config.model.abyss_shadows.process_manage.enable_snake:
-            soul_set.add(self.config.model.abyss_shadows.process_manage.preset_snake)
+        # 切换御魂
+        self.run_switch_soul((int(l[0]), int(l[1])))
+        self.cur_soul_preset = preset
+        # 退出式神录，回到区域导航界面；退过头则已重进狭间，返回 True 让调用方重新定位区域
+        return self.exit_shikigami_in_as()
 
-        for v in soul_set:
-            switch_soul(v)
+    def exit_shikigami_in_as(self) -> bool:
+        """ 退出狭间内的式神录界面，回到区域导航界面
 
-        self.switch_soul_done = True
-        # 退出式神录
+        正常情况点返回按钮即可回到区域导航界面（I_ABYSS_SHIKI/I_ABYSS_NAVIGATION 可见）。
+        若不小心退过头到大地图/寮/庭院，则调用 goto_abyss_shadows 重新进入狭间。
+
+        :return bool 是否退过头离开了区域（True=已退出到狭间外并重进，调用方需重新 change_area 定位区域）
+        """
         from tasks.GameUi.assets import GameUiAssets as gua
-        self.ui_click_until_disappear(gua.I_BACK_Y, interval=2)
+        while 1:
+            self.screenshot()
+            # 优先判断是否已回到区域导航界面（正常退出路径），此时无需任何额外动作
+            if self.appear(self.I_ABYSS_SHIKI) or self.appear(self.I_ABYSS_NAVIGATION):
+                return False
+            # 退过头到寮/庭院：重新进入狭间，返回 True 让调用方重新定位区域
+            # 用无副作用的 appear 检测寮/庭院的 check_button，不能用 ui_get_current_page —
+            # 后者在遇到过渡帧识别不到已知页时会主动点 I_BACK_MAIN 一键回主页，把还在式神录的正常状态强行拽出
+            if self.appear(gua.I_CHECK_GUILD) or self.appear(gua.I_CHECK_MAIN):
+                logger.warning("Exited too far to guild/main page, re-entering abyss shadows")
+                self.goto_abyss_shadows()
+                # 重进后停在集结界面，需先 select_boss 进入一个区域，恢复到有导航按钮的状态，
+                # 调用方随后的 change_area 才能正常从导航界面定位到真正的目标区域
+                area = self.get_first_area_to_enter()
+                if area is not None:
+                    self.select_boss(area)
+                return True
+            if self.appear_then_click(gua.I_BACK_Y, interval=2):
+                continue
 
     def check_available(self, item_code: Code):
         # 判断该怪物是否可用
@@ -1199,19 +1260,17 @@ if __name__ == "__main__":
     # res_img = cv2.cvtColor(res_img, cv2.COLOR_RGB2BGR)
     # cv2.imshow('res', res_img)
     # cv2.waitKey()
-
     t = ScriptTask(config, device)
-    #t.device.click(x=875, y=532)
-    t.goto_snake()
-    radius = 150
-    p1 = (197, 568)
+    t.run()
+    #radius = 150
+    """ p1 = (197, 568)
     import random
 
     while True:
         dx, dy = random.randint(-radius, radius), random.randint(-radius, radius)
         t.device.swipe_adb(p1, (p1[0] + dx, p1[1] + dy), duration=0.5)
         logger.info(f"Swipe {p1} to {(p1[0] + dx, p1[1] + dy)}")
-        sleep(5)
+        sleep(5) """
 
     # area_type = AreaType.DRAGON
     # t.unavailable_list += CodeList(IndexMap[area_type.name].value)
