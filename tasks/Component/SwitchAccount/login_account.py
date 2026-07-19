@@ -139,10 +139,16 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         @rtype:
         """
         logger.info("start switch_character")
+        # 记录上次桌面闪退检测时间，定时触发而非每轮触发，避免影响点击循环速度
+        last_alive_check = time.time()
         while 1:
             self.screenshot()
             self.device.click_record_clear()
             self.device.stuck_record_clear()
+            # 点击切服按钮过程中游戏可能闪退回MuMu桌面，每隔10秒复用现成逻辑检测一次，若已闪退则抛异常交由恢复处理
+            if time.time() - last_alive_check >= 10:
+                self._ensure_game_alive()
+                last_alive_check = time.time()
             if self.appear(self.I_SA_CHECK_SELECT_SVR_1):
                 break
             self.click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, interval=1.5)
