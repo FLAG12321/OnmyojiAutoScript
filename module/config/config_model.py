@@ -74,6 +74,7 @@ from tasks.HeroTest.config import HeroTest
 from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc
+from tasks.MultiAccountSignIn.config import MultiAccountSignIn
 from tasks.ReturnGift.config import ReturnGift
 from tasks.Plotline.config import Plotline
 from tasks.SearchId.config import SearchId
@@ -144,6 +145,7 @@ class ConfigModel(ConfigBase):
     find_jade: FindJade = Field(default_factory=FindJade)
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
     multi_daily_alt_acc: MultiDailyAltAcc = Field(default_factory=MultiDailyAltAcc)
+    multi_account_sign_in: MultiAccountSignIn = Field(default_factory=MultiAccountSignIn)
     plotline: Plotline = Field(default_factory=Plotline)
     search_id: SearchId = Field(default_factory=SearchId)
     return_gift: ReturnGift = Field(default_factory=ReturnGift)

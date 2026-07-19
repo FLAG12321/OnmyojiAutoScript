@@ -9,7 +9,7 @@ class ConfigManual:
 
     SCHEDULER_PRIORITY = """
         Restart > SoulsTidy
-        > KekkaiUtilize > KekkaiActivation > MultiDailyAltAcc> DailyAltAcc > MasterDisciple > Dokan > ReturnGift > DemonEncounter
+        > KekkaiUtilize > KekkaiActivation > MultiDailyAltAcc > MultiAccountSignIn > DailyAltAcc > MasterDisciple > Dokan > ReturnGift > DemonEncounter
         > AreaBoss > GoldYoukai > ExperienceYoukai > Nian > Tako > AutoCheckinBigGod > MultiAccExp > RealmRaid > RyouToppa > DailyTrifles > Exploration >FindJade
         > AbyssShadows > Hunt > GuildBanquet > DemonRetreat > GuildActivityMonitor
         > Orochi > OrochiMoans > OrochiJudgement > Sougenbi > FallenSun > EternitySea > SixRealms
