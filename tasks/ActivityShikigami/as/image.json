@@ -21,7 +21,7 @@
     "itemName": "climb_mode_pass",
     "imageName": "climb_mode_pass.png",
     "roiFront": "1139,544,26,27",
-    "roiBack": "1118,500,62,100",
+    "roiBack": "1117,500,63,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动爬塔标志"
@@ -39,7 +39,7 @@
     "itemName": "climb_mode_switch",
     "imageName": "climb_mode_switch.png",
     "roiFront": "1235,549,25,21",
-    "roiBack": "1223,531,50,62",
+    "roiBack": "1222,531,50,63",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "切换按键"
