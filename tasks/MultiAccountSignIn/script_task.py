@@ -84,6 +84,10 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
                 timeout_timer.reset()
                 wait_timer.reset()
                 continue
+            if self.appear_then_click(self.I_DLC_EXIT, interval=1):
+                timeout_timer.reset()
+                wait_timer.reset()
+                continue
             if wait_timer.reached():
                 self.click(self.I_ANIMATION_JUMP, interval=1)
                 wait_timer.reset()
