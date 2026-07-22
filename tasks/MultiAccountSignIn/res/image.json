@@ -52,5 +52,14 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "已经领取的奖励页面"
+  },
+  {
+    "itemName": "animation_jump",
+    "imageName": "res_animation_jump.png",
+    "roiFront": "1139,41,57,28",
+    "roiBack": "1114,33,125,52",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "跳过召唤动画"
   }
 ]

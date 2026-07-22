@@ -23,5 +23,7 @@ class MultiAccountSignInAssets:
 	I_GET_SHI_SUCCESS = RuleImage(roi_front=(1049,175,65,61), roi_back=(1027,145,110,125), threshold=0.7, method="Template matching", file="./tasks/MultiAccountSignIn/res/res_get_shi_success.png")
 	# 已经领取的奖励页面 
 	I_GET_SHI_OVER = RuleImage(roi_front=(523,538,235,40), roi_back=(478,510,316,89), threshold=0.7, method="Template matching", file="./tasks/MultiAccountSignIn/res/res_get_shi_over.png")
+	# 跳过召唤动画 
+	I_ANIMATION_JUMP = RuleImage(roi_front=(1139,41,57,28), roi_back=(1114,33,125,52), threshold=0.7, method="Template matching", file="./tasks/MultiAccountSignIn/res/res_animation_jump.png")
 
 

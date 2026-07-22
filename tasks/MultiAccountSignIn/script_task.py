@@ -67,14 +67,26 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
     def _return_to_reward_page(self, timeout: float = 15) -> bool:
         """关闭领取结果页及附加弹窗，直到重新回到奖励主页。"""
         timeout_timer = Timer(timeout).start()
+        wait_timer = Timer(3).start()
         while not timeout_timer.reached():
             self.screenshot()
             if self.appear(self.I_PAGE_GET_SHI):
                 return True
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                timeout_timer.reset()
+                wait_timer.reset()
                 continue
             if self.appear_then_click(self.I_GET_SHI_SUCCESS,interval=1):
                 timeout_timer.reset()
+                wait_timer.reset()
+                continue
+            if self.appear_then_click(self.I_ANIMATION_JUMP, interval=1):
+                timeout_timer.reset()
+                wait_timer.reset()
+                continue
+            if wait_timer.reached():
+                self.click(self.I_ANIMATION_JUMP, interval=1)
+                wait_timer.reset()
                 continue
         logger.warning('[MultiAccountSignIn] 返回奖励主页超时')
         return False
@@ -161,7 +173,7 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
 if __name__ == '__main__':
     from module.device.device import Device
 
-    config = Config('oas1')
+    config = Config('QMUMU3')
     device = Device(config)
     task = ScriptTask(config, device)
     task.run()
