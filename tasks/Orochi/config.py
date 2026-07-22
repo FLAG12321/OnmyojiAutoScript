@@ -45,6 +45,10 @@ class OrochiConfig(ConfigBase):
     limit_count: int = Field(default=30, description='limit_count_help')
     # 是否开启御魂加成
     soul_buff_enable: bool = Field(default=False, description='soul_buff_enable_help')
+    # 是否开启五倍消耗（游戏内五倍卡需已开启，脚本只负责按五倍计数并扣减券）
+    five_times_enable: bool = Field(default=False, description='five_times_enable_help')
+    # 五倍消耗券剩余数量，每消耗一张会立即回写，保证下次运行读到真实剩余
+    five_times_ticket: int = Field(default=0, description='five_times_ticket_help')
     # 是否在完成后拉起RealmRaid任务
     enable_realm_raid_chain: bool = Field(default=True, description='enable_realm_raid_chain_help')
 

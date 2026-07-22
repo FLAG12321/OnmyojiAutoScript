@@ -452,7 +452,12 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>user_status_help</source><translation>可选队长、队员、单独刷（野队还不打算实现）</translation></message>
 	<message><source>layer_help</source><translation> </translation></message>
 	<message><source>soul_buff_enable_help</source><translation>会在庭院开始的时候设置加成</translation></message>
-</context>	
+	<message><source>Five Times Enable</source><translation>开启五倍消耗</translation></message>
+	<message><source>Five Times Ticket</source><translation>五倍消耗券数量</translation></message>
+	<message><source>five_times_enable_help</source><translation>开启后一次战斗按五次计数（游戏内五倍卡需自行开启，脚本只负责计数并扣券）。
+例如限制次数100、有20张券时只需战斗20次；只有10张券则为10*5+50=60次</translation></message>
+	<message><source>five_times_ticket_help</source><translation>当前剩余的五倍消耗券数量（最高50）。每消耗一张会自动回写，下次运行读取到的是真实剩余</translation></message>
+</context>
 <context>
     <name>Args</name>
 	<message><source>BondlingConfig</source><translation>契灵</translation></message>

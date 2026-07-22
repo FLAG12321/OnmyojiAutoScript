@@ -80,6 +80,35 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         raise TaskEnd('Orochi')
 
+    def run_general_battle(self, config=None, buff=None) -> bool:
+        """
+        重写通用战斗：支持五倍消耗
+        父类 run_general_battle 内部会执行 self.current_count += 1（一次战斗计 1 次）。
+        当开启五倍消耗且仍有券时，本次战斗视为 5 次：
+        父类已计 1 次，这里再补 4 次，并扣减一张五倍券后立即回写 config，
+        保证下次运行读取到的是真实剩余券数。
+        能进入本方法说明尚未达到目标次数（否则外层循环已退出），
+        因此只要有券就用券，允许略微超过目标次数（例如目标 99、每战 +5 时最终为 100）。
+        :param config: 通用战斗配置
+        :param buff: 战斗加成
+        :return: 是否胜利
+        """
+        orochi_config = self.config.orochi.orochi_config
+        # 判断本次战斗是否使用五倍券：已开启且仍有券即可，允许超额
+        use_ticket = (orochi_config.five_times_enable
+                      and orochi_config.five_times_ticket > 0)
+        # 调用父类通用战斗，父类内部已经执行 current_count += 1
+        result = super().run_general_battle(config=config, buff=buff)
+        if use_ticket:
+            # 五倍券生效：父类已计 1 次，这里再补 4 次，凑成一次战斗抵 5 次
+            self.current_count += 4
+            # 扣减一张券并立即回写，保证下次运行读到真实剩余
+            orochi_config.five_times_ticket -= 1
+            self.config.save()
+            logger.info(f'Five times ticket used, remaining: {orochi_config.five_times_ticket}, '
+                        f'current_count: {self.current_count}/{self.limit_count}')
+        return result
+
     def orochi_enter(self) -> bool:
         logger.info('Enter orochi')
         while True:
