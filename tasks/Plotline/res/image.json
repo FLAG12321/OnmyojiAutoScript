@@ -421,5 +421,14 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
+  },
+  {
+    "itemName": "plotline_old_main_check",
+    "imageName": "res_plotline_old_main_check.png",
+    "roiFront": "839,176,73,51",
+    "roiBack": "204,68,1007,482",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "旧庭院判断"
   }
 ]

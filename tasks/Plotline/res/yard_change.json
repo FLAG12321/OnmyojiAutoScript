@@ -2,7 +2,7 @@
   {
     "itemName": "to_collet",
     "imageName": "res_to_collet.png",
-    "roiFront": "122,636,48,46",
+    "roiFront": "99,603,48,46",
     "roiBack": "20,575,1138,137",
     "method": "Template matching",
     "threshold": 0.7,

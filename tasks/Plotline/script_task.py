@@ -23,7 +23,7 @@ from tasks.GameUi.page import page_main,page_team,page_exploration
 from module.base.timer import Timer
 from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
-
+from module.atom.image import RuleImage
 from time import sleep
 from enum import Enum
 
@@ -160,7 +160,46 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
 
         handler = scene_handlers.get(scene, self.handle_unknown_scene)
         handler()
-    
+
+    def appear_then_click_leftmost(self,
+                                   target: RuleImage,
+                                   interval: float = None,
+                                   threshold: float = None,
+                                   nms_threshold: float = 0.3) -> bool:
+        """
+        识别 target 的所有匹配项，如果有多个则只点击最左边（x 最小）的那个。
+        用于同一界面可能出现多个相同图标、需要按从左到右顺序处理的场景。
+        :param target: RuleImage 对象
+        :param interval: 点击间隔，复用 appear 相同的计时器逻辑，避免过于频繁地点击
+        :param threshold: 匹配阈值，不传则使用 target 自身的阈值
+        :param nms_threshold: NMS 去重阈值，用于剔除重叠的冗余匹配框
+        :return: 成功识别并点击返回 True，否则 False
+        """
+        # 复用 interval 计时器逻辑，未到间隔时间直接返回
+        if interval:
+            if target.name in self.interval_timer:
+                if self.interval_timer[target.name].limit != interval:
+                    self.interval_timer[target.name] = Timer(interval)
+            else:
+                self.interval_timer[target.name] = Timer(interval)
+            if not self.interval_timer[target.name].reached():
+                return False
+
+        # match_all_any 返回 (score, x, y, w, h) 列表，已通过 NMS 去除重叠框
+        matches = target.match_all_any(self.device.image, threshold=threshold, nms_threshold=nms_threshold)
+        if not matches:
+            return False
+
+        # 按 x 升序取最左边的匹配项，点击其中心坐标
+        score, x, y, w, h = min(matches, key=lambda m: m[1])
+        click_x = int(x + w // 2)
+        click_y = int(y + h // 2)
+        self.device.click(click_x, click_y, control_name=target.name)
+
+        if interval:
+            self.interval_timer[target.name].reset()
+        return True
+
     def change_main_scene(self):
         "切换庭院场景"
         def change_main_scene():
@@ -176,7 +215,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     continue
                 if self.appear_then_click(self.I_TO_COLLET_2,interval=1):
                     continue
-                if self.appear_then_click(self.I_TO_COLLET,interval=1):
+                # I_TO_COLLET 可能同时匹配到多个，只点击最左边的那个
+                if self.appear_then_click_leftmost(self.I_TO_COLLET,interval=1):
                     continue
             while 1:
                 self.screenshot()
@@ -190,8 +230,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     break
                 if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
                     continue
-        
-        if self.appear(self.I_CHECK_MAIN):
+        if self.appear(self.I_PLOTLINE_OLD_MAIN_CHECK):
             return True
         if self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK) and (self.get_character_level_with_multiple_attempts() >= 7):
             while 1:
@@ -205,6 +244,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     continue
                 if self.appear_then_click(RestartAssets.I_LOGIN_SCROOLL_CLOSE, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
                     continue
+        return False
         
 
             
@@ -914,7 +954,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('QMUMU3')
+    c = Config('QMUMU1')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()

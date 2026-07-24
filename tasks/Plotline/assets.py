@@ -124,6 +124,8 @@ class PlotlineAssets:
 	I_CLICK_ATTACK3 = RuleImage(roi_front=(577,111,33,19), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack3.png")
 	# description 
 	I_PAGE_COLLET = RuleImage(roi_front=(103,609,41,38), roi_back=(18,577,936,130), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_collet.png")
+	# 旧庭院判断 
+	I_PLOTLINE_OLD_MAIN_CHECK = RuleImage(roi_front=(839,176,73,51), roi_back=(204,68,1007,482), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_plotline_old_main_check.png")
 
 
 	# Ocr Rule Assets
@@ -146,7 +148,7 @@ class PlotlineAssets:
 
 	# Image Rule Assets
 	#  
-	I_TO_COLLET = RuleImage(roi_front=(122,636,48,46), roi_back=(20,575,1138,137), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_to_collet.png")
+	I_TO_COLLET = RuleImage(roi_front=(99,603,48,46), roi_back=(20,575,1138,137), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_to_collet.png")
 	#  
 	I_TO_COLLET_2 = RuleImage(roi_front=(852,659,55,46), roi_back=(447,437,760,283), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_to_collet_2.png")
 	#  
