@@ -420,7 +420,7 @@ if __name__ == '__main__':
     from module.device.device import Device
     from tasks.GameUi.page import page_guild
 
-    c = Config('oas1')
+    c = Config('OAS1')
     d = Device(c)
     game = GameUi(config=c, device=d)
     game.screenshot()
