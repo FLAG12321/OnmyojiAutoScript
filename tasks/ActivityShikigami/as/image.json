@@ -43,5 +43,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "切换按键"
+  },
+  {
+    "itemName": "off_x5",
+    "imageName": "as_off_x5.png",
+    "roiFront": "870,656,25,21",
+    "roiBack": "839,637,94,64",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "未开启五倍"
+  },
+  {
+    "itemName": "on_x5",
+    "imageName": "as_on_x5.png",
+    "roiFront": "870,656,25,21",
+    "roiBack": "839,637,94,64",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "开启五倍"
   }
 ]

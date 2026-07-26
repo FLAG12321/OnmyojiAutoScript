@@ -37,6 +37,8 @@ class GeneralClimb(ConfigBase):
     active_souls_clean: bool = Field(default=False, description='是否运行结束后清理御魂')
     # 点击战斗随机休息
     random_sleep: bool = Field(default=False, description='是否启用在点击战斗前随机休息')
+    # 是否开启五倍消耗（仅 pass/ap 生效，五倍券由脚本读屏并共用于 pass/ap）
+    five_times_enable: bool = Field(default=False, description='five_times_enable_help')
 
     @property
     def limit_time_v(self) -> timedelta:

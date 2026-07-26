@@ -150,8 +150,12 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         # check_tickets_enough 缓存: 避免每次循环都 OCR 剩余门票
         # 策略: pass/ap 剩余 >= 50 时 10 分钟 OCR 一次; boss 剩余 >= 10 时 10 分钟 OCR 一次
         # 缓存期内每次调用预估递减 1 (一场战斗 1 张门票)
+        # 五倍消耗生效时改为递减 5, 且 OCR 间隔缩短为原来的五分之一
         self._ticket_cache: dict[str, int] = {}
         self._ticket_last_ocr: dict[str, datetime] = {}
+        # 当前是否处于五倍消耗状态(游戏内五倍开关已打开且五倍券充足)
+        # 仅在 pass/ap 战斗循环中维护, 供 check_tickets_enough 判断递减步长与 OCR 间隔
+        self._x5_active: bool = False
 
     def run(self) -> None:
         self.limit_time: timedelta = self.conf.general_climb.limit_time_v
@@ -189,6 +193,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         logger.hr(f'Start run climb type PASS', 1)
         self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_climb_mode_in_game('pass')
+        # 进入 pass 模式, 重置五倍状态, 由首次 check_tickets_enough 的 OCR 重新判断
+        self._x5_active = False
 
         ocr_limit_timer = Timer(1).start()
         click_limit_timer = Timer(4).start()
@@ -226,6 +232,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         self.ui_clicks([self.I_TO_BATTLE_MAIN],
                        stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_climb_mode_in_game('ap')
+        # 进入 ap 模式, 重置五倍状态, 由首次 check_tickets_enough 的 OCR 重新判断
+        self._x5_active = False
 
         ocr_limit_timer = Timer(1).start()
         while 1:
@@ -513,6 +521,62 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         logger.info(f'Switch climb mode to {mode}')
         self.ui_click(self.I_CLIMB_MODE_SWITCH, stop=map_check[mode], interval=1.9)
 
+    # ---------------------------------------------------------------- 五倍消耗
+    def read_x5_ticket(self) -> int:
+        """
+        读取当前五倍券剩余数量 (O_REMAIN_X5)
+        注意: O_REMAIN_X5 资产虽标记为 DigitCounter, 但五倍券界面显示的是纯数字(如 50),
+        没有 "X/Y" 分隔符, 用 ocr_digit_counter 会正则匹配失败返回 0(误判券耗尽)。
+        因此改用 ocr_digit 直接读纯数字, 与 O_REMAIN_PASS/O_REMAIN_AP 的读法一致。
+        :return: 五倍券剩余数量, 读取失败按 0 处理(视为无券)
+        """
+        self.screenshot()
+        return self.O_REMAIN_X5.ocr_digit(self.device.image)
+
+    def is_x5_on(self) -> bool:
+        """
+        判断游戏内五倍开关是否已开启
+        I_ON_X5 存在 -> 已开启; I_OFF_X5 存在 -> 未开启
+        """
+        return self.appear(self.I_ON_X5)
+
+    def switch_x5_in_game(self, on: bool):
+        """
+        将游戏内五倍开关切换到目标状态(点击 I_ON_X5/I_OFF_X5 同一按钮切换)
+        :param on: True 打开五倍, False 关闭五倍
+        """
+        target_on = self.is_x5_on()
+        if target_on == on:
+            return
+        logger.info(f'Switch x5 to {"ON" if on else "OFF"}')
+        # 开关按钮位置固定, 点击后状态互斥翻转; 用目标态图标作为停止条件
+        stop_img = self.I_ON_X5 if on else self.I_OFF_X5
+        self.ui_click(self.I_OFF_X5 if on else self.I_ON_X5, stop=stop_img, interval=1.5)
+
+    def update_x5_state(self, remain_ticket: int) -> bool:
+        """
+        根据配置、五倍券数量、当前门票剩余, 决定并同步游戏内五倍开关状态。
+        规则(仅 pass/ap 调用):
+        - 未开启五倍消耗配置 -> 保持关闭
+        - 五倍券为 0 -> 关闭五倍(用一倍打完剩余门票)
+        - 剩余门票 < 5(不足一次五倍) -> 关闭五倍(用一倍打完零头)
+        - 否则 -> 打开五倍
+        :param remain_ticket: 当前爬塔剩余门票数
+        :return: 同步后是否处于五倍状态
+        """
+        if not self.conf.general_climb.five_times_enable:
+            self._x5_active = False
+            return False
+        x5_ticket = self.read_x5_ticket()
+        # 五倍券耗尽或门票零头不足 5, 关闭五倍改用一倍
+        want_x5 = x5_ticket > 0 and remain_ticket >= 5
+        if not want_x5:
+            reason = 'x5 ticket exhausted' if x5_ticket <= 0 else f'remain {remain_ticket} < 5'
+            logger.info(f'Disable x5: {reason}')
+        self.switch_x5_in_game(want_x5)
+        self._x5_active = want_x5
+        return want_x5
+
     def lock_team(self, battle_conf: GeneralBattleConfig):
         """
         根据配置判断当前爬塔类型是否锁定阵容, 并执行锁定或解锁
@@ -534,8 +598,18 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         - pass/ap: 剩余 < 50 时每次都 OCR; >= 50 时 10 分钟 OCR 一次
         - boss:    剩余 < 10 时每次都 OCR; >= 10 时 10 分钟 OCR 一次
         缓存命中时预估递减 1 (一场战斗 1 张门票)
+
+        五倍消耗 (仅 pass/ap):
+        - 一场战斗消耗 5 张门票, 故缓存命中时预估递减 5
+        - OCR 间隔缩短为五分之一 (10 分钟 -> 2 分钟), 因门票消耗速度是原来的 5 倍
+        - 每次真实 OCR 后按剩余门票同步游戏内五倍开关(update_x5_state)
+        - 缓存期内一旦预估剩余不足 5, 强制下一轮重新 OCR 以便关闭五倍打零头
         """
         climb = self.climb_type
+        # 一场战斗消耗的门票数: 五倍生效为 5, 否则为 1
+        step = 5 if self._x5_active else 1
+        # 五倍生效时门票消耗快 5 倍, OCR 间隔相应缩短为原来的五分之一
+        ocr_interval = timedelta(minutes=2) if self._x5_active else timedelta(minutes=10)
 
         # 缓存判断 (ap100 不参与缓存)
         if climb != 'ap100':
@@ -547,14 +621,16 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 cached is None
                 or cached < threshold
                 or last_ocr is None
-                or (now - last_ocr) >= timedelta(minutes=10)
+                or (now - last_ocr) >= ocr_interval
+                # 五倍生效且预估剩余不足一次五倍, 需重新 OCR 以关闭五倍打零头
+                or (self._x5_active and cached < 5)
             )
             if not need_ocr:
-                self._ticket_cache[climb] = max(0, cached - 1)
+                self._ticket_cache[climb] = max(0, cached - step)
                 elapsed = int((now - last_ocr).total_seconds())
                 logger.info(
                     f'Skip OCR for {climb} tickets, cached={self._ticket_cache[climb]} '
-                    f'(last OCR {elapsed}s ago)'
+                    f'(last OCR {elapsed}s ago, step={step})'
                 )
                 return self._ticket_cache[climb] > 0
 
@@ -585,6 +661,10 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         if climb != 'ap100':
             self._ticket_cache[climb] = remain_times
             self._ticket_last_ocr[climb] = datetime.now()
+
+        # pass/ap 且门票充足时, 按真实剩余门票同步游戏内五倍开关状态
+        if climb in ('pass', 'ap') and remain_times > 0:
+            self.update_x5_state(remain_times)
 
         return remain_times > 0
 

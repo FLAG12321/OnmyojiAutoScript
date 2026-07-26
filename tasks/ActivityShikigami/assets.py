@@ -71,6 +71,10 @@ class ActivityShikigamiAssets:
 	I_CLIMB_MODE_AP = RuleImage(roi_front=(1090,541,29,27), roi_back=(1062,516,200,193), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb_mode_ap.png")
 	# 切换按键 
 	I_CLIMB_MODE_SWITCH = RuleImage(roi_front=(1235,549,25,21), roi_back=(1222,531,50,63), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb_mode_switch.png")
+	# 未开启五倍 
+	I_OFF_X5 = RuleImage(roi_front=(870,656,25,21), roi_back=(839,637,94,64), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_off_x5.png")
+	# 开启五倍 
+	I_ON_X5 = RuleImage(roi_front=(870,656,25,21), roi_back=(839,637,94,64), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_on_x5.png")
 
 
 	# Image Rule Assets
@@ -142,6 +146,8 @@ class ActivityShikigamiAssets:
 	O_ENTER_AP100 = RuleOcr(roi=(73,98,95,32), area=(5,79,256,108), mode="Single", method="Default", keyword="将魂试炼", name="enter_ap100")
 	# description 
 	O_FIRE2 = RuleOcr(roi=(1142,589,96,50), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
+	# 五倍券数量 
+	O_REMAIN_X5 = RuleOcr(roi=(936,14,104,34), area=(935,10,107,44), mode="DigitCounter", method="Default", keyword="", name="remain_x5")
 
 
 	# Click Rule Assets

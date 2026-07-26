@@ -425,6 +425,9 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>dokan_attack_priority_help</source><translation>道馆攻击优先顺序</translation></message>
 	<message><source>dokan_auto_cheering_while_cd_help</source><translation>失败CD后自动加油</translation></message>
 	<message><source>anti_detect_click_fixed_random_area_help</source><translation>防封：使用固定的随机区域进行随机点击，若为False将自动识别当前画面中的最大纯色区域作为随机点击区域</translation></message>
+	<message><source>Five Times Enable</source><translation>开启五倍消耗</translation></message>
+	<message><source>five_times_enable_help</source><translation>仅门票(pass)和体力(ap)爬塔生效。开启后脚本自动打开游戏内五倍开关，一次战斗消耗5张门票、扣1张五倍券；五倍券由脚本读屏，pass/ap共用。
+门票零头不足5张时自动关闭五倍用一倍打完，五倍券耗尽时自动关闭五倍。检测门票的计时相应缩短为五分之一。</translation></message>
 </context>
 <context>
     <name>Args</name>
