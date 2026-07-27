@@ -203,6 +203,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 if self.ui_reward_appear_click(True):
                     logger.info('appear_click reward success')
                     click_ap = True
+                    time.sleep(1)
                     timer_check.reset()
                 continue
 
