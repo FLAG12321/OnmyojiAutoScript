@@ -841,10 +841,10 @@ class MultiStatAggregator:
             account.error_count += 1
             account.last_time = ts
         elif ev == "battle":
-            # 只在有效计数时覆盖，忽略 count=0 的清理事件，避免清零导致除零
+            # 发出侧（alliedteam）给出的是增量场数，按累加统计；count<=0 的清理事件累加无影响
             new_count = int(payload.get("count", 0) or 0)
             if new_count > 0:
-                account.battle_count = new_count
+                account.battle_count += new_count
             account.last_time = ts
         elif ev == "coop":
             account.coops.append({

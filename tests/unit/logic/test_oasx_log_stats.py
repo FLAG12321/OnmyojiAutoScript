@@ -318,9 +318,9 @@ def test_multi_stats_battle_duration_survives_repeated_acc_start(tmp_path, monke
 
     # Bug A 断言：战斗总耗时应为两轮战斗之和（5 + 10 = 15），而非第二轮单独的值
     assert account["battle_total_duration_seconds"] == pytest.approx(15.0)
-    # Bug B 断言：count=0 不应清零战斗次数，应保留最后有效值 2
-    assert account["battle_count"] == 2
-    assert account["battle_avg_duration_seconds"] == pytest.approx(7.5)
+    # 修复1：battle 事件按增量累加（1 + 2 = 3），count=0 清理事件累加 0 无影响
+    assert account["battle_count"] == 3
+    assert account["battle_avg_duration_seconds"] == pytest.approx(5.0)
 
     # start_time 应保留首次 acc_start 的时间，delta = 26 秒
     assert account["duration_seconds"] == pytest.approx(26.0)
@@ -647,3 +647,27 @@ def test_multi_stats_failed_switch_retries_accumulate_to_target_account(tmp_path
     assert account["segments"][0]["duration_seconds"] == pytest.approx(70.0)
     assert account["segments"][1]["duration_seconds"] == pytest.approx(100.0)
     assert account["duration_seconds"] == pytest.approx(170.0)
+
+
+def test_multi_stats_battle_events_accumulate(tmp_path, monkeypatch):
+    """修复1：battle 事件的 count 是增量语义（发出侧为本次新增场数），聚合器应累加而非覆盖。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["alliedteam"]}',
+            '2026-06-20 06:00:10.000 | alliedteam.py:0041 |     INFO | [STAT] {"ev":"battle","acc":"a@x.com","char":"角色A","svr":"一区","count":3}',
+            '2026-06-20 06:00:20.000 | alliedteam.py:0041 |     INFO | [STAT] {"ev":"battle","acc":"a@x.com","char":"角色A","svr":"一区","count":2}',
+            '2026-06-20 06:00:30.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    # 3 + 2 = 5，覆盖语义会错误地得到 2
+    assert account["battle_count"] == 5
