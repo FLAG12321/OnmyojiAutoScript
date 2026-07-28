@@ -9,6 +9,9 @@ from module.logger import logger
 class StatEvent:
     """DailyAltAcc 结构化统计事件名。"""
 
+    RUN_START = "run_start"
+    RUN_END = "run_end"
+    SWITCH_START = "switch_start"
     ACC_START = "acc_start"
     ACC_END = "acc_end"
     SWITCH = "switch"

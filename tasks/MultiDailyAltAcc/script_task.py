@@ -31,8 +31,11 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self._mark_task_start(config_name, pid)
         
         try:
+            # 本次运行的开始边界：后端据此把统计切分为独立会话（一次调度 = 一个会话）；
+            # 放在 try 内首行，与 finally 中的 run_end 严格成对
+            self.emit_stat(StatEvent.RUN_START)
             # 加载配置，获取returngift_enable状态
-            self.daily_conf = self.config.multi_daily_alt_acc 
+            self.daily_conf = self.config.multi_daily_alt_acc
             returngift_enable = self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable
             # 更新进度文件中的returngift_enable状态
             self._update_task_returngift_enable(config_name, returngift_enable)
@@ -92,6 +95,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 self._coordinated_shutdown_system(config_name)
             self.next_run("MultiDailyAltAcc", success=True)
         finally:
+            # 本次运行的结束边界：正常结束与异常上抛均会发出，供后端闭合运行段
+            self.emit_stat(StatEvent.RUN_END)
             # 无论任务是否成功完成，都要标记为完成
             self._mark_task_completed(config_name)
         
@@ -434,6 +439,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         """切换到指定账号"""
         # 在切换账号前，重置检测记录，避免影响后续账号
         self.device.stuck_record_clear()
+        # 切号起点标记：账号耗时（含切号过程与失败重试）从此刻起算
+        self.emit_stat(
+            StatEvent.SWITCH_START,
+            acc=account_info.account,
+            char=account_info.character,
+            svr=account_info.svr,
+        )
         success = SwitchAccount(self.config, self.device, account_info).switchAccount()
         self.emit_stat(
             StatEvent.SWITCH,
