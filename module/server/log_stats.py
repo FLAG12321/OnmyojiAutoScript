@@ -22,6 +22,10 @@ _TASK_LINE_RE = re.compile(r"\[Task\]\s+(?P<task>[A-Za-z0-9_]+)\s+\(")
 _EQ_LINE_RE = re.compile(r"^═{15,}\s*$")
 _TITLE_LINE_RE = re.compile(r"^─{10,}\s*(?P<title>.*?)\s*─{10,}\s*$")
 _BATTLE_TITLE = "GENERAL BATTLE START"
+# 战斗结束标记行：GeneralBattle 的 win/false 分支输出 "Battle result is"，
+# 领奖分支（I_REWARD/I_REWARD_GOLD）无该行，但四条退出路径都会经过 "Reconfirm the results of the battle"；
+# 任一标记命中即闭合战斗，极端路径仍由边界/task_end/快照兜底
+_BATTLE_END_MARKERS = ("Battle result is", "Reconfirm the results of the battle")
 _START_TITLE = "START"
 _STAT_PREFIX = "[STAT] "
 
@@ -275,6 +279,10 @@ class LogStatsParser:
         elif self._active_battle is not None:
             self._active_battle.last_time = ts
 
+        # 战斗结束标记行：立即闭合当前战斗，避免战后动作计入战斗时长（修复3）
+        if self._active_battle is not None and any(marker in line for marker in _BATTLE_END_MARKERS):
+            self._close_active_battle()
+
     def _consume_runtime_timestamp(self, ts: datetime) -> None:
         runtime = self.runtime
         runtime.region_last = ts
@@ -448,6 +456,12 @@ class MultiStatAggregator:
 
             # 任一含时间戳的行都更新战斗计时（无论是否 STAT 行）
             self._update_battle_timestamp(ts)
+
+            # 战斗结束标记行：立即闭合当前战斗，避免战后动作计入战斗时长（修复3）
+            if self._active_battle is not None and any(marker in raw for marker in _BATTLE_END_MARKERS):
+                self._close_active_battle()
+                index += 1
+                continue
 
             # 命中 [STAT]（带或不带尾随空格/JSON）
             prefix_idx = raw.find("[STAT]")

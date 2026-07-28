@@ -695,3 +695,94 @@ def test_multi_stats_error_records_include_time(tmp_path, monkeypatch):
     assert account["errors"] == [
         {"task": "mail", "etype": "RuntimeError", "emsg": "boom", "time": "2026-06-20 06:00:05.000"}
     ]
+
+
+def test_multi_stats_battle_ends_at_result_line(tmp_path, monkeypatch):
+    """修复3：Battle result is 行闭合战斗计时，战后领奖等动作不再计入战斗时长。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["alliedteam"]}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"alliedteam"}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:10.000 | battle.py:0100 |     INFO | inside battle',
+            # 战斗在 06:00:20 出结果，此后到 task_end 的 35 秒是战后动作，不应计入战斗时长
+            '2026-06-20 06:00:20.000 | general_battle.py:0182 |     INFO | Battle result is win',
+            '2026-06-20 06:00:50.000 | battle.py:0101 |     INFO | post battle actions',
+            '2026-06-20 06:00:55.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"alliedteam","ok":true,"dur":54.0}',
+            '2026-06-20 06:01:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+    task = account["tasks"][0]
+
+    # 战斗时长 = 06:00:10 → 06:00:20 = 10 秒（未修复时延伸到 task_end 行时刻 06:00:55，得 45 秒）
+    assert task["battle_count"] == 1
+    assert task["battle_total_duration_seconds"] == pytest.approx(10.0)
+
+
+def test_task_stats_battle_ends_at_result_line(tmp_path, monkeypatch):
+    """修复3：单任务统计（LogStatsParser）同样以 Battle result is 行闭合战斗。"""
+    from module.server import log_stats
+
+    eq_line = "═" * 30
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            eq_line,
+            "─────────── Orochi ───────────",
+            eq_line,
+            '2026-06-20 06:00:00.000 | script.py:0001 |     INFO | task begin',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:10.000 | battle.py:0100 |     INFO | inside battle',
+            '2026-06-20 06:00:20.000 | general_battle.py:0182 |     INFO | Battle result is win',
+            '2026-06-20 06:00:50.000 | battle.py:0101 |     INFO | post battle actions',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    battle = result["tasks"]["Orochi"]["battle"]
+
+    assert battle["count"] == 1
+    # 平均时长 = 单场 10 秒（06:00:10 → 06:00:20）
+    assert battle["avg_duration_seconds"] == pytest.approx(10.0)
+
+
+def test_multi_stats_battle_ends_at_reconfirm_line(tmp_path, monkeypatch):
+    """修复3：领奖路径（I_REWARD/I_REWARD_GOLD）不输出 Battle result is，
+    由四条退出路径共同经过的 Reconfirm the results of the battle 行闭合战斗。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["alliedteam"]}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"alliedteam"}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:10.000 | battle.py:0100 |     INFO | inside battle',
+            # 领奖路径：无 Battle result is 行，靠 Reconfirm 行闭合
+            '2026-06-20 06:00:20.000 | general_battle.py:0208 |     INFO | Reconfirm the results of the battle',
+            '2026-06-20 06:00:50.000 | battle.py:0101 |     INFO | post battle actions',
+            '2026-06-20 06:00:55.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"alliedteam","ok":true,"dur":54.0}',
+            '2026-06-20 06:01:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    task = result["multi"]["accounts"][0]["tasks"][0]
+
+    assert task["battle_count"] == 1
+    assert task["battle_total_duration_seconds"] == pytest.approx(10.0)
