@@ -48,6 +48,7 @@ class MultiErrorResponse(BaseModel):
     task: str | None = None
     etype: str
     emsg: str
+    time: str | None = None  # 事件时刻，供前端按会话筛选（修复2）
 
 
 class MultiCoopResponse(BaseModel):

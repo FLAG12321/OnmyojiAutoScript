@@ -837,6 +837,7 @@ class MultiStatAggregator:
                 "task": str(payload.get("task", "")),
                 "etype": str(payload.get("etype", "")),
                 "emsg": str(payload.get("emsg", "")),
+                "time": _format_multi_ts(ts),  # 事件时刻，供前端按会话筛选（修复2）
             })
             account.error_count += 1
             account.last_time = ts

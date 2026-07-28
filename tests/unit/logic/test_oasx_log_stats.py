@@ -671,3 +671,27 @@ def test_multi_stats_battle_events_accumulate(tmp_path, monkeypatch):
 
     # 3 + 2 = 5，覆盖语义会错误地得到 2
     assert account["battle_count"] == 5
+
+
+def test_multi_stats_error_records_include_time(tmp_path, monkeypatch):
+    """修复2：error 记录带事件时刻，供前端按会话筛选（与 coop/mshop 同款）。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:00:05.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"error","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail","etype":"RuntimeError","emsg":"boom"}',
+            '2026-06-20 06:00:10.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":1}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    assert account["errors"] == [
+        {"task": "mail", "etype": "RuntimeError", "emsg": "boom", "time": "2026-06-20 06:00:05.000"}
+    ]
