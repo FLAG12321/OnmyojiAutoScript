@@ -786,3 +786,33 @@ def test_multi_stats_battle_ends_at_reconfirm_line(tmp_path, monkeypatch):
 
     assert task["battle_count"] == 1
     assert task["battle_total_duration_seconds"] == pytest.approx(10.0)
+
+
+def test_multi_stats_unclosed_battle_not_leaked_to_next_task(tmp_path, monkeypatch):
+    """修复4：上一子任务 task_end 丢失时，其未闭合战斗不得错误归属到下一子任务。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail","alliedteam"]}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail"}',
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:00:10.000 | battle.py:0100 |     INFO | inside battle',
+            # mail 的 task_end 丢失，直接开始下一个子任务
+            '2026-06-20 06:00:30.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"alliedteam"}',
+            '2026-06-20 06:00:40.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"alliedteam","ok":true,"dur":10.0}',
+            '2026-06-20 06:00:50.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+    alliedteam_task = account["tasks"][0]
+
+    # alliedteam 自身无战斗，mail 的遗留战斗不得计入
+    assert alliedteam_task["task"] == "alliedteam"
+    assert alliedteam_task["battle_count"] == 0

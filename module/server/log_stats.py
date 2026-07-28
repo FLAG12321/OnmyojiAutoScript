@@ -819,6 +819,8 @@ class MultiStatAggregator:
             account.switch_ok = payload.get("ok")
             account.last_time = ts
         elif ev == "task_start":
+            # 上一子任务的战斗若未闭合（task_end 丢失），先就地结算，防止错误归属到本任务（修复4）
+            self._close_active_battle()
             # 记录当前子任务名与起点时间，重置任务级战斗计数器
             self._current_task_name = str(payload.get("task", ""))
             self._current_task_start_ts = ts
