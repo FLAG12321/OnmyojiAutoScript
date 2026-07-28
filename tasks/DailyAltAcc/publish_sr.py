@@ -1,11 +1,12 @@
 # This Python file uses the following encoding: utf-8
 import json
+import re
 import time
 from pathlib import Path
 
 from filelock import FileLock
 
-from module.base.utils import point2str
+from module.base.utils import point2str, save_image
 from module.logger import logger
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.ReturnGift.assets import ReturnGiftAssets
@@ -53,7 +54,37 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         indexed = list(enumerate(queue))
         indexed.sort(key=lambda iv: (-iv[1]['count'], -iv[0]))
         return [v for _, v in indexed]
-
+    def _screenshot_sr(self):
+        retry_count = 0
+        screenshot_flag = False
+        while retry_count < 5:
+            self.screenshot()
+            if screenshot_flag == True and self.appear_then_click(self.I_UI_BACK_RED,interval=1):
+                return True
+            if self.appear_then_click(self.I_TO_PAGE_PIECE, interval=1):
+                time.sleep(1)
+                continue
+            if self.appear_then_click(self.I_PAGE_PIECE, interval=1):
+                time.sleep(1.5)
+                image = self.screenshot()
+                # 角色名优先取多账号运行注入的统计上下文(_stat_ctx)，单实例运行时退化为配置实例名
+                char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
+                # 替换 Windows 文件名非法字符，避免保存失败
+                char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+                save_dir = Path('screenshots/SR_Screenshots')
+                save_dir.mkdir(parents=True, exist_ok=True)
+                save_path = save_dir / f'{char_name}.png'
+                save_image(image, str(save_path))
+                logger.info(f'SR碎片页截图已保存: {save_path}')
+                screenshot_flag = True
+                continue
+            if self.appear_then_click(self.I_R_PAGE_GUILD, action=self.C_R_TOSEND_CLICK, interval=2):
+                self.device.click_record_clear()
+                time.sleep(1)
+                continue                
+            retry_count += 1
+        return False
+        
     def _publish_loop(self, queue: list[dict]):
         """发布主循环：遍历队列匹配模板 → 点击 → 发布 → 递减 → 回写；未命中时滑动翻页直到连续空滑到底"""
         EMPTY_SWIPE_LIMIT = 3
@@ -76,6 +107,7 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
                     queue.pop(matched_index)
                 queue = self._sort_queue(queue)
                 self._write_queue(queue)
+                self._screenshot_sr()
             else:
                 logger.info(f'发布 SR 碎片: {top["name"]} 失败')
             time.sleep(1)

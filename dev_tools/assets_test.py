@@ -102,30 +102,36 @@ def detect_ocr_detail(file: str, target: RuleOcr) -> dict:
             "message": "image_load_failed",
         }
 
-    boxed = target.detect_and_ocr(img, logDisplay=False)
-    selected = None
+    # BaseCor.detect_and_ocr 没有 logDisplay 参数，带参调用会抛 TypeError
+    boxed = target.detect_and_ocr(img)
+    # 过滤掉识别文本为空的结果项
+    boxed = [item for item in boxed if str(item.ocr_text or "").strip()]
 
-    if boxed:
-        if target.keyword:
-            for item in boxed:
-                text = str(item.ocr_text or "")
-                if target.keyword in text or text == target.keyword:
-                    selected = item
-                    break
-        if selected is None:
-            selected = max(boxed, key=lambda x: float(x.score))
-
-    if selected is None:
+    if not boxed:
+        # 未识别到任何文字；keyword 为空时 matched 置 None，由上层省略该字段
         return {
-            "matched": False,
+            "matched": False if target.keyword else None,
             "similarity": 0.0,
             "text": "",
             "roiFront": _roi_to_text(target.roi),
             "roiBack": _roi_to_text(target.area),
-            "message": "not_match",
+            "message": "not_match" if target.keyword else "ocr_empty",
         }
 
-    box = selected.box
+    texts = [str(item.ocr_text) for item in boxed]
+
+    # keyword 非空时优先定位包含 keyword 的识别项用于框选，否则取得分最高项
+    selected = None
+    if target.keyword:
+        for item in boxed:
+            if target.keyword in str(item.ocr_text):
+                selected = item
+                break
+    if selected is None:
+        selected = max(boxed, key=lambda x: float(x.score))
+
+    # box 可能是 list 而非 ndarray，先转换以支持切片索引
+    box = np.asarray(selected.box)
     x0 = int(np.min(box[:, 0])) + int(target.roi[0])
     y0 = int(np.min(box[:, 1])) + int(target.roi[1])
     x1 = int(np.max(box[:, 0])) + int(target.roi[0])
@@ -136,16 +142,23 @@ def detect_ocr_detail(file: str, target: RuleOcr) -> dict:
     target.roi = [x0, y0, w, h]
     target.area = [x0, y0, w, h]
 
-    text = str(selected.ocr_text or "")
-    matched = target.match(text, included=True) if target.keyword else bool(text)
+    if target.keyword:
+        # keyword 非空：将全部识别文本无分隔拼接后做包含匹配（兼容 keyword 跨识别框），返回 true/false
+        matched = target.keyword in "".join(texts)
+        message = "match" if matched else "not_match"
+    else:
+        # keyword 为空：不做匹配判断，matched 置 None 由上层省略该字段，只返回识别内容
+        matched = None
+        message = "ocr_result"
 
     return {
         "matched": matched,
         "similarity": round(float(selected.score), 4),
-        "text": text,
+        # 识别到非空内容时始终返回全部识别文本（空格分隔）
+        "text": " ".join(texts),
         "roiFront": _roi_to_text(target.roi),
         "roiBack": _roi_to_text(target.area),
-        "message": "match" if matched else "not_match",
+        "message": message,
     }
 
 

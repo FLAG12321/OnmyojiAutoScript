@@ -1266,10 +1266,9 @@ class AnnotatorManager:
                 keyword=keyword,
             )
             detail = detect_ocr_detail(str(source_path), target)
-            return {
+            result = {
                 "rule_type": "ocr",
                 "item_name": item_name,
-                "matched": bool(detail.get("matched", False)),
                 "similarity": float(detail.get("similarity", 0.0)),
                 "text": str(detail.get("text", "")),
                 "keyword": keyword,
@@ -1277,6 +1276,10 @@ class AnnotatorManager:
                 "roiBack": self._parse_roi(str(detail.get("roiBack", rule.get("roiBack", "0,0,100,100")))),
                 "message": str(detail.get("message", "not_match")),
             }
+            # keyword 非空才返回 matched 的 true/false 判定；keyword 为空时不返回该字段
+            if keyword:
+                result["matched"] = bool(detail.get("matched", False))
+            return result
 
         if rule_type == "list":
             if not list_meta:
