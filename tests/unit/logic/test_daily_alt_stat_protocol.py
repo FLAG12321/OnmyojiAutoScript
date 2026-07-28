@@ -142,3 +142,42 @@ def test_multi_run_emits_run_start_and_run_end(monkeypatch):
     # 一次运行必须以 run_start 开始、run_end 结束（finally 保证异常路径也发出）。
     assert payloads[0] == {"ev": "run_start"}
     assert payloads[-1] == {"ev": "run_end"}
+
+
+def test_multi_run_end_emit_failure_does_not_block_completion_mark(monkeypatch):
+    """审查m5：run_end 埋点抛异常时，任务完成标记仍必须执行，且不改变 TaskEnd 控制流。"""
+    from module.exception import TaskEnd
+    from tasks.MultiDailyAltAcc import script_task as mod
+
+    monkeypatch.setattr(mod.logger, "info", lambda msg, *args: None)
+
+    task = mod.ScriptTask.__new__(mod.ScriptTask)
+    conf = SimpleNamespace(
+        multi_daily_alt_acc_config=SimpleNamespace(
+            total_returngift_enable=False,
+            need_login_time=None,
+            shutdown_after_finish=False,
+            total_alliedteam_battle_enable=False,
+        )
+    )
+    task.config = SimpleNamespace(config_name="oas1", multi_daily_alt_acc=conf)
+    task._mark_task_start = lambda *a, **k: None
+    task._update_task_returngift_enable = lambda *a, **k: None
+    task._get_sorted_accounts = lambda *a, **k: []
+    task._notify_daily_completion = lambda *a, **k: None
+    task.next_run = lambda *a, **k: None
+    completed = []
+    task._mark_task_completed = lambda name: completed.append(name)
+
+    def failing_emit(ev, **fields):
+        # 仅让结束埋点失败，模拟日志写入 IO 故障
+        if ev == "run_end":
+            raise RuntimeError("log io failure")
+
+    task.emit_stat = failing_emit
+
+    with pytest.raises(TaskEnd):
+        task.run()
+
+    # 埋点失败不得阻断收尾：完成标记照常执行
+    assert completed == ["oas1"]

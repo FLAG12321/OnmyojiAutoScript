@@ -457,11 +457,10 @@ class MultiStatAggregator:
             # 任一含时间戳的行都更新战斗计时（无论是否 STAT 行）
             self._update_battle_timestamp(ts)
 
-            # 战斗结束标记行：立即闭合当前战斗，避免战后动作计入战斗时长（修复3）
+            # 战斗结束标记行：立即闭合当前战斗，避免战后动作计入战斗时长（修复3）；
+            # 不能 continue——标记行可能同时是旧格式内联 STAT 行，事件仍需解析（审查m3）
             if self._active_battle is not None and any(marker in raw for marker in _BATTLE_END_MARKERS):
                 self._close_active_battle()
-                index += 1
-                continue
 
             # 命中 [STAT]（带或不带尾随空格/JSON）
             prefix_idx = raw.find("[STAT]")
@@ -792,6 +791,9 @@ class MultiStatAggregator:
             return
 
         if ev == "switch_start":
+            # 上一账号的战斗若未闭合（task_end/acc_end 丢失），先就地结算，
+            # 时长不得延伸进本账号的切号窗口（审查m4）
+            self._close_active_battle()
             # 切号起点：以此刻抢占闭合上一账号运行段，目标账号耗时（含切号）从此刻起算
             self._begin_account_segment(payload, ts)
             return
@@ -881,6 +883,8 @@ class MultiStatAggregator:
             })
             account.last_time = ts
         elif ev == "acc_end":
+            # 本账号的战斗若未闭合（task_end 丢失），以此刻就地结算（审查m4）
+            self._close_active_battle()
             account.last_time = ts
             # 正常结束：以 acc_end 时刻闭合本账号运行段
             if self._open_account_key == self._event_key(payload):
@@ -1099,7 +1103,7 @@ class LogStatsService:
             new_lines = file.readlines()
             cache.position = file.tell()
 
-        merged_lines = cache.tail_lines + new_lines
+        merged_lines = self._merge_tail_lines(cache.tail_lines, new_lines)
         confirmed_lines, cache.tail_lines = self._split_confirmed_lines(merged_lines)
         if confirmed_lines:
             cache.parser.consume_lines(confirmed_lines)
@@ -1120,12 +1124,28 @@ class LogStatsService:
         )
 
     @staticmethod
+    def _merge_tail_lines(tail_lines: list[str], new_lines: list[str]) -> list[str]:
+        """合并上轮回扣的 tail 与本轮新行；tail 末尾的半行与新行首段拼成完整行（审查M1）。"""
+        if tail_lines and not tail_lines[-1].endswith("\n") and new_lines:
+            return tail_lines[:-1] + [tail_lines[-1] + new_lines[0]] + new_lines[1:]
+        return tail_lines + new_lines
+
+    @staticmethod
     def _split_confirmed_lines(lines: list[str]) -> tuple[list[str], list[str]]:
         if not lines:
             return [], []
 
+        # 半行回扣：文件尾部尚未写完换行的行不能当完整行消费，
+        # 留在 tail 待下轮与后续字节拼接后再解析（审查M1）
+        partial_tail: list[str] = []
+        if not lines[-1].endswith("\n"):
+            partial_tail = [lines[-1]]
+            lines = lines[:-1]
+            if not lines:
+                return [], partial_tail
+
         if len(lines) >= 3 and LogStatsParser._is_task_boundary(lines, len(lines) - 3):
-            return lines, []
+            return lines, partial_tail
 
         tail_size = 0
         if _EQ_LINE_RE.match(lines[-1].strip()):
@@ -1136,10 +1156,20 @@ class LogStatsService:
             and _TITLE_LINE_RE.match(lines[-1].strip())
         ):
             tail_size = 2
+        # 悬空 STAT 前缀行回扣：RichHandler 把 STAT 写成"前缀行 + JSON 续行"两行，
+        # 若轮询恰好切在两行之间，前缀行需留在 tail 等续行到达后合并解析；
+        # 否则续行下轮单独到达因无时间戳被跳过，事件永久丢失——新口径下丢失
+        # run_start 会导致全天会话索引错位且不自愈（审查M1）
+        if (
+            tail_size == 0
+            and "[STAT]" in lines[-1]
+            and MultiStatAggregator._extract_payload(lines[-1]) is None
+        ):
+            tail_size = 1
 
         if tail_size <= 0:
-            return lines, []
-        return lines[:-tail_size], lines[-tail_size:]
+            return lines, partial_tail
+        return lines[:-tail_size], lines[-tail_size:] + partial_tail
 
     @staticmethod
     def _empty_stats(script_name: str) -> dict[str, Any]:

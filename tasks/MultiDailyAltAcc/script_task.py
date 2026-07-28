@@ -95,8 +95,12 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 self._coordinated_shutdown_system(config_name)
             self.next_run("MultiDailyAltAcc", success=True)
         finally:
-            # 本次运行的结束边界：正常结束与异常上抛均会发出，供后端闭合运行段
-            self.emit_stat(StatEvent.RUN_END)
+            try:
+                # 本次运行的结束边界：正常结束与异常上抛均会发出，供后端闭合运行段
+                self.emit_stat(StatEvent.RUN_END)
+            except Exception:
+                # 统计埋点失败（如日志 IO 故障）不得阻断任务收尾与完成标记（审查m5）
+                logger.exception("emit run_end stat failed")
             # 无论任务是否成功完成，都要标记为完成
             self._mark_task_completed(config_name)
         
