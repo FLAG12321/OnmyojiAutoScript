@@ -463,20 +463,22 @@ def test_multi_stats_cross_account_preempt_closes_prior_segment(tmp_path, monkey
     assert result["multi"]["total_duration_seconds"] == pytest.approx(20.0)
 
 
-def test_multi_stats_splits_sessions_by_gap(tmp_path, monkeypatch):
-    """change-B 需求2：相邻事件间隔超过阈值应切分为多次 MultiAcc 运行会话。"""
+def test_multi_stats_splits_sessions_by_run_start(tmp_path, monkeypatch):
+    """需求1：会话按 run_start 事件切分，与时间间隔无关——5 分钟内的两次调度也是两个会话。"""
     from module.server import log_stats
 
     log_root = tmp_path / "log"
     log_root.mkdir()
     (log_root / "2026-06-20_oas1.txt").write_text(
         "\n".join([
-            # 会话 0：账号 A
-            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
-            '2026-06-20 06:05:00.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
-            # 会话 1：间隔 20 分钟后再次运行
-            '2026-06-20 06:25:00.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
-            '2026-06-20 06:30:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+            # 会话 0：第一次调度（如凌晨只回礼）
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["returngift"]}',
+            '2026-06-20 06:02:00.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+            # 会话 1：仅 3 分钟后的第二次调度（如同心战斗），旧 gap 口径会被错误合并
+            '2026-06-20 06:05:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:05:01.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["alliedteam"]}',
+            '2026-06-20 06:07:00.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
         ]) + "\n",
         encoding="utf-8",
     )
@@ -487,10 +489,99 @@ def test_multi_stats_splits_sessions_by_gap(tmp_path, monkeypatch):
 
     assert len(sessions) == 2
     assert sessions[0]["index"] == 0
-    assert sessions[0]["start_time"] == "2026-06-20 06:00:00.000"
-    assert sessions[0]["end_time"] == "2026-06-20 06:05:00.000"
-    assert sessions[0]["duration_seconds"] == pytest.approx(300.0)
-    assert sessions[0]["account_count"] == 1
+    assert sessions[0]["start_time"] == "2026-06-20 06:00:01.000"
     assert sessions[1]["index"] == 1
-    assert sessions[1]["start_time"] == "2026-06-20 06:25:00.000"
-    assert sessions[1]["account_count"] == 1
+    assert sessions[1]["start_time"] == "2026-06-20 06:05:01.000"
+    account = result["multi"]["accounts"][0]
+    assert [seg["session"] for seg in account["segments"]] == [0, 1]
+
+
+def test_multi_stats_run_end_closes_open_segment(tmp_path, monkeypatch):
+    """修复5：run_end 以事件时刻闭合未闭合运行段（覆盖正常结束与异常上抛路径）。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            # 账号未发 acc_end（异常上抛），run_end 应以 06:01:00 闭合运行段
+            '2026-06-20 06:00:30.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail","ok":false,"dur":29.0}',
+            '2026-06-20 06:01:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"run_end"}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    assert len(account["segments"]) == 1
+    assert account["segments"][0]["end_time"] == "2026-06-20 06:01:00.000"
+    assert account["duration_seconds"] == pytest.approx(59.0)
+
+
+def test_multi_stats_new_run_closes_leftover_segment_at_last_event(tmp_path, monkeypatch):
+    """需求1：硬中断（无 run_end）后重跑，遗留段以其最后事件时刻闭合，不跨会话计时。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:00:30.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_end","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail","ok":true,"dur":29.0}',
+            # 进程被杀，无 acc_end / run_end；10 分钟后手动重跑
+            '2026-06-20 06:10:00.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:10:01.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:12:00.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    assert len(account["segments"]) == 2
+    # 遗留段以最后事件时刻（06:00:30）闭合，属会话 0
+    assert account["segments"][0]["end_time"] == "2026-06-20 06:00:30.000"
+    assert account["segments"][0]["session"] == 0
+    assert account["segments"][1]["session"] == 1
+    assert account["duration_seconds"] == pytest.approx(29.0 + 119.0)
+
+
+def test_multi_stats_battles_after_run_end_not_attributed(tmp_path, monkeypatch):
+    """审查发现：run_end 后其他任务（如 Orochi）的战斗边界不得归属到上一会话的账号。
+
+    场景：MultiAcc 最后一个子任务 task_end 丢失（异常上抛），run_end 之后
+    同一日志文件里出现其他任务的 GENERAL BATTLE START 边界。
+    """
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:00:02.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"task_start","acc":"a@x.com","char":"角色A","svr":"一区","task":"mail"}',
+            # mail 的 task_end 丢失，任务异常上抛后 run_end
+            '2026-06-20 06:00:30.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"run_end"}',
+            # 之后是其他任务（如 Orochi）的战斗日志
+            "───────────────────────────── GENERAL BATTLE START ─────────────────────────────",
+            '2026-06-20 06:01:00.000 | battle.py:0100 |     INFO | orochi battle line',
+            '2026-06-20 06:02:00.000 | battle.py:0101 |     INFO | orochi battle line 2',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    # 未修复时：陈旧的 _current_task_name 使战斗边界被武装，60 秒战斗错误累加到账号 A
+    assert account["battle_count"] == 0
+    assert account["battle_total_duration_seconds"] == pytest.approx(0.0)

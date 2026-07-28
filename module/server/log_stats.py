@@ -24,9 +24,6 @@ _TITLE_LINE_RE = re.compile(r"^─{10,}\s*(?P<title>.*?)\s*─{10,}\s*$")
 _BATTLE_TITLE = "GENERAL BATTLE START"
 _START_TITLE = "START"
 _STAT_PREFIX = "[STAT] "
-# 多号统计的会话切分阈值：相邻事件间隔超过该秒数视为一次新的 MultiAcc 运行会话。
-# 账号在会话内顺序切换间隔通常以秒计，跨会话手动重跑间隔通常在分钟以上，故取 10 分钟。
-MULTI_SESSION_GAP_SECONDS = 600.0
 
 
 def _format_multi_ts(ts: datetime | None) -> str | None:
@@ -418,11 +415,10 @@ class MultiStatAggregator:
         self._current_task_battle_duration: float = 0.0
         # 战斗开始时的账号归属快照：防止战斗中途 acc_start 切换 _active_key 导致耗时错账
         self._battle_owner_key: tuple[str, str, str] | None = None
-        # 运行段/会话追踪（change-B 需求6/需求2）
+        # 运行段/会话追踪：会话按 run_start 事件切分（一次调度 = 一个会话）
         self._open_account_key: tuple[str, str, str] | None = None  # 当前有未闭合运行段的账号
-        self._last_event_ts: datetime | None = None  # 上一条事件的时刻，用于会话间隔判定
         self._session_index: int = 0  # 当前会话索引
-        self._session_started: bool = False  # 是否已开启过会话
+        self._run_started: bool = False  # 是否已见到首个 run_start（首个保持索引 0，其后 +1）
 
     def consume_lines(self, lines: list[str]) -> None:
         """逐行扫描，提取 [STAT] JSON 事件并分发处理。
@@ -549,6 +545,13 @@ class MultiStatAggregator:
             self._open_account_key = None
             return
         self._close_open_segment(end_ts)
+
+    def _reset_task_context(self) -> None:
+        """清空子任务级追踪状态，防止跨运行会话的战斗错误归属。"""
+        self._current_task_name = None
+        self._current_task_start_ts = None
+        self._current_task_battle_count = 0
+        self._current_task_battle_duration = 0.0
 
     def _build_sessions_payload(self) -> list[dict[str, Any]]:
         """按运行段的会话索引聚合出每次 MultiAcc 运行会话的元数据（需求2）。"""
@@ -735,18 +738,24 @@ class MultiStatAggregator:
         """根据 STAT 事件类型更新账号聚合状态。"""
         ev = str(payload.get("ev", ""))
 
-        # 会话边界：任意事件与上一事件间隔超过阈值视为新的 MultiAcc 运行会话（需求2）。
-        # 检测放在每种事件之前，避免空闲后首个事件不是 acc_start 时把间隔提前刷新掉。
-        if (
-            self._session_started
-            and self._last_event_ts is not None
-            and (ts - self._last_event_ts).total_seconds() > MULTI_SESSION_GAP_SECONDS
-        ):
-            # 上一会话遗留的未闭合段以其最后活动时刻闭合，避免跨空闲段计入新会话
+        if ev == "run_start":
+            # 一次运行的开始边界：闭合上一会话遗留状态并推进会话索引（首个 run_start 保持 0）
+            self._close_active_battle()
             self._close_open_segment_pending()
-            self._session_index += 1
-        self._last_event_ts = ts
-        self._session_started = True
+            self._reset_task_context()
+            if self._run_started:
+                self._session_index += 1
+            self._run_started = True
+            return
+
+        if ev == "run_end":
+            # 一次运行的结束边界：以事件时刻闭合活跃战斗与未闭合运行段
+            self._close_active_battle()
+            self._close_open_segment(end_ts=ts)
+            # 清空子任务追踪状态：run_end 之后同一日志里其他任务（如 Orochi）的战斗边界
+            # 不得再武装战斗并错误归属到上一会话的账号（审查发现的跨会话泄漏口）
+            self._reset_task_context()
+            return
 
         if ev == "acc_start":
             key = self._event_key(payload)
