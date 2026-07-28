@@ -553,6 +553,26 @@ class MultiStatAggregator:
         self._current_task_battle_count = 0
         self._current_task_battle_duration = 0.0
 
+    def _begin_account_segment(self, payload: dict[str, Any], ts: datetime) -> None:
+        """以 ts 抢占闭合当前未闭合运行段，并为事件所属账号开启新运行段。"""
+        key = self._event_key(payload)
+        # 抢占闭合：上一账号未见结束标志时，以本次起点为终点闭合其运行段
+        self._close_open_segment(end_ts=ts)
+        # 确保账号聚合状态存在；重复开段仅新增运行段，不清零已累加的战斗/协作等字段
+        if key in self._accounts:
+            account = self._accounts[key]
+            self._active_key = key
+            self._pending_account = None
+        else:
+            account = self._create_account_state(payload, ts)
+        # 开启新运行段
+        account.segment_open_start = ts
+        account.segment_open_session = self._session_index
+        account.last_time = ts
+        if account.start_time is None:
+            account.start_time = ts
+        self._open_account_key = key
+
     def _build_sessions_payload(self) -> list[dict[str, Any]]:
         """按运行段的会话索引聚合出每次 MultiAcc 运行会话的元数据（需求2）。"""
         grouped: dict[int, dict[str, Any]] = {}
@@ -757,25 +777,24 @@ class MultiStatAggregator:
             self._reset_task_context()
             return
 
+        if ev == "switch_start":
+            # 切号起点：以此刻抢占闭合上一账号运行段，目标账号耗时（含切号）从此刻起算
+            self._begin_account_segment(payload, ts)
+            return
+
         if ev == "acc_start":
             key = self._event_key(payload)
-            # 抢占闭合：若有未闭合运行段（本账号上一段或上一账号未结束），以本次 acc_start 时刻为终点闭合
-            # 对应"下一个账号开始切换但没看到结束标志，也应结束上个账号耗时"的口径（需求6）
-            self._close_open_segment(end_ts=ts)
-            # 确保账号聚合状态存在；重复 acc_start 仅新增运行段，不清零已累加的战斗/协作等字段
-            if key in self._accounts:
+            if self._open_account_key == key and key in self._accounts:
+                # 正常路径：段已由 switch_start 开启，不关闭重开，保留切号耗时
                 account = self._accounts[key]
                 self._active_key = key
                 self._pending_account = None
-            else:
-                account = self._create_account_state(payload, ts)
-            # 开启新运行段
-            account.segment_open_start = ts
-            account.segment_open_session = self._session_index
-            account.last_time = ts
-            if account.start_time is None:
-                account.start_time = ts
-            self._open_account_key = key
+                account.last_time = ts
+                if account.start_time is None:
+                    account.start_time = ts
+                return
+            # 兜底路径（无 switch_start 的旧日志或异常流）：维持原有闭合重开行为
+            self._begin_account_segment(payload, ts)
             return
 
         account = self._account_for_event(payload, ts, create_placeholder=True)

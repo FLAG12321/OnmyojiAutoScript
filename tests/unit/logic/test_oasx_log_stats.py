@@ -585,3 +585,65 @@ def test_multi_stats_battles_after_run_end_not_attributed(tmp_path, monkeypatch)
     # 未修复时：陈旧的 _current_task_name 使战斗边界被武装，60 秒战斗错误累加到账号 A
     assert account["battle_count"] == 0
     assert account["battle_total_duration_seconds"] == pytest.approx(0.0)
+
+
+def test_multi_stats_switch_start_opens_segment_before_acc_start(tmp_path, monkeypatch):
+    """需求2：账号运行段从 switch_start（切号起点）起算，而非 acc_start（切号完成后）。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"run_start"}',
+            '2026-06-20 06:00:01.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"switch_start","acc":"a@x.com","char":"角色A","svr":"一区"}',
+            # 切号耗时 40 秒
+            '2026-06-20 06:00:41.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"switch","acc":"a@x.com","char":"角色A","svr":"一区","ok":true}',
+            '2026-06-20 06:00:42.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:01:42.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    # 单一运行段：acc_start 不得关闭重开 switch_start 已开启的段
+    assert len(account["segments"]) == 1
+    assert account["segments"][0]["start_time"] == "2026-06-20 06:00:01.000"
+    assert account["segments"][0]["end_time"] == "2026-06-20 06:01:42.000"
+    # 总耗时 101 秒 = 切号 41 秒 + 任务 60 秒
+    assert account["duration_seconds"] == pytest.approx(101.0)
+
+
+def test_multi_stats_failed_switch_retries_accumulate_to_target_account(tmp_path, monkeypatch):
+    """需求2：切号失败与重试的耗时也归属目标账号，多段累加。"""
+    from module.server import log_stats
+
+    log_root = tmp_path / "log"
+    log_root.mkdir()
+    (log_root / "2026-06-20_oas1.txt").write_text(
+        "\n".join([
+            '2026-06-20 06:00:00.000 | script_task.py:0001 |     INFO | [STAT] {"ev":"run_start"}',
+            # 第一次切号失败（耗时 70 秒后重试）
+            '2026-06-20 06:00:10.000 | script_task.py:0002 |     INFO | [STAT] {"ev":"switch_start","acc":"a@x.com","char":"角色A","svr":"一区"}',
+            '2026-06-20 06:01:00.000 | script_task.py:0003 |     INFO | [STAT] {"ev":"switch","acc":"a@x.com","char":"角色A","svr":"一区","ok":false}',
+            # 重试：第二个 switch_start 以自身时刻闭合上一段并开启新段
+            '2026-06-20 06:01:20.000 | script_task.py:0004 |     INFO | [STAT] {"ev":"switch_start","acc":"a@x.com","char":"角色A","svr":"一区"}',
+            '2026-06-20 06:01:50.000 | script_task.py:0005 |     INFO | [STAT] {"ev":"switch","acc":"a@x.com","char":"角色A","svr":"一区","ok":true}',
+            '2026-06-20 06:01:51.000 | script_task.py:0006 |     INFO | [STAT] {"ev":"acc_start","acc":"a@x.com","char":"角色A","svr":"一区","tasks":["mail"]}',
+            '2026-06-20 06:03:00.000 | script_task.py:0007 |     INFO | [STAT] {"ev":"acc_end","acc":"a@x.com","char":"角色A","svr":"一区","err_count":0}',
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_stats, "LOG_ROOT", log_root)
+
+    result = log_stats.LogStatsService().build_stats("oas1", date(2026, 6, 20))
+    account = result["multi"]["accounts"][0]
+
+    assert len(account["segments"]) == 2
+    # 第一段 06:00:10 → 06:01:20（70 秒），第二段 06:01:20 → 06:03:00（100 秒）
+    assert account["segments"][0]["duration_seconds"] == pytest.approx(70.0)
+    assert account["segments"][1]["duration_seconds"] == pytest.approx(100.0)
+    assert account["duration_seconds"] == pytest.approx(170.0)
