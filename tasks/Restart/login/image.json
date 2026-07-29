@@ -41,7 +41,7 @@
     "roiFront": "800,0,480,290",
     "roiBack": "800,0,480,290",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "description"
   },
   {
@@ -172,20 +172,20 @@
   },
   {
     "itemName": "login_courtyard2",
+    "imageName": "login_courtyard2.png",
     "roiFront": "1127,629,29,78",
     "roiBack": "1066,585,128,131",
-    "description": "description",
-    "imageName": "login_courtyard2.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "login_get_coupon",
+    "imageName": "login_get_coupon.png",
     "roiFront": "716,438,134,41",
     "roiBack": "471,306,560,269",
-    "description": "领取抵扣券",
-    "imageName": "login_get_coupon.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "领取抵扣券"
   }
 ]

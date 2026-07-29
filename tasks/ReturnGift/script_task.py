@@ -34,7 +34,13 @@ def parse_sr_count(text) -> int | None:
     if text is None:
         return None
     if isinstance(text, tuple):
-        return int(text[0]) if len(text) > 0 else None
+        if len(text) == 0:
+            return None
+        # DigitCounter识别不到内容时返回(0, 0, 0)，视为未识别而不是数量0
+        # 真实数量为0时OCR结果形如"0/30"，total不为0，不会被误判
+        if all(v == 0 for v in text):
+            return None
+        return int(text[0])
     text = str(text)
     if not text:
         return None
@@ -203,6 +209,12 @@ class ScriptTask(GameUi,ReturnGiftAssets):
                     continue
                 score, x, y, w, h = matches[0]
                 ocr_box = (x + OCR_DX, y + OCR_DY, OCR_W, OCR_H)
+                # 滑动距离不足时图标已出现但下方数量区域仍在屏幕外，
+                # 此时跳过计数，等下一轮滑动后数量完整显示再识别
+                screen_h = self.device.image.shape[0]
+                if ocr_box[1] + ocr_box[3] > screen_h:
+                    logger.info(f'{attr_name} 碎片数量区域超出屏幕底部，待下一轮滑动后识别')
+                    continue
                 ocr = self.build_sr_count_ocr(ocr_box)
                 count = None
                 ocr_text = ''

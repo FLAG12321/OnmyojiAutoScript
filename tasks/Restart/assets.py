@@ -105,7 +105,7 @@ class RestartAssets:
 	# 卷轴关闭区域点击(用户新增，用于点击I_LOGIN_SCROOLL_CLOSE的区域而不依赖图片识别) 
 	I_LOGIN_SCROLL_CLOSE_AREA = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_scroll_close_area.png")
 	# description 
-	I_LOGIN_RED_CLOSE = RuleImage(roi_front=(800,0,480,290), roi_back=(800,0,480,290), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_red_close.png")
+	I_LOGIN_RED_CLOSE = RuleImage(roi_front=(800,0,480,290), roi_back=(800,0,480,290), threshold=0.7, method="Template matching", file="./tasks/Restart/login/login_login_red_close.png")
 	# description 
 	I_LOGIN_YELLOW_CLOSE = RuleImage(roi_front=(29,17,46,44), roi_back=(0,0,94,86), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_yellow_close.png")
 	# 用于判断是否出现登录选区的 

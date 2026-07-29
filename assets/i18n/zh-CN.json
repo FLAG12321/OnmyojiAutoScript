@@ -361,7 +361,7 @@
   "thirteen_switch_help": "打魂十三时切换的御魂分组，格式：组号,队伍号（组1-7,队伍1-4），-1,-1表示不切换",
   "total_KekkaiUtilize_enable": "蹭卡",
   "total_alliedteam_ap_enable": "补充同心体力",
-  "total_alliedteam_battle_enable": "同心模式",
+  "total_alliedteam_battle_enable": "同心战斗模式",
   "total_buff_exp_100_click": "100%经验加成",
   "total_buff_exp_50_click": "50%经验加成",
   "total_cooperation_enable": "寻找协作",
