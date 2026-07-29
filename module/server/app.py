@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from module.logger import logger
 
 from module.server.home_router import home_app
+from module.server.i18n import I18n
 from module.server.script_router import script_app
 from module.server.log_router import log_app
 from module.server.stats_router import stats_app
@@ -80,6 +81,13 @@ async def on_startup():
     :return:
     """
     logger.info('OAS web service startup done')
+    # 启动时扫描 template 配置，把前端会用到但缺失翻译的 key 补进 assets/i18n/zh-CN.json；
+    # 任何异常只记日志，不阻塞服务启动
+    try:
+        template = mm.config_cache('template')
+        I18n.sync_missing_keys(template.gui_menu_list, template.model.script_task)
+    except Exception as e:
+        logger.error(f'i18n sync failed: {e}')
     if app.state.script_instances:
         await mm.restart_processes(app.state.script_instances)
 
