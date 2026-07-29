@@ -95,4 +95,5 @@ async def additional_translate() -> dict:
         return data
     except Exception as e:
         logger.error(e)
-    return {}
+    # 异常时也保证响应形状稳定（两语言字段齐全），避免前端解析中断
+    return {'en-US': {}, 'zh-CN': {}}
