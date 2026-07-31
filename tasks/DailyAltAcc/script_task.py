@@ -4,7 +4,17 @@
 import time
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import (
+    EmulatorNotRunningError,
+    GameBugError,
+    GameNotRunningError,
+    GamePageUnknownError,
+    GameStuckError,
+    GameTooManyClickError,
+    RequestHumanTakeover,
+    ScriptError,
+    TaskEnd,
+)
 
 from tasks.GameUi.page import page_main
 from tasks.GameUi.assets import GameUiAssets
@@ -19,6 +29,7 @@ from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiActivation.config import CardType
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 from tasks.DailyAltAcc.stat_log import StatEvent, StatLogMixin
+from tasks.MultiDailyAltAcc.progress import STATUS_DONE, STATUS_FAILED
 
 # Sub-tasks
 from tasks.DailyAltAcc.courtyard import Courtyard
@@ -39,15 +50,95 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                  SummonUp, Trialbattle, PublishSr,
                  Guild, WeeklyTrifles):
     account_info: dict = None
+    # 子任务进度存储，由 MultiDailyAltAcc 注入；单任务直跑时为 None（不做持久化）
+    _progress = None
+    # 当前账号在进度文件中的键
+    _progress_key: str = None
+    # 当前账号的同心战斗上限，仅用于异常邮件里报告「已打 N/M 场」
+    _alliedteam_limit: int = 0
+
+    # 设备级异常：不属于某个子任务的问题，必须上抛给账号级重试/调度级恢复，
+    # 不能标记 failed（否则会把可恢复的环境问题误判成子任务本身有病）。
+    # GameStuckError / GameTooManyClickError / GameBugError 由 script.py 捕获后
+    # task_call('Restart') 重启游戏，一旦在这里被吞掉，游戏会一直卡着，
+    # 后续子任务每个都超时抛错、逐个标 failed 并各发一封邮件。
+    # GamePageUnknownError 是页面持续无法识别（活动弹窗/更新公告等），同属
+    # 环境故障——吞掉会连锁误标所有后续子任务并把账号误判完成；
+    # ScriptError 是开发级错误，吞掉会掩盖 bug，维持旧行为直达 script.py。
+    # 若增删此清单，须同步 MultiDailyAltAcc.ScriptTask._DEVICE_LEVEL_ERRORS。
+    _DEVICE_LEVEL_ERRORS = (
+        GameNotRunningError,
+        RequestHumanTakeover,
+        GameStuckError,
+        GameTooManyClickError,
+        GameBugError,
+        EmulatorNotRunningError,
+        GamePageUnknownError,
+        ScriptError,
+    )
+
+    def _mark_progress(self, task_key: str, status: str, **extra) -> bool:
+        """写子任务进度；没有注入 store 或写入异常都不影响任务流程。"""
+        if self._progress is None or not self._progress_key:
+            return False
+        try:
+            return self._progress.mark_task(self._progress_key, task_key, status, **extra)
+        except Exception:
+            logger.exception('写子任务进度失败')
+            return False
+
+    def _mark_progress_false(self, task_key: str) -> None:
+        """记录一次显式返回 False；达到上限迁移 skipped 时记一条 warning。
+
+        skipped 不发通知——它不是异常，而是「多次尝试后判定本阶段无事可做」，
+        发邮件会在空邮箱/无奖励的正常日子里天天刷屏。
+        """
+        if self._progress is None or not self._progress_key:
+            return
+        try:
+            if self._progress.mark_task_false(self._progress_key, task_key):
+                logger.warning(f'子任务 {task_key} 连续多次未完成，本阶段不再重试（skipped）')
+        except Exception:
+            logger.exception('写子任务 False 计数失败')
+
+    def _should_skip(self, task_key: str) -> bool:
+        """该子任务在本阶段是否已了结（done / failed / skipped），已了结则跳过。"""
+        if self._progress is None or not self._progress_key:
+            return False
+        try:
+            return self._progress.is_task_finished(self._progress_key, task_key)
+        except Exception:
+            logger.exception('读取子任务进度失败，按未完成处理')
+            return False
+
+    def _notify_task_failed(self, task_key: str, error: Exception) -> None:
+        """子任务首次失败时推送通知，说明本轮后续接续会跳过它。"""
+        lines = [f'子任务：{task_key}']
+        if task_key == 'alliedteam' and self._progress is not None:
+            done = self._progress.get_battle_count(self._progress_key)
+            lines.append(f'已打场次：{done}/{self._alliedteam_limit}')
+        lines.append(f'异常：{error.__class__.__name__} - {str(error).splitlines()[0] if str(error) else ""}')
+        lines.append('本轮后续接续将跳过该子任务')
+        lines.append(f'如需重试请删除进度文件：{getattr(self._progress, "path", "")}')
+        try:
+            self.config.notifier.push(content='\n'.join(lines), title='子任务异常已跳过')
+        except Exception:
+            logger.exception('推送子任务异常通知失败')
 
     def _run_with_stat(self, task_key: str, func, *args, **kwargs):
-        """记录子任务起止；异常时补充统计日志但不改变原控制流。"""
+        """记录子任务起止与进度。
+
+        业务异常（UI 卡死、OCR 失败等）不再炸掉整个账号：标记 failed、发一封
+        通知后吞掉异常返回 None，让 run() 继续执行该账号的下一个子任务。
+        设备级异常仍原样上抛。
+        """
         start_time = time.time()
         self.emit_stat(StatEvent.TASK_START, task=task_key)
         try:
             result = func(*args, **kwargs)
         except TaskEnd:
-            # TaskEnd 是部分子任务的正常结束信号，交给原有外层逻辑处理。
+            # TaskEnd 是部分子任务的正常结束信号，算完成，交给原有外层逻辑处理。
+            self._mark_progress(task_key, STATUS_DONE)
             self.emit_stat(
                 StatEvent.TASK_END,
                 task=task_key,
@@ -55,7 +146,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 dur=round(time.time() - start_time, 3),
             )
             raise
-        except Exception as e:
+        except self._DEVICE_LEVEL_ERRORS as e:
+            # 设备级异常不归因到子任务，不标记进度，直接上抛
             self.emit_stat(
                 StatEvent.ERROR,
                 task=task_key,
@@ -69,10 +161,40 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 dur=round(time.time() - start_time, 3),
             )
             raise
+        except Exception as e:
+            emsg = str(e).splitlines()[0] if str(e) else ""
+            self.emit_stat(
+                StatEvent.ERROR,
+                task=task_key,
+                etype=e.__class__.__name__,
+                emsg=emsg,
+            )
+            self.emit_stat(
+                StatEvent.TASK_END,
+                task=task_key,
+                ok=False,
+                dur=round(time.time() - start_time, 3),
+            )
+            # 未注入 store（单任务直跑）时维持旧行为原样上抛：
+            # 此时无进度可标、无跳过机制，吞掉会让故障从「显式报错」变成静默成功
+            if self._progress is None or not self._progress_key:
+                raise
+            logger.error(f'子任务 {task_key} 执行异常，已标记跳过: {e}')
+            # 首次「未失败 → failed」迁移才发通知，避免每轮重调度重复轰炸
+            if self._mark_progress(task_key, STATUS_FAILED, etype=e.__class__.__name__, emsg=emsg):
+                self._notify_task_failed(task_key, e)
+            return None
+        # 显式返回 False 表示业务上未完成（如 courtyard 进入超时）：不标 done
+        # （否则接续时被跳过导致漏领奖励），交给 False 计数决定保持 pending
+        # 重跑一次，还是达到上限迁移 skipped（避免无奖可领时账号永远无法收尾）。
+        if result is not False:
+            self._mark_progress(task_key, STATUS_DONE)
+        else:
+            self._mark_progress_false(task_key)
         self.emit_stat(
             StatEvent.TASK_END,
             task=task_key,
-            ok=True,
+            ok=result is not False,
             dur=round(time.time() - start_time, 3),
         )
         return result
@@ -112,8 +234,12 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
 
-        if con.daily_alt_acc_config.courtyard_enable:
-            if not self._run_with_stat("courtyard", self.run_courtyard):
+        if con.daily_alt_acc_config.courtyard_enable and not self._should_skip("courtyard"):
+            courtyard_result = self._run_with_stat("courtyard", self.run_courtyard)
+            # 仅当庭院明确返回 False（业务上未完成）才走回主界面补救；
+            # 业务异常已被 _run_with_stat 吞掉并返回 None，此时游戏可能仍卡着，
+            # 不能进入这个没有超时的补救循环。
+            if courtyard_result is False:
                 while 1:
                     self.screenshot()
                     if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
@@ -127,20 +253,20 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                     self.ui_goto(page_main)
                 
             delay_time += 10
-        if con.daily_alt_acc_config.mail_enable:
+        if con.daily_alt_acc_config.mail_enable and not self._should_skip("mail"):
             self._run_with_stat("mail", self.run_mail)
             delay_time += 5
-        if con.daily_alt_acc_config.cooperation_enable:
+        if con.daily_alt_acc_config.cooperation_enable and not self._should_skip("cooperation"):
             self._run_with_stat("cooperation", self.run_cooperation)
             delay_time += 3
-        if con.daily_alt_acc_config.donatejade_enable:
+        if con.daily_alt_acc_config.donatejade_enable and not self._should_skip("donatejade"):
             self._run_with_stat("donatejade", self.run_donatejade)
             delay_time += 10
-        if con.daily_alt_acc_config.returngift_enable:
+        if con.daily_alt_acc_config.returngift_enable and not self._should_skip("returngift"):
             if delay_time < 10:
                 time.sleep(10-delay_time)
             self._run_with_stat("returngift", self.run_returngift)
-        if con.daily_alt_acc_config.weekaward_enable:
+        if con.daily_alt_acc_config.weekaward_enable and not self._should_skip("weekaward"):
             def run_weekaward():
                 """执行寮商店、寮商城和分享领取，作为 weekaward 统计单元。"""
                 xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
@@ -148,19 +274,19 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 self.execute_mall()
                 self._share_collect()
             self._run_with_stat("weekaward", run_weekaward)
-        if con.daily_alt_acc_config.mysteryshop_enable:
+        if con.daily_alt_acc_config.mysteryshop_enable and not self._should_skip("mysteryshop"):
             self._run_with_stat("mysteryshop", self.run_mysteryshop)
             # 执行挂卡（只执行核心逻辑，避免TaskEnd）
-        if con.daily_alt_acc_config.tree_planting_enable > 0:
+        if con.daily_alt_acc_config.tree_planting_enable > 0 and not self._should_skip("tree"):
             self._run_with_stat("tree", self.run_tree_planting)
-        if con.daily_alt_acc_config.trialbattle_enable:
+        if con.daily_alt_acc_config.trialbattle_enable and not self._should_skip("trialbattle"):
             self._run_with_stat("trialbattle", self.run_trialbattle)
-        if con.daily_alt_acc_config.summon_up_enable:
+        if con.daily_alt_acc_config.summon_up_enable and not self._should_skip("summon_up"):
             self._run_with_stat("summon_up", self.run_summon_up)
-        if con.daily_alt_acc_config.publish_sr_enable:
+        if con.daily_alt_acc_config.publish_sr_enable and not self._should_skip("publish_sr"):
             self._run_with_stat("publish_sr", self.run_publish_sr)
 
-        if con.daily_alt_acc_config.kekkaiActivation_enable:
+        if con.daily_alt_acc_config.kekkaiActivation_enable and not self._should_skip("kekkaiActivation"):
             try:
                 activation_task = KekkaiActivation(self.config, self.device)
                 activation_conf=activation_task.config.kekkai_activation.activation_config
@@ -173,7 +299,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 self._run_with_stat("kekkaiActivation", activation_task.run)
             except TaskEnd:
                 pass  # 忽略挂卡任务的结束信号
-        if con.daily_alt_acc_config.KekkaiUtilize_enable:    
+        if con.daily_alt_acc_config.KekkaiUtilize_enable and not self._should_skip("KekkaiUtilize"):
             # 执行蹭卡
             try:
                 utilize_task = KekkaiUtilize(self.config, self.device)
@@ -199,7 +325,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                         # 直接将消息添加到当前任务的消息列表中
                         self.msg.append(msg_item)
                 pass  # 如果蹭卡任务也有TaskEnd，也需要处理
-        if con.daily_alt_acc_config.alliedteam_battle_enable or con.daily_alt_acc_config.alliedteam_ap_enable:
+        if (con.daily_alt_acc_config.alliedteam_battle_enable or con.daily_alt_acc_config.alliedteam_ap_enable) \
+                and not self._should_skip("alliedteam"):
             self._run_with_stat("alliedteam", self.run_alliedteam, con.daily_alt_acc_config.alliedteam_battle_enable, con.daily_alt_acc_config.alliedteam_ap_enable)
 
         self.set_next_run(task='DailyAltAcc', finish=True, success=True)
