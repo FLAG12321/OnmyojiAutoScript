@@ -182,6 +182,13 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         """将SR碎片统计结果写入 logs/sr_count.json，格式为 [{"name": "I_SR_X", "count": N}, ...]"""
         with open(self.sr_count_output_path(), 'w', encoding='utf-8') as f:
             json.dump(items, f, ensure_ascii=False, indent=2)
+
+        # 删除旧的发布队列，避免 DailyAltAcc 使用过期数据
+        sr_cnt_file = Path('logs/sr_cnt.json')
+        if sr_cnt_file.exists():
+            sr_cnt_file.unlink()
+            logger.info(f'已删除旧的发布队列 {sr_cnt_file}')
+
         return items
 
     def count_sr_fragments(self) -> list[dict]:

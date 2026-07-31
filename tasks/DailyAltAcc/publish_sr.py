@@ -55,12 +55,21 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         indexed.sort(key=lambda iv: (-iv[1]['count'], -iv[0]))
         return [v for _, v in indexed]
     def _screenshot_sr(self):
+        """进入祈愿(碎片)页保存截图供人工核查；发布失败时先关掉残留弹窗再导航"""
         retry_count = 0
         screenshot_flag = False
         while retry_count < 5:
             self.screenshot()
             if screenshot_flag == True and self.appear_then_click(self.I_UI_BACK_RED,interval=1):
                 return True
+            # 发布失败可能停在「取消发布」二次确认弹窗，先确认取消回到碎片列表
+            if self.appear(self.I_PAGE_PUBLISH_CANCEL):
+                self.ui_click_until_disappear(self.I_PUBLISH_CANCEL_ENSURE, interval=1)
+                continue
+            # 发布失败也可能停在碎片发布详情页，用红色返回键退出
+            if self.appear(self.I_PAGE_PUBLISH) and self.appear_then_click(self.I_H_BACK_RED, interval=1):
+                time.sleep(1)
+                continue
             if self.appear_then_click(self.I_TO_PAGE_PIECE, interval=1):
                 time.sleep(1)
                 continue
@@ -101,18 +110,20 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
 
             empty_swipes = 0
             top = queue[matched_index]
-            if self._do_publish_sr(top['name']):
+            publish_success = self._do_publish_sr(top['name'])
+
+            if publish_success:
                 top['count'] -= 1
                 if top['count'] <= 0:
                     queue.pop(matched_index)
                 queue = self._sort_queue(queue)
                 self._write_queue(queue)
-                self._screenshot_sr()
             else:
-                logger.info(f'发布 SR 碎片: {top["name"]} 失败')
+                logger.warning(f'发布 SR 碎片: {top["name"]} 失败，进入祈愿页保存当前状态截图')
+
+            # 无论成功失败，都进入祈愿页截图供人工核查
+            self._screenshot_sr()
             time.sleep(1)
-            self.screenshot()
-            self.appear_then_click(self.I_H_BACK_RED, interval=1)
             break
     def _find_first_match(self, queue: list[dict]) -> int | None:
         """截图一次后遍历队列，返回首个命中模板的索引；全部未命中返回 None"""
