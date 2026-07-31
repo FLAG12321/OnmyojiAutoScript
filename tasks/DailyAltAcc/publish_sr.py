@@ -23,6 +23,14 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
     SR_CNT_LOCK_FILE = Path(str(SR_CNT_FILE) + '.lock')
     # 一次发布需要消耗的碎片数
     PER_PUBLISH = 99
+    # 滑动后等待列表惯性滚动停止的时间，避免模板匹配到漂移中的坐标
+    SWIPE_SETTLE_WAIT = 1.5
+    # 阶段1（点击碎片进入发布页）超时；取消祈愿后列表重排需要更多时间找回目标
+    ENTER_PUBLISH_TIMEOUT = 8
+    # 阶段1连续未命中多久后尝试滑动找回目标
+    ENTER_PUBLISH_SWIPE_AFTER = 3
+    # 阶段1为找回目标最多滑动的次数
+    ENTER_PUBLISH_SWIPE_LIMIT = 2
 
     def run_publish_sr(self):
         """发布SR碎片入口：已有队列则续做，否则从统计文件构建"""
@@ -138,12 +146,14 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         return None
 
     def _swipe_page(self):
-        """向下滑动碎片列表页"""
+        """向下滑动碎片列表页；滑动后列表存在惯性滚动，需等画面稳定再匹配"""
         self.device.click_record_clear()
         p1 = (650, 520)
         p2 = (650, 350)
         logger.info('Swipe %s -> %s, 2S' % (point2str(*p1), point2str(*p2)))
         self.device.swipe_adb(p1, p2, duration=2)
+        # 惯性未停时模板匹配到的坐标会漂移，点击会落空，故等待列表停稳
+        time.sleep(self.SWIPE_SETTLE_WAIT)
 
     def _do_publish_sr(self, name: str):
         """执行单次SR碎片发布"""
@@ -154,7 +164,10 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
             return False
         logger.info(f'发布 SR 碎片: {name}')
         start_time = time.time()
-        while (time.time()-start_time < 5):
+        # 取消祈愿后列表会重排、目标可能滚出可见区域，故超时放宽并支持滑动找回
+        last_seen_time = time.time()
+        swipe_count = 0
+        while (time.time()-start_time < self.ENTER_PUBLISH_TIMEOUT):
             self.screenshot()
             if self.appear(self.I_PAGE_PUBLISH):
                 logger.info(f'选择发布个数: {name}')
@@ -162,12 +175,26 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
             if self.appear(self.I_PAGE_PUBLISH_CANCEL):
                 self.ui_click_until_disappear(self.I_PUBLISH_CANCEL_ENSURE,interval=1)
                 ReturnGiftScriptTask._goto_return_gift_page(self)
+                # 重新导航回碎片页后列表仍在渲染，等稳定再匹配
+                time.sleep(self.SWIPE_SETTLE_WAIT)
                 start_time = time.time()
+                last_seen_time = time.time()
+                swipe_count = 0
                 continue
             if self.appear_then_click(rule,interval=1):
                 start_time = time.time()
+                last_seen_time = time.time()
                 continue
-        if time.time()-start_time >= 5:
+            # 连续匹配不到目标：滑动翻页找回，避免在空白页面干等到超时
+            if (time.time()-last_seen_time >= self.ENTER_PUBLISH_SWIPE_AFTER
+                    and swipe_count < self.ENTER_PUBLISH_SWIPE_LIMIT):
+                logger.info(f'{name} 连续未命中，滑动列表重试({swipe_count + 1}/{self.ENTER_PUBLISH_SWIPE_LIMIT})')
+                self._swipe_page()
+                swipe_count += 1
+                last_seen_time = time.time()
+                start_time = time.time()
+                continue
+        if time.time()-start_time >= self.ENTER_PUBLISH_TIMEOUT:
             return False
         start_time = time.time()
         while (time.time()-start_time < 5):
