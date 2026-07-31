@@ -17,8 +17,8 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
 
     # 输入：碎片数量统计
     SR_COUNT_FILE = Path('logs/sr_count.json')
-    # 输出/续做：可发布次数队列
-    SR_CNT_FILE = Path(__file__).resolve().parent / 'sr_cnt.json'
+    # 输出/续做：可发布次数队列，与输入统计文件放在同一目录
+    SR_CNT_FILE = SR_COUNT_FILE.parent / 'sr_cnt.json'
     # 多实例读写队列文件时使用的进程级文件锁
     SR_CNT_LOCK_FILE = Path(str(SR_CNT_FILE) + '.lock')
     # 一次发布需要消耗的碎片数
