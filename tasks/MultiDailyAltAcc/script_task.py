@@ -5,12 +5,23 @@ import threading
 import json
 from pathlib import Path
 
-from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError
+from module.exception import (
+    EmulatorNotRunningError,
+    GameBugError,
+    GameNotRunningError,
+    GamePageUnknownError,
+    GameStuckError,
+    GameTooManyClickError,
+    RequestHumanTakeover,
+    ScriptError,
+    TaskEnd,
+)
 from module.logger import logger
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.MultiDailyAltAcc import DailyAltAccEx
 from tasks.MultiDailyAltAcc.assets import MultiDailyAltAccAssets
-from tasks.MultiDailyAltAcc.config import AccountInfo, MultiDailyAltAcc, ExtendedAccountInfo
+from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc, ExtendedAccountInfo
+from tasks.MultiDailyAltAcc.progress import ProgressStore, acc_key, phase_flags_of, phase_id_of
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyAltAcc.config import MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent, StatLogMixin
@@ -19,8 +30,29 @@ from script import Script
 
 class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     daily_conf: MultiDailyAltAcc = None
+    # 子任务进度存储，run() 中按配置实例创建
+    _progress: ProgressStore = None
     # 添加一个类级别的锁，用于同步关机操作
     _shutdown_lock = threading.Lock()
+
+    # 设备级异常：必须穿透到 script.py 的 Restart / 人工接管恢复逻辑，
+    # 任何一层被宽泛 except Exception 吞掉，游戏都会一直卡着、后续账号连环失败。
+    # 与 DailyAltAcc.ScriptTask._DEVICE_LEVEL_ERRORS 保持同一清单，增删须两边同步。
+    _DEVICE_LEVEL_ERRORS = (
+        GameNotRunningError,
+        RequestHumanTakeover,
+        GameStuckError,
+        GameTooManyClickError,
+        GameBugError,
+        EmulatorNotRunningError,
+        GamePageUnknownError,
+        ScriptError,
+    )
+    # 账号循环用的清单：GameNotRunningError 有单独分支处理切号崩溃语义，排除之。
+    # 从 _DEVICE_LEVEL_ERRORS 派生，避免两份清单漂移。
+    _DEVICE_LEVEL_ERRORS_IN_LOOP = tuple(
+        e for e in _DEVICE_LEVEL_ERRORS if e is not GameNotRunningError
+    )
 
     def run(self):
         import os
@@ -36,18 +68,28 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             self.emit_stat(StatEvent.RUN_START)
             # 加载配置，获取returngift_enable状态
             self.daily_conf = self.config.multi_daily_alt_acc
-            returngift_enable = self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable
+            base_config = self.daily_conf.multi_daily_alt_acc_config
+            returngift_enable = base_config.total_returngift_enable
             # 更新进度文件中的returngift_enable状态
             self._update_task_returngift_enable(config_name, returngift_enable)
-            
-            login_time = self.daily_conf.multi_daily_alt_acc_config.need_login_time
-            sup_account_list = self._get_sorted_accounts(login_time)
-            
+
+            # 建立子任务进度：开关快照与上次一致则接续（失败重调度/崩溃重启），
+            # 不一致说明上轮已成功并安排了新阶段，旧进度作废重建。
+            self._progress = ProgressStore(config_name)
+            self._progress.ensure_phase(
+                phase_flags_of(base_config), phase_id_of(self.start_time)
+            )
+
+            sup_account_list = self._get_sorted_accounts()
+
+            # 记录本轮是否有账号因异常走了失败调度（原结构 except 里调度后 break
+            # 不上抛，会继续处理后续账号并落到尾部，必须用标志避免成功收尾覆盖失败调度）
+            phase_failed = False
             for accountInfo in sup_account_list:
-                    
+
                 max_retries = 3
                 retry_count = 0
-                
+
                 while retry_count < max_retries:
                     try:
                         if self._process_single_account(accountInfo):
@@ -58,42 +100,56 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                             if retry_count < max_retries:
                                 logger.info(f"Account {accountInfo.character} failed, retrying ({retry_count}/{max_retries})...")
                             else:
-                                logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")            
+                                logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")
+                                phase_failed = True
                     except GameNotRunningError as e:
                         if "Game crashed to desktop while switching account" not in str(e):
+                            # 这条 raise 路径走不到尾部 phase_failed 分流，必须先安排
+                            # 10 分钟退避；否则 Restart 后 next_run 仍在过去，立即紧密重试。
+                            self.next_run("MultiDailyAltAcc", success=False)
                             raise GameNotRunningError("Game Not Running")
                         logger.error(f"Error processing account {accountInfo.character}: {e}")
                         self.config.notifier.push(
                             content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",
                             title="ERROR"
                         )
-                        # 仅切换账号测活失败按账号任务失败处理，避免影响任务开始前的全局游戏未启动检测
-                        self.daily_conf.multi_daily_alt_acc_config.need_login = False
-                        if not self.daily_conf.multi_daily_alt_acc_config.need_login_time == self.start_time:
-                            self.daily_conf.multi_daily_alt_acc_config.need_login_time = login_time
-                        self.save_config()
-                        self.next_run("MultiDailyAltAcc", success=False)
+                        # 仅切换账号测活失败按账号任务失败处理，避免影响任务开始前的全局游戏未启动检测。
+                        # 进度文件保留，10 分钟后重调度时只补未完成的账号与子任务。
+                        phase_failed = True
                         Script.save_error_log(self)
                         break
+                    except self._DEVICE_LEVEL_ERRORS_IN_LOOP:
+                        # 设备级异常必须继续穿透到 script.py 的 Restart / 人工接管逻辑。
+                        # 这条路径走不到尾部 phase_failed 分流，先安排 10 分钟退避，
+                        # 保留进度文件后原样上抛。
+                        self.next_run("MultiDailyAltAcc", success=False)
+                        Script.save_error_log(self)
+                        raise
                     except Exception as e:
                         logger.error(f"Error processing account {accountInfo.character}: {e}")
                         self.config.notifier.push(
-                            content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",  
+                            content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",
                             title="ERROR"
                         )
-                        self.daily_conf.multi_daily_alt_acc_config.need_login = False
-                        if not self.daily_conf.multi_daily_alt_acc_config.need_login_time == self.start_time:   
-                            self.daily_conf.multi_daily_alt_acc_config.need_login_time = login_time
-                        self.save_config()
-                        self.next_run("MultiDailyAltAcc", success=False)
-                        Script.save_error_log(self) 
-                        if e.__class__.__name__ == "RequestHumanTakeover": 
-                            raise RequestHumanTakeover("RequestHumanTakeover")
+                        # 非设备级账号异常保留进度，留给下一轮接续
+                        phase_failed = True
+                        Script.save_error_log(self)
+                        break
             self._notify_daily_completion()
-            # 检查是否需要关机
-            if self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish and self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
-                self._coordinated_shutdown_system(config_name)
-            self.next_run("MultiDailyAltAcc", success=True)
+            if phase_failed:
+                # 有账号失败：保留进度文件，10 分钟后重调度接续未完成部分
+                self.next_run("MultiDailyAltAcc", success=False)
+            else:
+                # 检查是否需要关机
+                if self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish and self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
+                    self._coordinated_shutdown_system(config_name)
+                # 先安排下一阶段（_schedule_* 改写开关并落盘），最后才删进度文件：
+                # 若反过来先删，进程在开关落盘前被杀会导致「开关没变 + 进度没了」，
+                # 下次启动重建进度把刚完成的阶段整个重跑（同心战斗重打 13 场）。
+                # 反向窗口（开关已改、clear 前崩溃）由快照不一致自动重建兜底，无害。
+                self.next_run("MultiDailyAltAcc", success=True)
+                if self._progress is not None:
+                    self._progress.clear()
         finally:
             try:
                 # 本次运行的结束边界：正常结束与异常上抛均会发出，供后端闭合运行段
@@ -267,18 +323,18 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         """执行系统关机操作（旧版本，保持向后兼容）"""
         self._execute_shutdown()
 
-    def _get_sorted_accounts(self, login_time):
-        """获取按最后完成时间排序的账号列表，先剔除不需要处理的账号，再按账号分组排序"""
+    def _get_sorted_accounts(self):
+        """获取按最后完成时间排序的账号列表，先剔除已完成的账号，再按账号分组排序"""
         if not self.daily_conf.sup_account_list:
             return []
-        
+
         from collections import defaultdict
         from datetime import datetime
-        
-        # 第一步：剔除不需要处理的账号（need_login为False时，已完成的不需要再登录）
+
+        # 第一步：剔除本阶段已完成的账号（依据持久化进度，而非登录时间推断）
         filtered_accounts = []
         for account_info in self.daily_conf.sup_account_list:
-            if not self._should_process_account(account_info, login_time):
+            if not self._should_process_account(account_info):
                 logger.info(f"Filtering out account {account_info.character} (already completed)")
                 continue
             filtered_accounts.append(account_info)
@@ -324,14 +380,22 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         
         return result
 
-    def _should_process_account(self, account_info, login_time):
-        """判断是否应该处理该账号"""
-        logger.info(f"account {account_info.character} need_login: {self.daily_conf.multi_daily_alt_acc_config.need_login}")
-        #logger.info(f"need_login: {self.daily_conf.multi_daily_alt_acc_config.need_login}")
-        if not self.daily_conf.multi_daily_alt_acc_config.need_login and not self.is_need_login(account_info, login_time):
-            logger.warning(f"{account_info.character} Skipped last Login Time: {account_info.last_complete_time}")
-            return False
-        return True
+    def _progress_key_of(self, account_info) -> str:
+        """账号在进度文件中的键。"""
+        return acc_key(account_info.account, account_info.character, account_info.svr)
+
+    def _should_process_account(self, account_info):
+        """判断是否应该处理该账号：完全依据持久化进度，不再比较登录时间。"""
+        if self._progress is None:
+            return True
+        try:
+            done = self._progress.is_account_done(self._progress_key_of(account_info))
+        except Exception:
+            logger.exception('读取账号进度失败，按未完成处理')
+            return True
+        if done:
+            logger.info(f"{account_info.character} 本阶段已完成，跳过")
+        return not done
 
     def _process_single_account(self, account_info):
         """处理单个账号的逻辑"""
@@ -467,23 +531,27 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         return success
 
     def _execute_daily_tasks(self, config, account_info):
-        """执行日常任务"""
+        """执行日常任务；设备级异常必须穿透到 script.py 的恢复逻辑。"""
         # 创建子任务实例
         dff = self._create_task_instance(config, account_info)
 
         try:
             dff.run()
-            self._emit_account_end(account_info, err_count=0)
-            return True
-        except TaskEnd as msg:
-            success = self._handle_task_end(msg, account_info)
+            # 正常返回虽不是当前主路径，仍按相同规则收尾，避免遗漏账号完成判断
+            success = self._finalize_account_progress(account_info, config)
             self._emit_account_end(account_info, err_count=0 if success else 1)
             return success
-        except RequestHumanTakeover:
-            self._emit_account_error(account_info, None, RequestHumanTakeover("RequestHumanTakeover"))
+        except TaskEnd as msg:
+            success = self._handle_task_end(msg, account_info, config)
+            self._emit_account_end(account_info, err_count=0 if success else 1)
+            return success
+        except self._DEVICE_LEVEL_ERRORS as e:
+            # _run_with_stat 已判定为设备级异常；这里不得再被宽泛 Exception 吞成 False，
+            # 否则 GameStuckError 到不了 script.py 的 task_call('Restart')。
+            self._emit_account_error(account_info, None, e)
             self._emit_account_end(account_info, err_count=1)
             Script.save_error_log(self)
-            raise RequestHumanTakeover
+            raise
         except Exception as e:
             logger.error(f"Error in daily tasks for {account_info.character}: {e}")
             self._emit_account_error(account_info, None, e)
@@ -506,7 +574,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         wq = WQEX(**kwargs)
         return wq
     def _create_task_instance(self, config, source_account_info):
-        """创建任务实例，并注入统计日志的账号上下文。"""
+        """创建任务实例，并注入统计日志的账号上下文与子任务进度上下文。"""
         dff = self.CreatObjectFromModule("DailyAltAcc", config=self.config, device=self.device)
         dff.daily_conf = self.daily_conf
         dff.account_info = config
@@ -515,11 +583,37 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             "char": source_account_info.character,
             "svr": source_account_info.svr,
         }
+        # 注入进度上下文：子任务据此标记 done/failed/skipped 并接续同心战斗场次
+        dff._progress = self._progress
+        dff._progress_key = self._progress_key_of(source_account_info)
+        dff._alliedteam_limit = config.alliedteam_limit_count
         return dff
-    def _handle_task_end(self, msg, account_info):
-        """处理任务结束消息"""
+
+    def _finalize_account_progress(self, account_info, account_config) -> bool:
+        """仅当本轮所有启用子任务均已了结时，才标记账号完成。
+
+        done / failed / skipped 都算已了结；首次返回 False 的子任务保持 pending，
+        账号返回 False 触发当前进程内重试。重试时已了结子任务自动跳过，只补 pending。
+        """
+        if self._progress is not None:
+            key = self._progress_key_of(account_info)
+            enabled_tasks = self._enabled_task_keys(account_config)
+            if self._progress.has_pending_tasks(key, enabled_tasks):
+                logger.warning(f"{account_info.character} 仍有未完成子任务，保留进度并重试")
+                return False
+            self._progress.mark_account_done(key)
+
+        # last_complete_time 仅用于排序与展示，不再参与完成判定
+        self.daily_conf.update_account_login_history(account_info)
+        # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+        self.save_config()
+        return True
+
+    def _handle_task_end(self, msg, account_info, account_config):
+        """处理任务结束消息；网络错误先返回 False，其余按子任务进度决定账号完成。"""
         logger.info(f"TaskEnd received: {msg.args}")
-        
+
         if msg.args and msg.args != []:
             logger.info(f"Message count: {len(msg.args)}")
             for item in msg.args[0]:
@@ -527,18 +621,11 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 if len(item) >= 2:
                     msg_type = item[0]  # MSGType
                     msg_content = item[1]  # Content
-                    
+
                     if self._process_message_type(msg_type, msg_content, account_info):
                         return False  # 如果是网络错误，需要重试
-                        
-        # 更新账号登录历史
-        # 更新配置文件中的时间
-        self.daily_conf.update_account_login_history(account_info)
-        # 将修改后的 daily_conf 同步回主配置模型,确保保存时包含最新数据
-        self.config.model.multi_daily_alt_acc = self.daily_conf
-        self.daily_conf.multi_daily_alt_acc_config.need_login_time = self.start_time
-        self.save_config()
-        return True
+
+        return self._finalize_account_progress(account_info, account_config)
 
     def _process_message_type(self, msg_type, msg_content, account_info):
         """处理不同类型的消息"""
@@ -586,16 +673,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             logger.info(f"Account: {info.character}, Last time: {info.last_complete_time}")
             
         #self.config.notifier.push(content="Daily任务执行完毕", title="任务提醒")
-
-    def is_need_login(self, item: AccountInfo, last_complete_time: datetime):
-        """
-        根据上次登陆时间判断是否需要登录查找
-        @param item: 账号信息
-        @param last_complete_time: 需要比较的时间
-        """
-        #logger.info(f"Account: {item.character}, Last completion time: {item.last_complete_time}, Login time: {last_complete_time}")
-        last_time = item.last_complete_time
-        return last_complete_time > last_time
 
     def save_config(self):
         """保存配置"""
@@ -649,7 +726,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
-        self.daily_conf.multi_daily_alt_acc_config.need_login = True
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
 
@@ -667,7 +743,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
             self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
             self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
-            self.daily_conf.multi_daily_alt_acc_config.need_login = True
             self._reset_one_shot_flags()
             self.config.model.multi_daily_alt_acc = self.daily_conf
 
@@ -683,7 +758,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
-        self.daily_conf.multi_daily_alt_acc_config.need_login = True
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
 
@@ -700,7 +774,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
-        self.daily_conf.multi_daily_alt_acc_config.need_login = True
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
         self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))

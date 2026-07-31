@@ -111,23 +111,33 @@ def test_multi_switch_to_account_emits_switch_start_before_switch(monkeypatch):
 
 
 def test_multi_run_emits_run_start_and_run_end(monkeypatch):
+    from datetime import datetime as _dt
+
     from module.exception import TaskEnd
     from tasks.MultiDailyAltAcc import script_task as mod
 
     events = []
     monkeypatch.setattr(mod.logger, "info", lambda msg, *args: events.append(msg))
+    # 避免单元测试写真实进度文件
+    monkeypatch.setattr(mod, "ProgressStore", lambda *a, **k: SimpleNamespace(
+        ensure_phase=lambda *a, **k: True, clear=lambda: None,
+        is_account_done=lambda key: False, mark_account_done=lambda key: None,
+    ))
 
     # 用 __new__ 绕过重量级构造，再以实例属性替换 run() 依赖的内部方法。
     task = mod.ScriptTask.__new__(mod.ScriptTask)
     conf = SimpleNamespace(
         multi_daily_alt_acc_config=SimpleNamespace(
             total_returngift_enable=False,
+            total_mail_enable=True,
             need_login_time=None,
             shutdown_after_finish=False,
             total_alliedteam_battle_enable=False,
         )
     )
     task.config = SimpleNamespace(config_name="oas1", multi_daily_alt_acc=conf)
+    # __new__ 裸实例没有 start_time，而 run() 里 phase_id_of(self.start_time) 需要它
+    task.start_time = _dt(2026, 7, 30, 0, 20)
     task._mark_task_start = lambda *a, **k: None
     task._update_task_returngift_enable = lambda *a, **k: None
     task._get_sorted_accounts = lambda *a, **k: []
@@ -146,21 +156,31 @@ def test_multi_run_emits_run_start_and_run_end(monkeypatch):
 
 def test_multi_run_end_emit_failure_does_not_block_completion_mark(monkeypatch):
     """审查m5：run_end 埋点抛异常时，任务完成标记仍必须执行，且不改变 TaskEnd 控制流。"""
+    from datetime import datetime as _dt
+
     from module.exception import TaskEnd
     from tasks.MultiDailyAltAcc import script_task as mod
 
     monkeypatch.setattr(mod.logger, "info", lambda msg, *args: None)
+    # 避免单元测试写真实进度文件
+    monkeypatch.setattr(mod, "ProgressStore", lambda *a, **k: SimpleNamespace(
+        ensure_phase=lambda *a, **k: True, clear=lambda: None,
+        is_account_done=lambda key: False, mark_account_done=lambda key: None,
+    ))
 
     task = mod.ScriptTask.__new__(mod.ScriptTask)
     conf = SimpleNamespace(
         multi_daily_alt_acc_config=SimpleNamespace(
             total_returngift_enable=False,
+            total_mail_enable=True,
             need_login_time=None,
             shutdown_after_finish=False,
             total_alliedteam_battle_enable=False,
         )
     )
     task.config = SimpleNamespace(config_name="oas1", multi_daily_alt_acc=conf)
+    # __new__ 裸实例没有 start_time，而 run() 里 phase_id_of(self.start_time) 需要它
+    task.start_time = _dt(2026, 7, 30, 0, 20)
     task._mark_task_start = lambda *a, **k: None
     task._update_task_returngift_enable = lambda *a, **k: None
     task._get_sorted_accounts = lambda *a, **k: []
