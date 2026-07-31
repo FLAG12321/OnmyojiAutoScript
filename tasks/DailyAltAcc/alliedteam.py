@@ -25,16 +25,50 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     # 援助式神切换标记，仅首场战斗切换一次，切换后置 False（后续场次直接点准备）
     _help_shikigami_detect: bool = True
 
+    def _restore_battle_count(self) -> int:
+        """从进度文件恢复已完成场次到 current_count。
+
+        必须在捕获 before_count 之前调用，否则战斗统计的「本次新增场数」会把
+        历史场次算进去。恢复后 run_alone 的次数上限判断天然只打剩余场次。
+        """
+        progress = getattr(self, '_progress', None)
+        key = getattr(self, '_progress_key', None)
+        if progress is None or not key:
+            return 0
+        try:
+            done = progress.get_battle_count(key)
+        except Exception:
+            logger.exception('读取同心战斗场次失败，从 0 开始')
+            return 0
+        if done > 0:
+            logger.info(f'同心战斗接续：已完成 {done} 场')
+            self.current_count = done
+        return done
+
+    def _persist_battle_count(self) -> None:
+        """每完成一场立刻回写，保证中断后能接续剩余场次。"""
+        progress = getattr(self, '_progress', None)
+        key = getattr(self, '_progress_key', None)
+        if progress is None or not key:
+            return
+        try:
+            progress.add_battle_count(key, 1)
+        except Exception:
+            logger.exception('回写同心战斗场次失败')
+
     def run_alliedteam(self, battle_enable, ap_enable):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_team)
+        # 先恢复历史场次，再捕获基线，确保统计的是本次新增场数
+        self._restore_battle_count()
         before_count = getattr(self, "current_count", 0)
+        battle_result = None
         if ap_enable:
             self.run_alliedteam_ap()
         if battle_enable:
-            self.run_alliedteam_battle()
+            battle_result = self.run_alliedteam_battle()
             # 只统计本次同心战斗新增场数，不统计胜负结果。
             emit_stat = getattr(self, "emit_stat", None)
             if emit_stat:
@@ -44,6 +78,10 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             emit_stat = getattr(self, "emit_stat", None)
             if emit_stat:
                 emit_stat(StatEvent.BATTLE, count=0)
+        # 选关失败/邀请超时时一场未打：透传 False 走 False 计数通道（保持
+        # pending 可重跑、两次后 skipped），不能靠默认返回 None 被标成 done
+        if battle_result is False:
+            return False
 
     def run_alliedteam_ap(self):    
         logger.info('开始执行补体力任务')
@@ -253,6 +291,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                     pass
                 if not self.appear(self.I_BATTLE):
                     self.run_general_battle(config=self.config.daily_alt_acc.general_battle_config)
+                    # 本场结束立刻落盘，中断后可从这里接续
+                    self._persist_battle_count()
                     break
 
     def battle_before(self, buff: BuffClass | list[BuffClass], config: GeneralBattleConfig, timeout: float = 5) -> bool:
