@@ -1,10 +1,11 @@
 # This Python file uses the following encoding: utf-8
 import time
+from module.base.timer import Timer
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_mall
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.RichMan.mall.mall import Mall
-from tasks.RichMan.config import Consignment
+from tasks.RichMan.config import Consignment, MedalRoom
 from tasks.MysteryShop.assets import MysteryShopAssets
 from tasks.DailyAltAcc.config import GoodsType, CoinType, MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent
@@ -16,10 +17,16 @@ class Mshop(Mall, DailyAltAccBase):
             self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_mall, confirm_wait=2.5)
+
+            # 勋章屋黑蛋：必须放在寄售屋之前。勋章页不是 page_main，也没有
+            # 黄色返回可点，下面的退出循环在那里两个分支都不成立会死循环；
+            # 而寄售屋兑换子页有黄色返回，退出循环能正常走完。
+            self._buy_medal_black_daruma()
+
             # 寄售屋
             config = Consignment(enable=True,buy_sale_ticket=True)
             self.execute_consignment(config)
-            
+
             # 退出
             start_time = time.time()
             while time.time()>start_time-5:
@@ -31,6 +38,38 @@ class Mshop(Mall, DailyAltAccBase):
                     continue
             if self.ui_get_current_page() != page_main:
                 self.ui_goto(page_main)
+
+    def _back_to_mall_root(self, timeout: float = 15) -> bool:
+        """退回商城根页面（底部导航栏可见的那一层）。
+
+        必须是有界循环：商城内各屋的入口按钮都在底部导航栏上，而 MallNavbar
+        里的 ui_click 没有超时，一旦起始页面不对就会永久自旋，_run_with_stat
+        也救不回来。所以这里超时就返回 False 让调用方跳过。
+
+        :return: True 已在商城根页面
+        """
+        timer = Timer(timeout).start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_MALL):
+                return True
+            if timer.reached():
+                return False
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
+                continue
+
+    def _buy_medal_black_daruma(self):
+        """勋章屋购买黑蛋（480 勋章，每周限购一颗）。
+
+        买不到的情况（按钮未出现/本周剩余为 0/勋章不足）由 buy_mall_one
+        内部判断并跳过，这里不用重复检查。
+        买完停在勋章页，必须退回商城根页面，否则后续寄售屋点不到底部导航栏
+        的入口，_enter_consignment 的 ui_click 无超时会死循环。
+        """
+        logger.hr('Medal black daruma', 2)
+        self.execute_medal(MedalRoom(enable=True, black_daruma=True))
+        if not self._back_to_mall_root():
+            logger.warning('勋章屋后回到商城根页面失败')
 
     def run_mysteryshop(self):
         #self.account_info = self.get_account_info()
