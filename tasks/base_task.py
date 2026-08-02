@@ -954,8 +954,10 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         if task_name is None:
             task_name = f"screenshot_{int(time.time())}"
         
-        # 确保目录存在
-        folder = './screenshots'
+        # 每个 task 的截图统一保存到 screenshots/<task名>_Screenshots/ 下
+        # （task 名取当前调度任务的 command，直接实例化调试时退化为 Default）
+        task_command = getattr(getattr(self.config, 'task', None), 'command', None) or 'Default'
+        folder = f'./screenshots/{task_command}_Screenshots'
         if not os.path.exists(folder):
             os.makedirs(folder)
         

@@ -44,8 +44,8 @@ class ScriptTask(GameUi,SearchIdAssets):
         :param csv_file_path: CSV文件路径
         """
         try:
-            # 确保screenshots目录存在
-            screenshots_dir = Path("screenshots")
+            # 确保搜索截图目录存在（与 search_save_image 的保存位置保持一致）
+            screenshots_dir = Path("screenshots/SearchId_Screenshots")
             screenshots_dir.mkdir(exist_ok=True)
             
             with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
@@ -238,9 +238,10 @@ class ScriptTask(GameUi,SearchIdAssets):
         # 将PIL图像转换回OpenCV格式（BGR）
         image_with_text = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         
-        folder_name = f'screenshots'
+        # 搜索截图统一保存到 screenshots/SearchId_Screenshots/ 下
+        folder_name = f'screenshots/SearchId_Screenshots'
         if not os.path.exists(f'./{folder_name}'):
-            os.mkdir(f'./{folder_name}')
+            os.makedirs(f'./{folder_name}')
         folder = f'./{folder_name}'
         save_path = os.path.join(folder, f"{name}")
         

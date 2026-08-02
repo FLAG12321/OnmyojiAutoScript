@@ -729,9 +729,10 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         self.screenshot()
         from module.base.utils import save_image
         now=datetime.now()
-        folder_name = f'screenshots'
-        if not os.path.exists( f'./{folder_name}'):
-            os.mkdir(f'./{folder_name}')
+        # 道馆截图统一保存到 screenshots/Dokan_Screenshots/ 下
+        folder_name = f'screenshots/Dokan_Screenshots'
+        if not os.path.exists(f'./{folder_name}'):
+            os.makedirs(f'./{folder_name}')
         folder = f'./{folder_name}'
         save_image(self.screenshot(), f'{folder}/道馆_{now.year}-{now.month:02d}-{now.day:02d}     {now.hour:02d}-{now.minute:02d}-{now.second:02d}.png')
         

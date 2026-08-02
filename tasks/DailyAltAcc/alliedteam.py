@@ -1,8 +1,9 @@
 # This Python file uses the following encoding: utf-8
-import os
+import re
 import time
 import random
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 from module.base.timer import Timer
 from module.base.utils import save_image
@@ -221,11 +222,16 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                     continue
                 
             now=datetime.now()
-            folder_name = f'{now.year}_{now.month:02d}_{now.day:02d}'
-            if not os.path.exists( f'./{folder_name}'):
-                os.mkdir(f'./{folder_name}')
-            folder = f'./{folder_name}'
-            save_image(self.screenshot(), f'{folder}/{now.hour:02d}-{now.minute:02d}-{now.second:02d}.png')
+            # 角色名优先取多账号运行注入的统计上下文(_stat_ctx)，单实例运行时退化为配置实例名
+            char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
+            # 替换 Windows 文件名非法字符，避免保存失败
+            char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+            save_dir = Path(f'screenshots/Battle_Screenshots_{now.year}_{now.month:02d}_{now.day:02d}')
+            save_dir.mkdir(parents=True, exist_ok=True)
+            # 同一角色同一天重复运行时直接覆盖，只保留最新一张
+            save_path = save_dir / f'{char_name}.png'
+            save_image(self.screenshot(), str(save_path))
+            logger.info(f'同心协战次数截图已保存: {save_path}')
             run_timer=Timer(5)
             run_timer.start()
             while 1:    
