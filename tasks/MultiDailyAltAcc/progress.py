@@ -91,7 +91,7 @@ def _write_json_atomic(path: Path, data: dict) -> None:
 class ProgressStore:
     """进度文件的读写封装，每个配置实例（oas1/oas2）一个文件，互不干扰。"""
 
-    def __init__(self, config_name: str, base_dir='logs'):
+    def __init__(self, config_name: str, base_dir='config/tasks_config'):
         self.config_name = config_name
         self.path = Path(base_dir) / f'multi_daily_progress_{config_name}.json'
         # 异常归档文件：failed/skipped 迁移的按天留痕，独立于阶段生命周期，

@@ -153,8 +153,8 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         raise TaskEnd('ReturnGift')
 
     def sr_count_output_path(self) -> Path:
-        # 统计结果放在 logs 目录，避免被 assets_extract 扫描到
-        output = Path('logs') / 'sr_count.json'
+        # 统计结果放在 config/tasks_config 目录，避免被 assets_extract 扫描到
+        output = Path('config/tasks_config') / 'sr_count.json'
         output.parent.mkdir(parents=True, exist_ok=True)
         return output
 
@@ -179,12 +179,12 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         self.device.swipe_adb(p1, p2, duration=duration)
 
     def write_sr_count_result(self, items: list[dict]) -> list[dict]:
-        """将SR碎片统计结果写入 logs/sr_count.json，格式为 [{"name": "I_SR_X", "count": N}, ...]"""
+        """将SR碎片统计结果写入 config/tasks_config/sr_count.json，格式为 [{"name": "I_SR_X", "count": N}, ...]"""
         with open(self.sr_count_output_path(), 'w', encoding='utf-8') as f:
             json.dump(items, f, ensure_ascii=False, indent=2)
 
         # 删除旧的发布队列，避免 DailyAltAcc 使用过期数据
-        sr_cnt_file = Path('logs/sr_cnt.json')
+        sr_cnt_file = Path('config/tasks_config/sr_cnt.json')
         if sr_cnt_file.exists():
             sr_cnt_file.unlink()
             logger.info(f'已删除旧的发布队列 {sr_cnt_file}')
@@ -382,7 +382,7 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         return send_time
     def _check_daily_running_with_returngift(self) -> bool:
         """检查是否有 total_returngift_enable=true 的Daily正在运行"""
-        progress_file = Path('./logs/daily_progress.json')
+        progress_file = Path('./config/tasks_config/daily_progress.json')
         if not progress_file.exists():
             return False
 

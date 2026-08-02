@@ -281,7 +281,7 @@ class MultiAccountRunner:
 
     def _get_progress_file(self) -> Path:
         """获取进度文件路径"""
-        return Path(f'./logs/{self.task_name.lower()}_progress.json')
+        return Path(f'./config/tasks_config/{self.task_name.lower()}_progress.json')
 
     @staticmethod
     def _read_progress(progress_file: Path) -> dict:

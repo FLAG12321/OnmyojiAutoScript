@@ -166,7 +166,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         """
         标记进程开始执行任务，基于配置名称而非PID
         """
-        progress_file = Path('./logs/daily_progress.json')
+        progress_file = Path('./config/tasks_config/daily_progress.json')
         progress_file.parent.mkdir(parents=True, exist_ok=True)
         
         with self._shutdown_lock:
@@ -194,7 +194,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     def _update_task_returngift_enable(self, config_name, returngift_enable):
         """更新进度文件中的returngift_enable状态"""
-        progress_file = Path('./logs/daily_progress.json')
+        progress_file = Path('./config/tasks_config/daily_progress.json')
         
         with self._shutdown_lock:
             if not progress_file.exists():
@@ -216,7 +216,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         """
         标记进程任务已完成，基于配置名称而非PID
         """
-        progress_file = Path('./logs/daily_progress.json')
+        progress_file = Path('./config/tasks_config/daily_progress.json')
         
         with self._shutdown_lock:
             # 读取现有进度信息
@@ -249,7 +249,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         import time
         
         pid = os.getpid()
-        progress_file = Path('./logs/daily_progress.json')
+        progress_file = Path('./config/tasks_config/daily_progress.json')
         
         # 标记当前进程已完成
         self._mark_task_completed(config_name)

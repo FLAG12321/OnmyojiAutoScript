@@ -16,7 +16,7 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
     """发布SR碎片子功能：依据 sr_count.json 生成可发布队列，按序点击发布"""
 
     # 输入：碎片数量统计
-    SR_COUNT_FILE = Path('logs/sr_count.json')
+    SR_COUNT_FILE = Path('config/tasks_config/sr_count.json')
     # 输出/续做：可发布次数队列，与输入统计文件放在同一目录
     SR_CNT_FILE = SR_COUNT_FILE.parent / 'sr_cnt.json'
     # 多实例读写队列文件时使用的进程级文件锁
@@ -43,7 +43,7 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         self._publish_loop(queue)
 
     def _build_queue_from_sr_count(self) -> list[dict]:
-        """读取 logs/sr_count.json，将 count 转换为可发布次数(count // 99)"""
+        """读取 config/tasks_config/sr_count.json，将 count 转换为可发布次数(count // 99)"""
         if not self.SR_COUNT_FILE.exists():
             logger.warning(f'{self.SR_COUNT_FILE} 不存在，发布队列为空')
             return []

@@ -40,7 +40,7 @@ class MultiDailyAltAccConfig(ConfigBase):
     total_returngift_enable: bool = Field(default=True, description='回礼')
     total_weekaward_enable: bool = Field(default=True, description='领取每周奖励')
     total_mysteryshop_enable: bool = Field(default=False, description='神秘商店')
-    # 以下两个字段已弃用：账号是否已完成改由 logs/multi_daily_progress_<config>.json 判定。
+    # 以下两个字段已弃用：账号是否已完成改由 config/tasks_config/multi_daily_progress_<config>.json 判定。
     # 保留字段仅为兼容既有配置文件与 GUI 翻译键，代码不再读写。
     need_login: bool = Field(default=True, description='无视时间登录（已弃用，改由进度文件判定）')
     need_login_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"),description='需要登录时间点（已弃用，改由进度文件判定）')
