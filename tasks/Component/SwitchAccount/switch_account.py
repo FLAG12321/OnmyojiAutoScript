@@ -105,6 +105,25 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         return True
 
 
+class SwitchAccountOnStart:
+    """ 任务开始前切号 mixin：启用时强制切换到目标账号，未启用则直接通过 """
+
+    def switch_account_on_start(self, switch_config, account_list) -> bool:
+        # 未启用切号，直接通过
+        if not switch_config.enable:
+            return True
+        # 启用了但没填目标账号，不能盲目在错误账号上执行
+        if not account_list or not account_list[0].is_valid():
+            logger.error("已启用切号但未配置目标账号，中止任务")
+            return False
+        # 每次都强制重新登录目标账号
+        if not SwitchAccount(self.config, self.device, account_list[0]).switchAccount():
+            logger.error("切换到目标账号 %s-%s 失败，中止任务",
+                         account_list[0].character, account_list[0].svr)
+            return False
+        return True
+
+
 if __name__ == '__main__':
     config = Config('oas3')
     device=Device(config)

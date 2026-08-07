@@ -1,6 +1,6 @@
 from pydantic import Field, BaseModel
 
-from tasks.Component.config_base import DateTime
+from tasks.Component.config_base import DateTime, ConfigBase
 from module.logger import logger
 
 class AccountInfo(BaseModel):
@@ -57,3 +57,8 @@ class AccountInfo(BaseModel):
 
     def is_valid(self):
         return self.character!="" and self.character is not None
+
+
+class SwitchAccountConfig(ConfigBase):
+    # 是否在任务开始前自动切换到目标账号
+    enable: bool = Field(default=False, description='switch_account_enable_help')
