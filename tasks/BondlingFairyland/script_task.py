@@ -19,6 +19,7 @@ from tasks.BondlingFairyland.general_invite import GeneralInvite
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
+from tasks.Component.SwitchAccount.switch_account import SwitchAccountOnStart
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul, switch_parser
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_bondling_fairyland, page_shikigami_records, page_mall
@@ -32,12 +33,17 @@ class BondlingNumberMax(Exception):
 """ 契灵 """
 
 
-class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul, BondlingFairylandAssets, RichManAssets):
+class ScriptTask(GameUi, GeneralInvite, GeneralRoom, BondlingBattle, SwitchSoul, SwitchAccountOnStart, BondlingFairylandAssets, RichManAssets):
     ball_pos_list = [None, None, None, None, None]  # 用于记录每一个位置的球是否出现
     first_catch = True  # 用于记录是否是第一次捕捉
 
     def run(self):
         cong = self.config.bondling_fairyland
+
+        # 任务开始前切号：启用时切换到目标账号，失败则中止任务稍后重试
+        if not self.switch_account_on_start(cong.switch_account_config, cong.switch_account_list):
+            self.set_next_run(task='BondlingFairyland', finish=False, server=True, success=False)
+            raise TaskEnd
 
         if cong.bondling_config.check_enable:
             logger.hr('第一步, 检查契忆数量', 2)
