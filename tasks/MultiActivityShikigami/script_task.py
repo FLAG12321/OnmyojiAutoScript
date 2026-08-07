@@ -13,6 +13,7 @@ from module.exception import (
 from module.logger import logger
 
 from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigamiScriptTask
+from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.GameUi.game_ui import GameUi
@@ -44,6 +45,8 @@ class ScriptTask(GameUi):
     依次切换账号并运行现有 ActivityShikigami 流程。所有账号共用当前实例的
     activity_shikigami 配置，不复制第二套活动参数。
     """
+    # 账号级续做进度，run() 中按配置实例创建；中断后接续时已完成账号直接跳过
+    _progress: ProgressStore = None
 
     @staticmethod
     def parse_account_characters(raw: str) -> list[str]:
@@ -185,17 +188,36 @@ class ScriptTask(GameUi):
         # 3. 发送未匹配名称通知(只发一次，本身不判失败)
         self._notify_unmatched(unmatched)
 
+        # 建立账号级续做进度：阶段标识 = 角色名列表 + 自然日。
+        # 用户改了角色名或跨天都视为新阶段（success_interval 为 1 天，跨天必须重做）；
+        # 失败重调度不改标识，接续时已完成账号直接跳过，避免中断重跑重复刷活动副本。
+        self._progress = ProgressStore('multi_activity_shikigami', self.config.config_name)
+        self._progress.ensure_phase(
+            {'characters': characters, 'day': self.start_time.strftime('%Y-%m-%d')},
+            self.start_time.strftime('%Y%m%d-%H%M'),
+        )
+
         # 4. 按顺序切换账号并运行活动适配器
         has_execution_failure = load_failure
         for source_name, account in execution_items:
+            # 已完成账号直接跳过，避免中断重跑时重复刷活动副本（消耗体力/挑战次数）
+            key = acc_key(account.account, account.character, account.svr)
+            if self._progress.is_account_done(key):
+                logger.info(
+                    f'[MultiActivityShikigami] 账号已完成，跳过: '
+                    f'{source_name}/{account.character}/{account.svr}'
+                )
+                continue
             try:
                 if not self._run_one_account(source_name, account):
                     has_execution_failure = True
+                else:
+                    self._progress.mark_account_done(key)
             except (GameNotRunningError, EmulatorNotRunningError, RequestHumanTakeover):
                 # 设备/游戏环境级异常：交给主调度器现有恢复逻辑，不继续盲目切换后续账号
                 raise
             except Exception as e:
-                # 可隔离的账号级异常：记录失败并继续后续账号，日志不含登录账号
+                # 可隔离的账号级异常：记录失败并继续后续账号，日志不含账号登录凭证
                 has_execution_failure = True
                 logger.error(
                     f'[MultiActivityShikigami] 账号执行异常: config={source_name}, '
@@ -209,6 +231,10 @@ class ScriptTask(GameUi):
             success=not has_execution_failure,
             server=False,
         )
+        # 全部成功收尾后才清进度：先调度后清，顺序不可颠倒（否则有「调度已改、进度已删」
+        # 的窗口导致整轮重跑）；load_failure 时账号集合不完整，同样保留进度
+        if not has_execution_failure:
+            self._progress.clear()
         # 7. 结束任务
         raise TaskEnd('MultiActivityShikigami')
 
