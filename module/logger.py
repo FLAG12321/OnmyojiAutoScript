@@ -124,9 +124,99 @@ logger.addHandler(console_hdlr)
 # ======================================================================================================================
 #            Set file
 # ======================================================================================================================
+def _open_log_file(name: str, day: date):
+    """打开指定日期的日志文件，log 目录缺失时补建。
+
+    Args:
+        name: 日志名（通常是实例名，如 oas1）。
+        day: 日志归属日期，决定文件名前缀。
+
+    Returns:
+        (文件对象, 文件路径) 二元组。
+    """
+    log_file = f'./log/{day}_{name}.txt'
+    try:
+        file = open(log_file, mode='a', encoding='utf-8')
+    except FileNotFoundError:
+        os.makedirs('./log', exist_ok=True)
+        file = open(log_file, mode='a', encoding='utf-8')
+    return file, log_file
+
+
+def _close_handler_file(handler) -> None:
+    """关闭被替换掉的文件 handler 及其持有的文件对象，避免文件描述符泄漏。"""
+    file = getattr(getattr(handler, 'console', None), 'file', None)
+    try:
+        handler.close()
+    except Exception:
+        pass
+    if file is not None and not getattr(file, 'closed', True):
+        try:
+            file.close()
+        except OSError:
+            pass
+
+
 class RichFileHandler(RichHandler):
-    # Rename
-    pass
+    """按日期滚动的文件日志 handler。
+
+    进程若在零点前启动并持续运行，启动时算出的文件名会把次日日志继续追加进前一天的
+    文件；而读取侧（module/server/log_stats.py、log_service.py）是按 date.today()
+    找文件的，于是当天统计读不到数据，前一天的统计里又混进了今天的日志。
+    这里在每次写入前比对日期，跨天就关掉旧文件换到新日期的文件。
+    """
+
+    def __init__(self, *args, log_name: str, log_day: date, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.log_name = log_name
+        self.log_day = log_day
+        # 防重入：滚动过程中补写分隔块与提示行会再次进入写入路径
+        self._rolling = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """写入前先判断是否需要跨天切换文件。"""
+        self.maybe_rollover()
+        super().emit(record)
+
+    def maybe_rollover(self) -> None:
+        """日期与当前文件归属日不一致时切换文件；同一天为空操作。"""
+        if self._rolling or date.today() == self.log_day:
+            return
+        # Handler.lock 是 RLock，emit() 经 handle() 已持锁时可重入
+        with self.lock:
+            # 双检：并发写入时另一线程可能已完成切换
+            if self._rolling or date.today() == self.log_day:
+                return
+            self._rolling = True
+            try:
+                self._rollover()
+            finally:
+                self._rolling = False
+
+    def _rollover(self) -> None:
+        """关闭旧日期文件，切到新日期文件，并在新文件开头补写 START 分隔块。"""
+        previous_day = self.log_day
+        old_file = self.console.file
+
+        new_day = date.today()
+        file, log_file = _open_log_file(self.log_name, new_day)
+        self.console.file = file
+        self.log_day = new_day
+        logger.log_file = log_file
+
+        if old_file is not None and not getattr(old_file, 'closed', True):
+            try:
+                old_file.close()
+            except OSError:
+                pass
+
+        # 新文件补写 START 分隔块：统计解析（log_stats.py）以 ═/─标题─/═ 三行块作为
+        # 任务与会话边界，script.py 的 save_error_log 也靠最后一个 ═ 行定位切片起点，
+        # 缺了这个块新文件会退化成"无边界日志"。只写文件，不广播到控制台/GUI。
+        self.console.print(GuiRule(title='', characters='═'))
+        self.console.print(GuiRule(title='START', characters='─'))
+        self.console.print(GuiRule(title='', characters='═'))
+        logger.info(f'Log file rolled over: {previous_day} -> {new_day}')
 
 
 # Add file logger
@@ -136,12 +226,8 @@ if pyw_name in ('', '-', '-c'):
 
 
 def set_file_logger(name=pyw_name, *, do_cleanup=False):
-    log_file = f'./log/{date.today()}_{name}.txt'
-    try:
-        file = open(log_file, mode='a', encoding='utf-8')
-    except FileNotFoundError:
-        os.mkdir('./log')
-        file = open(log_file, mode='a', encoding='utf-8')
+    log_day = date.today()
+    file, log_file = _open_log_file(name, log_day)
 
     file_console = Console(
         file=file,
@@ -160,11 +246,17 @@ def set_file_logger(name=pyw_name, *, do_cleanup=False):
         tracebacks_extra_lines=3,
         tracebacks_width=160,
         highlighter=NullHighlighter(),
+        log_name=name,
+        log_day=log_day,
     )
     hdlr.setFormatter(file_formatter)
 
-    logger.handlers = [h for h in logger.handlers if not isinstance(
+    stale_handlers = [h for h in logger.handlers if isinstance(
         h, (logging.FileHandler, RichFileHandler))]
+    logger.handlers = [h for h in logger.handlers if h not in stale_handlers]
+    # 被替换的旧 handler 要显式关闭，否则重复调用会累积未关闭的日志文件句柄
+    for stale in stale_handlers:
+        _close_handler_file(stale)
     logger.addHandler(hdlr)
     logger.log_file = log_file
 
@@ -269,6 +361,10 @@ def _get_renderables(
 def print(*objects: ConsoleRenderable, **kwargs):
     for hdlr in logger.handlers:
         try:
+            # rule()/hr() 经此直接写 console，绕过 emit()，跨天时同样需要先切文件，
+            # 否则三行边界块会被拆到两个文件里，统计解析将识别不到该边界
+            if isinstance(hdlr, RichFileHandler):
+                hdlr.maybe_rollover()
             if isinstance(hdlr, FlutterHandler):
                 for renderable in _get_renderables(hdlr.console, *objects, **kwargs):
                     hdlr.console.file._func(str(renderable))
