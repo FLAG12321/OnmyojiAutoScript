@@ -18,6 +18,7 @@ from tasks.AbyssShadows.assets import AbyssShadowsAssets
 from tasks.AbyssShadows.config import AbyssShadows, EnemyType, AreaType, Code, AbyssShadowsDifficulty, \
     CodeList, IndexMap
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.SwitchAccount.switch_account import SwitchAccountOnStart
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_guild
@@ -30,7 +31,7 @@ class AbyssShadowsFinished(Exception):
     pass
 
 
-class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
+class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssShadowsAssets):
     #
     min_count = {
         EnemyType.BOSS: 2,  # 最少首领战斗次数
@@ -67,6 +68,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             # 非周五六日，直接退出
             logger.info(f"Today is not abyss shadows day, exit")
             self.set_next_run(task='AbyssShadows', finish=False, server=True, success=True)
+            raise TaskEnd('AbyssShadows')
+
+        # 任务开始前切号：启用时切换到目标账号，失败则中止任务稍后重试
+        if not self.switch_account_on_start(cfg.switch_account_config, cfg.switch_account_list):
+            self.set_next_run(task='AbyssShadows', finish=False, server=True, success=False)
             raise TaskEnd('AbyssShadows')
 
         # 进入狭间

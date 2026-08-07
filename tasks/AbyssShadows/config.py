@@ -4,14 +4,17 @@
 # @note     draft version without full test
 # github    https://github.com/roarhill/oas
 from enum import Enum
+from typing import Any
+
 from module.atom.click import RuleClick
 from module.atom.image import RuleImage
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator, model_serializer, ValidationError
 
 from module.base.timer import Timer
 from tasks.AbyssShadows.assets import AbyssShadowsAssets
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.SwitchAccount.switch_account_config import AccountInfo, SwitchAccountConfig
 from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
 from tasks.Component.config_base import ConfigBase, Time, DateTime
 from tasks.Component.config_scheduler import Scheduler
@@ -365,5 +368,51 @@ class AbyssShadows(ConfigBase):
     abyss_shadows_time: AbyssShadowsTime = Field(default_factory=AbyssShadowsTime)
     process_manage: ProcessManage = Field(default_factory=ProcessManage)
     saved_params: SavedParams = Field(default_factory=SavedParams)
+    # 任务开始前是否切换到目标账号（开关）
+    switch_account_config: SwitchAccountConfig = Field(default_factory=SwitchAccountConfig)
+    # 目标账号列表（固定 1 个，GUI 以 switch_account_list_1 扁平化编辑）
+    switch_account_list: list[AccountInfo] = None
     # general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     # switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
+
+    @model_validator(mode='before')
+    @classmethod
+    def validator_switch_account_list(cls, v: dict) -> Any:
+        # 从 switch_account_list_N 扁平 key 重建账号列表
+        list_name = 'switch_account_list'
+        if list_name not in v:
+            v[list_name] = []
+
+        remove_keys = []
+        for key, value in v.items():
+            if list_name == key or list_name not in key:
+                continue
+            try:
+                item = AccountInfo(**value)
+                if item.is_valid():
+                    v[list_name].append(item)
+                remove_keys.append(key)
+            except (ValidationError, TypeError):
+                pass
+
+        for key in remove_keys:
+            del v[key]
+
+        # 只保留第一个目标账号，避免历史配置残留多个
+        v[list_name] = v[list_name][:1]
+        while len(v[list_name]) < 1:
+            v[list_name].append(AccountInfo())
+        return v
+
+    @model_serializer(mode='wrap')
+    def serializer_switch_account_list(self, handler, info):
+        # 先走默认序列化（保留 dynamic_hide 等 hide 上下文），再把顶层 list 展开成 _N key
+        data = handler(self)
+        result = {}
+        for key, value in data.items():
+            if isinstance(value, list):
+                for index, v in enumerate(value):
+                    result[f'{key}_{index + 1}'] = v
+            else:
+                result[key] = value
+        return result
