@@ -131,7 +131,8 @@ def test_non_dict_archive_toplevel_rebuilt(tmp_path):
 def test_archive_write_failure_does_not_break_marking(tmp_path, monkeypatch):
     store = _fresh_store(tmp_path)
 
-    import tasks.MultiDailyAltAcc.progress as progress_mod
+    # 实现已迁移到 Component 层，须打通用模块的 _write_json_atomic 才有效
+    import tasks.Component.MultiAccountRunner.progress as progress_mod
 
     def boom(path, data):
         raise OSError('disk full')
@@ -145,7 +146,8 @@ def test_archive_write_failure_does_not_break_marking(tmp_path, monkeypatch):
 def test_archive_written_before_progress(tmp_path, monkeypatch):
     store = _fresh_store(tmp_path)
 
-    import tasks.MultiDailyAltAcc.progress as progress_mod
+    # 实现已迁移到 Component 层，须打通用模块的 _write_json_atomic 才有效
+    import tasks.Component.MultiAccountRunner.progress as progress_mod
 
     calls = []
     original = progress_mod._write_json_atomic

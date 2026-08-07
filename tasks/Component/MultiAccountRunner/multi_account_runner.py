@@ -30,8 +30,18 @@ import threading
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from module.exception import GameNotRunningError
+from module.exception import (
+    EmulatorNotRunningError,
+    GameBugError,
+    GameNotRunningError,
+    GamePageUnknownError,
+    GameStuckError,
+    GameTooManyClickError,
+    RequestHumanTakeover,
+    ScriptError,
+)
 from module.logger import logger
+from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 
@@ -59,6 +69,10 @@ class MultiAccountRunner:
         save_config_func:    保存配置的回调函数
         max_retries:         每个账号的最大重试次数，默认 3
         on_account_error:    账号处理异常时的回调，接收 (account_info, error) 参数，可选
+        progress:            账号级进度存储（可选）。传入后账号是否处理改由进度文件判定，
+                             need_login / login_time 不再生效；成功处理一个账号会即时落盘。
+                             update_login_history_func / save_config_func 为调用方自用，
+                             Runner 不触发它们，仅在 process_func 内由调用方自行调用。
     """
 
     def __init__(
@@ -73,6 +87,7 @@ class MultiAccountRunner:
         save_config_func: Callable,
         max_retries: int = 3,
         on_account_error: Optional[Callable] = None,
+        progress: Optional[ProgressStore] = None,
     ):
         self.task_name = task_name
         self.config = config
@@ -84,7 +99,27 @@ class MultiAccountRunner:
         self.save_config_func = save_config_func
         self.max_retries = max_retries
         self.on_account_error = on_account_error
+        self.progress = progress
         self._lock = threading.Lock()
+
+    # 设备级异常：必须穿透到 script.py 的 Restart / 人工接管恢复逻辑，
+    # 任何一层被宽泛 except Exception 吞掉，游戏都会一直卡着、后续账号连环失败。
+    # 与 MultiDailyAltAcc.ScriptTask._DEVICE_LEVEL_ERRORS 保持同一清单，增删须两边同步。
+    _DEVICE_LEVEL_ERRORS = (
+        GameNotRunningError,
+        RequestHumanTakeover,
+        GameStuckError,
+        GameTooManyClickError,
+        GameBugError,
+        EmulatorNotRunningError,
+        GamePageUnknownError,
+        ScriptError,
+    )
+    # 账号循环用的清单：GameNotRunningError 有单独分支处理切号崩溃语义，排除之。
+    # 从 _DEVICE_LEVEL_ERRORS 派生，避免两份清单漂移。
+    _DEVICE_LEVEL_ERRORS_IN_LOOP = tuple(
+        e for e in _DEVICE_LEVEL_ERRORS if e is not GameNotRunningError
+    )
 
     # ======================== 公开接口 ========================
 
@@ -182,14 +217,25 @@ class MultiAccountRunner:
 
     def should_process_account(self, account_info: AccountInfo) -> bool:
         """
-        判断是否应该处理该账号
+        判断是否应该处理该账号。
 
-        当 need_login 为 True 时，所有账号都需要处理。
-        当 need_login 为 False 时，只有 last_complete_time < login_time 的账号需要处理。
+        progress 非空时：完全依据持久化进度判定，不再比较登录时间。
+        progress 为 None 时：保留基于 need_login / login_time 的旧行为。
 
         @param account_info: 账号信息
         @return: True 表示需要处理
         """
+        if self.progress is not None:
+            try:
+                key = acc_key(account_info.account, account_info.character, account_info.svr)
+                done = self.progress.is_account_done(key)
+            except Exception:
+                logger.exception('读取账号进度失败，按未完成处理')
+                return True
+            if done:
+                logger.info(f"[{self.task_name}] {account_info.character} 本阶段已完成，跳过")
+            return not done
+        # 兼容旧行为：基于 need_login / login_time 推断
         if self.need_login:
             return True
         # need_login 为 False 时，已完成的不需要再处理
@@ -233,6 +279,10 @@ class MultiAccountRunner:
         while retry_count < self.max_retries:
             try:
                 if process_func(account_info):
+                    # 账号成功处理：即时落盘，中断后接续时整个跳过
+                    if self.progress is not None:
+                        self.progress.mark_account_done(acc_key(
+                            account_info.account, account_info.character, account_info.svr))
                     return True
                 else:
                     retry_count += 1
@@ -242,6 +292,10 @@ class MultiAccountRunner:
                         logger.error(f"[{self.task_name}] Failed to process account {account_info.character} after {self.max_retries} attempts")
             except GameNotRunningError:
                 raise GameNotRunningError("Game Not Running")
+            except self._DEVICE_LEVEL_ERRORS_IN_LOOP:
+                # 设备级异常（卡死/弹错/模拟器退出等）必须继续穿透到 script.py 的
+                # Restart / 人工接管逻辑，不能在这里被宽泛 except Exception 吞成 return False
+                raise
             except Exception as e:
                 logger.error(f"[{self.task_name}] Error processing account {account_info.character}: {e}")
                 if self.on_account_error:

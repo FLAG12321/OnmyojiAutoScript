@@ -33,7 +33,16 @@
 
 ### 进度追踪
 
-基于 JSON 文件的多进程进度追踪，每个任务有独立的进度文件（`./logs/{task_name}_progress.json`），用于协调多个配置实例的并行执行。
+基于 JSON 文件的多进程进度追踪，每个任务有独立的进度文件（`./config/tasks_config/{task_name}_progress.json`），用于协调多个配置实例的并行执行。
+
+### 账号级续做进度（progress）
+
+传入 `progress`（通用 `ProgressStore`，见 [progress.py](./progress.py)）后，Runner 的账号完成判定与落盘改由进度文件驱动：
+
+- `should_process_account` 改查 `is_account_done`，中断重跑时已完成账号整个跳过；`need_login` / `login_time` 不再生效。
+- 每个账号处理成功后即时 `mark_account_done` 落盘，崩溃后据此接续。
+- 进度在任务全部成功收尾、安排下一阶段后由调用方 `clear()`（先调度后清，顺序不可颠倒，否则有「调度已改、进度已删」的窗口导致整轮重跑）。
+- 设备级异常（卡死/弹错/模拟器退出等）会原样穿透到 `script.py` 的 Restart / 人工接管逻辑，不会被 Runner 吞掉重试。
 
 ## 使用方式
 
@@ -88,9 +97,13 @@ def _process_single_account(self, account_info):
 
 ```python
 def _on_account_error(self, account_info, error):
-    self.multi_acc_conf.multi_acc_exp_config.need_login = False
-    self.multi_acc_conf.multi_acc_exp_config.need_login_time = self.runner.login_time
-    self.save_config()
+    # 错误回调只负责通知与留痕；账号级续接交给 progress 判定，
+    # 不再需要改写 need_login / need_login_time（会破坏过滤，见下）。
+    self.config.notifier.push(
+        content=f"{account_info.character}-{account_info.svr} 任务执行错误\nError: {error}",
+        title="ERROR"
+    )
+    Script.save_error_log(self)
 
 runner = MultiAccountRunner(
     ...,
@@ -155,6 +168,7 @@ class FindJadeRunner(MultiAccountRunner):
 | `save_config_func` | `Callable` | 保存配置的回调 |
 | `max_retries` | `int` | 最大重试次数，默认 3 |
 | `on_account_error` | `Optional[Callable]` | 账号异常回调，可选 |
+| `progress` | `Optional[ProgressStore]` | 账号级进度存储（可选）。传入后账号完成判定改由进度文件驱动，`need_login` / `login_time` 不再生效 |
 
 ### 主要方法
 
