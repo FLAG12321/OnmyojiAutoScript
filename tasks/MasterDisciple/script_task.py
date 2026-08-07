@@ -25,6 +25,7 @@ from tasks.Restart.assets import RestartAssets
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.RichMan.assets import RichManAssets
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
+from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.config_base import Time
@@ -39,6 +40,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     # 探索任务中切换援助式神相关标记
     help_shikigami_detect: bool = True
     coin_buff: bool =False
+    # 徒弟轮询的账号级续做进度，run_as_disciple 中创建；中断后接续时已完成徒弟直接跳过
+    _progress: ProgressStore = None
     def run(self) -> bool:
         """
         师徒任务主入口
@@ -71,6 +74,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 case _:
                     logger.error('Unknown master-disciple mode')
         except Exception as e:
+            # 异常上抛前必须置 success=False，否则 finally 会误判为成功并按成功间隔调度
+            success = False
             raise e
         finally:
             # 下一次运行时间
@@ -86,6 +91,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.set_next_run('GoldYoukai', success=True)
                 if config.master_disciple_config.run_guard:
                     pass
+                # 徒弟轮询全部成功收尾后清进度：先调度后清，顺序不可颠倒
+                if self._progress is not None:
+                    self._progress.clear()
             else:
                 self.set_next_run('MasterDisciple', finish=False, success=False)
 
@@ -161,10 +169,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self._execute_disciple_tasks()
             return True
 
-        # 轮询所有徒弟账号
+        # 轮询所有徒弟账号：建账号级续做进度，阶段标识 = 徒弟账号集合 + 自然日
         logger.info(f"Cycle all disciples enabled, total {len(account_list)} account(s) to process")
+        self._progress = ProgressStore('master_disciple', self.config.config_name)
+        self._progress.ensure_phase(
+            {'disciples': [acc_key(a.account, a.character, a.svr) for a in account_list],
+             'day': self.start_time.strftime('%Y-%m-%d')},
+            self.start_time.strftime('%Y%m%d-%H%M'),
+        )
         all_success = True
         for index, account_info in enumerate(account_list):
+            key = acc_key(account_info.account, account_info.character, account_info.svr)
+            if self._progress.is_account_done(key):
+                logger.info(f"Disciple {account_info.character}-{account_info.svr} already done, skipping")
+                continue
             logger.info(f"Processing disciple account {index + 1}/{len(account_list)}: {account_info.character}-{account_info.svr}")
             if not self.switch_to_disciple_account(account_info):
                 logger.warning(f"Failed to switch to disciple account {account_info.character}-{account_info.svr}, skipping")
@@ -172,6 +190,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 continue
             try:
                 self._execute_disciple_tasks()
+                # 徒弟任务正常完成：即时落盘，中断后接续时整个跳过
+                self._progress.mark_account_done(key)
             except TaskEnd:
                 raise
             except RequestHumanTakeover:
