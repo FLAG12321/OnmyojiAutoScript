@@ -2,6 +2,7 @@
 from module.exception import TaskEnd, RequestHumanTakeover
 from module.logger import logger
 from tasks.Component.MultiAccountRunner import MultiAccountRunner
+from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.GameUi.game_ui import GameUi
 from tasks.MultiAccExp.assets import MultiAccExpAssets
 from tasks.MultiAccExp.config import MultiAccExp
@@ -11,6 +12,8 @@ from script import Script
 class ScriptTask(GameUi, MultiAccExpAssets):
     multi_acc_conf: MultiAccExp = None
     _runner: MultiAccountRunner = None
+    # 账号级续做进度，run() 中按配置实例创建；中断后接续时已完成账号直接跳过
+    _progress: ProgressStore = None
 
     def run(self):
         self.multi_acc_conf = self.config.multi_acc_exp
@@ -21,18 +24,29 @@ class ScriptTask(GameUi, MultiAccExpAssets):
             self.set_next_run("MultiAccExp", success=False)
             return
 
-        login_time = self.multi_acc_conf.multi_acc_exp_config.need_login_time
+        # 建立账号级续做进度：阶段标识 = 账号集合 + 自然日（success_interval 为 1 天，
+        # 跨天必须重做）。失败重调度不改标识，接续时已完成账号直接跳过。
+        self._progress = ProgressStore('multi_acc_exp', self.config.config_name)
+        self._progress.ensure_phase(
+            {'accounts': [acc_key(a.account, a.character, a.svr)
+                          for a in (self.multi_acc_conf.sup_account_list or [])],
+             'day': self.start_time.strftime('%Y-%m-%d')},
+            self.start_time.strftime('%Y%m%d-%H%M'),
+        )
 
+        # need_login / need_login_time 已弃用，账号完成判定改由进度文件驱动，
+        # 传入固定值使其不再参与过滤（progress 非空时 Runner 不读它们）。
         self._runner = MultiAccountRunner(
             task_name="MultiAccExp",
             config=self.config,
             device=self.device,
             account_list=self.multi_acc_conf.sup_account_list,
-            need_login=self.multi_acc_conf.multi_acc_exp_config.need_login,
-            login_time=login_time,
+            need_login=False,
+            login_time=self.start_time,
             update_login_history_func=self.multi_acc_conf.update_account_login_history,
             save_config_func=self._save_config,
             on_account_error=self._on_account_error,
+            progress=self._progress,
         )
 
         success = self._runner.run(process_func=self._process_single_account)
@@ -45,6 +59,9 @@ class ScriptTask(GameUi, MultiAccExpAssets):
             )
 
         self.set_next_run("MultiAccExp", success=success)
+        # 全部成功收尾后才清进度：先调度后清，顺序不可颠倒
+        if success and self._progress is not None:
+            self._progress.clear()
         raise TaskEnd("MultiAccExp")
 
     def _process_single_account(self, account_info):
@@ -104,10 +121,8 @@ class ScriptTask(GameUi, MultiAccExpAssets):
             content=f"{account_info.character}-{account_info.svr} 经验妖怪任务执行错误\nError: {error}",
             title="ERROR"
         )
-        login_time = self.multi_acc_conf.multi_acc_exp_config.need_login_time
-        self.multi_acc_conf.multi_acc_exp_config.need_login = False
-        self.multi_acc_conf.multi_acc_exp_config.need_login_time = login_time
-        self._save_config()
+        # 不再改写 need_login / need_login_time（旧逻辑会把未跑账号误判为已完成，
+        # 导致后续轮次全部账号被过滤、任务永久空转）；账号续接由进度文件驱动
         Script.save_error_log(self)
 
     def _save_config(self):
