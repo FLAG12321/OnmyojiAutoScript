@@ -141,8 +141,10 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 self.swipe(self.S_SELECT_LEVEL,3)
         return True           
 
-    def run_alliedteam_battle(self):    
+    def run_alliedteam_battle(self):
         logger.info('开始执行战斗任务')
+        # 邀请人数阈值由小号配置控制（默认2，可设1）：不足则继续邀请，达标即进入下一流程
+        alliedteam_invite_count = self.get_config().daily_alt_acc_config.alliedteam_invite_count
         if not self.is_select_level():
             return False
         start_time = time.time()
@@ -166,7 +168,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 start_time = time.time()
                 logger.info("邀请完成")
                 break
-            if len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image))<2:
+            if len(self.I_INVITE_FRIEND_OVER.match_all_any(self.device.image)) < alliedteam_invite_count:
                 logger.info("邀请好友")
                 if self.appear(self.I_INVITE_FRIEND, interval=1):
                     self.I_INVITE_FRIEND.roi_front[2]=13

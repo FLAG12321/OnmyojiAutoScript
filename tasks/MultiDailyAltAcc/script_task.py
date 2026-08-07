@@ -457,6 +457,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         # 账号特定配置
         config.isflower = account_info.isflower
         config.alliedteam_limit_count = account_info.alliedteam_limit_count
+        config.alliedteam_invite_count = account_info.alliedteam_invite_count
 
         return config
 

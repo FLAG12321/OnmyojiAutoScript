@@ -16,6 +16,8 @@ class DailyAltAccConfig(BaseModel):
 
   alliedteam_battle_enable: bool = Field(default=False, description='是否开启同心队战斗')
   alliedteam_limit_count: int = Field(default=30, description='战斗次数')
+  # 邀请人数阈值：队友标记满该数量即进入下一流程，仅支持 1 或 2（默认2）
+  alliedteam_invite_count: int = Field(default=2, ge=1, le=2, description='同心队需要邀请的队友人数(1或2)')
   alliedteam_ap_enable: bool = Field(default=False, description='是否开启补充体力')
   donatejade_enable: bool = Field(default=True, description='是否开启捐勾')
   courtyard_enable: bool = Field(default=True, description='是否开启庭院事务')

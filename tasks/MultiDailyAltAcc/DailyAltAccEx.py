@@ -8,6 +8,7 @@ def get_config(self):
     config.daily_alt_acc_config.donatejade_enable = self.account_info.donatejade_enable
     config.daily_alt_acc_config.courtyard_enable = self.account_info.courtyard_enable
     config.daily_alt_acc_config.alliedteam_limit_count = self.account_info.alliedteam_limit_count
+    config.daily_alt_acc_config.alliedteam_invite_count = self.account_info.alliedteam_invite_count
     config.daily_alt_acc_config.cooperation_enable = self.account_info.cooperation_enable
     config.daily_alt_acc_config.returngift_enable = self.account_info.returngift_enable
     config.daily_alt_acc_config.weekaward_enable = self.account_info.weekaward_enable
