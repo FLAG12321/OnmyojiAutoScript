@@ -3,6 +3,7 @@ from module.config.config import Config
 from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
+from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.GameUi.game_ui import GameUi
@@ -12,6 +13,8 @@ from tasks.MultiAccountSignIn.config import ACCOUNT_CONFIGS
 
 
 class ScriptTask(GameUi, MultiAccountSignInAssets):
+    # 账号级续做进度，run() 中按配置实例创建；中断后接续时已完成账号直接跳过
+    _progress: ProgressStore = None
 
     def _load_accounts(self) -> list[tuple[str, AccountInfo]]:
         """从用户勾选的配置实例实时加载 MultiDailyAltAcc 账号列表。"""
@@ -110,8 +113,13 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
         logger.warning('[MultiAccountSignIn] 进入式神奖励主页超时')
         return False
 
-    def _run_sign_in(self, source_name: str, account: AccountInfo) -> None:
-        """执行单个账号的签到功能。"""
+    def _run_sign_in(self, source_name: str, account: AccountInfo) -> bool:
+        """
+        执行单个账号的签到功能。
+
+        @return: True 表示该账号已处理完毕（领取成功，或本就无可领/已领），
+                 False 表示导航失败等可重试问题（计入任务失败，不标记账号完成）
+        """
         logger.info(
             f'[MultiAccountSignIn] 开始签到: config={source_name}, '
             f'character={account.character}, server={account.svr}'
@@ -120,23 +128,26 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
             self.screenshot()
             if self.ui_get_current_page() != page_main and not self.ui_goto(page_main):
                 logger.warning('[MultiAccountSignIn] 无法返回庭院主页面，跳过当前账号')
-                return
+                return False
             if not self._goto_reward_page():
-                return
+                return False
 
             for attempt in range(1, 4):
                 self.screenshot()
                 if not self._click_leftmost_reward():
-                    break
+                    # 无可领奖励（通常为已领），视为已处理：不会重复领取，标记完成
+                    logger.info('[MultiAccountSignIn] 无可领奖励，视为已签到')
+                    return True
                 logger.info(f'[MultiAccountSignIn] 第 {attempt}/3 次点击最左侧奖励')
                 if not self._wait_reward_result():
                     logger.warning(f'[MultiAccountSignIn] 第 {attempt}/3 次未进入领取成功页面')
                     continue
                 logger.info('[MultiAccountSignIn] 奖励领取成功')
                 self._return_to_reward_page()
-                return
+                return True
 
             logger.info('[MultiAccountSignIn] 三次尝试后未领取成功，当前账号签到结束')
+            return True
         finally:
             # 无论领取结果如何，都返回主页面，保证下一账号从稳定状态开始切换。
             self.ui_get_current_page(skip_first_screenshot=False)
@@ -150,27 +161,51 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
             self.set_next_run('MultiAccountSignIn', finish=True, success=False, server=False)
             raise TaskEnd('MultiAccountSignIn')
 
-        has_switch_failure = False
+        # 建立账号级续做进度：阶段标识 = 账号集合 + 自然日（success_interval 为 1 天，
+        # 跨天必须重做）。失败重调度不改标识，接续时已完成账号直接跳过。
+        self._progress = ProgressStore('multi_account_sign_in', self.config.config_name)
+        self._progress.ensure_phase(
+            {'accounts': [acc_key(account.account, account.character, account.svr)
+                          for _, account in accounts],
+             'day': self.start_time.strftime('%Y-%m-%d')},
+            self.start_time.strftime('%Y%m%d-%H%M'),
+        )
+
+        has_failure = False
         for source_name, account in accounts:
+            key = acc_key(account.account, account.character, account.svr)
+            if self._progress.is_account_done(key):
+                logger.info(
+                    f'[MultiAccountSignIn] 账号已签到，跳过: '
+                    f'{source_name}/{account.character}/{account.svr}'
+                )
+                continue
             logger.info(
                 f'[MultiAccountSignIn] 切换账号: config={source_name}, '
                 f'character={account.character}, server={account.svr}'
             )
             if not SwitchAccount(self.config, self.device, account).switchAccount():
-                has_switch_failure = True
+                has_failure = True
                 logger.error(
                     f'[MultiAccountSignIn] 切换账号失败: '
                     f'{source_name}/{account.character}/{account.svr}'
                 )
                 continue
-            self._run_sign_in(source_name, account)
+            if not self._run_sign_in(source_name, account):
+                # 导航类失败计入任务失败，保留进度，按失败间隔重试接续
+                has_failure = True
+                continue
+            self._progress.mark_account_done(key)
 
         self.set_next_run(
             'MultiAccountSignIn',
             finish=True,
-            success=not has_switch_failure,
+            success=not has_failure,
             server=False,
         )
+        # 全部成功收尾后才清进度：先调度后清，顺序不可颠倒
+        if not has_failure:
+            self._progress.clear()
         raise TaskEnd('MultiAccountSignIn')
 
 
