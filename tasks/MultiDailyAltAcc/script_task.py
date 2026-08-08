@@ -714,12 +714,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""
-        # 周三或周六开启神秘商店
-        if start_time.weekday() == 2 or start_time.weekday() == 5:
-            self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = True
-        # 周一开启周奖励
-        if start_time.weekday() == 0:
-            self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = True
+        # 每周奖励/神秘商店已改由早晨 6:05 那趟领取（_schedule_after_midnight 开启），
+        # 这里显式关闭，避免 18:05 晚间这趟重复领取
+        self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = False
 
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
@@ -744,6 +742,12 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
             self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
             self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
+            # 周一开启周奖励、周三/周六开启神秘商店：由早晨 6:05 那趟领取
+            # （start_time 是同日 00:23 同心战斗，星期几与 6:05 趟一致）
+            if start_time.weekday() == 0:
+                self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = True
+            if start_time.weekday() == 2 or start_time.weekday() == 5:
+                self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = True
             self._reset_one_shot_flags()
             self.config.model.multi_daily_alt_acc = self.daily_conf
 
