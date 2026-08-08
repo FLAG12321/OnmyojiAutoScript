@@ -14,6 +14,8 @@ class SixRealmsGate(BaseModel):
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
     # 限制次数
     limit_count: int = Field(default=1, description='limit_count_help')
+    # 力量强化目标等级
+    power_enhance_level: int = Field(default=4, title='力量强化等级', description='力量强化目标等级，默认4。未达到该等级时优先进入战之岛刷力量强化，达到后优先神秘岛')
 
 
 class SixRealms(ConfigBase):

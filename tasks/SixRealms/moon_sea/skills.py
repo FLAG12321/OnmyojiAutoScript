@@ -14,6 +14,11 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
     cnt_skill101 = 0
     cnt_skillpower = 1
     get_skill101 = False
+
+    @property
+    def _conf(self):
+        return self.config.model.six_realms.six_realms_gate
+
     def in_main(self, screenshot: bool = False):
         if screenshot:
             self.screenshot()
@@ -126,7 +131,7 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
             logger.info('Start select skill')
             select = self._select_skill()
             # 如果没有柔风并且钱够并且还有刷新次数
-            while   self.cnt_skill101 < 1 and self.cnt_skillpower>=4 and refresh and select == 3 and check_coin_skill() and check_refresh() :
+            while   self.cnt_skill101 < 1 and self.cnt_skillpower >= self._conf.power_enhance_level and refresh and select == 3 and check_coin_skill() and check_refresh() :
                 logger.info('Refresh skill')
                 self.appear_then_click(self.I_SKILL_REFRESH)
                 select = self._select_skill()
