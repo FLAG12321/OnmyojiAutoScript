@@ -90,6 +90,15 @@ def name_to_function(name):
     return function
 
 
+# 需要在调度层做"禁止运行时间段"保护的任务名 -> 配置子模型名。
+# 命中禁止区间时调度层会把任务推迟到区间结束，避免在区间内因游戏未运行触发 Restart 造成顶号。
+# 子模型需提供 forbidden_time_enable(bool) 与 forbidden_time_range(str) 字段。
+FORBIDDEN_TIME_TASKS = {
+    'KekkaiUtilize': 'utilize_config',
+    'KekkaiActivation': 'activation_config',
+}
+
+
 class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
 
     def __init__(self, config_name: str, task=None) -> None:
@@ -240,6 +249,32 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             logger.critical("No task waiting or pending")
             logger.critical("Please enable at least one task")
             raise RequestHumanTakeover
+
+    def get_forbidden_time_end(self, task: str, now: datetime = None) -> datetime:
+        """
+        判断任务当前是否处于禁止运行时间段内。
+        命中则返回该连续禁止区间的结束时刻（供调度层推迟任务），否则返回 None。
+
+        :param task: 任务名，大驼峰，如 'KekkaiUtilize'
+        :param now: 当前时间，默认取 datetime.now()
+        :return: 区间结束时刻的 datetime 或 None
+        """
+        submodel_name = FORBIDDEN_TIME_TASKS.get(task)
+        if submodel_name is None:
+            return None
+        task_object = getattr(self.model, convert_to_underscore(task), None)
+        if task_object is None:
+            return None
+        sub = getattr(task_object, submodel_name, None)
+        if sub is None:
+            return None
+        if not getattr(sub, 'forbidden_time_enable', False):
+            return None
+        time_range = getattr(sub, 'forbidden_time_range', '') or ''
+        if not time_range:
+            return None
+        now = now or datetime.now()
+        return forbidden_range_end(now, time_range)
 
     def get_schedule_data(self) -> dict[str, dict]:
         """

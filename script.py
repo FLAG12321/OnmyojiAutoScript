@@ -369,6 +369,14 @@ class Script:
                 if not self.wait_until(task.next_run):
                     del_cached_property(self, 'config')
                     continue
+            else:
+                # 任务已到点：若当前落在该任务的禁止运行时间段内，推迟到区间结束并重新选择任务，
+                # 避免调度层先因游戏未运行触发 Restart 造成顶号（禁止时间段内本不应上号）
+                forbidden_end = self.config.get_forbidden_time_end(task.command)
+                if forbidden_end is not None:
+                    logger.info(f'Task `{task.command}` 处于禁止运行时间段内，推迟到 {forbidden_end}')
+                    self.config.task_delay(task.command, target=forbidden_end, server=False)
+                    continue
             break
 
         return task.command
