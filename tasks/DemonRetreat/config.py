@@ -13,6 +13,8 @@ from tasks.Component.config_base import ConfigBase, Time
 class DemonRetreatTime(ConfigBase):
     # 自定义运行时间
     custom_run_time: Time = Field(default=Time(hour=10, minute=0, second=0))
+    # 是否主动开启首领退治（会长开启）：勾选后检测到开启按键时自动开启活动
+    try_start_demon_retreat: bool = Field(default=False, description='try_start_demon_retreat_help')
 
 
 class DemonRetreat(ConfigBase):

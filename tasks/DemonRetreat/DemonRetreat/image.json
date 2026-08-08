@@ -88,5 +88,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "祈愿"
+  },
+  {
+    "itemName": "task_open",
+    "imageName": "DemonRetreat_task_open.png",
+    "roiFront": "1135,550,97,59",
+    "roiBack": "1084,499,186,165",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "开启首领退治"
   }
 ]

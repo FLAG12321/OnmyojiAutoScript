@@ -119,7 +119,14 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
             # 进入首领退治
             if self.appear_then_click(self.I_HUNT, interval=1.5):
                 goto_demon_retreat_num += 1
-
+            # 会长开启：勾选主动开启后，识别到开启任务弹窗/按键时自动开启首领退治
+            if cfg.demon_retreat_time.try_start_demon_retreat:
+                #识别到开启任务弹窗点击开启首领退治
+                if self.ocr_appear_click(self.O_DIALOG_OPEN_TASK, interval=1.5):
+                    continue
+                #识别到开启任务按键点击开启首领退治
+                if self.appear_then_click(self.I_TASK_OPEN, interval=1.5):
+                    continue
             # 确保不离开退治
             if self.appear_then_click(self.I_QUIT_BACK, interval=1):
                 pass

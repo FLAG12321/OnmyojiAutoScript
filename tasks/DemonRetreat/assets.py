@@ -31,10 +31,14 @@ class DemonRetreatAssets:
 	I_REWARD_ALL = RuleImage(roi_front=(535,540,177,60), roi_back=(535,540,177,60), threshold=0.8, method="Template matching", file="./tasks/DemonRetreat/DemonRetreat/DemonRetreat_reward_all.png")
 	# 祈愿 
 	I_PRAY = RuleImage(roi_front=(1176,385,43,70), roi_back=(1176,385,43,70), threshold=0.8, method="Template matching", file="./tasks/DemonRetreat/DemonRetreat/DemonRetreat_pray.png")
+	# 开启首领退治 
+	I_TASK_OPEN = RuleImage(roi_front=(1135,550,97,59), roi_back=(1084,499,186,165), threshold=0.7, method="Template matching", file="./tasks/DemonRetreat/DemonRetreat/DemonRetreat_task_open.png")
 
 
 	# Ocr Rule Assets
 	# 检查是否迟到 
 	O_LATER_ENTER_CHECK = RuleOcr(roi=(928,16,48,35), area=(928,16,48,35), mode="Single", method="Default", keyword="", name="later_enter_check")
+	#  
+	O_DIALOG_OPEN_TASK = RuleOcr(roi=(519,334,195,42), area=(707,404,79,39), mode="Full", method="Default", keyword="当前选择难度", name="dialog_open_task")
 
 

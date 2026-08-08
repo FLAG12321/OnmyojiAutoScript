@@ -387,6 +387,8 @@
   "try_complete_enemy_count_help": "时间内未打满时尝试补全剩余敌人（跳过的怪不计入真实计数）",
   "try_start_abyss_shadows": "尝试开启狭间暗域",
   "try_start_abyss_shadows_help": "到达时间后尝试由本账号开启狭间暗域",
+  "try_start_demon_retreat": "主动开启首领退治",
+  "try_start_demon_retreat_help": "勾选后，当界面上存在开启按钮（会长/副会权限）时，由脚本主动开启首领退治活动",
   "two": "两人",
   "uiautomator2": "uiautomator2",
   "usage": "usage",
