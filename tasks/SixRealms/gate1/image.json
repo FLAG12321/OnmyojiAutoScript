@@ -101,8 +101,8 @@
   {
     "itemName": "mfirst_skill",
     "imageName": "gate1_mfirst_skill.png",
-    "roiFront": "259,554,141,39",
-    "roiBack": "209,523,227,100",
+    "roiFront": "887,555,140,39",
+    "roiBack": "838,529,227,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "极道轰炸选择re"

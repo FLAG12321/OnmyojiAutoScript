@@ -99,8 +99,8 @@ class SixRealmsAssets:
 	I_PREPARE_BATTLE = RuleImage(roi_front=(29,638,55,66), roi_back=(20,630,72,81), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_prepare_battle.png")
 	# 继续执行re 
 	I_MCONINUE = RuleImage(roi_front=(1121,578,100,100), roi_back=(1121,578,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mconinue.png")
-	# 极道轰炸选择re 
-	I_MFIRST_SKILL = RuleImage(roi_front=(259,554,141,39), roi_back=(209,523,227,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mfirst_skill.png")
+	# 怪力乱神选择re 
+	I_MFIRST_SKILL = RuleImage(roi_front=(887,555,140,39), roi_back=(838,529,227,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_mfirst_skill.png")
 	# 唤息re 
 	I_M_STORE = RuleImage(roi_front=(1124,594,61,57), roi_back=(1103,576,100,100), threshold=0.8, method="Template matching", file="./tasks/SixRealms/gate1/gate1_m_store.png")
 	# 左上角退出re 
