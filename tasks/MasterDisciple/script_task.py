@@ -42,6 +42,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     coin_buff: bool =False
     # 徒弟轮询的账号级续做进度，run_as_disciple 中创建；中断后接续时已完成徒弟直接跳过
     _progress: ProgressStore = None
+    # run_guard 每次启动任务第一次战斗必须勾选"默认邀请"并确认勾选成功，防止首次未勾选导致后续战斗不自动邀请
+    _guard_default_invite_checked: bool = False
     def run(self) -> bool:
         """
         师徒任务主入口
@@ -1111,10 +1113,26 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 阶段2：胜利 — 先处理邀请弹窗（在I_WIN上层），再点I_WIN
         logger.info("Guard: handling invite dialog on top of WIN")
         self.I_REWARD.roi_back=[0,0,1280,720]
+        # 防提前break：邀请弹窗未完全弹出/奖励页尚未出现时，I_WIN、I_REWARD、I_GI_SURE
+        # 会短暂同时不可见，需持续消失一段时间（idle）才认为已进入奖励阶段
+        idle_timer = Timer(3)
+        idle_timer.start()
         while 1:
             self.screenshot()
             # 优先处理邀请弹窗
             if self.appear(self.I_GI_SURE):
+                idle_timer.reset()
+                # 任务启动后第一次出现邀请弹窗：必须先勾选"默认邀请"（点击I_I_NO_DEFAULT），
+                # 并确认勾选成功（发现I_I_DEFAULT）后，才允许点击确定（I_GI_SURE）
+                if not self._guard_default_invite_checked:
+                    if self.appear_then_click(self.I_I_NO_DEFAULT, interval=0.5):
+                        continue
+                    if self.appear(self.I_I_DEFAULT):
+                        logger.info("Guard: default invite checked")
+                        self._guard_default_invite_checked = True
+                        continue
+                    # 尚未确认勾选成功，不点击确定
+                    continue
                 if self.appear(self.I_I_NO_DEFAULT):
                     self.appear_then_click(self.I_I_NO_DEFAULT, interval=0.5)
                     continue
@@ -1125,15 +1143,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
                 self.appear_then_click(self.I_WIN, action=action_click, interval=0.5)
                 sleep(2)
+                # 点掉胜利后重新计空闲，给奖励页留足出现时间，避免过渡期提前break
+                idle_timer.reset()
                 continue
             if self.appear_multi_scale(self.I_REWARD):
+                idle_timer.reset()
                 self.ui_click_until_smt_disappear(self.I_REWARD, self.I_REWARD, interval=1.5)
                 continue
             if self.appear_multi_scale(self.I_REWARD_GOLD):
+                idle_timer.reset()
                 self.ui_click_until_smt_disappear(self.I_REWARD_GOLD, self.I_REWARD_GOLD, interval=1.5)
                 continue
-            # I_WIN和邀请弹窗都消失了，进入奖励阶段
-            if not self.appear(self.I_WIN, threshold=0.8) and not self.appear(self.I_REWARD) and not self.appear(self.I_GI_SURE):
+            # I_WIN和邀请弹窗持续消失一段时间，才进入奖励阶段
+            if idle_timer.reached():
+                logger.info("Guard: win and invite dialog both gone, entering reward stage")
                 break
                 
 
@@ -1161,6 +1184,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         3. 战斗胜利 → 自动处理邀请弹窗 → 等师父再进入 → 循环
         """
         logger.info("Running guard as disciple")
+        # 每次启动任务重置守卫标志：第一次战斗必须确认勾选"默认邀请"
+        self._guard_default_invite_checked = False
 
         guard_count = self.config.master_disciple.master_disciple_config.guard_battle_count
         master_name = self.config.master_disciple.master_disciple_config.master_name
