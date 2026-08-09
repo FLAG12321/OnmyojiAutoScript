@@ -25,6 +25,7 @@ class GeneralClimb(ConfigBase):
     ap100_limit: int = Field(default=20, description='100体爬塔的最大次数')
     ap20_limit: int = Field(default=140, description='ap20爬塔的最大次数(7入口×20次)')
     pass_monopoly_limit: int = Field(default=50, description='大富翁模式爬塔的最大次数')
+    season_boss_limit: int = Field(default=0, description='修行合训(season_boss)玩法的最大搜寻次数, 0表示不启用(不写进run_sequence即休眠)')
     run_sequence: str = Field(default='pass,ap100,boss,ap,ap20,pass_monopoly',
                               description='运行爬塔顺序(pass:门票,ap100:100体,boss:boss战,ap:体力,ap20:20体,pass_monopoly:大富翁)\n英文逗号分隔,从左到右运行,可自定义执行顺序\n例如:pass,ap100,boss,ap就是门票->100体->boss战->体力->20体->大富翁')
     # # 门票爬塔buff

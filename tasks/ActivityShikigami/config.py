@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from tasks.Component.config_scheduler import Scheduler
 from tasks.Component.config_base import ConfigBase, TimeDelta
 from tasks.Component.BaseActivity.config_activity import GeneralClimb
+from tasks.ActivityShikigami.season_boss.config import SeasonBossConfig
 
 
 def check_soul_by_number(enable_switch: bool, group_team: str, label: str):
@@ -79,6 +80,7 @@ class ActivityShikigami(ConfigBase):
     general_climb: GeneralClimb = Field(default_factory=GeneralClimb)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
     general_battle: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
+    season_boss: SeasonBossConfig = Field(default_factory=SeasonBossConfig)
 
     # @model_validator(mode='after')
     def validate_switch_preset(self):

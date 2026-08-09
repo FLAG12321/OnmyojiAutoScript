@@ -64,9 +64,9 @@ class ActivityShikigamiAssets:
 	# 上锁图标 
 	I_LOCK = RuleImage(roi_front=(825,657,28,25), roi_back=(739,613,276,85), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_lock.png")
 	# 还未上锁图片 
-	I_UNLOCK = RuleImage(roi_front=(884,648,28,25), roi_back=(733,607,266,95), threshold=0.5, method="Template matching", file="./tasks/ActivityShikigami/as/as_unlock.png")
+	I_UNLOCK = RuleImage(roi_front=(872,640,28,25), roi_back=(733,607,266,94), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_unlock.png")
 	# 活动爬塔标志 
-	I_CLIMB_MODE_PASS = RuleImage(roi_front=(1139,544,26,27), roi_back=(1117,500,63,100), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb_mode_pass.png")
+	I_CLIMB_MODE_PASS = RuleImage(roi_front=(1181,654,33,47), roi_back=(1160,639,91,72), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb_mode_pass.png")
 	# 体力爬塔标志 
 	I_CLIMB_MODE_AP = RuleImage(roi_front=(1090,541,29,27), roi_back=(1062,516,200,193), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb_mode_ap.png")
 	# 切换按键 
@@ -79,7 +79,7 @@ class ActivityShikigamiAssets:
 
 	# Image Rule Assets
 	# 进入活动 
-	I_SHI = RuleImage(roi_front=(1182,224,42,31), roi_back=(1163,135,83,393), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/shi.png")
+	I_SHI = RuleImage(roi_front=(1188,458,40,45), roi_back=(1163,135,83,393), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/shi.png")
 	# 左上角返回 
 	I_BACK_GREEN = RuleImage(roi_front=(27,19,34,38), roi_back=(2,1,170,75), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_back_green.png")
 	# 右上跳过按钮 
@@ -87,13 +87,13 @@ class ActivityShikigamiAssets:
 	# 红色退出 
 	I_RED_EXIT = RuleImage(roi_front=(1162,96,39,38), roi_back=(1029,53,216,159), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_red_exit.png")
 	# 进入主要的战斗界面 
-	I_TO_BATTLE_MAIN = RuleImage(roi_front=(1042,186,39,127), roi_back=(976,96,195,326), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
+	I_TO_BATTLE_MAIN = RuleImage(roi_front=(177,212,39,127), roi_back=(88,112,195,326), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
 	# 点击进入boss战斗页面 
-	I_TO_BATTLE_BOSS = RuleImage(roi_front=(937,249,34,122), roi_back=(878,153,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
+	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1113,258,34,122), roi_back=(1075,169,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
 	# description 
 	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(148,17,135,39), roi_back=(78,5,260,107), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_main.png")
 	# description 
-	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(151,17,126,42), roi_back=(118,5,184,80), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_boss.png")
+	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(158,12,126,42), roi_back=(118,5,184,80), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_boss.png")
 	# 从main进入到式神录 
 	I_BATTLE_MAIN_TO_RECORDS = RuleImage(roi_front=(1018,561,37,45), roi_back=(976,539,146,100), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/battle_main_to_records.png")
 
@@ -133,7 +133,7 @@ class ActivityShikigamiAssets:
 	# 体力的数量检测 
 	O_REMAIN_AP = RuleOcr(roi=(774,16,71,31), area=(773,16,70,34), mode="DigitCounter", method="Default", keyword="", name="remain_ap")
 	# 活动体力的剩余检测 
-	O_REMAIN_PASS = RuleOcr(roi=(593,14,57,35), area=(586,17,66,30), mode="DigitCounter", method="Default", keyword="", name="remain_pass")
+	O_REMAIN_PASS = RuleOcr(roi=(1153,14,67,35), area=(1153,17,66,30), mode="DigitCounter", method="Default", keyword="", name="remain_pass")
 	# 还有多少次购买体力的机会 
 	O_REMAIN_BUY = RuleOcr(roi=(808,531,39,42), area=(808,531,39,42), mode="DigitCounter", method="Default", keyword="", name="remain_buy")
 	# 活动票数（没有百分比） 
@@ -199,5 +199,46 @@ class ActivityShikigamiAssets:
 	# Ocr Rule Assets
 	# 大富翁剩余次数 OCR 
 	O_MONOPOLY_REMAIN_PASS = RuleOcr(roi=(1167,19,54,29), area=(1141,11,86,38), mode="DigitCounter", method="Default", keyword="", name="monopoly_remain_pass")
+
+
+	# Click Rule Assets
+	# 左上角怪物卡片本体点击区(检测用「自己发现」标签, 点击落在卡面内) 
+	C_SEASON_BOSS_CARD = RuleClick(roi_front=(25,90,260,100), roi_back=(25,90,260,100), name="season_boss_card")
+
+
+	# Image Rule Assets
+	# 普通/注灵搜寻切换控件(搜寻按钮右上角小图标) 
+	I_SEASON_BOSS_MODE_SWITCH = RuleImage(roi_front=(1164,538,32,28), roi_back=(1150,528,60,50), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/mode_switch.png")
+	# 普通搜寻按钮(单行「搜寻」) 
+	I_SEASON_BOSS_DISCOVER = RuleImage(roi_front=(1085,570,130,100), roi_back=(1070,556,160,130), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/discover.png")
+	# 注灵搜寻按钮(双行「注灵/搜寻」) 
+	I_SEASON_BOSS_DISCOVER_PREMIUM = RuleImage(roi_front=(1085,570,130,100), roi_back=(1070,556,160,130), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/discover_premium.png")
+	# 搜寻按钮上的锁图标(已搜到御灵未击败, 此时无法判断门票模式) 
+	I_SEASON_BOSS_LOCKED = RuleImage(roi_front=(1125,607,34,34), roi_back=(1120,594,54,54), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/locked.png")
+	# 继续挑战(不消耗道具, 只取首行「继续」区分) 
+	I_SEASON_BOSS_FIGHT_FREE = RuleImage(roi_front=(1102,528,82,40), roi_back=(1085,512,120,72), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/fight_free.png")
+	# 开启挑战(消耗道具, 只取首行「开启」区分) 
+	I_SEASON_BOSS_FIGHT_PAY = RuleImage(roi_front=(1102,528,82,40), roi_back=(1085,512,120,72), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/fight_pay.png")
+	# 收服御灵页确认(标题「收服御灵」) 
+	I_CHECK_SEASON_BOSS_MONSTER = RuleImage(roi_front=(560,66,162,40), roi_back=(540,50,200,72), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/check_monster.png")
+	# 左上角怪物卡片(取「自己发现」标签, 不随怪物品阶变化) 
+	I_SEASON_BOSS_CARD = RuleImage(roi_front=(230,62,64,52), roi_back=(215,50,95,80), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/card.png")
+	# 收服页红色关闭按钮 
+	I_SEASON_BOSS_RED_EXIT = RuleImage(roi_front=(1180,72,44,42), roi_back=(1165,58,75,70), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/red_exit.png")
+	# 收服页底部「式神录」入口(狐面图标), 点击进入式神录切御魂 
+	I_SEASON_BOSS_SHIKIGAMI_RECORD = RuleImage(roi_front=(996,593,44,40), roi_back=(968,568,102,90), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/season_boss/shikigami_record.png")
+
+
+	# Ocr Rule Assets
+	# 修行合训主页确认(标题, 固定元素) 
+	O_SEASON_BOSS_CHECK_MAIN = RuleOcr(roi=(154,14,134,38), area=(154,14,134,38), mode="Single", method="Default", keyword="修行合训", name="season_boss_check_main")
+	# 普通搜寻币剩余 
+	O_SEASON_BOSS_REMAIN_NORMAL = RuleOcr(roi=(950,17,66,31), area=(965,17,45,28), mode="Digit", method="Default", keyword="", name="season_boss_remain_normal")
+	# 注灵搜寻币剩余 
+	O_SEASON_BOSS_REMAIN_PREMIUM = RuleOcr(roi=(1159,18,61,28), area=(1181,18,30,24), mode="Digit", method="Default", keyword="", name="season_boss_remain_premium")
+	# 中间界面竖排怪物名 
+	O_SEASON_BOSS_MONSTER_NAME = RuleOcr(roi=(355,210,45,135), area=(355,210,45,135), mode="Single", method="Default", keyword="", name="season_boss_monster_name")
+	# 收服页品阶徽章 
+	O_SEASON_BOSS_RANK = RuleOcr(roi=(730,65,95,40), area=(730,65,95,40), mode="Single", method="Default", keyword="", name="season_boss_rank")
 
 

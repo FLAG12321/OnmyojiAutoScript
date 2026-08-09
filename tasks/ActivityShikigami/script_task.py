@@ -26,6 +26,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_shikigami_records
 from tasks.ActivityShikigami.pass_monopoly import PassMonopolyMixin
+from tasks.ActivityShikigami.season_boss.mixin import SeasonBossMixin
 import tasks.Component.GeneralBattle.config_general_battle
 import tasks.ActivityShikigami.page as game
 
@@ -140,7 +141,7 @@ class StateMachine(BaseTask):
         logger.hr(f'Climb switch to {self.climb_type}', 2)
         return True
 
-class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMixin, ActivityShikigamiAssets):
+class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMixin, SeasonBossMixin, ActivityShikigamiAssets):
     """
     更新前请先看 ./README.md
     """
@@ -473,7 +474,9 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         self.count_map[self.climb_type] = self.current_count
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
-        fire_ocr = {'boss': self.O_FIRE2, 'ap20': self.O_FIRE_AP20}.get(self.climb_type, self.O_FIRE)
+        # season_boss 战斗结束回到的是修行合训主页, 没有"挑战"字样, 用主页标题「修行合训」判定退出战斗
+        fire_ocr = {'boss': self.O_FIRE2, 'ap20': self.O_FIRE_AP20,
+                    'season_boss': self.O_SEASON_BOSS_CHECK_MAIN}.get(self.climb_type, self.O_FIRE)
         ok_cnt, max_retry = 0, 5
         while 1:
             sleep(random.uniform(0.5, 1.5))
