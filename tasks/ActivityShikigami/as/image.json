@@ -11,17 +11,17 @@
   {
     "itemName": "unlock",
     "imageName": "as_unlock.png",
-    "roiFront": "884,648,28,25",
-    "roiBack": "733,607,266,95",
+    "roiFront": "872,640,28,25",
+    "roiBack": "733,607,266,94",
     "method": "Template matching",
-    "threshold": 0.5,
+    "threshold": 0.7,
     "description": "还未上锁图片"
   },
   {
     "itemName": "climb_mode_pass",
     "imageName": "climb_mode_pass.png",
-    "roiFront": "1139,544,26,27",
-    "roiBack": "1117,500,63,100",
+    "roiFront": "1181,654,33,47",
+    "roiBack": "1160,639,91,72",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动爬塔标志"
