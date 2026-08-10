@@ -199,11 +199,16 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         start_time = time.time()
         while (time.time()-start_time < 5):
             self.screenshot()
-            if self.ocr_appear(self.O_CHECK_COUNT) and not self.appear(self.I_PUBLISH_ENSURE2):
-                break
-            if self.ocr_appear_click(self.O_CHECK_COUNT,action=self.I_PUBLISH_ENSURE2,interval=1):
-                start_time = time.time()
+            # 数量已到 99：只点击确认按钮关闭数量面板，面板消失后结束本阶段。
+            # 不能用 ocr_appear_click(interval=1)：限流时确认被跳过、误落到 ADD_COUNT；
+            # 面板关闭后 ADD_COUNT 位置为空，空点击会取消发布，PUBLISH_ENSURE 也不再出现
+            if self.ocr_appear(self.O_CHECK_COUNT):
+                if not self.appear(self.I_PUBLISH_ENSURE2):
+                    break
+                if self.appear_then_click(self.I_PUBLISH_ENSURE2, interval=1):
+                    start_time = time.time()
                 continue
+            # 数量未到 99：打开数量面板并逐次增加数量
             if self.appear_then_click(self.I_ADD_COUNT,interval=1):
                 start_time = time.time()
                 continue
