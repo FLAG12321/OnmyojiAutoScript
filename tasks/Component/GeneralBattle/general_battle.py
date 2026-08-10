@@ -10,6 +10,7 @@ from module.base.timer import Timer
 
 from module.base.utils import get_color, color_similar
 from tasks.base_task import BaseTask
+from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
 from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType, GeneralBattleConfig
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType, GeneralBattleConfig
@@ -248,7 +249,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 sleep(1.5)
                 continue
             # 未知结算弹窗（皮肤碎片等）：点一下空白区域尝试跳过
-            if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD)and not self.appear(self.I_WIN):
+            if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD)and not self.appear(self.I_WIN) and not self.appear(GeneralInviteAssets.I_GI_SURE):
                 self.click(self.C_RANDOM_CLICK)  #碎片
                 self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL) #整个皮肤
                 continue
