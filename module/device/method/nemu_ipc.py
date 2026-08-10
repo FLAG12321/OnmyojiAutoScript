@@ -1,5 +1,6 @@
 import asyncio
 import ctypes
+import glob
 import os
 import sys
 import time
@@ -250,8 +251,11 @@ class NemuIpcImpl:
         list_dll = [
             # MuMuPlayer12
             os.path.abspath(os.path.join(nemu_folder, './shell/sdk/external_renderer_ipc.dll')),
-            # MuMuPlayer12 5.0
-            os.path.abspath(os.path.join(nemu_folder, './nx_device/12.0/shell/sdk/external_renderer_ipc.dll')),
+            # MuMuPlayer12 nx_device 布局，版本号不写死（安卓12=12.0 / 安卓15=15.0 等）
+            *[
+                os.path.abspath(p)
+                for p in glob.glob(os.path.join(nemu_folder, './nx_device/*/shell/sdk/external_renderer_ipc.dll'))
+            ],
         ]
         self.lib = None
         for ipc_dll in list_dll:

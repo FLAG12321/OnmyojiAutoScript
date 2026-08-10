@@ -79,6 +79,14 @@ class EmulatorHealth:
                     return True, f'pid={proc.info["pid"]} (name-only fallback)'
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+        # MuMu 新版（安卓 15 / nx_main）不再以 MuMuVMMHeadless.exe --comment 方式运行，
+        # 严格扫描未命中时回退到窗口句柄优先的通用探测，避免把已运行的模拟器误判为死亡。
+        try:
+            if self.device._is_emulator_process_alive():
+                return True, 'generic emulator process alive (fallback)'
+        except Exception as e:
+            return False, f'generic process fallback exception: {e}'
         return False, f'no MuMuVMMHeadless.exe with --comment {target_name}'
 
     def _adb_check(self) -> tuple:
@@ -126,6 +134,9 @@ class EmulatorHealth:
         is_alive() 在 Task 9 实现时会把此项当作 True 处理。
         """
         method = self.device.config.script.device.screenshot_method
+        # ScreenshotMethod 是 str Enum（如 ADB='ADB' 大写），直接与字面量比较会漏判，
+        # 统一取 .value 后再做字符串判断。
+        method = method.value if hasattr(method, 'value') else method
 
         if method == 'auto':
             logger.info('screenshot_method=auto, skipping channel check')
@@ -147,7 +158,7 @@ class EmulatorHealth:
             except Exception as e:
                 return False, f'u2 check failed: {e}'
 
-        if method == 'adb':
+        if method in ('adb', 'ADB', 'ADB_nc'):
             try:
                 pong = self.device.adb_shell(['echo', 'pong'])
                 if pong and 'pong' in str(pong):
@@ -155,6 +166,16 @@ class EmulatorHealth:
                 return False, f'adb shell pong empty: {pong!r}'
             except Exception as e:
                 return False, f'adb shell failed: {e}'
+
+        if method == 'window_background':
+            # 窗口直控截图：用配置的窗口句柄/标题判断目标窗口仍存在
+            try:
+                alive = self.device._is_configured_handle_alive()
+                if alive is not None:
+                    return alive, f'window handle alive: {alive}'
+                return False, 'window_background requires configured handle'
+            except Exception as e:
+                return False, f'window_background check failed: {e}'
 
         return False, f'unknown screenshot_method: {method!r}'
 
