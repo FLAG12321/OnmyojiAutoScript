@@ -187,6 +187,38 @@ class DeployConfig(ConfigModel):
             logger.info(f"[ success ]")
             return True
 
+    def execute_output(self, command) -> str:
+        """静默执行命令并返回完整输出；失败或超时返回空串。
+
+        与 execute 一样用 CREATE_NO_WINDOW，GUI 无控制台时不弹 CMD 窗口。
+        """
+        command = command.replace(r"\\", "/").replace("\\", "/").replace('"', '"')
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding='utf-8',
+            errors='replace',
+            shell=True,
+            creationflags=flags,
+        )
+        try:
+            out, _ = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            # 超时按进程树杀，防止命令挂起（如 git 连不上远程）
+            if sys.platform.startswith('win'):
+                subprocess.Popen(
+                    f'taskkill /F /T /PID {proc.pid}',
+                    shell=True,
+                    creationflags=flags,
+                ).wait()
+            else:
+                proc.kill()
+            proc.communicate()
+            return ''
+        return out or ''
+
     def show_error(self, command=None):
         logger.hr("Update failed", 0)
         self.show_config()

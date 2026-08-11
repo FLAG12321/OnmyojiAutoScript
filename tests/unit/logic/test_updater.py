@@ -15,7 +15,10 @@ from module.server.updater import Updater, _update_progress
 def updater(tmp_path):
     """用临时 deploy.yaml 构造 Updater，隔离真实 config/deploy.yaml。"""
     deploy_file = tmp_path / 'deploy.yaml'
-    return Updater(file=str(deploy_file))
+    updater = Updater(file=str(deploy_file))
+    # 隔离模板默认分支（模板 Branch 已改为 run_now_2），测试明确用 master 作为基线
+    updater.Branch = 'master'
+    return updater
 
 
 def reset_progress():
@@ -272,7 +275,7 @@ def test_upgrade_git_not_builtin(updater, monkeypatch):
 def test_upgrade_git_download_fail(updater, monkeypatch):
     monkeypatch.setattr(updater, 'git_is_builtin', True)
 
-    def fail_download(url, dest):
+    def fail_download(url, dest, on_progress=None):
         raise Exception('network down')
 
     monkeypatch.setattr(updater, '_download_git_archive', fail_download)
@@ -307,7 +310,7 @@ def test_upgrade_git_replaces_and_verifies(updater, monkeypatch, tmp_path):
 
     payload = make_git_tarbz2()
 
-    def fake_download(url, dest):
+    def fake_download(url, dest, on_progress=None):
         with open(dest, 'wb') as f:
             f.write(payload)
 
@@ -335,7 +338,7 @@ def test_upgrade_git_rejects_archive_without_http(updater, monkeypatch, tmp_path
 
     payload = make_git_tarbz2(with_http=False)
 
-    def fake_download(url, dest):
+    def fake_download(url, dest, on_progress=None):
         with open(dest, 'wb') as f:
             f.write(payload)
 
@@ -372,7 +375,7 @@ def test_upgrade_git_replaces_missing_root(updater, monkeypatch, tmp_path):
 
     payload = make_git_tarbz2()
 
-    def fake_download(url, dest):
+    def fake_download(url, dest, on_progress=None):
         with open(dest, 'wb') as f:
             f.write(payload)
 
@@ -384,6 +387,38 @@ def test_upgrade_git_replaces_missing_root(updater, monkeypatch, tmp_path):
     # 新 git 已就位，无备份残留
     assert (git_root / 'mingw64' / 'bin' / 'git.exe').exists()
     assert not os.path.exists(str(git_root) + '.bak')
+
+
+# 17e. upgrade_git：下载进度回调写入 log（节流显示百分比/字节）
+@pytest.mark.unit
+def test_upgrade_git_reports_progress(updater, monkeypatch, tmp_path):
+    git_root = tmp_path / 'Git'
+    old_bin = git_root / 'mingw64' / 'bin'
+    old_bin.mkdir(parents=True)
+    (old_bin / 'git.exe').write_text('old', encoding='utf-8')
+    monkeypatch.setattr(updater, 'git_root', str(git_root))
+    monkeypatch.setattr(updater, 'git_is_builtin', True)
+
+    payload = make_git_tarbz2()
+
+    def fake_download(url, dest, on_progress=None):
+        # 模拟下载：按比例回调进度（有总大小）
+        if on_progress:
+            total = len(payload)
+            for frac in (0.25, 0.5, 0.75, 1.0):
+                on_progress(int(total * frac), total)
+        with open(dest, 'wb') as f:
+            f.write(payload)
+
+    monkeypatch.setattr(updater, '_download_git_archive', fake_download)
+    updater.execute_output = lambda cmd: 'git version 2.55.0.3.windows.1\n'
+
+    logs = []
+    assert updater.upgrade_git(on_line=logs.append) is True
+    # 进度行写入日志，且包含百分比与字节数
+    progress_lines = [l for l in logs if '下载中' in l]
+    assert progress_lines
+    assert any('MB' in l and '%' in l for l in progress_lines)
 
 
 # 18. execute_pull：git 不可用 → 自动升级 → 再 fetch/pull 成功

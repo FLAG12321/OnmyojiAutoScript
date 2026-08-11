@@ -313,12 +313,28 @@ class Updater(DeployConfig, GitManager, PipManager):
         zip_path = os.path.join(tmp_dir, archive_name)
         extract_dir = os.path.join(tmp_dir, 'git_new')
         try:
-            # 1. 下载（多源依次尝试）
+            # 1. 下载（多源依次尝试），进度节流后写入 log
             downloaded = False
             for url in GIT_UPGRADE_URLS:
                 emit(f'下载完整版 git {GIT_UPGRADE_VERSION}（约 116MB，视网速可能需要几分钟）…')
+                last_reported = 0
+
+                def progress(d, t):
+                    # 有总大小按 10% 一档、无总大小按每 10MB 一档，避免逐块刷屏
+                    nonlocal last_reported
+                    if t:
+                        pct = d * 100 // t
+                        if pct >= last_reported + 10 or d >= t:
+                            last_reported = pct
+                            emit(f'下载中: {d / 1048576:.1f} MB / {t / 1048576:.1f} MB ({pct}%)')
+                    else:
+                        mb = d // (10 * 1048576)
+                        if mb > last_reported:
+                            last_reported = mb
+                            emit(f'下载中: {d / 1048576:.1f} MB')
+
                 try:
-                    self._download_git_archive(url, zip_path)
+                    self._download_git_archive(url, zip_path, on_progress=progress)
                     downloaded = True
                     break
                 except Exception as e:
@@ -404,8 +420,12 @@ class Updater(DeployConfig, GitManager, PipManager):
         if os.path.exists(backup):
             shutil.move(backup, git_root)
 
-    def _download_git_archive(self, url, dest) -> None:
-        """流式下载 git 归档到 dest，失败抛异常。"""
+    def _download_git_archive(self, url, dest, on_progress=None) -> None:
+        """流式下载 git 归档到 dest，失败抛异常。
+
+        Args:
+            on_progress: 进度回调(downloaded_bytes, total_bytes)，每个数据块调用一次
+        """
         with requests.get(url, stream=True, timeout=(15, 180)) as r:
             r.raise_for_status()
             total = int(r.headers.get('Content-Length') or 0)
@@ -416,6 +436,8 @@ class Updater(DeployConfig, GitManager, PipManager):
                         continue
                     f.write(chunk)
                     downloaded += len(chunk)
+                    if on_progress:
+                        on_progress(downloaded, total)
         if total and downloaded < total:
             raise Exception(f'下载不完整: {downloaded}/{total} 字节')
 
