@@ -60,8 +60,10 @@ class ConnectionAttr:
                 if 'eri' in k[0].split('_')[-1]:
                     print(k, v)
                     su.__setattr__(k[0], chr(8) + v)
-        # Cache adb_client
-        _ = self.adb_client
+        # 桌面客户端模式不需要 adb，跳过 adb server 拉起
+        if not self.is_desktop:
+            # Cache adb_client
+            _ = self.adb_client
 
         # Parse custom serial
         # self.serial = str(self.config.Emulator_Serial)
@@ -126,6 +128,14 @@ class ConnectionAttr:
     @cached_property
     def is_emulator(self):
         return self.serial.startswith('emulator-') or self.serial.startswith('127.0.0.1:')
+
+    @cached_property
+    def is_desktop(self):
+        """桌面客户端模式：serial 配置为 'desktop'。"""
+        try:
+            return str(self.config.script.device.serial) == 'desktop'
+        except (AttributeError, TypeError):
+            return False
 
     @cached_property
     def is_network_device(self):

@@ -65,6 +65,14 @@ class Device(Platform, Screenshot, Control, AppControl):
             emulator_down = True
             logger.warning('super().__init__ saw EmulatorNotRunningError — will run full_recovery')
 
+        # 桌面客户端模式：无模拟器生命周期，直接进入 HEALTHY；窗口缺失则报错退出
+        if self.is_desktop:
+            if emulator_down:
+                logger.critical('Desktop client window not found, please start the game and bind PID first')
+                raise RequestHumanTakeover from None
+            self._init_desktop()
+            return
+
         # Probe health first — if the user already has a working emulator,
         # don't disturb it. Only run full_recovery if unhealthy.
         if not emulator_down and self.health.is_alive():
@@ -97,6 +105,25 @@ class Device(Platform, Screenshot, Control, AppControl):
         if self.config.script.device.screenshot_method == 'auto':
             self.run_simple_screenshot_benchmark()
 
+    def _init_desktop(self) -> None:
+        """桌面客户端模式初始化：跳过模拟器健康检查/full_recovery。"""
+        logger.info('Desktop client mode: skip emulator health check and full recovery')
+        self._transition_to(EmulatorState.HEALTHY)
+        # 桌面模式固定用 BitBlt 后台截图 + 后台窗口输入
+        # （PrintWindow 对客户端的 DirectX 渲染窗口全 flag 返回纯黑，不可用）
+        if self.config.script.device.screenshot_method in ('auto', 'printwindow'):
+            self.config.script.device.screenshot_method = 'window_background'
+        if self.config.script.device.control_method != 'window_message':
+            logger.warning(
+                f'Desktop mode requires control_method=window_message, '
+                f'current={self.config.script.device.control_method}, overriding'
+            )
+            self.config.script.device.control_method = 'window_message'
+        self.config.save()
+        self.screenshot_interval_set()
+        # 检测并调整桌面客户端窗口客户区到 1280x720，保证识别 1:1
+        self.desktop_window_set_size()
+
     def _transition_to(self, target: EmulatorState) -> None:
         """Transition emulator state with validation. Same state is a no-op."""
         from module.exception import ScriptError
@@ -123,6 +150,15 @@ class Device(Platform, Screenshot, Control, AppControl):
         full_recovery cycle after this method returns False.
         """
         logger.hr('Device full_recovery', level=1)
+
+        # 桌面模式：只做窗口存在性检查，不 kill/重启客户端
+        if self.is_desktop:
+            if self.desktop_window_exists():
+                self._transition_to(EmulatorState.HEALTHY)
+                logger.info('Desktop mode: target window alive, healthy')
+                return True
+            logger.error('Desktop mode: target window not found, please start the game manually')
+            return False
 
         instance = self._resolve_emulator_instance()
         if instance is None:
@@ -362,6 +398,10 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.stuck_record_check = empty_function
 
     def app_start(self):
+        # 桌面模式：用户手动管理客户端生命周期，不做任何拉起
+        if self.is_desktop:
+            logger.info('Desktop mode: app_start no-op, user manages the client')
+            return
         if not self.config.script.error.handle_error:
             logger.critical('No app stop/start, because HandleError disabled')
             logger.critical('Please enable Alas.Error.HandleError or manually login to AzurLane')
@@ -371,6 +411,10 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.click_record_clear()
 
     def app_stop(self):
+        # 桌面模式：绝不杀用户已开的客户端进程
+        if self.is_desktop:
+            logger.info('Desktop mode: app_stop no-op, user manages the client')
+            return
         if not self.config.script.error.handle_error:
             logger.critical('No app stop/start, because HandleError disabled')
             logger.critical('Please enable Alas.Error.HandleError or manually login to AzurLane')

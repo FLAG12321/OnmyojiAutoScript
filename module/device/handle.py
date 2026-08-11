@@ -2,7 +2,10 @@
 # @author runhey
 # github https://github.com/runhey
 import re
+import ctypes
+from ctypes import c_long, byref, POINTER, Structure, wintypes
 
+from contextlib import contextmanager
 from enum import Enum
 from time import sleep
 from cached_property import cached_property
@@ -13,13 +16,63 @@ from win32process import GetWindowThreadProcessId
 from win32gui import (GetWindowText, EnumWindows, FindWindow, FindWindowEx,
                       IsWindow, GetWindowRect, GetWindowDC, DeleteObject,
                       SetForegroundWindow, IsWindowVisible, GetDC, GetParent,
-                      EnumChildWindows)
+                      EnumChildWindows, GetClientRect, ClientToScreen,
+                      GetWindowLong, SetWindowPos)
 from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       WM_LBUTTONDOWN, WM_ACTIVATE, WA_ACTIVE, MK_LBUTTON,
-                      WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE)
+                      WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE,
+                      GWL_STYLE, GWL_EXSTYLE, HWND_TOP, SWP_NOMOVE, SWP_SHOWWINDOW)
 from module.config.config import Config
 from module.logger import logger
 from module.exception import *
+
+# 桌面客户端窗口标题（官方桌面版，多开共用同一标题）
+DESKTOP_WINDOW_TITLES = ('阴阳师-网易游戏', '阴阳师-MuMu模拟器专版')
+
+# DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2，SetThreadDpiAwarenessContext 的入参
+_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
+
+
+@contextmanager
+def dpi_awareness():
+    """临时把当前线程切到 Per-Monitor V2 DPI 感知，退出时恢复原上下文。
+
+    OAS 进程自身未声明 DPI 感知，GDI 调用默认被系统虚拟化成逻辑像素：125% 缩放下
+    物理 1280x720 的客户区只报 1024x576，BitBlt 也只能取到画面左上角那一块（右侧
+    侧边栏与底部菜单栏直接丢失）。桌面客户端进程是 Per-Monitor DPI 感知、按物理
+    像素原生渲染，因此桌面分支的窗口测量与截图必须在感知上下文里做才能拿到完整的
+    物理像素画面。用线程级而非进程级，是为了不影响模拟器直控路径既有的逻辑像素假设。
+    """
+    user32 = ctypes.windll.user32
+    previous = None
+    try:
+        previous = user32.SetThreadDpiAwarenessContext(_PER_MONITOR_AWARE_V2)
+    except AttributeError:
+        # Windows 10 1607 以前没有该 API，退化为原有逻辑像素行为
+        pass
+    try:
+        yield
+    finally:
+        if previous:
+            user32.SetThreadDpiAwarenessContext(previous)
+
+
+def _window_total_size(width: int, height: int, style: int, ex_style: int) -> tuple:
+    """用 user32.AdjustWindowRectEx 计算包含标题栏/边框的窗口总尺寸 (w, h)。
+
+    pywin32 未导出 AdjustWindowRectEx，故用 ctypes 调用。
+    """
+    user32 = ctypes.windll.user32
+
+    class RECT(Structure):
+        _fields_ = [('left', c_long), ('top', c_long), ('right', c_long), ('bottom', c_long)]
+
+    user32.AdjustWindowRectEx.argtypes = [POINTER(RECT), c_long, c_long, c_long]
+    user32.AdjustWindowRectEx.restype = wintypes.BOOL
+    rect = RECT(0, 0, width, height)
+    user32.AdjustWindowRectEx(byref(rect), style, False, ex_style)
+    return rect.right - rect.left, rect.bottom - rect.top
+
 
 def handle_title2num(title: str) -> int:
     """
@@ -157,6 +210,8 @@ class Handle:
         'bluestacks_family': ['root_handle_title']
     }
     config: Config = None
+    is_desktop_window: bool = False
+    """是否为桌面客户端模式（serial='desktop'），桌面分支统一用此标志隔离"""
 
     def __init__(self, config) -> None:
         """
@@ -172,7 +227,19 @@ class Handle:
         if not self.config.script.device.handle or self.config.script.device.handle == '':
             logger.info('Handle is empty, oas not use handle')
             return
-    
+
+        # 桌面客户端模式：按 PID 定位窗口，跳过模拟器窗口树逻辑
+        if self.config.script.device.serial == 'desktop':
+            self.root_handle_title = ''
+            self.root_handle_num = 0
+            self.root_handle = self.config.script.device.handle
+            logger.info(f'Desktop handle PID is {self.root_handle}')
+            self.root_handle_num = self.find_desktop_window_by_pid(self.root_handle)
+            self.root_handle_title = DESKTOP_WINDOW_TITLES[0]
+            self.is_desktop_window = True
+            logger.info(f'Desktop client window found: title={self.root_handle_title}, hwnd={self.root_handle_num}')
+            return
+
         # 获取根的句柄
         self.root_handle_title = ''
         self.root_handle_num = 0
@@ -231,6 +298,100 @@ class Handle:
         # window系统的缩放
         logger.info(f'Window screen scale rate: {window_scale_rate()}')
         # screenshot_handle_num 和 screenshot_size 延迟到首次截屏时按需求值，不在初始化时预计算
+
+    def find_desktop_window_by_pid(self, pid) -> int:
+        """按 PID 查找桌面客户端窗口，返回窗口句柄；未找到抛 EmulatorNotRunningError。"""
+        try:
+            pid_int = int(str(pid))
+        except (TypeError, ValueError):
+            logger.error(f'Invalid desktop PID: {pid}')
+            raise EmulatorNotRunningError(f'Invalid desktop client PID: {pid}')
+
+        def enum_cb(hwnd, param):
+            param.append(hwnd)
+            return True
+
+        windows = []
+        EnumWindows(enum_cb, windows)
+        for hwnd in windows:
+            if GetWindowText(hwnd) in DESKTOP_WINDOW_TITLES:
+                _, win_pid = GetWindowThreadProcessId(hwnd)
+                if win_pid == pid_int:
+                    return hwnd
+        logger.error(f'Desktop client window not found, PID={pid}')
+        raise EmulatorNotRunningError(f'Desktop client window not found, PID={pid}')
+
+    def desktop_window_exists(self) -> bool:
+        """桌面模式：目标 PID 对应窗口仍存在即视为客户端运行中。"""
+        try:
+            self.find_desktop_window_by_pid(self.config.script.device.handle)
+            return True
+        except EmulatorNotRunningError:
+            return False
+
+    def desktop_client_offset(self) -> tuple:
+        """返回客户区在窗口 DC 内的偏移 (x, y)，用于 BitBlt 扣除标题栏/边框。"""
+        with dpi_awareness():
+            window_rect = GetWindowRect(self.screenshot_handle_num)
+            client_origin = ClientToScreen(self.screenshot_handle_num, (0, 0))
+            return client_origin[0] - window_rect[0], client_origin[1] - window_rect[1]
+
+    def desktop_client_size(self) -> tuple:
+        """返回桌面客户端窗口客户区的物理像素尺寸 (width, height)。"""
+        with dpi_awareness():
+            rect = GetClientRect(self.screenshot_handle_num)
+            return rect[2] - rect[0], rect[3] - rect[1]
+
+    def desktop_client_size_virtual(self) -> tuple:
+        """返回客户区在 DPI 虚拟化空间下的尺寸 (width, height)。
+
+        OAS 进程未声明 DPI 感知，PostMessage 的 lParam 会被系统按该空间解释，
+        因此后台输入的坐标必须换算到这里，而不是截图所用的物理空间。
+        """
+        rect = GetClientRect(self.screenshot_handle_num)
+        return rect[2] - rect[0], rect[3] - rect[1]
+
+    def desktop_window_set_size(self, width: int = 1280, height: int = 720) -> bool:
+        """桌面模式：检测窗口客户区尺寸，非目标大小时用 SetWindowPos 调整到 width×height。
+
+        窗口位置保持不变；返回是否执行了调整。全过程在 DPI 感知上下文内完成，
+        GetClientRect/SetWindowPos 处理的都是物理像素，因此目标尺寸无需按缩放比换算，
+        调整后客户区物理尺寸恰为 width×height，游戏画面与资产 1:1 对应。
+        """
+        if not getattr(self, 'is_desktop_window', False):
+            return False
+        hwnd = self.root_handle_num
+        with dpi_awareness():
+            client_rect = GetClientRect(hwnd)
+            client_w = client_rect[2] - client_rect[0]
+            client_h = client_rect[3] - client_rect[1]
+            logger.info(f'Desktop client size: {client_w}x{client_h} (physical), target {width}x{height}')
+            if client_w == width and client_h == height:
+                logger.info('Desktop client size already matches target')
+                return False
+            # 用 AdjustWindowRectEx 精确计算含标题栏/边框的窗口总尺寸
+            style = GetWindowLong(hwnd, GWL_STYLE)
+            ex_style = GetWindowLong(hwnd, GWL_EXSTYLE)
+            total_w, total_h = _window_total_size(width, height, style, ex_style)
+            logger.info(f'Resize desktop window to {total_w}x{total_h} to get client {width}x{height}')
+            try:
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
+            except Exception as e:
+                # 拒绝访问通常是目标窗口权限更高（游戏以管理员运行）或客户端锁定窗口大小
+                logger.error(f'SetWindowPos failed: {e}. '
+                             f'请以管理员身份运行 OAS，或手动把游戏窗口设为 1280x720')
+                return False
+            # 校准：SetWindowPos 后的实际客户区可能与目标差几像素，按差值持续修正
+            for _ in range(5):
+                cr = GetClientRect(hwnd)
+                cw, ch = cr[2] - cr[0], cr[3] - cr[1]
+                if cw == width and ch == height:
+                    return True
+                total_w += width - cw
+                total_h += height - ch
+                logger.info(f'Calibrate desktop window to {total_w}x{total_h}, current client {cw}x{ch}')
+                SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
+            return True
 
     @staticmethod
     def all_windows() -> list:
@@ -397,6 +558,8 @@ class Handle:
         截屏的句柄其实并不是根句柄
         :return:  出错返回None
         """
+        if getattr(self, 'is_desktop_window', False):
+            return self.root_handle_num
         if self.emulator_family == EmulatorFamily.FAMILY_MUMU:
             # 使用正则匹配12 来判定是不是mumu12这并不是一个好的方法
             if len(self.root_node.children) == 0:
@@ -487,6 +650,10 @@ class Handle:
         2023.7.1 在高缩放的设备上应该输出1280X720
         :return:
         """
+        if getattr(self, 'is_desktop_window', False):
+            # 桌面模式固定输出 1280x720（物理目标，与资产 1:1）；
+            # 实际位图由截图方法截取逻辑客户区后 resize 到该尺寸
+            return 1280, 720
         winRect = GetWindowRect(self.screenshot_handle_num)
         scale_rate = window_scale_rate()
         width_before: int = winRect[2] - winRect[0]  # 右x-左x

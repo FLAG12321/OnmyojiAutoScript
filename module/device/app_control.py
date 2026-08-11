@@ -12,6 +12,9 @@ class AppControl(Adb, Uiautomator2):
     _app_u2_family = ['uiautomator2', 'minitouch', 'scrcpy']
 
     def app_is_running(self) -> bool:
+        # 桌面模式：目标窗口存在即游戏在运行，不做 ADB 探测
+        if self.is_desktop:
+            return self.desktop_window_exists()
         method = self.config.script.device.control_method
         # if self.is_wsa:
         #     package = self.app_current_wsa()
