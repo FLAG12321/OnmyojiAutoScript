@@ -63,7 +63,7 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
 
     def _select_skill(self) -> int:
         self.screenshot()
-        self.wait_until_stable(self.I_SELECT_3)
+        self.wait_until_stable(self.I_SELECT_3,timer=Timer(0.3, count=1), timeout=Timer(3, count=5))
         select = 3  # 从0开始计数
         button = None
         # 只选柔风
@@ -131,11 +131,15 @@ class MoonSeaSkills(BaseTask, SixRealmsAssets):
             logger.info('Start select skill')
             select = self._select_skill()
             # 如果没有柔风并且钱够并且还有刷新次数
+            self.screenshot()
             while   self.cnt_skill101 < 1 and self.cnt_skillpower >= self._conf.power_enhance_level and refresh and select == 3 and check_coin_skill() and check_refresh() :
                 logger.info('Refresh skill')
+                self.screenshot()
                 self.appear_then_click(self.I_SKILL_REFRESH)
                 select = self._select_skill()
+            self.screenshot()
             if self.appear(self.selects_button[select]):
+                self.screenshot()
                 while self.appear_rgb(self.selects_button[select]):
                     self.screenshot()
                     self.appear_then_click(self.selects_button[select], interval=1)
