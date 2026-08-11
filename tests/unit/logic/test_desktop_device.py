@@ -207,6 +207,30 @@ def test_desktop_trace_is_curved_not_straight():
     assert any(cross(p) != 0 for p in trace)
 
 
+def test_desktop_trace_vertical_does_not_crash():
+    # 纯垂直移动（x 相同）：贝塞尔 x 方向参数化退化会产生 NaN 崩溃，应退化为垂直直线轨迹
+    w = object.__new__(Window)
+    trace = w.desktop_trace((1145, 670), (1145, 601))
+    assert trace
+    assert all(p[0] == 1145 for p in trace)
+    # 终点精确落在目标点，中间点位于起点与终点之间且单调
+    assert trace[-1] == [1145, 601]
+    ys = [p[1] for p in trace]
+    assert all(601 <= y <= 670 for y in ys)
+    assert ys == sorted(ys, reverse=True)
+
+
+def test_desktop_trace_vertical_midpoints_on_line():
+    # 长距离纯垂直移动：中间点全在垂直线上且单调递增，不产生 NaN
+    w = object.__new__(Window)
+    trace = w.desktop_trace((100, 100), (100, 600), interval=10)
+    assert len(trace) >= 5
+    assert all(p[0] == 100 for p in trace)
+    ys = [p[1] for p in trace]
+    assert ys == sorted(ys)
+    assert trace[-1] == [100, 600]
+
+
 def test_move_desktop_window_message_first_call_jumps(monkeypatch):
     # 首次移动没有历史位置 → 只发一次 WM_MOUSEMOVE 直达目标，并记录光标
     w = _desktop_window()

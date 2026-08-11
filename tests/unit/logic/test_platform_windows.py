@@ -171,6 +171,23 @@ def test_find_emulator_instance_uses_config_for_local_nat_mumu12():
     assert instance.MuMuPlayer12_id == 1
 
 
+def test_find_emulator_instance_uses_config_for_android15_mumu():
+    # 安卓 15 的 MuMu 实例名是 MuMuPlayer-15.0-N, 版本号不应写死为 12.0
+    platform = object.__new__(PlatformWindows)
+    platform.serial = "127.0.0.1:16512"
+    platform.all_emulator_instances = []
+
+    instance = platform.find_emulator_instance(
+        serial="127.0.0.1:16512",
+        name="MuMuPlayer-15.0-4",
+        path="E:/MuMuPlayer/nx_main/MuMuNxMain.exe",
+        emulator="MuMuPlayer12",
+    )
+
+    assert instance.type == Emulator.MuMuPlayer12
+    assert instance.MuMuPlayer12_id == 4
+
+
 def test_find_emulator_instance_falls_back_to_enumeration_when_auto():
     # 类型为 auto(emulator 为空)时回退到原有枚举探测, 按 serial/id 匹配已枚举实例
     platform = object.__new__(PlatformWindows)
