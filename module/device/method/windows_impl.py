@@ -338,6 +338,12 @@ class Window(Handle):
         number_list: int = int(dist(start_pos, end_pos) / (1 * interval))
         if number_list < 1:
             return [tuple(end_pos)]
+        # 贝塞尔曲线以 x 方向做参数化（t=(x-x0)/(x1-x0)），起点终点 x 相同时分母
+        # 为 0 会产生 NaN，int(NaN) 崩溃；纯垂直移动退化为垂直直线插值
+        if start_pos[0] == end_pos[0]:
+            dy = end_pos[1] - start_pos[1]
+            return [[int(start_pos[0]), int(start_pos[1] + dy * i / number_list)]
+                    for i in range(1, number_list + 1)]
         le = random.randint(2, 4)
         deviation = random.randint(20, 40)
         # 0.8 概率先快中间慢后面快，0.1 先快后慢，0.1 先慢后快
