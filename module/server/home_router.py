@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import json
+import threading
 from fastapi import APIRouter, Body
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from module.config.utils import write_file
 from module.logger import logger
 from module.ocr.rpc import shutdown_ocr_server
 from module.server.main_manager import MainManager
-from module.server.updater import Updater
+from module.server.updater import Updater, _update_progress
 from module.server.i18n import I18n
 
 home_app = APIRouter(
@@ -58,6 +59,7 @@ async def update_info():
         updater = Updater()
         result = {'is_update': updater.check_update(),
                   'branch': updater.current_branch(),
+                  'repository': updater.Repository,
                   'current_commit': updater.current_commit(),
                   'latest_commit': updater.latest_commit(),
                   'commit': updater.get_commit(n=15),
@@ -70,13 +72,36 @@ async def update_info():
 
 @home_app.get('/execute_update')
 async def execute_update():
-    # 下拉仓库 -> 关闭所有脚本进程 -> 最后重启oasx
+    # 后台线程执行更新（切分支 + pull），立即返回，进度经 /update_progress 轮询
     try:
         updater = Updater()
-        updater.execute_pull()
+        threading.Thread(target=updater.execute_pull, daemon=True).start()
     except Exception as e:
         logger.error(e)
-    return '手动更新将会立即结束运行中的脚本服务, 最后你还需重启oasx'
+    return '更新已在后台开始，可通过 /update_progress 查看进度'
+
+
+@home_app.get('/update_progress')
+async def update_progress():
+    return _update_progress.snapshot()
+
+
+@home_app.post('/update_config')
+async def update_config(branch: str = None, repository: str = None):
+    # 写回 deploy.yaml（DeployConfig.__setattr__ 自动落盘）；Repository 变化时同步 git remote
+    updater = Updater()
+    if repository:
+        repository = str(repository).strip()
+        if not (repository.startswith('http://') or repository.startswith('https://')
+                or repository.startswith('git@')):
+            return {'error': 'repository 格式不合法'}
+        if repository != updater.Repository:
+            updater.Repository = repository
+            if not updater.execute_stream(f'"{updater.git}" remote set-url origin {repository}'):
+                logger.warning('git remote set-url origin failed')
+    if branch:
+        updater.Branch = str(branch).strip()
+    return {'repository': updater.Repository, 'branch': updater.Branch}
 
 
 @home_app.put('/chinese_translate')
