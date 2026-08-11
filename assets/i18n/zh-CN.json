@@ -408,8 +408,8 @@
   "welfare_enable": "优先开启福利寮",
   "welfare_tags": "福利寮标签关键字",
   "wild": "野队",
-  "window_background": "window_background (后台截图, 模拟器/桌面客户端通用)",
-  "window_message": "window_message (后台窗口消息, 模拟器/桌面客户端通用)",
+  "window_background": "window_background",
+  "window_message": "window_message",
   "一星": "一星",
   "不": "不",
   "不更改": "不更改",
@@ -724,10 +724,10 @@
   "命中行未配御魂段或未匹配怪物时兜底御魂预设, 组,队; -1,-1表示不切换": "命中行未配御魂段或未匹配怪物时兜底御魂预设, 组,队; -1,-1表示不切换",
   "怪物->预设映射, 每行一个 (品阶:普通/精英/首领, 组1-7,队1-4)\n4段(只切队伍): 怪物名,品阶,队伍组,队伍队\n6段(队伍+御魂): 怪物名,品阶,队伍组,队伍队,御魂组,御魂队\n4段行未配御魂: 开启御魂切换时御魂跟随队伍预设\n例:\n雷麒麟,普通,1,1\n雷麒麟,精英,2,2,3,1\n幽火姥姥,精英,3,3,4,2": "怪物->预设映射, 每行一个 (品阶:普通/精英/首领, 组1-7,队1-4)\n4段(只切队伍): 怪物名,品阶,队伍组,队伍队\n6段(队伍+御魂): 怪物名,品阶,队伍组,队伍队,御魂组,御魂队\n4段行未配御魂: 开启御魂切换时御魂跟随队伍预设\n例:\n雷麒麟,普通,1,1\n雷麒麟,精英,2,2,3,1\n幽火姥姥,精英,3,3,4,2",
   "是否在收服御灵页进式神录切御魂; 未配御魂预设时御魂跟随队伍预设": "是否在收服御灵页进式神录切御魂; 未配御魂预设时御魂跟随队伍预设",
-  "printwindow": "printwindow (后台截图, 不支持桌面客户端)",
+  "printwindow": "printwindow",
   "serial_help": "常见的模拟器 Serial 可以查询下方列表\n填 \"auto\" 自动检测模拟器，多个模拟器正在运行或使用不支持自动检测的模拟器时无法使用 \"auto\"，必须手动填写\n\n模拟器默认 Serial:\n[MuMu模拟器12]: 127.0.0.1:16384 \n[MuMu模拟器]: 127.0.0.1:7555 \n[雷电模拟器](全系列通用): emulator-5554 或 127.0.0.1:5555\n\n如果没有提及的那可能是还没有测试或者不推荐使用，可以自行尝试\n如果你使用了模拟器的多开功能，它们的 Serial 将不是默认的，可以在 console.bat 中执行 `adb devices` 查询，或根据模拟器官方的教程填写\n\n【桌面客户端模式】\n填 \"desktop\" 即切换为控制官方桌面客户端（窗口标题\"阴阳师-网易游戏\"），纯后台截图与输入，支持多开，不需要模拟器与 ADB。\n此时 Handle 需填目标客户端窗口的进程 PID，见 Handle 说明。",
   "handle_help": "填 \"auto\" 自动检测模拟器，多个模拟器正在运行或使用不支持自动检测的模拟器时无法使用 \"auto\"，必须手动填写\n输入为句柄标题或者是句柄号，每次启动模拟器时句柄号会变化。清空表示不使用window的操作方式。\n\n句柄标题 Handle:\n[MuMu模拟器12]: \"MuMu模拟器12\"\n[MuMu模拟器]: \"MuMu模拟器\" \n[雷电模拟器](全系列通用): \"雷电模拟器\"\n\n句柄号 Handle:\n某些模拟器多开时具有相同的句柄标题（说的就是MuMu），此时需要手动获取模拟器的句柄号手动设置。\n获取工具请查阅文档：[模拟器支持]\n\n【桌面客户端模式】\nSerial 填 \"desktop\" 时，此处填目标客户端窗口的进程 PID（纯数字），用于多开时区分实例。\n获取方式（任选其一）:\n  1) 任务管理器 → 详细信息 → 找到 onmyoji.exe，查看 PID 列\n  2) 命令行执行: ./toolkit/python.exe -m dev_tools.bind_desktop_window --config <实例名> --pick\n     （按提示把鼠标移到目标游戏窗口上回车，自动写入配置）\n  3) 列出全部客户端窗口按序号选择: 把上面的 --pick 换成 --list\n注意 PID 每次重启客户端都会变化，重启后需重新绑定。",
   "screenshot_method_help": "使用自动选择时，将执行一次性能测试并自动更改为最快的截图方案。一般情况下的速度: \nwindow_background ~= nemu_ipc >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB\n使用window_background来截图是10ms左右，对比DroidCast_raw是100ms左右（仅限作者的电脑）。但是window_background有一个致命的缺点是模拟器不可以最小化，\nnemu_ipc仅限mumu12模拟器且要求版本大于3.8.13，并且需要设置模拟器的执行路径\n\n【桌面客户端模式】\n请选择 window_background（BitBlt 后台截图），这是桌面模式唯一可用的方式。\nprintwindow 对客户端的 DirectX 渲染窗口会返回纯黑画面，不要选。\n桌面模式下会自动把客户区调整为 1280x720 并按物理像素 1:1 截图。",
   "control_method_help": "速度: window_message ~= minitouch > Hermit >>> uiautomator2 ~= ADB\n控制方式是模拟人类的速度，也不是越快越好 使用(window_message)会偶尔出现失效的情况\n\n【桌面客户端模式】\n请选择 window_message（后台窗口消息），这是桌面模式唯一可用的方式。\n若客户端以管理员权限运行，OAS 也必须以管理员身份启动，否则 Windows 的 UIPI 权限隔离会拦截所有点击与滑动（表现为截图正常但点击无反应）。",
-  "desktop": "desktop (桌面客户端模式)"
+  "desktop": "desktop"
 }

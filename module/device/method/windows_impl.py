@@ -36,6 +36,11 @@ from module.device.handle import Handle, window_scale_rate, EmulatorFamily, dpi_
 
 class Window(Handle):
 
+    # 桌面模式鼠标移动：每 N 像素取一个轨迹点，并限制单次移动的最大点数。
+    # 移动仅用于让客户端更新悬停状态，点越少越快；上限保证跨屏移动也不会拖慢。
+    DESKTOP_MOVE_STEP = 60
+    DESKTOP_MOVE_MAX_POINTS = 12
+
     def __init__(self, *args, **kwargs):
         logger.info("Window init")
         super().__init__(*args, **kwargs)
@@ -97,6 +102,14 @@ class Window(Handle):
             client_rect = GetClientRect(self.screenshot_handle_num)
             widthScreen = client_rect[2] - client_rect[0]
             heightScreen = client_rect[3] - client_rect[1]
+            if widthScreen <= 0 or heightScreen <= 0:
+                # 窗口最小化时客户区为 0x0，BitBlt 取不到任何内容。桌面模式允许窗口
+                # 被其他窗口遮挡，但不能最小化（PrintWindow 虽支持最小化，却对该
+                # DirectX 客户端返回纯黑，无法替代）。
+                raise RequestHumanTakeover(
+                    'Desktop client window is minimized, screenshot unavailable. '
+                    '请恢复游戏窗口（可被其他窗口遮挡，但不能最小化）'
+                )
             hwndDc = GetDC(self.screenshot_handle_num)
             mfcDc = CreateDCFromHandle(hwndDc)
             saveDc = mfcDc.CreateCompatibleDC()
@@ -266,10 +279,12 @@ class Window(Handle):
         直接在目标点发 down/up 会被部分控件忽略，因此必须带鼠标移动过程。
         """
         hwnd = self.root_handle_num
+        # 后台消息点击由客户端按 down/up 事件判定，无需模拟真人按压时长；
+        # 保留小幅随机抖动避免固定间隔特征
         if fast:
-            press_time: float = (random.randint(10, 40)) / 1000.0
+            press_time: float = (random.randint(10, 25)) / 1000.0
         else:
-            press_time: float = (random.randint(100, 200)) / 1000.0
+            press_time: float = (random.randint(30, 60)) / 1000.0
         self.move_desktop_window_message(x, y)
         mx, my = self.desktop_message_coord(x, y)
         lparam = MAKELONG(mx, my)
@@ -286,6 +301,10 @@ class Window(Handle):
         入参为资产坐标；维护 _desktop_cursor 记录当前鼠标位置（同为资产坐标），
         使连续操作之间的移动连贯；轨迹与模拟器路径同源（BezierTrajectory），
         避免直线等距的机器特征。发消息前统一换算到窗口消息坐标空间。
+
+        移动只为让客户端更新悬停状态，无需逐像素铺满：轨迹按 DESKTOP_MOVE_STEP
+        像素取点并整体限制在 DESKTOP_MOVE_MAX_POINTS 个以内，长距离移动的耗时
+        因此与距离解耦，不会随屏幕跨度线性增长。
         """
         hwnd = self.root_handle_num
         start = getattr(self, '_desktop_cursor', None)
@@ -303,9 +322,13 @@ class Window(Handle):
         if start == target:
             post_move(target[0], target[1])
             return
-        for px, py in self.desktop_trace(start, target):
+        trace = self.desktop_trace(start, target, interval=self.DESKTOP_MOVE_STEP)
+        # 点数超限时等间隔抽稀，保留轨迹形状但把消息量压到上限内
+        if len(trace) > self.DESKTOP_MOVE_MAX_POINTS:
+            step = len(trace) / self.DESKTOP_MOVE_MAX_POINTS
+            trace = [trace[int(i * step)] for i in range(self.DESKTOP_MOVE_MAX_POINTS)]
+        for px, py in trace:
             post_move(px, py)
-            time.sleep(random.randint(1, 3) / 1000.0)
         post_move(target[0], target[1])
         self._desktop_cursor = target
 

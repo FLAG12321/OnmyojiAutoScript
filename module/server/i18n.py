@@ -4,6 +4,10 @@ from pathlib import Path
 
 from module.logger import logger
 
+# 候选项在运行时按环境现算、值不稳定的字段，其 enumEnum 不参与翻译 key 收集。
+# handle 在桌面模式下是"已开客户端窗口"下拉，值含每次开游戏都变的 PID。
+DYNAMIC_ENUM_FIELDS = frozenset({'handle'})
+
 
 class Addition:
     # 补充翻译目录（下发给 OASX 的翻译源），类属性便于测试替换路径。
@@ -73,6 +77,11 @@ class I18n(Addition):
                             # description 为空字符串时跳过，避免产生空 key 垃圾条目
                             if item.get('description'):
                                 keys.add(item['description'])
+                            # 动态字段的候选项按运行时环境现算（如 handle 是已开
+                            # 客户端窗口，值里含每次开游戏都变的 PID），收进翻译表
+                            # 只会不断追加无法复用、也无法自动清理的垃圾条目
+                            if item['name'] in DYNAMIC_ENUM_FIELDS:
+                                continue
                             for enum_value in item.get('enumEnum', []):
                                 if isinstance(enum_value, str):
                                     keys.add(enum_value)

@@ -44,6 +44,25 @@ class TestCollectFrontendKeys:
         keys = I18n.collect_frontend_keys(MENU, fake_script_task)
         assert 'Broken' in keys
 
+    def test_dynamic_enum_values_not_collected(self):
+        # handle 的候选项在桌面模式下按运行时枚举窗口现算，值含每次开游戏都变的 PID，
+        # 收进翻译表只会不断追加无法复用也无法自动清理的垃圾条目
+        def task_with_handle(task_name):
+            return {'device': [
+                {'name': 'handle', 'description': 'handle_help', 'type': 'enum',
+                 'enumEnum': ['', '27272 (0,0)']},
+                {'name': 'screenshot_method', 'type': 'enum',
+                 'enumEnum': ['window_background']},
+            ]}
+
+        keys = I18n.collect_frontend_keys({'Daily': ['Demo']}, task_with_handle)
+        # 字段名与 description 照常收集（它们是稳定 key）
+        assert {'handle', 'handle_help'} <= keys
+        # 动态候选项一律不收
+        assert not any('27272' in k for k in keys)
+        # 其余字段的静态枚举值不受影响
+        assert 'window_background' in keys
+
 
 class TestLoadAdditionsFilter:
     def test_empty_values_filtered(self, tmp_path, monkeypatch):

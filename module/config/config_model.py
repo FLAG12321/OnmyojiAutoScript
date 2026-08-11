@@ -369,7 +369,58 @@ class ConfigModel(ConfigBase):
                         groups_value[key] = groups[group_name]
             result[key] = merge_value(groups_value[key], value, schema["$defs"])
 
+        self._inject_desktop_handle_options(result)
         return result
+
+    def _inject_desktop_handle_options(self, result: dict) -> None:
+        """桌面模式下把 handle 就地改成"已开客户端窗口"下拉，供界面选择而非手填 PID。
+
+        仅当 script.device.serial == 'desktop' 时注入：handle 是桌面与模拟器共用
+        字段，模拟器模式下需要保留 auto/窗口标题/HWND 的自由文本输入，因此那边的
+        schema 输出保持原样不动。
+        字段类型仍是 str，只是在返回给界面的字典里补上候选项，pydantic 校验不受影响。
+        """
+        device_items = result.get('device')
+        if not device_items:
+            return
+        if getattr(self.script.device, 'serial', '') != 'desktop':
+            return
+        try:
+            from module.device.handle import desktop_window_option, list_desktop_windows
+            windows = list_desktop_windows()
+        except Exception as e:
+            # 枚举依赖 win32 且只服务于界面展示，失败时退回手填输入框，不能拖垮设置页
+            logger.warning(f'list desktop windows failed, handle stays a text input: {e}')
+            return
+
+        options = [desktop_window_option(w) for w in windows]
+        current = ''
+        for item in device_items:
+            if item['name'] == 'handle':
+                current = str(item.get('value') or '')
+                break
+        # 落盘的 handle 是纯 PID，而候选项是带标题坐标的展示串。界面靠"值等于某个
+        # 候选项"来选中，所以要把当前值换成同款展示串，否则下拉会显示为空白
+        display = ''
+        for window, option in zip(windows, options):
+            if str(window['pid']) == current:
+                display = option
+                break
+        # 已绑定的 PID 此刻不在枚举结果里（客户端未启动，或重启后换了 PID）：
+        # 仍把原值作为候选保留，让界面显示出"配置里存的是谁"而不是静默变空
+        if current and not display:
+            display = current
+            options.append(current)
+        # 空串候选用于"解除绑定"，同时保证 handle 为空时下拉有项可选中
+        options.insert(0, '')
+
+        for item in device_items:
+            if item['name'] != 'handle':
+                continue
+            item['type'] = 'enum'
+            item['enumEnum'] = options
+            item['value'] = display
+            break
 
     def script_set_arg(self, task: str, group: str, argument: str, value) -> bool:
         # 验证参数
@@ -420,6 +471,18 @@ class ConfigModel(ConfigBase):
             date_time = self.restart.task_config.reset_task_datetime
             logger.info(f"reset_task_datetime={date_time}")
             self.reset_datetime_for_all_enabled_tasks(date_time)
+
+        # 桌面模式下 handle 在界面上是下拉项，回传的是 "PID | 标题 (x,y)" 展示串，
+        # 落盘前剥回纯 PID，保证 Handle 按数字消费 handle 的逻辑不变。
+        # 必须限定在 desktop 模式：模拟器模式的 handle 允许填窗口标题等非数字文本，
+        # 那里不能走这个解析，否则标题会被剥成空串
+        if (task == 'script' and group == 'device' and argument == 'handle'
+                and isinstance(value, str) and self.script.device.serial == 'desktop'):
+            from module.device.handle import desktop_option2pid
+            resolved = desktop_option2pid(value)
+            if resolved != value:
+                logger.info(f'Desktop handle option resolved to PID: {resolved}')
+            value = resolved
 
         # 设置参数
         try:

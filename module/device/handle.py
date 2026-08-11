@@ -74,6 +74,61 @@ def _window_total_size(width: int, height: int, style: int, ex_style: int) -> tu
     return rect.right - rect.left, rect.bottom - rect.top
 
 
+def list_desktop_windows() -> list:
+    """枚举当前所有桌面客户端窗口。
+
+    返回 [{'pid': int, 'title': str, 'x': int, 'y': int}]，按屏幕位置排序。
+    桌面客户端多开时窗口标题完全相同，只能靠 PID 区分，附带左上角坐标是为了
+    让用户在界面上按"窗口摆在哪"对号入座。按坐标排序保证同一组窗口每次枚举
+    顺序稳定（EnumWindows 的返回顺序随 Z 序变化）。
+    """
+    def enum_cb(hwnd, param):
+        param.append(hwnd)
+        return True
+
+    handles = []
+    EnumWindows(enum_cb, handles)
+    result = []
+    for hwnd in handles:
+        if GetWindowText(hwnd) not in DESKTOP_WINDOW_TITLES:
+            continue
+        try:
+            rect = GetWindowRect(hwnd)
+        except Exception:
+            # 窗口在枚举与取矩形之间被关闭，跳过即可
+            continue
+        result.append({
+            'pid': GetWindowThreadProcessId(hwnd)[1],
+            'title': GetWindowText(hwnd),
+            'x': rect[0],
+            'y': rect[1],
+        })
+    result.sort(key=lambda w: (w['x'], w['y'], w['pid']))
+    return result
+
+
+def desktop_window_option(window: dict) -> str:
+    """把窗口信息格式化成界面下拉项文本，形如 `27272 (154,38)`。
+
+    不显示窗口标题：桌面客户端多开时标题完全相同，且中文字样在英文界面里冗余。
+    PID 放在最前，desktop_option2pid 只认第一段数字，坐标纯属给用户辨识用，
+    改动展示格式不会影响解析。
+    """
+    return f"{window['pid']} ({window['x']},{window['y']})"
+
+
+def desktop_option2pid(option: str) -> str:
+    """从下拉项文本中取回纯 PID；取不到时返回空串。
+
+    界面回传的是展示文本，但落盘的 handle 必须是纯 PID（Handle 按数字消费），
+    因此写入配置前统一在这里剥掉标题与坐标。用户手工填的纯数字原样通过。
+    """
+    if not option:
+        return ''
+    matched = re.match(r'\s*(\d+)', str(option))
+    return matched.group(1) if matched else ''
+
+
 def handle_title2num(title: str) -> int:
     """
     从标题到句柄号

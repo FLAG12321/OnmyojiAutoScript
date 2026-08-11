@@ -9,7 +9,7 @@ from module.device.connection import Connection
 from module.device.connection_attr import ConnectionAttr
 from module.device.device import Device, EmulatorState
 from module.device.handle import Handle
-from module.exception import EmulatorNotRunningError
+from module.exception import EmulatorNotRunningError, RequestHumanTakeover
 from module.device.method.windows_impl import Window
 
 
@@ -232,6 +232,73 @@ def test_move_desktop_window_message_traces_from_last_point(monkeypatch):
     assert len(calls) > 5
     assert all(m == win32con.WM_MOUSEMOVE for m, _ in calls)
     assert w._desktop_cursor == (600, 500)
+
+
+def test_move_desktop_window_message_caps_points(monkeypatch):
+    # 跨屏移动的消息数受 DESKTOP_MOVE_MAX_POINTS 限制，耗时不随距离线性增长
+    w = _desktop_window()
+    w._desktop_cursor = (0, 0)
+    calls = []
+    monkeypatch.setattr('module.device.method.windows_impl.PostMessage',
+                        lambda hwnd, msg, wp, lp: calls.append((msg, lp)))
+    w.move_desktop_window_message(1280, 720)
+    # 轨迹点被抽稀到上限，再加终点补发一次
+    assert len(calls) <= w.DESKTOP_MOVE_MAX_POINTS + 1
+    assert w._desktop_cursor == (1280, 720)
+
+
+def test_screenshot_desktop_bitblt_raises_when_minimized(monkeypatch):
+    # 窗口最小化时客户区为 0x0，应给出可读错误而非 reshape 崩溃
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0x200
+    monkeypatch.setattr('module.device.method.windows_impl.GetClientRect', lambda h: (0, 0, 0, 0))
+    with pytest.raises(RequestHumanTakeover):
+        w.screenshot_desktop_bitblt()
+
+
+class _IntervalTimer:
+    def __init__(self):
+        self.limit = None
+
+
+def _interval_screenshot(is_desktop, value, combat_value, method='printwindow'):
+    from module.device.screenshot import Screenshot
+    s = object.__new__(Screenshot)
+    s.is_desktop = is_desktop
+    opt = types.SimpleNamespace(screenshot_interval=value, combat_screenshot_interval=combat_value)
+    s.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(
+            optimization=opt,
+            device=types.SimpleNamespace(screenshot_method=method),
+        ),
+        Emulator_ScreenshotMethod=method,
+    )
+    s._screenshot_interval = _IntervalTimer()
+    return s, opt
+
+
+def test_screenshot_interval_desktop_allows_lower_floor():
+    # 桌面 BitBlt 便宜，间隔下限放宽到 0.05 / 战斗 0.1，且不改写用户配置
+    from module.device.screenshot import Screenshot
+    s, opt = _interval_screenshot(True, 0.05, 0.1)
+    Screenshot.screenshot_interval_set(s, None)
+    assert s._screenshot_interval.limit == 0.05
+    Screenshot.screenshot_interval_set(s, 'combat')
+    assert s._screenshot_interval.limit == 0.1
+    # 原配置值未被非桌面区间夹取写回
+    assert opt.screenshot_interval == 0.05
+    assert opt.combat_screenshot_interval == 0.1
+
+
+def test_screenshot_interval_emulator_unchanged():
+    # 非桌面路径行为逐值不变：0.1~0.3 / 战斗 0.3~1.0
+    from module.device.screenshot import Screenshot
+    s, _ = _interval_screenshot(False, 0.05, 0.05, method='adb')
+    Screenshot.screenshot_interval_set(s, None)
+    assert s._screenshot_interval.limit == 0.1
+    Screenshot.screenshot_interval_set(s, 'combat')
+    assert s._screenshot_interval.limit == 0.3
 
 
 def test_click_desktop_moves_before_press(monkeypatch):
@@ -548,3 +615,104 @@ def test_get_orientation_desktop_returns_normal(monkeypatch):
     assert Connection.get_orientation(conn) == 0
     assert called == []
     assert conn.orientation == 0
+
+
+# ---------------- 桌面模式 handle 下拉：窗口枚举 / 候选注入 / 写回解析 ----------------
+
+def _fake_desktop_windows():
+    # 模拟两个桌面客户端窗口，位于不同屏幕坐标（多开）
+    return [
+        {'pid': 27272, 'title': '阴阳师-网易游戏', 'x': 154, 'y': 38},
+        {'pid': 31844, 'title': '阴阳师-网易游戏', 'x': 1280, 'y': 0},
+    ]
+
+
+def test_desktop_window_option_formats_display_text():
+    # 下拉项文本：PID 打头、后随窗口左上角坐标，供多开时按屏幕位置辨识；
+    # 不含窗口标题（多开标题相同无辨识价值，且避免界面出现中文字样）
+    from module.device.handle import desktop_window_option
+    assert desktop_window_option({'pid': 27272, 'title': '阴阳师-网易游戏', 'x': 154, 'y': 38}) \
+        == '27272 (154,38)'
+
+
+def test_desktop_option2pid_extracts_leading_number():
+    # 界面回传的是展示串，落盘前要剥回纯 PID；纯数字文本原样通过
+    from module.device.handle import desktop_option2pid
+    assert desktop_option2pid('27272 (154,38)') == '27272'
+    assert desktop_option2pid('27272 | 阴阳师-网易游戏 (154,38)') == '27272'
+    assert desktop_option2pid('27272') == '27272'
+    assert desktop_option2pid('') == ''
+    assert desktop_option2pid('auto') == ''
+
+
+def _config_model(serial, handle):
+    """构造纯默认 ConfigModel 并设定 serial/handle，不读写磁盘上的用户配置。
+
+    __setattr__ 会触发自动保存，这里连同 save 一并拦掉，避免单测落盘。
+    """
+    from module.config.config_model import ConfigModel
+    config = ConfigModel()
+    object.__setattr__(config, 'save', lambda: None)
+    config.script.device.serial = serial
+    config.script.device.handle = handle
+    return config
+
+
+def test_script_task_desktop_injects_handle_options(monkeypatch):
+    # 桌面模式下 handle 变下拉：type=enum、候选含空项(解除绑定)与枚举到的窗口，
+    # 且已存 PID 的 value 对齐到同款展示串（否则界面选不中当前项会显示空白）
+    monkeypatch.setattr('module.device.handle.list_desktop_windows', _fake_desktop_windows)
+    config = _config_model('desktop', '27272')
+    item = next(i for i in config.script_task('Script')['device'] if i['name'] == 'handle')
+    assert item['type'] == 'enum'
+    assert item['enumEnum'][0] == ''
+    assert '27272 (154,38)' in item['enumEnum']
+    assert '31844 (1280,0)' in item['enumEnum']
+    # value 对齐到当前 PID 的展示串
+    assert item['value'] == '27272 (154,38)'
+
+
+def test_script_task_emulator_handle_stays_text(monkeypatch):
+    # 模拟器模式下 handle 输出与改动前一致：仍是 string 文本输入，不注入任何候选项
+    monkeypatch.setattr('module.device.handle.list_desktop_windows', _fake_desktop_windows)
+    config = _config_model('127.0.0.1:16384', 'MuMuPlayer')
+    item = next(i for i in config.script_task('Script')['device'] if i['name'] == 'handle')
+    assert item['type'] == 'string'
+    assert 'enumEnum' not in item
+
+
+def test_script_task_desktop_keeps_unlisted_current_value(monkeypatch):
+    # 已存 PID 此刻不在枚举结果里（客户端重启换了 PID）：原值仍进候选且 value 显示它，
+    # 界面不会把配置显示成空白
+    monkeypatch.setattr('module.device.handle.list_desktop_windows',
+                        lambda: [{'pid': 31844, 'title': '阴阳师-网易游戏', 'x': 0, 'y': 0}])
+    config = _config_model('desktop', '27272')
+    item = next(i for i in config.script_task('Script')['device'] if i['name'] == 'handle')
+    assert item['value'] == '27272'
+    assert '27272' in item['enumEnum']
+    assert item['value'] in item['enumEnum']
+
+
+def test_script_task_desktop_enum_failure_falls_back_to_text(monkeypatch):
+    # 枚举窗口异常（依赖 win32 只服务展示）时退回文本框，不能拖垮设置页
+    monkeypatch.setattr('module.device.handle.list_desktop_windows',
+                        lambda: (_ for _ in ()).throw(RuntimeError('win32 unavailable')))
+    config = _config_model('desktop', '27272')
+    item = next(i for i in config.script_task('Script')['device'] if i['name'] == 'handle')
+    assert item['type'] == 'string'
+    assert 'enumEnum' not in item
+
+
+def test_script_set_arg_desktop_handle_stores_pure_pid():
+    # 写回：桌面模式下选中展示串，落盘必须是纯 PID（Handle 按数字消费）
+    config = _config_model('desktop', '')
+    assert config.script_set_arg('script', 'device', 'handle',
+                                 '27272 (154,38)') is True
+    assert config.script.device.handle == '27272'
+
+
+def test_script_set_arg_emulator_handle_keeps_title_text():
+    # 写回：模拟器模式下 handle 允许窗口标题等非数字文本，不能走桌面解析被剥空
+    config = _config_model('127.0.0.1:16384', '')
+    assert config.script_set_arg('script', 'device', 'handle', 'MuMuPlayer') is True
+    assert config.script.device.handle == 'MuMuPlayer'
