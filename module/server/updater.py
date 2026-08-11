@@ -467,9 +467,14 @@ class Updater(DeployConfig, GitManager, PipManager):
         #         pass
 
         source = "origin"
-        for _ in range(3):
+        # fetch 加快速失败参数（TCP 3s、慢速 10s 中止），进程 25s 兜底 kill：
+        # 连不上远程时尽快失败返回，避免 update_info 长时间挂起阻塞更新器页
+        for _ in range(2):
             if self.execute(
-                    f'"{self.git}" fetch {source} {self.Branch}', allow_failure=True
+                    f'"{self.git}" -c http.connectTimeout=3 -c http.lowSpeedLimit=1000 '
+                    f'-c http.lowSpeedTime=10 fetch {source} {self.Branch}',
+                    allow_failure=True,
+                    timeout=25,
             ):
                 break
         else:
@@ -520,12 +525,14 @@ class Updater(DeployConfig, GitManager, PipManager):
                     prog.reject(f'git 升级后仍不可用：{reason}')
                     return False
 
-        # 1. fetch 目标分支
+        # 1. fetch 目标分支（加快速失败参数，连不上远程时尽快失败，不让后台线程空挂）
         prog.set_step(f'fetch {source}/{self.Branch}')
         fetched = False
         for _ in range(3):
             if self.execute_stream(
-                    f'"{self.git}" fetch {source} {self.Branch}', on_line=prog.append
+                    f'"{self.git}" -c http.connectTimeout=3 -c http.lowSpeedLimit=1000 '
+                    f'-c http.lowSpeedTime=10 fetch {source} {self.Branch}',
+                    on_line=prog.append
             ):
                 fetched = True
                 break

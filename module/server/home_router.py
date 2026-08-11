@@ -54,7 +54,9 @@ async def kill_server():
 
 
 @home_app.get('/update_info')
-async def update_info():
+def update_info():
+    # 同步 def：FastAPI 会放到线程池执行，git fetch 耗时不会阻塞事件循环。
+    # 即便连不上 GitHub，也不至于拖住 /update_progress 等其他接口。
     try:
         updater = Updater()
         result = {'is_update': updater.check_update(),

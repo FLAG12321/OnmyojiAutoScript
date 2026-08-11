@@ -1,6 +1,8 @@
 # This Python file uses the following encoding: utf-8
 # copy from alas https://github.com/LmeSzinc/AzurLaneAutoScript
 import copy
+import subprocess
+import sys
 from typing import Optional, Union
 
 from deploy.logger import logger
@@ -128,12 +130,13 @@ class DeployConfig(ConfigModel):
             .replace('"', '"')
         )
 
-    def execute(self, command, allow_failure=False, output=True):
+    def execute(self, command, allow_failure=False, output=True, timeout=None):
         """
         Args:
             command (str):
             allow_failure (bool):
             output(bool):
+            timeout (int | None): 进程最长执行秒数，超时 kill 并视为失败；None 表示不限制。
 
         Returns:
             bool: If success.
@@ -143,7 +146,35 @@ class DeployConfig(ConfigModel):
         if not output:
             command = command + ' >nul 2>nul'
         logger.info(command)
-        error_code = os.system(command)
+        # GUI(pythonw) 无控制台时 os.system 会为子进程新建 CMD 窗口，改用 CREATE_NO_WINDOW 静默执行
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding='utf-8',
+            errors='replace',
+            shell=True,
+            creationflags=flags,
+        )
+        try:
+            proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # 超时视为失败。Windows 下 kill cmd 不会带走它派生的 git/ping 子进程，
+            # 残留子进程仍持有 stdout 管道会让 communicate 继续阻塞，必须按进程树杀
+            logger.info(f"[ timeout ]: {command[:80]}...")
+            if sys.platform.startswith('win'):
+                subprocess.Popen(
+                    f'taskkill /F /T /PID {proc.pid}',
+                    shell=True,
+                    creationflags=flags,
+                ).wait()
+            else:
+                proc.kill()
+            proc.communicate()
+            error_code = -1
+        else:
+            error_code = proc.returncode
         if error_code:
             if allow_failure:
                 logger.info(f"[ allowed failure ], error_code: {error_code}")
