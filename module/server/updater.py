@@ -26,10 +26,10 @@ from module.server.config import DeployConfig
 # 实测无法通过 https 拉取远程，装了也没用。
 GIT_MIN_VERSION = (2, 30, 0)
 GIT_UPGRADE_VERSION = '2.55.0.3'
-# 国内镜像优先，失败依次尝试下一个
+# 国内源优先（淘宝 npmmirror / 华为云），GitHub 代理兜底，失败依次尝试下一个
 GIT_UPGRADE_URLS = [
-    'https://ghproxy.net/https://github.com/git-for-windows/git/releases/download/'
-    'v2.55.0.windows.3/Git-2.55.0.3-64-bit.tar.bz2',
+    'https://registry.npmmirror.com/-/binary/git-for-windows/v2.55.0.windows.3/Git-2.55.0.3-64-bit.tar.bz2',
+    'https://mirrors.huaweicloud.com/git-for-windows/v2.55.0.windows.3/Git-2.55.0.3-64-bit.tar.bz2',
     'https://gh-proxy.com/https://github.com/git-for-windows/git/releases/download/'
     'v2.55.0.windows.3/Git-2.55.0.3-64-bit.tar.bz2',
 ]
