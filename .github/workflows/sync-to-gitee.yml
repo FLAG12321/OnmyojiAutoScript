@@ -1,0 +1,28 @@
+name: Sync to Gitee
+
+on:
+  push:
+    branches:
+      - '**' # 任意分支 push 都触发，即时同步该分支与 tag
+  schedule:
+    - cron: "0 4 * * *" # 每天 UTC 04:00（北京时间 12:00）兜底同步未触发的分支
+
+jobs:
+  mirror:
+    name: Mirror FLAG12321/OnmyojiAutoScript to Gitee
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror repo to Gitee
+        uses: Yikun/hub-mirror-action@master
+        with:
+          # 源为 GitHub 上的用户仓库，目标为 Gitee 同名仓库，账号类型均为 user
+          src: github/FLAG12321
+          dst: gitee/flag12321
+          # HTTPS 方式推送，使用 Gitee 私人令牌作为认证凭据
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          clone_style: https
+          static_list: "OnmyojiAutoScript"
+          account_type: user
+          # 强制覆盖 Gitee 历史，保证与 GitHub 完全一致（镜像语义）
+          force_update: true
+          white_list: "OnmyojiAutoScript"
