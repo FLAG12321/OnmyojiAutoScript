@@ -251,6 +251,23 @@ class Updater(DeployConfig, GitManager, PipManager):
         self.__dict__.pop('git', None)
         self.__dict__.pop('_git_root', None)
 
+    def ensure_origin(self) -> bool:
+        """确保 git origin 与 deploy.yaml 的 Repository 一致，不一致时自动切换。"""
+        current = self.execute_output(f'"{self.git}" remote get-url origin').strip()
+        if current == self.Repository:
+            return True
+        if current.startswith(('http://', 'https://', 'git@')):
+            # origin 存在但地址不同，set-url 覆盖
+            ok = self.execute_stream(f'"{self.git}" remote set-url origin {self.Repository}')
+        else:
+            # origin 不存在（get-url 输出报错文本），用 add 创建
+            ok = self.execute_stream(f'"{self.git}" remote add origin {self.Repository}')
+        if ok:
+            logger.info(f'origin 已同步到 {self.Repository}')
+            return True
+        logger.warning('同步 origin 失败，更新可能仍走旧远程')
+        return False
+
     def find_usable_git(self):
         """
         探测本机已安装的可用 git（含 https 传输组件），零下载优先。
@@ -497,6 +514,11 @@ class Updater(DeployConfig, GitManager, PipManager):
         #         # failed, should fallback to `git pull`
         #         pass
 
+        # 确保 fetch 源与 deploy.yaml Repository 一致（用户直接改 yaml 时自动换源）
+        self.fetch_ok = False
+        if not self.ensure_origin():
+            return False
+
         source = "origin"
         # fetch 加快速失败参数（TCP 3s、慢速 10s 中止），进程 25s 兜底 kill：
         # 连不上远程时尽快失败返回，避免 update_info 长时间挂起阻塞更新器页
@@ -558,6 +580,11 @@ class Updater(DeployConfig, GitManager, PipManager):
                 if not usable:
                     prog.reject(f'git 升级后仍不可用：{reason}')
                     return False
+
+        # 0.5 确保 fetch 源与 deploy.yaml Repository 一致（用户直接改 yaml 时自动换源）
+        if not self.ensure_origin():
+            prog.reject('同步 origin 失败，拒绝使用旧远程更新')
+            return False
 
         # 1. fetch 目标分支（加快速失败参数，连不上远程时尽快失败，不让后台线程空挂）
         prog.set_step(f'fetch {source}/{self.Branch}')

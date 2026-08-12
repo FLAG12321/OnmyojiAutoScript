@@ -204,6 +204,20 @@ def test_update_config_invalid_repository(updater, monkeypatch):
     assert 'error' in result
 
 
+# 10b. update_config：Repository 与 deploy.yaml 相同也强制 set-url
+#     （回归：之前相等的值会跳过 set-url，导致表单显示 gitee、实际拉取仍是 github）
+@pytest.mark.unit
+def test_update_config_same_repo_still_set_url(updater, monkeypatch):
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    updater.Repository = 'https://example.com/repo.git'
+    set_url_calls = []
+    updater.execute_stream = lambda cmd, on_line=None: set_url_calls.append(cmd) or True
+    result = asyncio.run(home_router.update_config(
+        repository='https://example.com/repo.git'))
+    assert result['repository'] == 'https://example.com/repo.git'
+    assert any('remote set-url origin' in c for c in set_url_calls)
+
+
 # 11. 进度 snapshot 字段齐全、状态流转正确
 @pytest.mark.unit
 def test_progress_snapshot():
@@ -606,7 +620,72 @@ def test_execute_pull_switch_makes_git_usable(updater, tmp_path, monkeypatch):
     assert updater.git == str(exe).replace('\\', '/')
 
 
-# 25. get_commit：git 报错文本（fatal，如远程引用缺失）→ 返回空元组，不把报错当 commit
+# 25. ensure_origin：地址已与 deploy.yaml 一致时不执行 git 命令
+@pytest.mark.unit
+def test_ensure_origin_keeps_matching_url(updater):
+    updater.Repository = 'https://example.com/repo.git'
+    updater.execute_output = lambda cmd: 'https://example.com/repo.git\n'
+    calls = []
+    updater.execute_stream = lambda cmd, on_line=None: calls.append(cmd) or True
+    assert updater.ensure_origin() is True
+    assert calls == []
+
+
+# 26. ensure_origin：origin 地址旧时自动 set-url 到 deploy.yaml Repository
+@pytest.mark.unit
+def test_ensure_origin_switches_url(updater):
+    updater.Repository = 'https://gitee.com/example/repo.git'
+    updater.execute_output = lambda cmd: 'https://github.com/example/repo.git\n'
+    calls = []
+    updater.execute_stream = lambda cmd, on_line=None: calls.append(cmd) or True
+    assert updater.ensure_origin() is True
+    assert calls == [
+        f'"{updater.git}" remote set-url origin https://gitee.com/example/repo.git'
+    ]
+
+
+# 27. ensure_origin：origin 不存在时自动 add 到 deploy.yaml Repository
+@pytest.mark.unit
+def test_ensure_origin_adds_missing_remote(updater):
+    updater.Repository = 'https://gitee.com/example/repo.git'
+    updater.execute_output = lambda cmd: "error: No such remote 'origin'\n"
+    calls = []
+    updater.execute_stream = lambda cmd, on_line=None: calls.append(cmd) or True
+    assert updater.ensure_origin() is True
+    assert calls == [
+        f'"{updater.git}" remote add origin https://gitee.com/example/repo.git'
+    ]
+
+
+# 28. check_update：origin 同步失败时不执行 fetch，fetch_ok 保持 false
+@pytest.mark.unit
+def test_check_update_stops_when_ensure_origin_fails(updater, monkeypatch):
+    monkeypatch.setattr(updater, 'ensure_origin', lambda: False)
+
+    def unexpected_fetch(*args, **kwargs):
+        raise AssertionError('origin 同步失败后不应继续 fetch')
+
+    updater.execute = unexpected_fetch
+    assert updater.check_update() is False
+    assert updater.fetch_ok is False
+
+
+# 29. execute_pull：origin 同步失败时拒绝更新，不执行 fetch/pull
+@pytest.mark.unit
+def test_execute_pull_rejects_when_ensure_origin_fails(updater, monkeypatch):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    monkeypatch.setattr(updater, 'ensure_origin', lambda: False)
+
+    def unexpected_stream(*args, **kwargs):
+        raise AssertionError('origin 同步失败后不应继续 fetch/pull')
+
+    updater.execute_stream = unexpected_stream
+    assert updater.execute_pull() is False
+    assert _update_progress.status == 'rejected'
+
+
+# 30. get_commit：git 报错文本（fatal，如远程引用缺失）→ 返回空元组，不把报错当 commit
 @pytest.mark.unit
 def test_get_commit_filters_git_error(updater):
     updater.execute_output = lambda cmd: (
@@ -637,7 +716,8 @@ def test_get_commit_parses_valid(updater):
 
 # 27. check_update：fetch 失败 → fetch_ok=False；fetch 成功但无更新 → fetch_ok=True
 @pytest.mark.unit
-def test_check_update_fetch_ok(updater):
+def test_check_update_fetch_ok(updater, monkeypatch):
+    monkeypatch.setattr(updater, 'ensure_origin', lambda: True)
     # fetch 全部失败（连不上远程）
     updater.execute = lambda cmd, allow_failure=False, output=True, timeout=None: False
     assert updater.check_update() is False

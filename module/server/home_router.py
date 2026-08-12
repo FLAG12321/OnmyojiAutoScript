@@ -91,7 +91,7 @@ async def update_progress():
 
 @home_app.post('/update_config')
 async def update_config(branch: str = None, repository: str = None):
-    # 写回 deploy.yaml（DeployConfig.__setattr__ 自动落盘）；Repository 变化时同步 git remote
+    # 写回 deploy.yaml（DeployConfig.__setattr__ 自动落盘）；Repository 同步 git remote
     updater = Updater()
     if repository:
         repository = str(repository).strip()
@@ -100,8 +100,10 @@ async def update_config(branch: str = None, repository: str = None):
             return {'error': 'repository 格式不合法'}
         if repository != updater.Repository:
             updater.Repository = repository
-            if not updater.execute_stream(f'"{updater.git}" remote set-url origin {repository}'):
-                logger.warning('git remote set-url origin failed')
+        # 无条件同步 origin：即使表单值与 deploy.yaml 一致（如用户直接改过 yaml），
+        # .git/config 的 origin 仍可能是旧地址，必须 set-url 才能让拉取真正换源
+        if not updater.execute_stream(f'"{updater.git}" remote set-url origin {repository}'):
+            logger.warning('git remote set-url origin failed')
     if branch:
         updater.Branch = str(branch).strip()
     return {'repository': updater.Repository, 'branch': updater.Branch}
