@@ -604,3 +604,66 @@ def test_execute_pull_switch_makes_git_usable(updater, tmp_path, monkeypatch):
 
     assert updater.execute_pull() is True
     assert updater.git == str(exe).replace('\\', '/')
+
+
+# 25. get_commit：git 报错文本（fatal，如远程引用缺失）→ 返回空元组，不把报错当 commit
+@pytest.mark.unit
+def test_get_commit_filters_git_error(updater):
+    updater.execute_output = lambda cmd: (
+        "fatal: ambiguous argument 'origin/master': unknown revision or path not in the working tree.\n"
+        "Use '--' to separate paths from revisions, like this:\n"
+        "'git <command> [<revision>...] -- [<file>...]'\n"
+    )
+    assert updater.get_commit('origin/master') == (None, None, None, None)
+    # n>1 无合法行时同样返回空元组，避免把脏数据交给前端
+    assert updater.get_commit('origin/master', n=15) == (None, None, None, None)
+
+
+# 26. get_commit：标准 4 字段输出 → 正常解析；杂行混入时只保留合法行
+@pytest.mark.unit
+def test_get_commit_parses_valid(updater):
+    updater.execute_output = lambda cmd: (
+        'abc123---Alice---2026-01-01 00:00:00 +0800---fix bug\n'
+    )
+    assert updater.get_commit() == ('abc123', 'Alice', '2026-01-01 00:00:00 +0800', 'fix bug')
+    updater.execute_output = lambda cmd: (
+        "fatal: ambiguous argument 'origin/master': unknown revision or path not in the working tree.\n"
+        'abc123---Alice---2026-01-01 00:00:00 +0800---fix bug\n'
+    )
+    assert updater.get_commit('origin/master', n=15) == [
+        ('abc123', 'Alice', '2026-01-01 00:00:00 +0800', 'fix bug')
+    ]
+
+
+# 27. check_update：fetch 失败 → fetch_ok=False；fetch 成功但无更新 → fetch_ok=True
+@pytest.mark.unit
+def test_check_update_fetch_ok(updater):
+    # fetch 全部失败（连不上远程）
+    updater.execute = lambda cmd, allow_failure=False, output=True, timeout=None: False
+    assert updater.check_update() is False
+    assert updater.fetch_ok is False
+
+    # fetch 成功、无新提交 → is_update=False 但 fetch_ok=True
+    updater.execute = lambda cmd, allow_failure=False, output=True, timeout=None: True
+    updater.execute_output = lambda cmd: ''   # git log 无输出 → 本地无领先、远程无差异
+    assert updater.check_update() is False
+    assert updater.fetch_ok is True
+
+
+# 28. /update_info 透出 fetch_ok，前端据此区分「检查失败」与「无更新」
+@pytest.mark.unit
+def test_update_info_returns_fetch_ok(updater, monkeypatch):
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    updater.fetch_ok = False
+    updater.check_update = lambda: False
+    updater.current_branch = lambda: 'master'
+    updater.Repository = 'https://example.com/repo.git'
+    updater.current_commit = lambda: ('a' * 40, 'u', 't', 'm')
+    updater.latest_commit = lambda: ('a' * 40, 'u', 't', 'm')
+    updater.get_commit = lambda n=15: [('a' * 40, 'u', 't', 'm')]
+    result = home_router.update_info()
+    assert result['fetch_ok'] is False
+    # fetch 成功后 fetch_ok 应透出 True
+    updater.fetch_ok = True
+    result = home_router.update_info()
+    assert result['fetch_ok'] is True

@@ -60,6 +60,7 @@ def update_info():
     try:
         updater = Updater()
         result = {'is_update': updater.check_update(),
+                  'fetch_ok': updater.fetch_ok,
                   'branch': updater.current_branch(),
                   'repository': updater.Repository,
                   'current_commit': updater.current_commit(),

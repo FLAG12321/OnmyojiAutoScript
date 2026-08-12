@@ -106,6 +106,8 @@ class Updater(DeployConfig, GitManager, PipManager):
     def __init__(self, file=DEPLOY_CONFIG):
         super().__init__(file=file)
         self.state = 0
+        # fetch 成功与否，由 check_update 记录，供 /update_info 透出以区分「检查失败」与「无更新」
+        self.fetch_ok = False
 
     @property
     def delay(self):
@@ -455,8 +457,15 @@ class Updater(DeployConfig, GitManager, PipManager):
         if not log:
             return None, None, None, None
 
-        logs = log.split("\n")
-        logs = list(map(lambda log: tuple(log.split("---")), logs))
+        # git 失败时 fatal 报错文本（stderr 被合并进 stdout）可能混入输出，且 commit
+        # message 含换行时也会被拆成多行；只保留标准 4 字段行，避免把报错当 commit 返回
+        logs = [
+            tuple(line.split("---"))
+            for line in log.split("\n")
+            if len(line.split("---")) == 4
+        ]
+        if not logs:
+            return None, None, None, None
 
         if n == 1:
             return logs[0]
@@ -491,6 +500,8 @@ class Updater(DeployConfig, GitManager, PipManager):
         source = "origin"
         # fetch 加快速失败参数（TCP 3s、慢速 10s 中止），进程 25s 兜底 kill：
         # 连不上远程时尽快失败返回，避免 update_info 长时间挂起阻塞更新器页
+        # fetch_ok 记录 fetch 是否成功，供 /update_info 区分「检查失败」与「无更新」
+        self.fetch_ok = False
         for _ in range(2):
             if self.execute(
                     f'"{self.git}" -c http.connectTimeout=3 -c http.lowSpeedLimit=1000 '
@@ -498,6 +509,7 @@ class Updater(DeployConfig, GitManager, PipManager):
                     allow_failure=True,
                     timeout=25,
             ):
+                self.fetch_ok = True
                 break
         else:
             logger.warning("Git fetch failed")
