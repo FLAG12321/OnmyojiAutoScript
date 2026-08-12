@@ -77,6 +77,8 @@ class ActivityShikigamiAssets:
 	I_ON_X5 = RuleImage(roi_front=(870,656,25,21), roi_back=(839,637,94,64), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_on_x5.png")
 	# 紫蛇皮识别 
 	I_PURPLE_SNAKE_SKIN = RuleImage(roi_front=(619,296,53,50), roi_back=(122,59,1004,436), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_purple_snake_skin.png")
+	# 金币识别 
+	I_AS_REWARD_GOLD = RuleImage(roi_front=(422,283,64,53), roi_back=(122,59,1004,436), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_as_reward_gold.png")
 
 
 	# Image Rule Assets

@@ -413,7 +413,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         # 通用战斗结束判断
         self.device.stuck_record_add("BATTLE_STATUS_S")
         self.device.click_record_clear()
-        logger.info(f"Start {self.climb_type} battle process")
+        logger.info(f"General Start {self.climb_type} battle process ")
         self.count_map[self.climb_type] = self.current_count
         for btn in (self.C_RANDOM_LEFT, self.C_RANDOM_RIGHT, self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM):
             btn.name = "BATTLE_RANDOM"
@@ -436,16 +436,22 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             # 战斗成功
             if self.appear_then_click(self.I_WIN, interval=2):
                 continue
-            #  出现 "魂" 和 紫蛇皮
-            if self.appear(self.I_REWARD) or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)or self.appear(self.I_PURPLE_SNAKE_SKIN):
+            #  出现 "魂" 紫蛇皮 金币
+            if self.appear(self.I_REWARD)  \
+                or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) \
+                or self.appear(self.I_PURPLE_SNAKE_SKIN) \
+                or self.appear(self.I_AS_REWARD_GOLD):
                 logger.info('Win battle')
-                appear_reward_purple_snake_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) or self.appear(self.I_PURPLE_SNAKE_SKIN)
+                appear_reward_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) \
+                    or self.appear(self.I_PURPLE_SNAKE_SKIN) \
+                    or self.appear(self.I_AS_REWARD_GOLD)
                 appear_reward = self.appear(self.I_REWARD)
                 if appear_reward:
                     self.click(self.I_REWARD, interval=0.9)
                     ok_cnt += 1
                     continue
-                if appear_reward_purple_snake_skin:
+                logger.info('appear_reward_skin: %d', appear_reward_skin)
+                if appear_reward_skin:
                     reward_click = random.choice(
                         [self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM])
                     self.click(reward_click, interval=1.8)
