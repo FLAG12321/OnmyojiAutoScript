@@ -61,5 +61,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "开启五倍"
+  },
+  {
+    "itemName": "purple_snake_skin",
+    "imageName": "as_purple_snake_skin.png",
+    "roiFront": "619,296,53,50",
+    "roiBack": "122,59,1004,436",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "紫蛇皮识别"
   }
 ]

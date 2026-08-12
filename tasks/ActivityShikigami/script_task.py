@@ -437,9 +437,9 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             if self.appear_then_click(self.I_WIN, interval=2):
                 continue
             #  出现 "魂" 和 紫蛇皮
-            if self.appear(self.I_REWARD) or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN):
+            if self.appear(self.I_REWARD) or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)or self.appear(self.I_PURPLE_SNAKE_SKIN):
                 logger.info('Win battle')
-                appear_reward_purple_snake_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)
+                appear_reward_purple_snake_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) or self.appear(self.I_PURPLE_SNAKE_SKIN)
                 appear_reward = self.appear(self.I_REWARD)
                 if appear_reward:
                     self.click(self.I_REWARD, interval=0.9)
