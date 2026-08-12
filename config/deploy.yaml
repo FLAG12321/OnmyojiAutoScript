@@ -3,7 +3,7 @@ Deploy:
     # URL of AzurLaneAutoScript repository
     # [CN user] Use 'https://gitee.com/lmeszinc/azur-lane-auto-script-mirror' for faster and more stable download
     # [Other] Use 'https://github.com/LmeSzinc/AzurLaneAutoScript'
-    Repository: https://github.com/FLAG12321/OnmyojiAutoScript.git
+    Repository: https://gitee.com/flag12321/OnmyojiAutoScript.git
     # Branch of Alas
     # [Developer] Use 'dev', 'app', etc, to try new features
     # [Other] Use 'run_now_2', the stable branch
