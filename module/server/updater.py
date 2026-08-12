@@ -606,18 +606,25 @@ class Updater(DeployConfig, GitManager, PipManager):
         current = self.execute_output(f'"{self.git}" symbolic-ref --short HEAD').strip()
         if current != self.Branch:
             prog.set_step(f'switch branch: {current} -> {self.Branch}')
-            # 有已跟踪修改则直接丢弃本地改动，保证切换干净（不保留、不 stash、不拒绝）
+            # 先校验未推送提交,避免丢弃本地改动后又因校验被拒绝
+            unpushed = self.execute_output(
+                f'"{self.git}" log --not --remotes={source}/* -1 --oneline').strip()
+            if unpushed:
+                prog.reject(f'本地存在未推送的提交：{unpushed}，拒绝切换分支。请先 push。')
+                return False
+            # 丢弃已跟踪文件改动,确保切换干净（不保留、不 stash、不拒绝）
             if not self.execute_stream(f'"{self.git}" diff --quiet HEAD'):
                 prog.append('工作区有已跟踪文件的修改，直接丢弃后切换')
                 if not self.execute_stream(f'"{self.git}" reset --hard HEAD', on_line=prog.append):
                     prog.finish(False)
                     logger.warning('Git reset --hard failed')
                     return False
-            # 校验：本地存在未推送提交则拒绝切换
-            unpushed = self.execute_output(
-                f'"{self.git}" log --not --remotes={source}/* -1 --oneline').strip()
-            if unpushed:
-                prog.reject(f'本地存在未推送的提交：{unpushed}，拒绝切换分支。请先 push。')
+            # 清理未跟踪文件/目录（忽略 .gitignore 保护项），
+            # 避免与目标分支同名文件冲突导致 checkout 被覆盖拦截
+            prog.append('清理未跟踪文件，确保切换不被覆盖冲突拦截')
+            if not self.execute_stream(f'"{self.git}" clean -fd', on_line=prog.append):
+                prog.finish(False)
+                logger.warning('Git clean failed')
                 return False
             # 切换：本地已有则直接 checkout，否则基于远程创建跟踪分支
             if self.execute_stream(f'"{self.git}" show-ref --verify refs/heads/{self.Branch}'):

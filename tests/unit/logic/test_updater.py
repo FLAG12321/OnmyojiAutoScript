@@ -106,6 +106,7 @@ def test_execute_pull_discards_dirty_then_switch(updater):
     assert updater.execute_pull() is True
     assert _update_progress.status == 'done'
     assert any('reset --hard' in c for c in calls)
+    assert any('clean -fd' in c for c in calls)
     assert any('checkout target' in c and 'origin' not in c for c in calls)
 
 
