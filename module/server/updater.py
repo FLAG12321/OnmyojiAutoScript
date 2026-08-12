@@ -606,14 +606,23 @@ class Updater(DeployConfig, GitManager, PipManager):
         current = self.execute_output(f'"{self.git}" symbolic-ref --short HEAD').strip()
         if current != self.Branch:
             prog.set_step(f'switch branch: {current} -> {self.Branch}')
-            # 校验：已跟踪文件有修改则拒绝切换（未跟踪文件不阻塞）
+            # 已跟踪文件有修改则先 stash（未跟踪文件不阻塞切换，无需处理）。
+            # 切换成功后改动留在 stash、目标分支保持干净，不自动恢复；
+            # 切换失败/被拒绝时恢复 stash 保持工作区原状
+            stashed = False
             if not self.execute_stream(f'"{self.git}" diff --quiet HEAD'):
-                prog.reject('工作区有已跟踪文件的修改，拒绝切换分支。请先提交或 stash 本地改动。')
-                return False
+                prog.append('工作区有已跟踪文件的修改，先 stash 再切换')
+                if not self.execute_stream(f'"{self.git}" stash push', on_line=prog.append):
+                    prog.finish(False)
+                    logger.warning('Git stash failed')
+                    return False
+                stashed = True
             # 校验：本地存在未推送提交则拒绝切换
             unpushed = self.execute_output(
                 f'"{self.git}" log --not --remotes={source}/* -1 --oneline').strip()
             if unpushed:
+                if stashed:
+                    self.execute_stream(f'"{self.git}" stash pop', on_line=prog.append)
                 prog.reject(f'本地存在未推送的提交：{unpushed}，拒绝切换分支。请先 push。')
                 return False
             # 切换：本地已有则直接 checkout，否则基于远程创建跟踪分支
@@ -629,9 +638,15 @@ class Updater(DeployConfig, GitManager, PipManager):
                     on_line=prog.append,
                 )
             if not switched:
+                # 切换失败，恢复 stash 保持工作区原状
+                if stashed:
+                    self.execute_stream(f'"{self.git}" stash pop', on_line=prog.append)
                 prog.finish(False)
                 logger.warning('Git checkout failed')
                 return False
+            # 切换成功：改动保留在 stash，目标分支干净
+            if stashed:
+                prog.append('本地改动已存入 stash，目标分支保持干净（git stash list / git stash pop 可恢复）')
 
         # 3. pull 到最新
         prog.set_step(f'pull {source}/{self.Branch}')
