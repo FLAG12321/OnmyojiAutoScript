@@ -87,9 +87,9 @@ def test_execute_pull_switch_new(updater):
     assert any('checkout -b target origin/target' in c for c in calls)
 
 
-# 4. 已跟踪文件有修改：先 stash → 切换成功 → 不恢复，目标分支保持干净
+# 4. 已跟踪文件有修改：直接丢弃本地改动后切换
 @pytest.mark.unit
-def test_execute_pull_stash_then_switch(updater):
+def test_execute_pull_discards_dirty_then_switch(updater):
     reset_progress()
     updater.check_git_usable = lambda: (True, '')
     updater.Branch = 'target'
@@ -99,22 +99,19 @@ def test_execute_pull_stash_then_switch(updater):
     def fake_stream(cmd, on_line=None):
         calls.append(cmd)
         if 'diff --quiet' in cmd:
-            return False  # 有已跟踪修改 → 触发 stash
+            return False  # 有已跟踪修改 → 触发 reset
         return True
 
     updater.execute_stream = fake_stream
     assert updater.execute_pull() is True
     assert _update_progress.status == 'done'
-    assert any('stash push' in c for c in calls)
+    assert any('reset --hard' in c for c in calls)
     assert any('checkout target' in c and 'origin' not in c for c in calls)
-    # 切换成功后不恢复 stash，目标分支保持干净
-    assert not any('stash pop' in c for c in calls)
-    assert any('stash' in l and '干净' in l for l in _update_progress.logs)
 
 
-# 4b. 有已跟踪修改但 stash 失败 → 更新失败
+# 4b. 有已跟踪修改但 reset 失败 → 更新失败
 @pytest.mark.unit
-def test_execute_pull_stash_fail(updater):
+def test_execute_pull_reset_fail(updater):
     reset_progress()
     updater.check_git_usable = lambda: (True, '')
     updater.Branch = 'target'
@@ -123,61 +120,12 @@ def test_execute_pull_stash_fail(updater):
     def fake_stream(cmd, on_line=None):
         if 'diff --quiet' in cmd:
             return False  # 脏
-        if 'stash push' in cmd:
-            return False  # stash 失败
+        if 'reset --hard' in cmd:
+            return False  # reset 失败
         return True
 
     updater.execute_stream = fake_stream
     assert updater.execute_pull() is False
-
-
-# 4c. 切换失败且已 stash → 恢复 stash，保持工作区原状
-@pytest.mark.unit
-def test_execute_pull_checkout_fail_restores_stash(updater):
-    reset_progress()
-    updater.check_git_usable = lambda: (True, '')
-    updater.Branch = 'target'
-    calls = []
-    updater.execute_output = lambda cmd: 'old\n' if 'symbolic-ref' in cmd else ''
-
-    def fake_stream(cmd, on_line=None):
-        calls.append(cmd)
-        if 'diff --quiet' in cmd:
-            return False  # 脏 → stash
-        if 'show-ref' in cmd:
-            return False  # 本地无分支 → checkout -b
-        if 'checkout' in cmd:
-            return False  # checkout 失败
-        return True
-
-    updater.execute_stream = fake_stream
-    assert updater.execute_pull() is False
-    assert _update_progress.status == 'failed'
-    assert any('stash push' in c for c in calls)
-    assert any('stash pop' in c for c in calls)
-
-
-# 4d. 有未推送提交且已 stash → 恢复 stash 后拒绝
-@pytest.mark.unit
-def test_execute_pull_unpushed_restores_stash(updater):
-    reset_progress()
-    updater.check_git_usable = lambda: (True, '')
-    updater.Branch = 'target'
-    calls = []
-    updater.execute_output = lambda cmd: ('old\n' if 'symbolic-ref' in cmd
-                                          else 'abc123 commit\n' if 'log --not' in cmd else '')
-
-    def fake_stream(cmd, on_line=None):
-        calls.append(cmd)
-        if 'diff --quiet' in cmd:
-            return False  # 脏 → stash
-        return True
-
-    updater.execute_stream = fake_stream
-    assert updater.execute_pull() is False
-    assert _update_progress.status == 'rejected'
-    assert any('stash push' in c for c in calls)
-    assert any('stash pop' in c for c in calls)
 
 
 # 5. 本地存在未推送提交：拒绝切换（rejected）
