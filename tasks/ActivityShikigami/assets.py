@@ -237,7 +237,7 @@ class ActivityShikigamiAssets:
 	# 注灵搜寻币剩余 
 	O_SEASON_BOSS_REMAIN_PREMIUM = RuleOcr(roi=(1159,18,61,28), area=(1181,18,30,24), mode="Digit", method="Default", keyword="", name="season_boss_remain_premium")
 	# 中间界面竖排怪物名 
-	O_SEASON_BOSS_MONSTER_NAME = RuleOcr(roi=(355,210,45,135), area=(355,210,45,135), mode="Single", method="Default", keyword="", name="season_boss_monster_name")
+	O_SEASON_BOSS_MONSTER_NAME = RuleOcr(roi=(356,190,46,175), area=(355,210,45,135), mode="Single", method="Default", keyword="", name="season_boss_monster_name")
 	# 收服页品阶徽章 
 	O_SEASON_BOSS_RANK = RuleOcr(roi=(730,65,95,40), area=(730,65,95,40), mode="Single", method="Default", keyword="", name="season_boss_rank")
 

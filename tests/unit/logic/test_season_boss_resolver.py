@@ -8,11 +8,12 @@ PRESET_TEXT = '雷麒麟,普通,1,1\n雷麒麟,精英,2,2\n幽火姥姥,精英,3
 
 class TestResolveMonsterPreset:
     def test_exact_match(self):
-        assert resolve_monster_preset('雷麒麟', '精英', PRESET_TEXT, '-1,-1') == ((2, 2), None)
+        # 4段行未配御魂 -> 御魂跟随队伍预设
+        assert resolve_monster_preset('雷麒麟', '精英', PRESET_TEXT, '-1,-1') == ((2, 2), (2, 2))
 
     def test_match_rank_distinct(self):
         # 同名不同品阶走不同预设
-        assert resolve_monster_preset('雷麒麟', '普通', PRESET_TEXT, '-1,-1') == ((1, 1), None)
+        assert resolve_monster_preset('雷麒麟', '普通', PRESET_TEXT, '-1,-1') == ((1, 1), (1, 1))
 
     def test_no_match_uses_default(self):
         assert resolve_monster_preset('未知怪', '普通', PRESET_TEXT, '4,1') == ((4, 1), None)
@@ -23,9 +24,17 @@ class TestResolveMonsterPreset:
     def test_empty_text(self):
         assert resolve_monster_preset('雷麒麟', '普通', '', '3,2') == ((3, 2), None)
 
-    def test_rank_not_in_text_uses_default(self):
-        # 文本里没有 首领 品阶的行, 走兜底
-        assert resolve_monster_preset('雷麒麟', '首领', PRESET_TEXT, '4,2') == ((4, 2), None)
+    def test_name_priority_when_rank_missing(self):
+        # 怪物名优先: 品阶识别不到(空串)时, 按名字命中第一行预设
+        assert resolve_monster_preset('雷麒麟', '', PRESET_TEXT, '-1,-1') == ((1, 1), (1, 1))
+
+    def test_name_priority_when_rank_mismatch(self):
+        # 怪物名优先: 品阶识别不一致(文本无首领)时, 按名字命中预设而非兜底
+        assert resolve_monster_preset('雷麒麟', '首领', PRESET_TEXT, '4,2') == ((1, 1), (1, 1))
+
+    def test_name_not_in_text_uses_default(self):
+        # 名字也未命中 -> 走兜底
+        assert resolve_monster_preset('未知怪', '首领', PRESET_TEXT, '4,2') == ((4, 2), None)
 
 
 class TestResolveSoulPreset:
@@ -35,19 +44,20 @@ class TestResolveSoulPreset:
     def test_six_field_returns_soul(self):
         assert resolve_monster_preset('雷麒麟', '普通', self.SOUL_TEXT, '-1,-1') == ((1, 1), (5, 2))
 
-    def test_four_field_soul_falls_back_to_default(self):
-        # 命中行只有4段(未配御魂), 御魂回落到兜底
-        assert resolve_monster_preset('雷麒麟', '精英', self.SOUL_TEXT, '-1,-1', '6,3') == ((2, 2), (6, 3))
+    def test_four_field_soul_follows_team(self):
+        # 命中行只有4段(未配御魂), 御魂跟随队伍预设
+        assert resolve_monster_preset('雷麒麟', '精英', self.SOUL_TEXT, '-1,-1', '6,3') == ((2, 2), (2, 2))
 
-    def test_four_field_no_default_soul_is_none(self):
-        assert resolve_monster_preset('雷麒麟', '精英', self.SOUL_TEXT, '-1,-1', '-1,-1') == ((2, 2), None)
+    def test_four_field_soul_follows_team_without_default(self):
+        # 4段行御魂跟随队伍预设, 不依赖 default_soul_group_team
+        assert resolve_monster_preset('雷麒麟', '精英', self.SOUL_TEXT, '-1,-1', '-1,-1') == ((2, 2), (2, 2))
 
     def test_no_match_uses_both_defaults(self):
         assert resolve_monster_preset('未知怪', '普通', self.SOUL_TEXT, '4,1', '7,4') == ((4, 1), (7, 4))
 
-    def test_invalid_soul_group_is_none(self):
-        # 御魂组8越界 -> 解析为 None, 队伍预设仍有效
-        assert resolve_monster_preset('鬼王', '普通', '鬼王,普通,1,1,8,1', '-1,-1') == ((1, 1), None)
+    def test_invalid_soul_group_follows_team(self):
+        # 御魂组8越界 -> 御魂解析为 None, 命中时御魂跟随队伍预设
+        assert resolve_monster_preset('鬼王', '普通', '鬼王,普通,1,1,8,1', '-1,-1') == ((1, 1), (1, 1))
 
 
 class TestShouldSkipSoulSwitch:

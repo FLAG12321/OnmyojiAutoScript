@@ -40,17 +40,23 @@ class SeasonBossMixin(BaseTask):
         from tasks.ActivityShikigami.script_task import LimitTimeOut, LimitCountOut
 
         logger.hr('Start run climb type season_boss', 1)
-        # ① 进入修行合训主页: 复用现有 boss 入口, 进入后即为修行合训主页
-        self.ui_click(self.I_TO_BATTLE_BOSS, stop=self.I_CHECK_BATTLE_BOSS, interval=1)
-        # 确认已在修行合训主页 (OCR 标题「修行合训」), 防止与原 boss 页混淆
-        self.wait_until_appear(self.O_SEASON_BOSS_CHECK_MAIN, wait_time=3)
+        # season_boss 首领战可能超过默认 5 分钟卡死上限, 长耗时战斗的卡死判定放宽到 10 分钟, 结束后还原
+        self.device.stuck_timer_long = Timer(600, count=600).start()
+        try:
+            # ① 进入修行合训主页: 复用现有 boss 入口, 进入后即为修行合训主页
+            self.ui_click(self.I_TO_BATTLE_BOSS, stop=self.I_CHECK_BATTLE_BOSS, interval=1)
+            # 确认已在修行合训主页 (OCR 标题「修行合训」), 防止与原 boss 页混淆
+            self.wait_until_appear(self.O_SEASON_BOSS_CHECK_MAIN, wait_time=3)
 
-        for phase in self.sb_conf.phase_order_v:
-            logger.hr(f'season_boss phase: {phase}', 2)
-            try:
-                self._run_sb_phase(phase)
-            except (LimitTimeOut, LimitCountOut):
-                break
+            for phase in self.sb_conf.phase_order_v:
+                logger.hr(f'season_boss phase: {phase}', 2)
+                try:
+                    self._run_sb_phase(phase)
+                except (LimitTimeOut, LimitCountOut):
+                    break
+        finally:
+            # 还原通用卡死判定时长, 不影响其他任务
+            self.device.stuck_timer_long = Timer(300, count=300).start()
 
         # ③ 两阶段结束, 返回活动主页
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
@@ -60,7 +66,7 @@ class SeasonBossMixin(BaseTask):
         单阶段战斗循环。每轮重新判断页面状态, 再决定 打掉遗留御灵 / 切模式 / 搜寻。
         """
         ocr_limit_timer = Timer(1).start()
-        # 连续无法识别页面状态的保护计时器, 识别到任一已知状态就重置
+        # 连续无法识别页面状态的保护计时器, 识别到任一已知状态就重置; 战斗结束后也需重置
         unknown_timer = Timer(30).start()
         while 1:
             self.screenshot()
@@ -73,6 +79,8 @@ class SeasonBossMixin(BaseTask):
                 unknown_timer.reset()
                 logger.info('season_boss search locked, fight pending monster first')
                 self._resolve_pending_monster()
+                # 处理遗留御灵可能含一场战斗, 耗时不计入未知页面保护, 回循环重新判断
+                unknown_timer.reset()
                 continue
 
             # ② 未锁, 切到目标门票模式。没切成就重新截图再判断, 不在这里死等。
@@ -100,6 +108,8 @@ class SeasonBossMixin(BaseTask):
             # ⑥ 识别怪物名+品阶 -> 预设 -> 开战
             self._sb_preset = self.handle_monster_select()
             self._open_fight()
+            # 战斗耗时不计入未知页面保护, 战斗结束回循环重新判断页面状态
+            unknown_timer.reset()
 
     def _resolve_pending_monster(self) -> bool:
         """

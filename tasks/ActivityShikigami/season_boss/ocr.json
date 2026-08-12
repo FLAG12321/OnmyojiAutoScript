@@ -28,7 +28,7 @@
   },
   {
     "itemName": "season_boss_monster_name",
-    "roiFront": "355,210,45,135",
+    "roiFront": "356,190,46,175",
     "roiBack": "355,210,45,135",
     "mode": "Single",
     "method": "Default",
