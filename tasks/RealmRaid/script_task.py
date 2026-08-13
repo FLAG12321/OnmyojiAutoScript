@@ -289,9 +289,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     continue
                 if self.appear_then_click(self.I_UNLOCK_2, interval=1):
                     continue
-                if self.appear(self.I_LOCK_2, threshold=0.9):
+                if self.appear(self.I_LOCK_2):
                     break
-                if self.appear(self.I_LOCK, threshold=0.9):
+                if self.appear(self.I_LOCK):
                     break
             logger.info(f'Click {self.I_UNLOCK.name}')
         else:
@@ -301,9 +301,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     continue
                 if self.appear_then_click(self.I_LOCK_2, interval=1):
                     continue
-                if self.appear(self.I_UNLOCK_2, threshold=0.9):
+                if self.appear(self.I_UNLOCK_2):
                     break
-                if self.appear(self.I_UNLOCK, threshold=0.9):
+                if self.appear(self.I_UNLOCK):
                     break
             logger.info(f'Click {self.I_LOCK.name}')
 
