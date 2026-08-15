@@ -6,7 +6,7 @@ import os
 from time import sleep, time
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, time as datetime_time, timedelta
 from module.atom.animate import RuleAnimate
 from module.atom.click import RuleClick
 from module.atom.gif import RuleGif
@@ -20,7 +20,7 @@ from module.base.timer import Timer
 from module.config.config import Config
 from module.device.device import Device
 from module.exception import ScriptError, TaskEnd
-from module.config.utils import forbidden_range_end
+from module.config.utils import convert_to_underscore, forbidden_range_end
 from module.logger import logger
 from module.ocr.base_ocr import OcrMode
 from tasks.Component.Costume.costume_base import CostumeBase
@@ -47,6 +47,40 @@ class Week(str, Enum):
 class SwitchWeek(ConfigBase):
     next_week_day: Week = Field(default=Week.mon, description='选择下周周几运行')
 
+
+def _identity(value):
+    """原样透传：配置字段类型与任务属性类型一致时使用。"""
+    return value
+
+
+def _time_to_timedelta(value):
+    """把 Time(datetime.time) 换算成 timedelta，与各任务 run() 里的既有换算一致。
+
+    已经是 timedelta 的原样返回（HeroTest 的条件换算会出现这种情况）。
+    """
+    if isinstance(value, timedelta):
+        return value
+    if isinstance(value, datetime_time):
+        return timedelta(hours=value.hour, minutes=value.minute, seconds=value.second)
+    return value
+
+
+# HOT 重绑规则表：把当前任务配置子树里变化的叶子字段同步回任务实例上的捕获标量。
+#
+# 为什么需要它：HOT 提交是原地改模型对象，所有捕获「子模型对象」的读法自动生效；
+# 但 run() 开头 `self.limit_count = <配置值>` 这类把标量拷到实例属性的写法拷的是值，
+# 模型改了也追不回来（规格 §11.1「已复制到局部 scalar 的值不追溯更新」）。
+# limit_time / limit_count 本就声明在 BaseTask 上（见下方类属性），属基类既有约定，
+# 因此这张表放基类，13 个战斗任务无需各自实现 prepare hook。
+#
+# 表项：配置叶子字段名 -> (任务属性名, 值转换器)
+_HOT_SCALAR_REBIND: dict = {
+    'limit_count': ('limit_count', _identity),
+    'hya_limit_count': ('limit_count', _identity),   # Hyakkiyakou 的源字段名不同
+    'limit_time': ('limit_time', _time_to_timedelta),
+}
+
+
 class BaseTask(GlobalGameAssets, CostumeBase):
     config: Config = None
     device: Device = None
@@ -58,6 +92,49 @@ class BaseTask(GlobalGameAssets, CostumeBase):
     limit_time: timedelta = None  # 限制运行的时间，是软时间，不是硬时间
     limit_count: int = None  # 限制运行的次数
     current_count: int = None  # 当前运行的次数
+
+    # 声明允许 HOT 提交替换的派生属性，框架据此拒绝 prepare 返回未声明字段（规格 §11.1）
+    HOT_RELOAD_DERIVED_FIELDS = frozenset({'limit_count', 'limit_time'})
+
+    def prepare_config_reload(self, candidate, changed_paths) -> dict:
+        """HOT 两阶段提交的 prepare hook：算出捕获标量的新值，不做任何写入。
+
+        必须是纯函数（规格 §11.1）：只读 candidate 与自身属性，返回新值由框架在
+        RLock 内统一 setattr，因此不修改 task/session/device，也不做 I/O。
+
+        三重限定，逐条都有存在必要：
+        1. **任务子树限定**——只接受路径首段等于当前运行任务的配置键。否则用户改
+           Orochi 的 limit_count 会把正在跑的 EvoZone 的次数上限改掉。
+        2. **出处校验**——只有实例属性当前值恰好等于「旧模型值」时才重绑，证明它确实
+           是从该字段拷来的且未被业务改写。这一条同时保护了 BondlingFairyland 的
+           `self.limit_count //= 2`（handoff 模式两人各刷一半）：折半后值已不等于配置
+           原值，不会被覆盖回去。
+        3. **类型转换**——limit_time 在配置里是 Time，在任务里是 timedelta，
+           必须按同一换算比较与回写，否则会塞进 time 对象让后续时间比较抛 TypeError。
+        """
+        # 注意：此时会话模型尚未提交，self.config.model 仍是旧值，正好用来做出处校验
+        task_key = convert_to_underscore(self.config.task) if self.config.task else None
+        if not task_key:
+            return {}
+        prepared: dict = {}
+        for path in changed_paths:
+            if path[0] != task_key:
+                continue
+            rule = _HOT_SCALAR_REBIND.get(path[-1])
+            if rule is None:
+                continue
+            attr_name, convert = rule
+            try:
+                old_value = self.config._model_get(self.config.model, path)
+                new_value = self.config._model_get(candidate, path)
+            except AttributeError:
+                # 路径与模型结构不匹配：交给 WARM 边界重建，不猜测
+                continue
+            if convert(old_value) != getattr(self, attr_name, None):
+                # 出处校验未通过：该属性不是这个字段的原样拷贝，不动它
+                continue
+            prepared[attr_name] = convert(new_value)
+        return prepared
 
     def __init__(self, config: Config, device: Device) -> None:
         """

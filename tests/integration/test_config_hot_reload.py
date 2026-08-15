@@ -148,11 +148,13 @@ def test_commit_exception_keeps_runtime_and_defers(tmp_path):
     store.patch_user_field("synthetic", LIMIT_PATH, 2)
 
     # 提交段抛错（模拟模型无对应属性等结构性不匹配）：异常被吞并按失败转 WARM，
-    # 运行 model/派生缓存保持原值、指纹进入失败集，且不向调用方穿出
-    def boom_set(model, path, value):
+    # 运行 model/派生缓存保持原值、指纹进入失败集，且不向调用方穿出。
+    # 打在 _resolve_model_slots 上：原地赋值方案里它是提交段唯一可能失败的一趟，
+    # 且失败发生在任何 setattr 之前，正是「零写入」不变量的守护点。
+    def boom_resolve(model, paths, candidate):
         raise AttributeError("synthetic commit boom")
 
-    session._set_model_value = boom_set
+    session._resolve_model_slots = boom_resolve
     assert session.refresh_hot_at_checkpoint(task) is False
     assert session.model.synthetic.task.limit_count == 1
     assert task.derived_limit == 1
@@ -333,3 +335,74 @@ def test_synthetic_policy_classification():
     assert SYNTHETIC_POLICY.classify(LIMIT_PATH) == HOT
     assert SYNTHETIC_POLICY.classify(("script", "device", "serial")) == COLD
     assert SYNTHETIC_POLICY.classify(("running_task",)) == WARM
+
+
+# ---------- 原地赋值：捕获引用可见性与提交原子性 ----------
+
+def test_hot_commit_visible_through_captured_submodel(tmp_path):
+    """本次改动的核心命题：捕获子模型对象的读法必须立即看到 HOT 新值。
+
+    任务里大量存在 `con = self.config.<task>` 与 `cached_property conf` 这类把配置
+    子模型捕获到局部变量/实例属性的写法。原先 HOT 用 model_copy 自底向上重建模型，
+    会换掉对象标识使捕获者读到旧副本——白名单开了也不生效。改原地赋值后必须可见。
+    """
+    session, store, task = make_synthetic_session(tmp_path)
+    # 模拟任务在 run() 开头捕获子模型对象（不是标量）
+    captured_group = session.model.synthetic
+    captured_leaf_owner = session.model.synthetic.task
+    root_before = session.model
+
+    store.patch_user_field("synthetic", LIMIT_PATH, 7)
+    assert session.refresh_hot_at_checkpoint(task) is True
+
+    # 根模型与各层子模型的对象标识不变，捕获者读到的就是新值
+    assert session.model is root_before
+    assert captured_group.task.limit_count == 7
+    assert captured_leaf_owner.limit_count == 7
+
+
+def test_hot_commit_atomic_across_multiple_paths(tmp_path):
+    """多路径提交必须原子：解析阶段任一路径失败，已解析路径也不得落盘。
+
+    原实现逐路径 `self._model = ...` 边解析边提交，第 N 条抛错会留下前 N-1 条已生效。
+    两趟结构（先全解析、后全赋值）保证要么全成要么零写入。
+    构造方式：两条都是模型里真实存在的 HOT 路径，按 sorted 顺序 running_task 先解析成功、
+    limit_count 后解析抛错，于是能断言「先成功那条同样没被写入」。
+    """
+    session, store, task = make_synthetic_session(tmp_path)
+    session.reload_policy = ReloadPolicy(
+        hot_paths=frozenset({LIMIT_PATH, ("running_task",)}),
+        cold_prefixes=(("script", "device"),),
+    )
+    store.patch_user_field("synthetic", ("running_task",), "Orochi")
+    store.patch_user_field("synthetic", LIMIT_PATH, 9)
+
+    # 让排在后面的 limit_count 在解析阶段抛错；running_task 已解析成功
+    real_model_get = Config._model_get
+
+    def selective_boom(model, path):
+        if path == LIMIT_PATH:
+            raise AttributeError("synthetic resolve boom")
+        return real_model_get(model, path)
+
+    session._model_get = selective_boom
+    assert session.refresh_hot_at_checkpoint(task) is False
+
+    # 两条都必须保持原值：解析失败发生在任何 setattr 之前
+    assert session.model.running_task == ""
+    assert session.model.synthetic.task.limit_count == 1
+    assert get_path(session.base, ("running_task",)) == ""
+    assert get_path(session.base, LIMIT_PATH) == 1
+
+
+def test_set_model_value_writes_in_place(tmp_path):
+    """_set_model_value 契约已从「重建返回新模型」改为「原地写并返回同一实例」。"""
+    session, store, task = make_synthetic_session(tmp_path)
+    root = session.model
+    leaf_owner = root.synthetic.task
+
+    returned = session._set_model_value(root, LIMIT_PATH, 5)
+
+    assert returned is root
+    assert leaf_owner.limit_count == 5
+

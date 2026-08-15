@@ -1895,6 +1895,86 @@ def test_websocket_first_frame_order_and_directed_config_state(client, monkeypat
     assert not any("__broadcast__" in s for s in sent)
 
 
+@pytest.mark.parametrize(
+    ("command", "failing_attr"),
+    (
+        ("start", "start_script_process"),
+        ("stop", "process_stop"),
+    ),
+)
+def test_websocket_start_stop_failure_keeps_connection(client, monkeypatch, command, failing_attr):
+    """启停失败不得打死 WS 连接，且必须回推一帧 state 让客户端退出中间态。
+
+    外层 try 只捕 WebSocketDisconnect，start/stop 抛出的异常（generation 不匹配、
+    握手超时、配置损坏、锁超时）一旦逃逸就会终止 while True，前端只看到重连而
+    拿不到任何失败提示——这就是「点启动没反应」的根因之一。
+    """
+    from module.server.main_manager import mm
+
+    sent = []
+
+    class FakeConfig:
+        def get_next(self):
+            return None
+
+        def get_schedule_data(self):
+            return {"running": {}, "pending": [], "waiting": []}
+
+    class FakeProcess:
+        state = 0
+
+        def cached_config_state(self):
+            return {
+                "pending_restart_paths": [],
+                "pending_warm_paths": [],
+                "observed_mtime_ns": 0,
+                "status": "current",
+            }
+
+        async def connect(self, websocket):
+            await websocket.accept()
+
+        async def disconnect(self, websocket):
+            pass
+
+        async def send_state(self, websocket, data):
+            sent.append(data)
+            await websocket.send_json(data)
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            if failing_attr == "process_stop":
+                raise RuntimeError('stop boom')
+
+    async def fake_ensure(_name):
+        return FakeProcess()
+
+    async def boom_start(_name):
+        raise RuntimeError('start boom')
+
+    monkeypatch.setattr(mm, "ensure_script_process", fake_ensure)
+    monkeypatch.setattr(mm, "config_cache", lambda name: FakeConfig())
+    if failing_attr == "start_script_process":
+        monkeypatch.setattr(mm, "start_script_process", boom_start)
+    else:
+        monkeypatch.setattr(mm, "start_script_process", lambda _name: None)
+
+    with client.websocket_connect("/ws/oas1") as websocket:
+        # 3 帧首帧
+        for _ in range(3):
+            websocket.receive_json()
+        websocket.send_text(command)
+        # 失败后仍能收到回推的 state 帧，说明连接没被异常打死
+        assert list(websocket.receive_json().keys()) == ["state"]
+        # 连接仍可继续服务后续命令
+        websocket.send_text("get_state")
+        assert list(websocket.receive_json().keys()) == ["state"]
+
+    assert [list(s.keys())[0] for s in sent[3:]] == ["state", "state"]
+
+
 def test_config_copy_invalid_name_is_400(client):
     """复制目标名非法必须在入口返回 400，不能继续枚举并伪装成功。"""
     response = client.post(

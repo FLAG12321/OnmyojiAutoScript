@@ -13,7 +13,7 @@ import pytest
 
 import script as script_module
 from module.config.config import Config
-from module.config.config_reload import COLD, DEFAULT_RELOAD_POLICY, WARM
+from module.config.config_reload import COLD, HOT, WARM, default_reload_policy
 from module.config.config_store import ConfigStore
 from module.server import script_process as script_process_module
 from module.server.script_process import ScriptProcess, ScriptState
@@ -195,14 +195,22 @@ def test_cold_pending_does_not_abort_wait(tmp_path):
 
 
 def test_reload_policy_default_deny():
-    policy = DEFAULT_RELOAD_POLICY
+    """生产默认策略：COLD 前缀优先，用户单值字段 HOT，结构性字段与运行期簿记字段 WARM。"""
+    policy = default_reload_policy()
     assert policy.classify(("script", "device", "serial")) == COLD
     assert policy.classify(("script", "device", "screenshot", "interval")) == COLD
-    assert policy.classify(("orochi", "orochi_config", "limit_count")) == WARM
+    # 用户可调单值字段全面开放中途生效（schema 派生）
+    assert policy.classify(("orochi", "orochi_config", "limit_count")) == HOT
+    assert policy.classify(("script", "optimization", "schedule_rule")) == HOT
+    assert policy.classify(("meta_demon", "meta_demon_config", "md_strategy_count")) == HOT
+    # 运行期簿记字段由 manager/调度器写入，HOT_DENY_PATHS 扣除后仍为 WARM
     assert policy.classify(("running_task",)) == WARM
-    assert policy.classify(("script", "optimization", "schedule_rule")) == WARM
-    assert policy.classify(("meta_demon", "meta_demon_config", "md_strategy_count")) == WARM
+    assert policy.classify(("config_name",)) == WARM
+    # extra='allow' 动态 key 子树无法预先枚举成 exact path，保持 WARM
     assert policy.classify(("find_jade", "invite_info_list_1", "name")) == WARM
+    # scheduler 子树与 list 字段按结构性规则排除
+    assert policy.classify(("orochi", "scheduler", "next_run")) == WARM
+    assert policy.classify(("multi_daily_alt_acc", "sup_account_list")) == WARM
 
 
 def test_warm_refresh_rebuilds_cached_notifier(tmp_path):
@@ -1252,3 +1260,84 @@ def test_spawn_handshake_ignores_delayed_old_nonce_before_new_failure(tmp_path):
 
     child.join(timeout=5)
     assert child.is_alive() is False
+
+
+# ---------- 端到端：真实 ConfigModel + 真实 BaseTask prepare hook ----------
+
+def _make_orochi_task(session):
+    """构造绕过设备初始化的 BaseTask 壳，模拟 Orochi 在 run() 开头捕获配置。"""
+    from tasks.base_task import BaseTask
+
+    task = object.__new__(BaseTask)
+    task.config = session
+    session.task = "Orochi"
+    conf = session.model.orochi.orochi_config
+    # 模拟 Orochi.run() 的两种捕获：子模型对象 + 换算后的标量
+    task.captured_submodel = conf
+    task.limit_count = conf.limit_count
+    task.limit_time = timedelta(
+        hours=conf.limit_time.hour, minutes=conf.limit_time.minute,
+        seconds=conf.limit_time.second,
+    )
+    return task
+
+
+def test_hot_end_to_end_updates_model_submodel_and_scalar(tmp_path):
+    """端到端：改磁盘 limit_count → 一次检查点后模型、捕获子模型、捕获标量全部生效。
+
+    这是本次热重载改造的总命题：
+    - 模型原地赋值 → 捕获子模型对象立即可见（无需改任务读取方式）
+    - BaseTask 基类 prepare hook → 捕获标量同步重绑
+    """
+    session, store = make_session(tmp_path, limit_count=30)
+    task = _make_orochi_task(session)
+
+    store.patch_user_field("oas1", OROCHI_LIMIT, 77)
+    assert session.refresh_hot_at_checkpoint(task) is True
+
+    assert session.model.orochi.orochi_config.limit_count == 77
+    assert task.captured_submodel.limit_count == 77   # 捕获对象：靠原地赋值
+    assert task.limit_count == 77                     # 捕获标量：靠 prepare 重绑
+
+
+def test_hot_end_to_end_limit_time_rebinds_as_timedelta(tmp_path):
+    """limit_time 走 Time → timedelta 换算重绑，类型必须仍是 timedelta。"""
+    session, store = make_session(tmp_path)
+    task = _make_orochi_task(session)
+
+    store.patch_user_field("oas1", ("orochi", "orochi_config", "limit_time"), "01:45:00")
+    assert session.refresh_hot_at_checkpoint(task) is True
+
+    assert task.limit_time == timedelta(hours=1, minutes=45)
+    assert isinstance(task.limit_time, timedelta)
+
+
+def test_hot_end_to_end_skips_runtime_modified_scalar(tmp_path):
+    """出处校验的端到端形态：业务改写过的标量不被覆盖，但模型仍照常推进。"""
+    session, store = make_session(tmp_path, limit_count=30)
+    task = _make_orochi_task(session)
+    task.limit_count //= 2   # 模拟 BondlingFairyland 的 handoff 折半
+
+    store.patch_user_field("oas1", OROCHI_LIMIT, 77)
+    assert session.refresh_hot_at_checkpoint(task) is True
+
+    # 模型与捕获对象照常生效，只有被改写过的标量保持业务值
+    assert session.model.orochi.orochi_config.limit_count == 77
+    assert task.captured_submodel.limit_count == 77
+    assert task.limit_count == 15
+
+
+def test_hot_end_to_end_ignores_other_task_subtree(tmp_path):
+    """任务子树限定的端到端形态：跑 Orochi 时改 EvoZone 不动 Orochi 的标量。"""
+    session, store = make_session(tmp_path, limit_count=30)
+    task = _make_orochi_task(session)
+    evo_path = ("evo_zone", "evo_zone_config", "limit_count")
+    store.patch_user_field("oas1", evo_path, 30)
+    session.refresh_hot_at_checkpoint(task)
+
+    store.patch_user_field("oas1", evo_path, 999)
+    assert session.refresh_hot_at_checkpoint(task) is True
+
+    # EvoZone 的模型值生效，但 Orochi 任务实例上的 limit_count 不受影响
+    assert session.model.evo_zone.evo_zone_config.limit_count == 999
+    assert task.limit_count == 30

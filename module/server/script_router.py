@@ -546,10 +546,23 @@ async def websocket_endpoint(websocket: WebSocket, script_name: str):
                 await script_process.send_state(websocket, {"config_state": script_process.cached_config_state()})
             elif data == 'start':
                 # 连接期间缓存的 wrapper 可能已失效，按名称重新进入 manager 身份协议。
-                await mm.start_script_process(script_name)
-                script_process = await mm.ensure_script_process(script_name)
+                # 启动失败（generation 不匹配、握手超时、配置损坏、锁超时）不得穿透
+                # while True：外层 try 只捕 WebSocketDisconnect，异常逃逸会直接打死
+                # 这条 WS 连接，前端只看到重连而拿不到任何失败提示。
+                # 捕获后回推一帧当前 state，让客户端退出「启动中」并与真实状态对齐。
+                try:
+                    await mm.start_script_process(script_name)
+                    script_process = await mm.ensure_script_process(script_name)
+                except Exception as e:
+                    logger.error(f'[{script_name}] websocket start failed: {e}')
+                await script_process.send_state(websocket, {"state": script_process.state})
             elif data == 'stop':
-                await script_process.stop()
+                # 停止同样不得让异常打死连接，理由同上
+                try:
+                    await script_process.stop()
+                except Exception as e:
+                    logger.error(f'[{script_name}] websocket stop failed: {e}')
+                await script_process.send_state(websocket, {"state": script_process.state})
 
     except WebSocketDisconnect:
         logger.warning(f'[{script_name}] websocket disconnect')

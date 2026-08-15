@@ -521,10 +521,10 @@ def test_synthetic_profile_is_injectable():
 def test_synthetic_hot_paths_classify_under_default_deny():
     from module.config.config_reload import (
         COLD,
-        DEFAULT_RELOAD_POLICY,
         HOT,
         ReloadPolicy,
         WARM,
+        default_reload_policy,
     )
 
     policy = ReloadPolicy(
@@ -535,6 +535,10 @@ def test_synthetic_hot_paths_classify_under_default_deny():
     assert policy.classify(("synthetic", "task", "limit_count")) == HOT
     assert policy.classify(("script", "device", "serial")) == COLD
     assert policy.classify(("synthetic", "task", "other_field")) == WARM
-    # 生产默认策略 hot 为空：合成 HOT 路径按 WARM 处理，不开放任何真实字段中途替换
-    assert DEFAULT_RELOAD_POLICY.hot_paths == frozenset()
-    assert DEFAULT_RELOAD_POLICY.classify(("synthetic", "task", "limit_count")) == WARM
+    # 生产默认策略的 hot 由 ConfigModel schema 派生，不含合成 Schema 的路径：
+    # 合成路径在生产策略下仍按 WARM 处理，两套策略互不污染
+    production = default_reload_policy()
+    assert ("synthetic", "task", "limit_count") not in production.hot_paths
+    assert production.classify(("synthetic", "task", "limit_count")) == WARM
+    # 生产策略确实开放了真实任务字段（与首版空白名单的契约已不同）
+    assert production.classify(("orochi", "orochi_config", "limit_count")) == HOT

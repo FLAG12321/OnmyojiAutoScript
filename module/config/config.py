@@ -17,7 +17,7 @@ from threading import Lock
 from module.base.filter import Filter
 from module.config.config_generation import ConfigGenerationError
 from module.config.config_operations import MISSING, _eq, get_path, set_path
-from module.config.config_reload import COLD, HOT, DEFAULT_RELOAD_POLICY, ReloadPolicy, coerce_path
+from module.config.config_reload import COLD, HOT, ReloadPolicy, coerce_path, default_reload_policy
 from module.config.config_store import (
     ConfigGenerationMismatchError,
     ConfigJsonError,
@@ -143,6 +143,12 @@ FORBIDDEN_TIME_TASKS = {
     'KekkaiActivation': 'activation_config',
 }
 
+# HOT 提交需连带失效的 Config 级派生缓存：(路径前缀, cached_property 名)。
+# HOT 白名单现在覆盖 script.error 下的 scalar，而 notifier 是从 notify_config/notify_enable
+# 构建的 cached_property；只改模型不清缓存会留下「模型已新、通知目标仍旧」的半生效状态
+# （规格 §11.1 禁止）。WARM 重建在 _commit_loaded_state 里已做同样的清理。
+_HOT_INVALIDATED_CACHES: tuple = ((("script", "error"), "notifier"),)
+
 
 class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
     """运行期配置会话：持有 model/base/generation/mtime 与 blocked 状态。
@@ -179,8 +185,9 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         super(ConfigManual, self).__init__()
         super(ConfigWatcher, self).__init__()
         super(ConfigMenu, self).__init__()
-        # WARM/COLD 分级热重载策略：默认 script.device 子树 COLD、无 HOT、其余 WARM。
-        self.reload_policy = reload_policy or DEFAULT_RELOAD_POLICY
+        # WARM/COLD 分级热重载策略：默认 script.device 子树 COLD、HOT 由 ConfigModel
+        # schema 派生（全部 scalar/Enum/单值时间叶子）、其余 WARM。
+        self.reload_policy = reload_policy or default_reload_policy()
         self.store = store or ConfigStore(config_root=Path.cwd() / 'config')
         loaded = self.store.load(self.config_name)
         self._commit_loaded_state(loaded.model, copy.deepcopy(loaded.canonical), loaded)
@@ -489,22 +496,48 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             node = getattr(node, key)
         return node
 
+    def _resolve_model_slots(self, model, paths, candidate) -> list:
+        """解析 HOT 路径对应的「宿主模型、字段名、候选新值」三元组，不做任何写入。
+
+        原地赋值方案（§11.1）要求提交段保持原子性：本方法是「可能失败」的一趟，
+        全程只 getattr，路径与模型结构不匹配时在这里抛 AttributeError，此时运行态零变更；
+        调用方拿到完整三元组列表后再统一 setattr，那一趟不会失败。
+        :param model: 会话运行模型（写入目标）
+        :param paths: 需要同步的 canonical tuple path 列表
+        :param candidate: 已校验的候选模型（取值来源）
+        :return: [(host_model, field_name, value), ...]
+        """
+        slots: list = []
+        for path in paths:
+            # 宿主定位到叶子的父节点；叶子本身用 setattr 写，不能提前 getattr
+            host = model
+            for key in path[:-1]:
+                host = getattr(host, key)
+            value = self._model_get(candidate, path)
+            slots.append((host, path[-1], value))
+        return slots
+
     def _set_model_value(self, model, path: tuple[str, ...], value):
-        """沿 canonical tuple path 自底向上 model_copy 重建模型，不改动原实例。
+        """把单个 canonical tuple path 的字段原地赋值为 value，返回同一个根模型实例。
+
+        原地赋值而非 model_copy 重建（§11.1）：任务里大量存在
+        `con = self.config.<task>` 这类把配置子模型捕获到局部变量或 cached_property
+        的写法，重建会换掉对象标识使捕获者读到旧副本，HOT 白名单开了也不生效；
+        原地写则所有捕获同一对象的读法立即看到新值，无需逐任务改读取方式。
 
         value 必须已是 Pydantic 字段接受的类型（来自候选模型的已校验值）；
-        HOT 同步按已验证模型字段进行，避免对运行模型整体重校验破坏 transient 状态
+        ConfigBase 未设 frozen/validate_assignment，故此处不触发重校验，
+        也不会对运行模型整体重校验破坏 transient 状态
         （规格 §12 禁止把 canonical 动态 key 直接反向写入模型）。
+
+        返回根模型是为兼容 `self._model = self._set_model_value(...)` 的既有调用形态；
+        原地写下返回值与入参是同一实例。
         """
-        keys = list(path)
-
-        def rebuild(node, i):
-            if i == len(keys) - 1:
-                return node.model_copy(update={keys[i]: value})
-            child = getattr(node, keys[i])
-            return node.model_copy(update={keys[i]: rebuild(child, i + 1)})
-
-        return rebuild(model, 0)
+        host = model
+        for key in path[:-1]:
+            host = getattr(host, key)
+        setattr(host, path[-1], value)
+        return model
 
     def _hot_changed_paths(self, disk_canonical: dict) -> list:
         """返回磁盘相对会话基线发生变化的 HOT 白名单路径。
@@ -659,11 +692,21 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
                 return False
             try:
                 changed_set = set(changed_paths)
-                for path in changed_paths:
-                    model_val = self._model_get(candidate, path)
-                    self._model = self._set_model_value(self._model, path, model_val)
-                    self._base = set_path(self._base, path, get_path(loaded.canonical, path))
+                # 第一趟：解析全部槽位与候选值。这是唯一可能失败的一趟，此时零写入；
+                # 原实现逐路径 `self._model = ...` 边解析边提交，多路径下第 N 条抛错
+                # 会留下前 N-1 条已生效的半成品，本结构顺带修掉该原子性缺口。
+                slots = self._resolve_model_slots(self._model, changed_paths, candidate)
+                disk_values = [get_path(loaded.canonical, path) for path in changed_paths]
+                # 第二趟：只做已解析槽位的原地赋值与 base/deferred 推进，不会失败
+                for host, field, value in slots:
+                    setattr(host, field, value)
+                for path, disk_val in zip(changed_paths, disk_values):
+                    self._base = set_path(self._base, path, disk_val)
                     self._pending_warm_paths.discard(path)
+                # 连带失效受影响的 Config 级派生缓存，避免模型已新而缓存仍旧
+                for prefix, cache_name in _HOT_INVALIDATED_CACHES:
+                    if any(p[:len(prefix)] == prefix for p in changed_paths):
+                        self.__dict__.pop(cache_name, None)
                 if prepared:
                     for name, value in prepared.items():
                         setattr(task, name, value)
