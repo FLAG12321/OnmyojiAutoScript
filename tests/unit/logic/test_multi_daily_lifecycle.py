@@ -1,5 +1,7 @@
 # This Python file uses the following encoding: utf-8
 """MultiDailyAltAcc 阶段生命周期与账号级跳过测试。"""
+from copy import deepcopy
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +17,107 @@ def _make_task():
 
 def _account(account='mail@x.com', character='小号一', svr='两情相悦'):
     return SimpleNamespace(account=account, character=character, svr=svr)
+
+
+def _phase_config(**overrides):
+    defaults = {
+        "total_weekaward_enable": True,
+        "total_mysteryshop_enable": True,
+        "total_alliedteam_battle_enable": False,
+        "total_alliedteam_ap_enable": False,
+        "total_returngift_enable": False,
+        "total_courtyard_enable": False,
+        "total_mail_enable": False,
+        "total_cooperation_enable": False,
+        "total_tree_planting_enable": 1,
+        "total_trialbattle_enable": True,
+        "total_summon_up_enable": True,
+        "total_publish_sr_enable": True,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+class _ReloadingConfig:
+    """模拟 task_delay 先从磁盘重载，再保存 scheduler 的真实行为。"""
+
+    def __init__(self, phase):
+        self.disk = SimpleNamespace(
+            multi_daily_alt_acc=SimpleNamespace(
+                multi_daily_alt_acc_config=deepcopy(phase),
+                scheduler=SimpleNamespace(next_run=None),
+            )
+        )
+        self.model = deepcopy(self.disk)
+        self.task_delay_calls = []
+        self.save_calls = 0
+
+    def task_delay(self, task, **kwargs):
+        self.task_delay_calls.append(kwargs["target"])
+        self.model = deepcopy(self.disk)
+        self.model.multi_daily_alt_acc.scheduler.next_run = kwargs["target"]
+        if kwargs.get("persist", True):
+            self.save()
+
+    def save(self):
+        self.save_calls += 1
+        self.disk = deepcopy(self.model)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("method", "initial", "expected"),
+    (
+        (
+            "_schedule_normal_day",
+            {},
+            {"total_courtyard_enable": True, "total_returngift_enable": False},
+        ),
+        (
+            "_schedule_evening",
+            {},
+            {"total_courtyard_enable": False, "total_returngift_enable": True},
+        ),
+        (
+            "_schedule_after_midnight",
+            {},
+            {"total_alliedteam_battle_enable": False, "total_returngift_enable": False},
+        ),
+        (
+            "_schedule_after_midnight",
+            {"total_alliedteam_battle_enable": True},
+            {"total_alliedteam_battle_enable": False, "total_alliedteam_ap_enable": True},
+        ),
+        (
+            "_schedule_after_midnight",
+            {"total_returngift_enable": True},
+            {"total_returngift_enable": False, "total_alliedteam_battle_enable": True},
+        ),
+        (
+            "_schedule_alliedteam_after_returngift",
+            {"total_returngift_enable": True},
+            {"total_returngift_enable": False, "total_alliedteam_battle_enable": True},
+        ),
+    ),
+)
+def test_phase_schedule_changes_survive_task_delay_reload(method, initial, expected):
+    task = _make_task()
+    config = _ReloadingConfig(_phase_config(**initial))
+    task.config = config
+    task.daily_conf = config.model.multi_daily_alt_acc
+    task.start_time = datetime(2026, 8, 17, 0, 23)
+
+    if method == "_schedule_alliedteam_after_returngift":
+        getattr(task, method)()
+    else:
+        getattr(task, method)(task.start_time)
+
+    saved = config.disk.multi_daily_alt_acc.multi_daily_alt_acc_config
+    for field, value in expected.items():
+        assert getattr(saved, field) is value
+    assert len(config.task_delay_calls) == 1
+    assert config.save_calls == 1
+    assert config.disk.multi_daily_alt_acc.scheduler.next_run is not None
 
 
 @pytest.mark.unit

@@ -22,7 +22,6 @@ from module.config.atomicwrites import atomic_write
 from module.config.config import Config
 from module.device.device import Device
 from module.logger import logger
-from module.server.config_manager import ConfigManager
 from module.server.annotator_rule_schema import (
     default_list_meta,
     field_default,
@@ -156,9 +155,12 @@ class EmulatorCaptureSession:
             f"[diag][annotator] begin _build_device, session={self.session_id}, "
             f"config={self.config_name}, thread={threading.current_thread().name}"
         )
+        # 独立标注入口也必须划定 COLD 启动边界；Device 初始化成功后才冻结正式快照。
+        config.begin_device_initialization()
         # 注入采集线程自身的 _stop_event 作为取消信号：断开（stop）后置位，
         # Device 拉起链路（full_recovery / emulator_start_watch）在检查点尽快放弃拉起。
         device = Device(config=config, cancel_event=self._stop_event)
+        config.freeze_startup_device_snapshot()
         device.disable_stuck_detection()
         device.screenshot_interval_set(interval)
         logger.info(
@@ -208,10 +210,11 @@ class EmulatorCaptureSession:
         device: Device | None = None
         interval = max(0.1, 1.0 / float(self.frame_rate))
         try:
-            config = Config(config_name=self.config_name)
             while not self._stop_event.is_set():
                 if device is None:
                     try:
+                        # 每次重试都重建 Config，会丢弃上次失败留下的 provisional 初始化状态。
+                        config = Config(config_name=self.config_name)
                         device = self._build_device(config, interval)
                         with self._frame_lock:
                             self.state = "running"
@@ -646,7 +649,12 @@ class AnnotatorManager:
         return sorted(tasks)
 
     def list_configs(self) -> list[str]:
-        return ConfigManager.all_script_files()
+        # all_script_files 是实例方法，必须走实例调用。
+        # 标注器不持有自己的 Store：复用 MainManager 的单一 ConfigStore，
+        # 既避免出现第二个默认 Store，也让运行期替换 mm.store 后立即生效。
+        from module.server.main_manager import mm
+
+        return mm.all_script_files()
 
     @staticmethod
     def rule_schema() -> dict[str, Any]:

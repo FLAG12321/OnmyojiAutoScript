@@ -1,0 +1,506 @@
+# This Python file uses the following encoding: utf-8
+# 配置严格持久化校验：
+# - ValidationProfile 允许测试注入任意 Pydantic model，不写死 ConfigModel
+# - validate_persisted_config 顺序：legacy -> 动态预检/排序 -> unknown -> strict model -> canonical 不变量
+# - STRICT_CONFIG_VALIDATION 上下文变量关闭 ConfigBase 的 range 降级回退
+import contextvars
+import copy
+import re
+import types
+from dataclasses import dataclass
+from typing import Annotated, Any, Callable, Sequence, Union, get_args, get_origin
+
+from pydantic import BaseModel, TypeAdapter, ValidationError
+
+from tasks.Component.config_base import ConfigBase
+from module.config.config_model import ConfigModel
+
+# 严格持久化校验开关：开启时 ConfigBase.__init__ 不再把 range 错误降级为默认值
+STRICT_CONFIG_VALIDATION = contextvars.ContextVar("strict_config_validation", default=False)
+
+
+class ConfigValidationError(ValueError):
+    """严格持久化校验失败，磁盘保持不变。"""
+
+
+@dataclass(frozen=True)
+class DynamicPathSet:
+    """动态 serializer 的路径集合注册项。
+
+    mode:
+      counted     由 count_path 控制成员数量，写入 _N 扁平 key
+      contiguous  无 count，成员连续索引，至少保留一项
+      single      固定只保留 _1 一项
+    """
+    key: str
+    member_path: tuple[str, ...]
+    count_path: tuple[str, ...] | None = None
+    mode: str = "counted"
+
+
+@dataclass(frozen=True)
+class DynamicFieldSet:
+    """声明固定对象下允许按模式扩展的同类型字段。"""
+    path: tuple[str, ...]
+    key_pattern: str
+    value_type: type
+
+
+@dataclass(frozen=True)
+class ValidationProfile:
+    model_type: type[BaseModel]
+    legacy_migrations: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = ()
+    dynamic_path_sets: Sequence[DynamicPathSet] = ()
+    dynamic_field_sets: Sequence[DynamicFieldSet] = ()
+
+
+def _migrate_master_battle_mode(raw: dict) -> None:
+    """master_battle_mode 旧字段迁移：normal_battle 映射两个 exit-after-prepare 为 False，其余为 True。
+
+    legacy key 只为缺失的新字段补值；已有新字段优先，保证迁移幂等且不覆盖新配置。
+    """
+    task = raw.get("master_disciple")
+    if not isinstance(task, dict):
+        return
+    section = task.get("master_disciple_config")
+    if not isinstance(section, dict):
+        return
+    legacy = section.pop("master_battle_mode", None)
+    if legacy is None:
+        return
+    mapped = legacy != "normal_battle"
+    section.setdefault("master_coin_exit_after_prepare", mapped)
+    section.setdefault("master_exp_exit_after_prepare", mapped)
+
+
+LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = (
+    (("master_disciple", "master_disciple_config", "master_battle_mode"), _migrate_master_battle_mode),
+)
+
+
+def legacy_source_paths() -> set[tuple[str, ...]]:
+    """返回所有 legacy alias 的源路径，供 AST 门禁校验 before-validator 迁移均已登记。"""
+    return {path for path, _ in LEGACY_ALIAS_MIGRATIONS}
+
+
+DYNAMIC_PATH_SET_REGISTRY: Sequence[DynamicPathSet] = (
+    DynamicPathSet("find_jade.invite_info_list", ("find_jade", "invite_info_list"),
+                   ("find_jade", "find_jade_config", "invite_info_count")),
+    DynamicPathSet("find_jade.sup_account_list", ("find_jade", "sup_account_list"),
+                   ("find_jade", "find_jade_config", "sup_account_count")),
+    DynamicPathSet("multi_daily_alt_acc.sup_account_list", ("multi_daily_alt_acc", "sup_account_list"),
+                   ("multi_daily_alt_acc", "multi_daily_alt_acc_config", "sup_account_count")),
+    DynamicPathSet("multi_acc_exp.sup_account_list", ("multi_acc_exp", "sup_account_list"),
+                   ("multi_acc_exp", "multi_acc_exp_config", "sup_account_count")),
+    DynamicPathSet("meta_demon.md_strategies", ("meta_demon", "md_strategies"),
+                   ("meta_demon", "meta_demon_config", "md_strategy_count")),
+    DynamicPathSet("master_disciple.disciple_account_list", ("master_disciple", "disciple_account_list"),
+                   mode="contiguous"),
+    DynamicPathSet("bondling_fairyland.switch_account_list", ("bondling_fairyland", "switch_account_list"),
+                   mode="single"),
+    DynamicPathSet("abyss_shadows.switch_account_list", ("abyss_shadows", "switch_account_list"),
+                   mode="single"),
+)
+
+
+DYNAMIC_FIELD_SET_REGISTRY: Sequence[DynamicFieldSet] = (
+    DynamicFieldSet(
+        ("multi_account_sign_in", "account_config_selection"),
+        r"config_[0-9a-f]{16}",
+        bool,
+    ),
+)
+
+
+DEFAULT_CONFIG_PROFILE = ValidationProfile(
+    model_type=ConfigModel,
+    legacy_migrations=LEGACY_ALIAS_MIGRATIONS,
+    dynamic_path_sets=DYNAMIC_PATH_SET_REGISTRY,
+    dynamic_field_sets=DYNAMIC_FIELD_SET_REGISTRY,
+)
+
+
+def normalize_legacy_config(
+    raw: dict,
+    config_name: str,
+    profile: ValidationProfile = None,
+) -> dict:
+    """返回深拷贝：写入 config_name 并执行 legacy alias 迁移，不修改入参。"""
+    profile = profile or DEFAULT_CONFIG_PROFILE
+    normalized = copy.deepcopy(raw)
+    if not isinstance(normalized, dict):
+        raise ConfigValidationError("config root must be an object")
+    for _path, migrate in profile.legacy_migrations:
+        migrate(normalized)
+    normalized["config_name"] = config_name
+    return normalized
+
+
+def _unwrap_annotation(annotation: Any) -> tuple[Any, ...]:
+    """展开 Annotated/Union/Optional，返回所有可能的实际类型。"""
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        return _unwrap_annotation(get_args(annotation)[0])
+    if origin in (Union, types.UnionType):
+        result: list[Any] = []
+        for item in get_args(annotation):
+            result.extend(_unwrap_annotation(item))
+        return tuple(result)
+    return (annotation,)
+
+
+def _model_types(annotation: Any) -> tuple[type[BaseModel], ...]:
+    """从任意常见 Pydantic 注解中提取嵌套 BaseModel 类型。"""
+    models: list[type[BaseModel]] = []
+    for item in _unwrap_annotation(annotation):
+        if isinstance(item, type) and issubclass(item, BaseModel):
+            models.append(item)
+        else:
+            origin = get_origin(item)
+            if origin is list:
+                for nested in _model_types(get_args(item)[0] if get_args(item) else Any):
+                    models.append(nested)
+    return tuple(models)
+
+
+def _list_item_models(annotation: Any) -> tuple[type[BaseModel], ...]:
+    models: list[type[BaseModel]] = []
+    for item in _unwrap_annotation(annotation):
+        if get_origin(item) is not list:
+            continue
+        args = get_args(item)
+        if args:
+            models.extend(_model_types(args[0]))
+    return tuple(dict.fromkeys(models))
+
+
+def _list_item_model(annotation: Any) -> type[BaseModel] | None:
+    """动态 registry 必须映射到唯一 item model。"""
+    models = _list_item_models(annotation)
+    return models[0] if len(models) == 1 else None
+
+
+def _dynamic_entry_for_key(
+    path: tuple[str, ...],
+    key: str,
+    profile: ValidationProfile,
+) -> DynamicPathSet | None:
+    """只有显式 registry 声明的 member_N key 才能绕过 unknown 拒绝。"""
+    for entry in profile.dynamic_path_sets:
+        if path != entry.member_path[:-1]:
+            continue
+        field = entry.member_path[-1]
+        prefix = field + "_"
+        if not key.startswith(prefix):
+            continue
+        suffix = key[len(prefix):]
+        if suffix.isdigit():
+            return entry
+    return None
+
+
+def _dynamic_field_for_key(
+    path: tuple[str, ...],
+    key: str,
+    profile: ValidationProfile,
+) -> DynamicFieldSet | None:
+    """返回覆盖当前未知字段的受约束动态字段注册项。"""
+    for entry in profile.dynamic_field_sets:
+        if path == entry.path and re.fullmatch(entry.key_pattern, key):
+            return entry
+    return None
+
+
+def _selected_model_type(field_info, data: dict, path: tuple[str, ...]) -> type[BaseModel] | None:
+    """用字段完整注解/元数据执行一次独立验证，获取 Pydantic 实际选择的 Union 分支。"""
+    annotation = field_info.rebuild_annotation()
+    # list[Union[...]] 必须连同列表字段的完整注解一起验证，才能保留 item 上的
+    # discriminator/union_mode 等元数据，并与父模型实际选择的分支完全一致。
+    candidate = [copy.deepcopy(data)] if _list_item_models(annotation) else copy.deepcopy(data)
+    try:
+        selected = TypeAdapter(annotation).validate_python(candidate)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise ConfigValidationError(f"invalid field {'/'.join(path)}: {exc}") from exc
+    if isinstance(selected, list) and len(selected) == 1:
+        selected = selected[0]
+    return type(selected) if isinstance(selected, BaseModel) else None
+
+
+def _reject_unknown_keys(
+    data: Any,
+    model_type: type[BaseModel],
+    profile: ValidationProfile,
+    path: tuple[str, ...] = (),
+) -> None:
+    """递归拒绝除显式 alias 与动态 registry 之外的未知字段。
+
+    Pydantic `extra='allow'` 仅服务运行期兼容，不能放宽持久化边界。
+    """
+    if not isinstance(data, dict):
+        return
+    fields = model_type.model_fields
+    for key, value in data.items():
+        full = path + (key,)
+        if key == "config_name" and not path:
+            continue
+        field_set = _dynamic_field_for_key(path, key, profile)
+        if field_set is not None:
+            try:
+                TypeAdapter(field_set.value_type).validate_python(value, strict=True)
+            except (ValidationError, TypeError, ValueError) as exc:
+                raise ConfigValidationError(f"invalid dynamic field {'/'.join(full)}: {exc}") from exc
+        if key not in fields:
+            entry = _dynamic_entry_for_key(path, key, profile)
+            if entry is not None:
+                item_model = _list_item_model(fields[entry.member_path[-1]].annotation)
+                if item_model is None:
+                    raise ConfigValidationError(f"invalid dynamic registry {'/'.join(full)}")
+                _reject_unknown_keys(value, item_model, profile, full)
+                continue
+            if field_set is None:
+                raise ConfigValidationError(f"unknown field {'/'.join(full)}")
+            continue
+        annotation = fields[key].annotation
+        if isinstance(value, list) and _list_item_models(annotation):
+            candidates = _list_item_models(annotation)
+            if len(candidates) == 1:
+                for index, item in enumerate(value):
+                    if isinstance(item, dict):
+                        _reject_unknown_keys(item, candidates[0], profile, full + (str(index),))
+        elif isinstance(value, dict):
+            model_candidates = _model_types(annotation)
+            if len(model_candidates) == 1:
+                _reject_unknown_keys(value, model_candidates[0], profile, full)
+
+
+def _reject_unknown_by_instance(
+    data: Any,
+    instance: Any,
+    profile: ValidationProfile,
+    path: tuple[str, ...] = (),
+) -> None:
+    """按正式 model_validate 产生的实例类型检查 Union 最终分支 unknown。"""
+    if not isinstance(data, dict) or not isinstance(instance, BaseModel):
+        return
+    fields = type(instance).model_fields
+    for key, value in data.items():
+        full = path + (key,)
+        if key == "config_name" and not path:
+            continue
+        if key not in fields:
+            if _dynamic_field_for_key(path, key, profile) is not None:
+                continue
+            entry = _dynamic_entry_for_key(path, key, profile)
+            if entry is not None:
+                continue
+            raise ConfigValidationError(f"unknown field {'/'.join(full)}")
+        child = getattr(instance, key, None)
+        if isinstance(value, dict) and isinstance(child, BaseModel):
+            _reject_unknown_by_instance(value, child, profile, full)
+        elif isinstance(value, list) and isinstance(child, list):
+            for index, item in enumerate(value):
+                if index < len(child) and isinstance(item, dict):
+                    _reject_unknown_by_instance(item, child[index], profile, full + (str(index),))
+
+
+def _get_node(data: Any, path: tuple[str, ...]) -> Any:
+    """读取 path 值；缺失返回 None。"""
+    node: Any = data
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _validate_dynamic_path_sets(data: dict, profile: ValidationProfile) -> None:
+    """按注册 mode 校验动态列表的精确 cardinality。
+
+    counted 要求索引恰为 1..count；contiguous 要求从 1 连续且至少一项；
+    single 只允许 _1。首次 migration 必须先归一化旧形状，再调用本严格入口。
+    """
+    for entry in profile.dynamic_path_sets:
+        parent = entry.member_path[:-1]
+        field = entry.member_path[-1]
+        node = _get_node(data, parent)
+        if not isinstance(node, dict):
+            continue
+        # 持久化 canonical 只允许 field_N；逻辑 list 与扁平成员混用会被父 validator 重组。
+        if field in node:
+            raise ConfigValidationError(
+                f"dynamic list {'/'.join(entry.member_path)} must use flattened members"
+            )
+        prefix = field + "_"
+        member_suffixes = [
+            key[len(prefix):] for key in node
+            if key.startswith(prefix) and key[len(prefix):].isdigit()
+        ]
+        if any(not suffix or int(suffix) < 1 or suffix != str(int(suffix)) for suffix in member_suffixes):
+            raise ConfigValidationError(
+                f"dynamic list {'/'.join(entry.member_path)} has non-canonical member index"
+            )
+        indexes = sorted(int(suffix) for suffix in member_suffixes)
+        if entry.mode == "counted" and entry.count_path is not None:
+            count = _get_node(data, entry.count_path)
+            if type(count) is not int or count < 0:
+                raise ConfigValidationError(
+                    f"dynamic count {'/'.join(entry.count_path)} must be a non-negative integer"
+                )
+            if indexes != list(range(1, len(indexes) + 1)) or len(indexes) != count:
+                raise ConfigValidationError(
+                    f"dynamic list {'/'.join(entry.member_path)} indexes {indexes} "
+                    f"do not match 1..{count}"
+                )
+        elif entry.mode == "contiguous":
+            if not indexes or indexes != list(range(1, len(indexes) + 1)):
+                raise ConfigValidationError(
+                    f"dynamic list {'/'.join(entry.member_path)} must have contiguous "
+                    f"indexes starting at 1"
+                )
+        elif entry.mode == "single":
+            if indexes != [1]:
+                raise ConfigValidationError(
+                    f"dynamic list {'/'.join(entry.member_path)} must keep exactly _1"
+                )
+
+
+def _sort_dynamic_member_keys(data: dict, profile: ValidationProfile) -> None:
+    """按数字索引重排扁平动态 key，禁止父 validator 依赖 JSON 插入顺序。"""
+    for entry in profile.dynamic_path_sets:
+        parent = entry.member_path[:-1]
+        field = entry.member_path[-1]
+        node = _get_node(data, parent)
+        if not isinstance(node, dict):
+            continue
+        prefix = field + "_"
+        members = [
+            (int(key[len(prefix):]), key, node[key])
+            for key in list(node)
+            if key.startswith(prefix) and key[len(prefix):].isdigit()
+        ]
+        if len(members) < 2:
+            continue
+        for _index, key, _payload in members:
+            del node[key]
+        for _index, key, payload in sorted(members):
+            node[key] = payload
+
+
+def _validate_dynamic_payloads(
+    data: dict,
+    profile: ValidationProfile,
+) -> dict[str, dict[str, Any]]:
+    """在父任务 before-validator 前验证 payload，并保存索引到 canonical payload 的映射。"""
+    expected: dict[str, dict[str, Any]] = {}
+    for entry in profile.dynamic_path_sets:
+        expected_members: dict[str, Any] = {}
+        expected[entry.key] = expected_members
+        parent = entry.member_path[:-1]
+        field = entry.member_path[-1]
+        node = _get_node(data, parent)
+        if not isinstance(node, dict):
+            continue
+        task_model = profile.model_type
+        for part in parent:
+            candidates = _model_types(task_model.model_fields[part].annotation)
+            if len(candidates) != 1:
+                raise ConfigValidationError(f"dynamic registry {entry.key} has ambiguous task model")
+            task_model = candidates[0]
+        item_model = _list_item_model(task_model.model_fields[field].annotation)
+        if item_model is None:
+            raise ConfigValidationError(f"dynamic registry {entry.key} has invalid item model")
+        prefix = field + "_"
+        for key, payload in node.items():
+            if not key.startswith(prefix):
+                continue
+            suffix = key[len(prefix):]
+            if not suffix.isdigit():
+                continue
+            if not isinstance(payload, dict):
+                raise ConfigValidationError(
+                    f"dynamic member {'/'.join(parent + (key,))} must be an object"
+                )
+            member_path = parent + (key,)
+            try:
+                # unknown 必须先于父任务 before-validator 拒绝，避免损坏字段被静默丢弃。
+                _reject_unknown_keys(payload, item_model, profile, member_path)
+                item = item_model.model_validate(copy.deepcopy(payload))
+                is_valid = getattr(item, "is_valid", None)
+                if callable(is_valid) and not is_valid():
+                    # 历史模板会保留默认空项；只有 canonical 精确等于默认实例时才兼容。
+                    default_item = item_model()
+                    if item.model_dump(mode="json") != default_item.model_dump(mode="json"):
+                        raise ConfigValidationError(
+                            f"invalid dynamic member {'/'.join(member_path)}: semantic validation failed"
+                        )
+                expected_members[key] = item.model_dump(mode="json")
+            except ConfigValidationError:
+                raise
+            except (ValidationError, TypeError, ValueError, AttributeError) as exc:
+                raise ConfigValidationError(
+                    f"invalid dynamic member {'/'.join(member_path)}: {exc}"
+                ) from exc
+    return expected
+
+
+def _validate_canonical_dynamic_payloads(
+    canonical: dict,
+    expected: dict[str, dict[str, Any]],
+    profile: ValidationProfile,
+) -> None:
+    """确认父 validator/serializer 未改变动态索引集合或索引对应 payload。"""
+    _validate_dynamic_path_sets(canonical, profile)
+    for entry in profile.dynamic_path_sets:
+        parent = entry.member_path[:-1]
+        field = entry.member_path[-1]
+        prefix = field + "_"
+        node = _get_node(canonical, parent)
+        actual = {}
+        if isinstance(node, dict):
+            actual = {
+                key: value for key, value in node.items()
+                if key.startswith(prefix) and key[len(prefix):].isdigit()
+            }
+        expected_members = expected.get(entry.key, {})
+        if set(actual) != set(expected_members):
+            raise ConfigValidationError(
+                f"dynamic list {'/'.join(entry.member_path)} changed members during canonicalization"
+            )
+        for key, payload in expected_members.items():
+            if actual[key] != payload:
+                raise ConfigValidationError(
+                    f"dynamic member {'/'.join(parent + (key,))} changed during canonicalization"
+                )
+
+
+def validate_persisted_config(
+    raw: dict,
+    config_name: str,
+    profile: ValidationProfile = None,
+) -> tuple[BaseModel, dict]:
+    """严格持久化校验：迁移 legacy -> dynamic cardinality/payload -> unknown -> model -> canonical。"""
+    profile = profile or DEFAULT_CONFIG_PROFILE
+    normalized = normalize_legacy_config(raw, config_name, profile)
+    token = STRICT_CONFIG_VALIDATION.set(True)
+    try:
+        # 动态成员必须在任何父模型 before-validator 运行前独立拒绝损坏 payload
+        _validate_dynamic_path_sets(normalized, profile)
+        expected_dynamic = _validate_dynamic_payloads(normalized, profile)
+        # 先稳定 key 顺序，再允许任何父任务 before-validator 消费扁平成员。
+        _sort_dynamic_member_keys(normalized, profile)
+        _reject_unknown_keys(normalized, profile.model_type, profile)
+        model = profile.model_type.model_validate(normalized)
+        # Union 的真实分支只由这次正式校验决定；随后按实例类型精确拒绝 unknown，
+        # 避免 TypeAdapter 预选导致 validator 提前或重复执行。
+        _reject_unknown_by_instance(normalized, model, profile)
+        canonical = model.model_dump(mode="json")
+        _validate_canonical_dynamic_payloads(canonical, expected_dynamic, profile)
+    except ConfigValidationError:
+        raise
+    except (ValidationError, TypeError, ValueError, AttributeError, KeyError, IndexError) as exc:
+        # 旧任务 before-validator 常假定父节点是 dict，或直接索引嵌套结构；
+        # 边界统一包装其形状异常，避免 KeyError/IndexError 泄漏到事务层。
+        raise ConfigValidationError(str(exc)) from exc
+    finally:
+        STRICT_CONFIG_VALIDATION.reset(token)
+    return model, canonical

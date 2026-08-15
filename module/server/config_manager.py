@@ -10,7 +10,19 @@ from typing import Any, get_args, get_origin
 from pydantic import BaseModel, ValidationError
 
 from module.config.config_model import ConfigModel
-from module.config.utils import convert_to_underscore, read_file, write_file
+from module.config.config_store import (
+    ConfigNotFoundError,
+    ConfigStore,
+)
+from module.config.config_generation import (
+    ConfigGenerationError,
+    ConfigIdentityConflictError,
+)
+from module.config.config_validation import (
+    STRICT_CONFIG_VALIDATION,
+    ConfigValidationError as StrictConfigValidationError,
+)
+from module.config.utils import convert_to_underscore
 from module.logger import logger
 
 
@@ -69,13 +81,15 @@ class ConfigValidationError(ValueError):
         self.fields = fields
 
 class ConfigManager:
-    @staticmethod
-    def config_dir() -> Path:
-        return Path.cwd() / 'config'
+    def __init__(self, store: ConfigStore = None) -> None:
+        # 构造本身不做任何 I/O；MainManager 复用同一 store，任务 3 起全部实例配置访问走 Store。
+        self.store = store or ConfigStore(config_root=Path.cwd() / 'config')
 
-    @staticmethod
-    def config_path(name: str) -> Path:
-        return ConfigManager.config_dir() / f'{name}.json'
+    def config_dir(self) -> Path:
+        return self.store.config_root
+
+    def config_path(self, name: str) -> Path:
+        return self.store.config_root / f'{name}.json'
 
     @staticmethod
     def validate_config_name(name: str, *, allow_template: bool = True) -> str:
@@ -230,11 +244,16 @@ class ConfigManager:
         fields = ConfigManager._collect_unknown_field_errors(data, ConfigModel)
         fields.extend(ConfigManager._collect_dynamic_field_validation_errors(data, ConfigModel))
         model_data = copy.deepcopy(data)
-        model_data.pop('config_name', None)
+        model_data['config_name'] = name
         try:
-            ConfigModel(config_name=name, **model_data)
+            ConfigModel.model_validate(model_data)
         except ValidationError as e:
             fields.extend(ConfigManager._format_validation_error(e))
+        except (TypeError, ValueError, AttributeError) as e:
+            # 兼容模型的 before-validator 可能假定任务/分组节点为 dict，统一转成导入校验错误。
+            fields.append(ConfigManager._format_field_error(
+                "__root__", str(e), "model_type",
+            ))
         if fields:
             raise ConfigValidationError(fields)
 
@@ -315,55 +334,61 @@ class ConfigManager:
         fields.extend(ConfigManager._collect_dynamic_field_validation_errors(task_value, task_model_type, task_key))
 
         try:
-            task_model = task_model_type(**copy.deepcopy(task_value))
+            # 任务导入属于持久化边界，禁止 ConfigBase 把越界值静默回退为默认值。
+            token = STRICT_CONFIG_VALIDATION.set(True)
+            try:
+                task_model = task_model_type.model_validate(
+                    copy.deepcopy(task_value)
+                )
+            finally:
+                STRICT_CONFIG_VALIDATION.reset(token)
         except ValidationError as e:
             for error in ConfigManager._format_validation_error(e):
                 fields.append(ConfigManager._prefix_validation_error(error, task_key))
             task_model = None
+        except (TypeError, ValueError, AttributeError) as e:
+            # 与整份配置导入保持一致，任务/分组形状异常必须返回可映射到 HTTP 400 的错误。
+            fields.append(ConfigManager._format_field_error(
+                task_key, str(e), "model_type",
+            ))
+            task_model = None
 
         if fields:
             raise ConfigValidationError(fields)
-        return task_model.model_dump()
+        return task_model.model_dump(mode="json")
 
-    @staticmethod
-    def import_task_config(name: str, task_name: str, data: dict[str, Any]) -> tuple[str, str]:
+    def import_task_config(self, name: str, task_name: str, data: dict[str, Any]) -> tuple[str, str]:
         """
         导入单个任务配置，返回配置名称和归一化任务 key。
+        通过 ConfigStore 的 REPLACE_SUBTREE 原子替换目标任务子树。
         """
-        name = ConfigManager.validate_config_name(name, allow_template=False)
-        task_key = ConfigManager.validate_task_key(task_name)
-        file_path = ConfigManager.config_path(name)
-        if not file_path.exists():
-            raise ConfigNotFoundError(f'Config not found: {name}')
-
-        task_value = ConfigManager.validate_task_import_payload(task_key, data)
-        validated_task_value = ConfigManager.validate_task_value(task_key, task_value)
-
-        try:
-            config_data = read_file(file_path)
-        except json.JSONDecodeError as e:
-            raise ConfigJsonError(f'Config JSON parse failed: {e}') from e
-        if not isinstance(config_data, dict):
-            raise ConfigJsonError("Config JSON root must be an object")
-        if task_key not in config_data:
+        name = self.validate_config_name(name, allow_template=False)
+        task_key = self.validate_task_key(task_name)
+        task_value = self.validate_task_import_payload(task_key, data)
+        validated_task_value = self.validate_task_value(task_key, task_value)
+        loaded = self.store.load(name)
+        canonical = loaded.canonical
+        if task_key not in canonical:
             raise ConfigNotFoundError(f'Task not found in config: {task_key}')
-
-        new_config_data = copy.deepcopy(config_data)
-        new_config_data[task_key] = validated_task_value
-        ConfigManager._validate_config_model(name, new_config_data)
-        write_file(file_path, new_config_data)
-        logger.info(f'import task {task_key} to {file_path}')
+        expected = canonical[task_key]
+        self.store.replace_subtree(
+            name,
+            (task_key,),
+            expected,
+            validated_task_value,
+            loaded.generation,
+        )
+        logger.info(f'import task {task_key} to {name}')
         return name, task_key
 
-    @staticmethod
-    def load_task_for_transfer(name: str, task_name: str, *, allow_template: bool = True) -> tuple[str, str, dict[str, Any]]:
+    def load_task_for_transfer(self, name: str, task_name: str, *, allow_template: bool = True) -> tuple[str, str, dict[str, Any]]:
         """
         读取单个任务配置片段，返回配置名、任务 key、任务 JSON。
         """
-        name, data = ConfigManager.load_config_for_export(name)
+        name, data = self.load_config_for_export(name)
         if not allow_template and name == 'template':
             raise ConfigNameError("Config name template is reserved")
-        task_key = ConfigManager.validate_task_key(task_name)
+        task_key = self.validate_task_key(task_name)
         if task_key not in data:
             raise ConfigNotFoundError(f'Task not found in config: {task_key}')
         task_value = data[task_key]
@@ -371,53 +396,46 @@ class ConfigManager:
             raise ConfigJsonError("Task JSON value must be an object")
         return name, task_key, {task_key: copy.deepcopy(task_value)}
 
-    @staticmethod
-    def load_task_for_export(name: str, task_name: str) -> tuple[str, str, dict[str, Any]]:
+    def load_task_for_export(self, name: str, task_name: str) -> tuple[str, str, dict[str, Any]]:
         """
         读取脱敏后的单个任务配置片段。
         """
-        name, data = ConfigManager.load_config_for_export(name)
-        task_key = ConfigManager.validate_task_key(task_name)
+        name, data = self.load_config_for_export(name)
+        task_key = self.validate_task_key(task_name)
         if task_key not in data:
             raise ConfigNotFoundError(f'Task not found in config: {task_key}')
-        redacted = ConfigManager.redact_config(data)
+        redacted = self.redact_config(data)
         task_value = redacted.get(task_key)
         if not isinstance(task_value, dict):
             raise ConfigJsonError("Task JSON value must be an object")
         return name, task_key, {task_key: copy.deepcopy(task_value)}
 
-    @staticmethod
-    def import_config(name: str, data: dict[str, Any]) -> str:
+    def import_config(self, name: str, data: dict[str, Any]) -> str:
         """
         导入配置内容，返回最终配置名称。
         """
-        name = ConfigManager.validate_config_name(name, allow_template=False)
-        file_path = ConfigManager.config_path(name)
-        if file_path.exists():
-            raise ConfigAlreadyExistsError(f'Config already exists: {name}')
+        name = self.validate_config_name(name, allow_template=False)
         if not isinstance(data, dict):
             raise ConfigJsonError("Config JSON root must be an object")
-
-        ConfigManager._validate_config_model(name, data)
-        write_file(file_path, data)
-        logger.info(f'import config {name} to {file_path}')
+        try:
+            self.store.import_config(name, data)
+        except ConfigIdentityConflictError as e:
+            raise ConfigAlreadyExistsError(str(e))
+        except ConfigGenerationError:
+            # 身份损坏、migration/recovery 失败不是“目标已存在”，保留为服务端错误。
+            raise
+        except StrictConfigValidationError as e:
+            # 严格持久化校验失败：统一映射到 API 的 400 字段结构
+            raise ConfigValidationError([self._format_field_error("__root__", str(e), "config_validation")])
+        logger.info(f'import config {name}')
         return name
 
-    @staticmethod
-    def load_config_for_export(name: str) -> tuple[str, dict[str, Any]]:
+    def load_config_for_export(self, name: str) -> tuple[str, dict[str, Any]]:
         """
         读取待导出的配置，返回校验后的名称和配置内容。
         """
-        name = ConfigManager.validate_config_name(name, allow_template=True)
-        file_path = ConfigManager.config_path(name)
-        if not file_path.exists():
-            raise ConfigNotFoundError(f'Config not found: {name}')
-        try:
-            data = read_file(file_path)
-        except json.JSONDecodeError as e:
-            raise ConfigJsonError(f'Config JSON parse failed: {e}') from e
-        if not isinstance(data, dict):
-            raise ConfigJsonError("Config JSON root must be an object")
+        name = self.validate_config_name(name, allow_template=True)
+        data = self.store.load_canonical_snapshot(name)
         return name, data
 
     @staticmethod
@@ -465,72 +483,49 @@ class ConfigManager:
             for item in node:
                 ConfigManager._redact_by_key(item)
 
-    @staticmethod
-    def all_script_files() -> list[str]:
+    def all_script_files(self) -> list[str]:
         """
-        获取所有的脚本文件 除了tmplate
+        获取所有的脚本文件 除了template
         :return: ['oas1', 'oas2']
         """
-        # 获取某个路径的所有json文件名
-        config_path = Path.cwd() / 'config'
-        json_files = config_path.glob('*.json')
-        result = []
-        for json in json_files:
-            if json.stem == 'template':
-                continue
-            result.append(json.stem)
+        result = self.store.active_config_names()
         if len(result) == 0:
-            # 如果没有脚本文件 则创建一个
-            ConfigManager.copy(file='oas1', template='template')
-            result.append('oas1')
+            # 如果没有活动实例则基于 template 创建一个 oas1
+            template = self.store.load('template').canonical
+            self.store.create_from_template('oas1', copy.deepcopy(template))
+            result = self.store.active_config_names()
         return result
 
-    @staticmethod
-    def all_json_file() -> list:
+    def all_json_file(self) -> list:
         """
         获取所有的json文件
         :return: ['oas1', 'oas2']
         """
-        # 获取某个路径的所有json文件名
-        config_path = Path.cwd() / 'config'
-        json_files = config_path.glob('*.json')
-        result = []
-        for json in json_files:
-            if json.stem == 'template':
-                result.insert(0, json.stem)
-            else:
-                result.append(json.stem)
+        result = self.store.active_config_names(include_template=True)
+        if 'template' in result:
+            result.remove('template')
+            result.insert(0, 'template')
         return result
 
-    @staticmethod
-    def copy(file: str, template: str = 'template') -> None:
+    def copy(self, file: str, template: str = 'template') -> None:
         """
-        复制一个配置文件
+        复制一个配置文件；生命周期异常必须交给 API 层按类别映射，不能静默成功。
         :param file:  不带json后缀
         :param template:
         :return:
         """
-        config_path = Path.cwd() / 'config'
-        template_path = config_path / f'{template}.json'
-        file_path = config_path / f'{file}.json'
-        if file_path.exists():
-            logger.error(f'{file_path} is exists')
-            return
+        file = self.validate_config_name(file, allow_template=False)
+        template = self.validate_config_name(template, allow_template=True)
+        canonical = self.store.load(template).canonical
+        self.store.create_from_template(file, copy.deepcopy(canonical))
+        logger.info(f'copy {template} to {file}')
 
-        with open(template_path, 'r', encoding='utf-8') as f:
-            template_content = f.read()
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(template_content)
-        logger.info(f'copy {template_path} to {file_path}')
-
-
-    @staticmethod
-    def generate_script_name() -> str:
+    def generate_script_name(self) -> str:
         """
         生成一个新的配置的名字
         :return:
         """
-        all_script_files = ConfigManager.all_script_files()
+        all_script_files = self.all_script_files()
         if not all_script_files:
             return 'oas1'
 
@@ -546,48 +541,3 @@ class ConfigManager:
         script_numbers.sort()
         new_script_number = script_numbers[-1] + 1
         return f'oas{new_script_number}'
-
-    @staticmethod
-    def rename(old_name: str, new_name: str) -> bool:
-        """
-        重命名一个配置文件
-        :param old_name: 旧的配置文件名称
-        :param new_name: 新的配置文件名称
-        :return: True or False
-        """
-        config_path = Path.cwd() / 'config'
-        old_path = config_path / f'{old_name}.json'
-        new_path = config_path / f'{new_name}.json'
-        if not old_path.exists():
-            logger.error(f'{old_path} is not exists')
-            return False
-        if new_path.exists():
-            logger.error(f'{new_path} is exists')
-            return False
-        try:
-            old_path.rename(new_path)
-            logger.info(f'rename {old_path} to {new_path}')
-            return True
-        except Exception as e:
-            logger.error(f'rename {old_path} to {new_path} failed: {e}')
-            return False
-
-    @staticmethod
-    def delete(file: str) -> bool:
-        """
-        删除一个配置文件
-        :param file:  不带json后缀
-        :return: True or False
-        """
-        config_path = Path.cwd() / 'config'
-        file_path = config_path / f'{file}.json'
-        if not file_path.exists():
-            logger.error(f'{file_path} is not exists')
-            return False
-        try:
-            file_path.unlink()
-            logger.info(f'delete {file_path}')
-            return True
-        except Exception as e:
-            logger.error(f'delete {file_path} failed: {e}')
-            return False

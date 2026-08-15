@@ -80,6 +80,9 @@ async def on_startup():
     app.state 的生命周期在定义app的时候就有了
     :return:
     """
+    # 第一条生产动作：migration → lifecycle 恢复 → active 身份校验 → 枚举并创建 ScriptProcess。
+    # 必须在任何 config 读取/枚举（template i18n sync、restart_processes）之前完成。
+    await mm.initialize()
     logger.info('OAS web service startup done')
     # 启动时扫描 template 配置，把前端会用到但缺失翻译的 key 补进 assets/i18n/zh-CN.json；
     # 任何异常只记日志，不阻塞服务启动
@@ -93,6 +96,14 @@ async def on_startup():
 
 
 async def on_shutdown():
+    logger.info('OAS web service shutdown start')
+    # 停止所有脚本实例并清空注册/cache，避免服务退出后残留子进程
+    for _name, script_p in list(mm.script_process.items()):
+        try:
+            await script_p.stop()
+        except Exception as e:
+            logger.error(f'stop script {_name} failed during shutdown: {e}')
+    mm.script_process = {}
     logger.info('OAS web service shutdown done')
 
 

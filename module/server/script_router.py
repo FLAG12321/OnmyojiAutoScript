@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import asyncio
+import copy
 import json
 from urllib.parse import quote
 
@@ -9,19 +10,37 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
+from filelock import Timeout
+from module.config.config_generation import (
+    ConfigGenerationError,
+    ConfigIdentityConflictError,
+    ConfigIdentityNameError,
+    ConfigIdentityNotFoundError,
+)
+from module.config.config_operations import MISSING
+from module.config.config_store import (
+    ConfigGenerationMismatchError,
+    ConfigJsonError as StoreConfigJsonError,
+    ConfigNotFoundError,
+)
+from module.config.config_validation import ConfigValidationError
 from module.config.utils import convert_to_underscore
 from module.server.config_manager import (
     ConfigAlreadyExistsError,
     ConfigJsonError,
     ConfigNameError,
-    ConfigNotFoundError,
+    ConfigNotFoundError as ManagerConfigNotFoundError,
     ConfigTaskError,
-    ConfigValidationError,
+    ConfigValidationError as ManagerConfigValidationError,
 )
 
 from module.logger import logger
 from module.server.main_manager import mm
-from module.server.script_process import ScriptProcess, ScriptState
+from module.server.script_process import (
+    ScriptProcess,
+    ScriptStartupTimeoutError,
+    ScriptState,
+)
 
 from tasks.Component.config_base import TimeDelta
 
@@ -43,8 +62,25 @@ async def config_list():
 
 @script_app.post('/config_copy')
 async def config_copy(file: str, template: str = 'template'):
-    mm.copy(file, template)
-    return mm.all_script_files()
+    """复制配置并把生命周期失败映射为稳定 HTTP 状态，禁止失败返回 200。"""
+    try:
+        mm.copy(file, template)
+        return mm.all_script_files()
+    except (ConfigNameError, ConfigIdentityNameError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (
+        ManagerConfigNotFoundError,
+        ConfigIdentityNotFoundError,
+        ConfigNotFoundError,
+    ) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (ConfigAlreadyExistsError, ConfigIdentityConflictError) as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except (Timeout, TimeoutError) as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except (ConfigGenerationError, ConfigValidationError, OSError) as e:
+        # 身份损坏、源配置损坏或文件系统失败均属于服务端错误。
+        raise HTTPException(status_code=500, detail=f'Config copy failed: {e}')
 
 @script_app.get('/config_new_name')
 async def config_new_name():
@@ -62,16 +98,21 @@ async def config_import(name: str = Form(...), file: UploadFile = File(...)):
         raw = await file.read()
         data = json.loads(raw.decode('utf-8'))
         config_name = mm.import_config(name, data)
-        mm.add_script_file(config_name)
+        await mm.add_script_file(config_name)
         return {'name': config_name, 'file': f'{config_name}.json'}
     except ConfigAlreadyExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    except ConfigValidationError as e:
+    except ManagerConfigValidationError as e:
         raise HTTPException(status_code=400, detail={'message': str(e), 'fields': e.fields})
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise HTTPException(status_code=400, detail=f'Invalid JSON file: {e}')
     except (ConfigNameError, ConfigJsonError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except (ConfigGenerationError, OSError) as e:
+        # 身份损坏、migration/recovery 失败或文件系统错误保留为服务端错误。
+        raise HTTPException(status_code=500, detail=f'Config import failed: {e}')
 
 
 @script_app.get('/config/export')
@@ -90,6 +131,8 @@ async def config_export(name: str):
                 'Cache-Control': 'no-store',
             },
         )
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (ConfigNameError, ConfigJsonError) as e:
@@ -114,10 +157,20 @@ async def config_task_import(
             'file': f'{normalized_config_name}.json',
             'updated': True,
         }
-    except ConfigNotFoundError as e:
+    except (
+        ManagerConfigNotFoundError,
+        ConfigIdentityNotFoundError,
+        ConfigNotFoundError,
+    ) as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except ConfigValidationError as e:
+    except ManagerConfigValidationError as e:
         raise HTTPException(status_code=400, detail={'message': str(e), 'fields': e.fields})
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f'Config write failed: {e}')
     except (ConfigNameError, ConfigJsonError, ConfigTaskError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -137,6 +190,8 @@ async def config_task_export(config_name: str, task_name: str):
                 'Cache-Control': 'no-store',
             },
         )
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (ConfigNameError, ConfigJsonError, ConfigTaskError) as e:
@@ -149,6 +204,8 @@ async def config_task_copy_json(config_name: str, task_name: str):
     try:
         _, _, data = mm.load_task_for_transfer(config_name, task_name)
         return data
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ConfigNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (ConfigNameError, ConfigJsonError, ConfigTaskError) as e:
@@ -165,12 +222,19 @@ async def config_rename(old_name: str = '', new_name: str = ''):
     """
     if old_name == new_name or new_name == '':
         return False
-    if old_name in mm.script_process:
-        if mm.script_process[old_name].state != ScriptState.INACTIVE:
-            mm.script_process[old_name].stop()
-        del mm.script_process[old_name]
-    if not mm.rename(old_name, new_name):
-        raise HTTPException(status_code=400, detail='Rename failed')
+    try:
+        # stop 源实例 → Store 提交 → 重建注册；禁止直接调用 coroutine 而不 await
+        await mm.rename_config(old_name, new_name)
+    except ConfigIdentityNameError as e:
+        raise HTTPException(status_code=400, detail=f'Rename failed: {e}')
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f'Rename failed: {e}')
+    except ConfigIdentityConflictError as e:
+        raise HTTPException(status_code=409, detail=f'Rename failed: {e}')
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except (ConfigGenerationError, OSError) as e:
+        raise HTTPException(status_code=500, detail=f'Rename failed: {e}')
     return True
 
 
@@ -183,12 +247,16 @@ async def config_delete(name: str = ''):
     """
     if name == '' or name == 'template':
         raise HTTPException(status_code=400, detail='Delete failed')
-    if name in mm.script_process:
-        if mm.script_process[name].state != ScriptState.INACTIVE:
-            mm.script_process[name].stop()
-        del mm.script_process[name]
-    if not mm.delete(name):
-        raise HTTPException(status_code=400, detail='Delete failed')
+    try:
+        await mm.delete_config(name)
+    except ConfigIdentityNameError as e:
+        raise HTTPException(status_code=400, detail=f'Delete failed: {e}')
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f'Delete failed: {e}')
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except (ConfigGenerationError, OSError) as e:
+        raise HTTPException(status_code=500, detail=f'Delete failed: {e}')
     return True
 
 
@@ -196,28 +264,105 @@ async def config_delete(name: str = ''):
 async def task_copy(task_name: str, dest_config_name: str, source_config_name: str):
     if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
         return False
-    source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
-    if source_task is None:
+    task_key = convert_to_underscore(task_name)
+    try:
+        source_canonical = mm.store.load_canonical_snapshot(source_config_name)
+        dest_loaded = mm.store.load(dest_config_name)
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    if task_key not in source_canonical:
         return False
-    return mm.config_cache(dest_config_name).model.copy_script_task(task_name, source_task)
+    expected = dest_loaded.canonical.get(task_key, MISSING)
+    try:
+        result = mm.store.replace_subtree(
+            dest_config_name,
+            (task_key,),
+            expected,
+            copy.deepcopy(source_canonical[task_key]),
+            dest_loaded.generation,
+        )
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail=f'Task copy invalid: {e}')
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+
+    # 成功后锁外投递 config_changed 事件，与 PUT value/reset 保持同一模式。
+    mm.notify_config_changed(dest_config_name, result)
+    return True
 
 
 @script_app.put('/config/task/group/copy')
 async def task_group_copy(task_name: str, group_name: str, dest_config_name: str, source_config_name: str):
     if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
         return False
-    source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
-    if source_task is None:
+    task_key = convert_to_underscore(task_name)
+    group_key = convert_to_underscore(group_name)
+    try:
+        source_canonical = mm.store.load_canonical_snapshot(source_config_name)
+        dest_loaded = mm.store.load(dest_config_name)
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    dest_canonical = dest_loaded.canonical
+    if task_key not in source_canonical or not isinstance(source_canonical[task_key], dict):
         return False
-    return mm.config_cache(dest_config_name).model.copy_task_group(task_name, group_name, source_task)
+    if group_key not in source_canonical[task_key]:
+        return False
+    expected = dest_canonical.get(task_key, {}).get(group_key, MISSING) if isinstance(
+        dest_canonical.get(task_key), dict) else MISSING
+    try:
+        result = mm.store.replace_subtree(
+            dest_config_name,
+            (task_key, group_key),
+            expected,
+            copy.deepcopy(source_canonical[task_key][group_key]),
+            dest_loaded.generation,
+        )
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail=f'Task group copy invalid: {e}')
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+
+    # 成功后锁外投递 config_changed 事件，与 PUT value/reset 保持同一模式。
+    mm.notify_config_changed(dest_config_name, result)
+    return True
 
 
 # ---------------------------------   脚本实例管理   ----------------------------------
 @script_app.get('/{script_name}/start')
 async def script_start(script_name: str):
-    if script_name not in mm.script_process:
-        mm.script_process[script_name] = ScriptProcess(script_name)
-    await mm.script_process[script_name].start()
+    try:
+        started = await mm.start_script_process(script_name)
+    except (ConfigNotFoundError, ConfigIdentityNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=f'Config not found: {script_name}') from e
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}') from e
+    except ScriptStartupTimeoutError as e:
+        # 子进程 generation 握手超时属于启动失败，必须返回 500 而不是 503 锁超时。
+        raise HTTPException(status_code=500, detail=f'Script startup failed: {e}') from e
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except (ConfigGenerationError, ConfigJsonError, StoreConfigJsonError, ConfigValidationError, OSError) as e:
+        # 配置损坏、校验失败或文件系统错误必须保留为服务端失败，不能伪装成冲突。
+        raise HTTPException(status_code=500, detail=f'Config start failed: {e}') from e
+    if started is not True:
+        # 只有明确 True 才算启动成功，None/False/其他返回值均禁止 HTTP 200。
+        raise HTTPException(status_code=409, detail=f'Config refused to start: {script_name}')
     return
 
 @script_app.get('/{script_name}/stop')
@@ -229,10 +374,8 @@ async def script_stop(script_name: str):
     return
 
 async def _restart_from_instance(script_name: str):
-    # 实例主动请求重启时，由 server 统一执行 stop/start，避免子进程自杀后无法继续 start。
-    script_process = mm.script_process[script_name]
-    await script_process.stop()
-    await script_process.start()
+    # 实例主动请求重启也走 manager 身份协议，不能把 start 插入 rename/delete 提交窗口。
+    await mm.restart_script_process(script_name)
 
 @script_app.get('/{script_name}/restart_from_instance')
 async def script_restart_from_instance(script_name: str):
@@ -244,7 +387,8 @@ async def script_restart_from_instance(script_name: str):
 
 @script_app.get('/{script_name}/{task}/args')
 async def script_task(script_name: str, task: str):
-    return mm.config_cache(script_name).model.script_task(task)
+    # Config 会话持有注入 Store，可在模型纯 Schema 结果上补充运行时 active 身份。
+    return mm.config_cache(script_name).script_task(task)
 
 @script_app.put('/{script_name}/{task}/{group}/{argument}/value')
 async def script_task(script_name: str, task: str, group: str, argument: str, types: str, value):
@@ -257,11 +401,15 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
             case 'boolean':
                 if isinstance(value, str):
                     logger.warning(f'[{script_name}] script argument {argument} value is string, try to convert to bool')
-                    if value.lower() in ['true', '1']:
+                    normalized = value.lower()
+                    if normalized in ['true', '1']:
                         value = True
-                    elif value.lower() in ['false', '0']:
+                    elif normalized in ['false', '0']:
                         value = False
-                value = bool(value)
+                    else:
+                        raise ValueError(f'Invalid boolean value: {value!r}')
+                elif type(value) is not bool:
+                    raise ValueError(f'Invalid boolean value: {value!r}')
             case 'string':
                 pass
             case 'date_time':
@@ -277,7 +425,42 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
     except Exception as e:
         # 类型不正确
         raise HTTPException(status_code=400, detail=f'Argument type error: {e}')
-    return mm.config_cache(script_name).model.script_set_arg(task, group, argument, value)
+
+    try:
+        is_global_reset = (
+            convert_to_underscore(task) == 'restart'
+            and convert_to_underscore(group) == 'tasks_config_reset'
+            and convert_to_underscore(argument) == 'reset_task_datetime_enable'
+            and value is True
+        )
+        # 全局重置是一个用户动作，必须在单个 Store 事务内更新标志与全部 next_run。
+        if is_global_reset:
+            result = mm.store.reset_enabled_next_runs(script_name)
+        else:
+            result = mm.store.patch_user_argument(
+                script_name,
+                task,
+                group,
+                argument,
+                value,
+            )
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail=f'Argument invalid: {e}')
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except OSError as e:
+        # atomic writer/文件系统失败必须明确返回服务端错误，不得报告配置已保存。
+        raise HTTPException(status_code=500, detail=f'Config write failed: {e}')
+
+    # 成功后锁外投递 config_changed 事件给运行实例，结果包含本次原子事务的全部路径。
+    mm.notify_config_changed(script_name, result)
+    return result.success
 
 
 @script_app.put('/{script_name}/{task}/sync_next_run')
@@ -290,6 +473,15 @@ async def sync_next_run(script_name: str, task: str, target_dt: str):
     script_process = mm.script_process[script_name]
     config.get_next()
     await script_process.broadcast_state({"schedule": config.get_schedule_data()})
+    # task_delay 已写盘，投递 config_changed 事件提示子进程在下一边界刷新；
+    # INACTIVE 实例不投递，避免 restart 后新进程消费陈旧事件（与 notify_config_changed 一致）。
+    # 事件仅作低延迟提示：极端竞态下 generation/mtime 即使略陈旧，子进程仍会以
+    # mtime_ns 兜底检测（规格 §4.4），不依赖事件携带的身份做一致性判断。
+    if script_process.state != ScriptState.INACTIVE:
+        script_process.deliver_config_changed(
+            config.generation, config.mtime_ns,
+            [(convert_to_underscore(task), "scheduler", "next_run")],
+        )
     return True
 
 
@@ -328,27 +520,34 @@ async def script_task_log(script_name: str):
 
 @script_app.websocket("/ws/{script_name}")
 async def websocket_endpoint(websocket: WebSocket, script_name: str):
-    if script_name not in mm.script_process:
-        mm.script_process[script_name] = ScriptProcess(script_name)
-    script_process = mm.script_process[script_name]
+    try:
+        script_process = await mm.ensure_script_process(script_name)
+    except ConfigNotFoundError:
+        await websocket.close()
+        return
     await script_process.connect(websocket)
-    await script_process.broadcast_state({"state": script_process.state})
+    # 新连接定向首帧：顺序发送 state、schedule、缓存 config_state（不广播模拟首帧）
+    await script_process.send_state(websocket, {"state": script_process.state})
     config = mm.config_cache(script_name)
     config.get_next()
-    await script_process.broadcast_state({"schedule": config.get_schedule_data()})
+    await script_process.send_state(websocket, {"schedule": config.get_schedule_data()})
+    await script_process.send_state(websocket, {"config_state": script_process.cached_config_state()})
 
     try:
         while True:
-            # 初次进入，广播state schedule
             data = await websocket.receive_text()
             if data == 'get_state':
-                await script_process.broadcast_state({"state": script_process.state})
+                await script_process.send_state(websocket, {"state": script_process.state})
             elif data == 'get_schedule':
                 config = mm.config_cache(script_name)
                 config.get_next()
-                await script_process.broadcast_state({"schedule": config.get_schedule_data()})
+                await script_process.send_state(websocket, {"schedule": config.get_schedule_data()})
+            elif data == 'get_config_state':
+                await script_process.send_state(websocket, {"config_state": script_process.cached_config_state()})
             elif data == 'start':
-                await script_process.start()
+                # 连接期间缓存的 wrapper 可能已失效，按名称重新进入 manager 身份协议。
+                await mm.start_script_process(script_name)
+                script_process = await mm.ensure_script_process(script_name)
             elif data == 'stop':
                 await script_process.stop()
 

@@ -45,6 +45,13 @@ class ScriptWSManager:
         for ws in disconnected:
             await self.disconnect(ws)
 
+    async def send_state(self, websocket: WebSocket, data: dict):
+        """仅向单个 socket 定向发送状态 JSON，不广播（用于新连接首帧）。"""
+        try:
+            await websocket.send_json(data)
+        except RuntimeError:
+            await self.disconnect(websocket)
+
     async def broadcast_log(self, log: str):
         # 广播日志
         disconnected = []

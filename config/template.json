@@ -1042,11 +1042,6 @@
     "md_default_strategy": {
       "md_preset_group_team_default_1": "1,1",
       "md_preset_group_team_default_2": "1,1"
-    },
-    "md_strategies_1": {
-      "md_match_names": "御撰津",
-      "md_preset_group_team_1": "1,1",
-      "md_preset_group_team_2": "1,1"
     }
   },
   "frog_boss": {

@@ -1,6 +1,5 @@
 # This Python file uses the following encoding: utf-8
 from datetime import datetime
-from pathlib import Path
 
 from module.config.config import Config
 from module.device.device import Device
@@ -81,13 +80,13 @@ class ScriptTask(GameUi):
         - load_failure: 是否有配置加载失败(计入任务失败结果)。
         """
         # 第一步：建立 character -> [(source_name, account), ...] 索引
+        # 通过注入 ConfigStore 的 active 配置列表/load 扫描，不 glob 配置文件；
         # 配置文件按文件名稳定排序，账号按原始列表位置保序，保证同名项内部顺序稳定
         index: dict[str, list[tuple[str, AccountInfo]]] = {}
         load_failure = False
-        for config_file in sorted((Path.cwd() / 'config').glob('*.json')):
-            source_name = config_file.stem
+        for source_name in self.config.store.active_config_names():
             try:
-                source_config = Config(source_name)
+                source_config = Config(source_name, store=self.config.store)
                 source_accounts = source_config.multi_daily_alt_acc.sup_account_list or []
             except Exception as e:
                 # 单个配置加载失败：记录不含敏感数据的错误日志并继续扫描其他配置

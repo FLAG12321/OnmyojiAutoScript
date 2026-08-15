@@ -1,10 +1,11 @@
 import pytest
 from module.config.config import Config, Function
+from module.config.config_model import ConfigModel
 
 
 class TestConfigLoading:
     def test_load_oas_config(self, config):
-        """config fixture 来自 conftest.py，从真实配置加载"""
+        """config fixture 来自 conftest.py，从隔离配置加载"""
         assert config is not None
         assert config.config_name == "oas1"
         assert hasattr(config, "script")
@@ -17,6 +18,26 @@ class TestConfigLoading:
         from module.config.config_manual import ConfigManual
         assert hasattr(ConfigManual, "SCHEDULER_PRIORITY")
         assert len(ConfigManual.SCHEDULER_PRIORITY) > 0
+
+
+class TestModelValidateCompat:
+    def test_model_validate_accepts_canonical_data_without_file_io(self):
+        raw = ConfigModel().model_dump(mode="json")
+        raw["config_name"] = "oas-test"
+        model = ConfigModel.model_validate(raw)
+        assert model.config_name == "oas-test"
+
+    def test_config_compat_loader_still_reads_named_file(self, tmp_path):
+        # Config 由注入 Store 加载：oas-test 必须真实存在于隔离配置根
+        from module.config.config_store import ConfigStore
+
+        raw = ConfigModel().model_dump(mode="json")
+        raw["config_name"] = "oas-test"
+        raw["meta_demon"].pop("md_strategies_1", None)
+        store = ConfigStore(config_root=tmp_path / "config")
+        store.create_from_template("oas-test", raw)
+        config = Config("oas-test", store=store)
+        assert config.config_name == "oas-test"
 
 
 class TestFunctionParsing:

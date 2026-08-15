@@ -14,7 +14,9 @@ from module.logger import logger
 
 
 if __name__ == "__main__":
-    # ConfigModel对象并更新保存
+    # ConfigModel 默认对象 → ConfigStore.replace_template 严格校验并原子替换 template
+    from module.config.config_store import ConfigStore
     config = ConfigModel()
-    config_path = Path("./config/template.json")
-    config.write_json("template", config.model_dump())
+    store = ConfigStore(config_root=Path("./config"))
+    store.replace_template(config.model_dump(mode="json"))
+    logger.info("template updated")

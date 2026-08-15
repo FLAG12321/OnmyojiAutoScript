@@ -17,16 +17,33 @@ class FakeScriptProcess:
         self.calls.append('start')
 
 
+class FakeMainManager:
+    """伪 manager：提供 restart_script_process 身份协议（stop→start），并记录 manager 级调用。"""
+
+    def __init__(self, process):
+        self.script_process = {'oas': process}
+        self.manager_calls = []
+
+    async def restart_script_process(self, script_name):
+        # 与真实 MainManager.restart_script_process 的语义一致：先 stop 再 start。
+        self.manager_calls.append('restart_script_process')
+        process = self.script_process[script_name]
+        await process.stop()
+        await process.start()
+
+
 def test_restart_from_instance_stops_then_starts_existing_process(monkeypatch):
     async def run_case():
         process = FakeScriptProcess()
-        fake_mm = types.SimpleNamespace(script_process={'oas': process})
+        fake_mm = FakeMainManager(process)
         monkeypatch.setattr(script_router, 'mm', fake_mm)
 
         result = await script_router.script_restart_from_instance('oas')
         await asyncio.sleep(0)
 
         assert result == {'restarting': True}
+        # 重启必须经由 manager 协议方法完成，且进程调用顺序为 stop→start。
+        assert fake_mm.manager_calls == ['restart_script_process']
         assert process.calls == ['stop', 'start']
 
     asyncio.run(run_case())

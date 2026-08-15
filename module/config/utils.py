@@ -30,6 +30,62 @@ def filepath_argument(filename):
     return f'./module/config/argument/{filename}.yaml'
 
 
+def _read_content_by_extension(file: str):
+    """
+    按扩展名读取文件内容。调用方必须已持有对应锁（或确认目录已存在）；
+    与 read_file 的差异是不做目录创建和文件存在性检查。
+    """
+    _, ext = os.path.splitext(file)
+    if ext == '.yaml':
+        with open(file, mode='r', encoding='utf-8') as f:
+            s = f.read()
+            data = list(yaml.safe_load_all(s))
+            if len(data) == 1:
+                data = data[0]
+            if not data:
+                data = {}
+            return data
+    elif ext == '.json':
+        with open(file, mode='r', encoding='utf-8') as f:
+            s = f.read()
+            return json.loads(s)
+    else:
+        logger.warning(f'Unsupported config file extension: {ext}')
+        return {}
+
+def _atomic_write_content(file: str, data) -> None:
+    """
+    按扩展名原子写文件内容。调用方必须已持有对应锁（或确认目录已存在）；
+    与 write_file 的差异是不做目录创建。
+    """
+    _, ext = os.path.splitext(file)
+    if ext == '.yaml':
+        with atomic_write(file, overwrite=True, encoding='utf-8', newline='') as f:
+            if isinstance(data, list):
+                yaml.safe_dump_all(data, f, default_flow_style=False, encoding='utf-8', allow_unicode=True,
+                                   sort_keys=False)
+            else:
+                yaml.safe_dump(data, f, default_flow_style=False, encoding='utf-8', allow_unicode=True,
+                               sort_keys=False)
+    elif ext == '.json':
+        with atomic_write(file, overwrite=True, encoding='utf-8', newline='') as f:
+            s = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=False, default=str)
+            f.write(s)
+    else:
+        logger.warning(f'Unsupported config file extension: {ext}')
+
+def _read_file_unlocked(file: str):
+    """
+    仅供配置事务内部使用的无锁读取原语；调用方必须已持有对应 FileLock。
+    """
+    return _read_content_by_extension(file)
+
+def _write_file_unlocked(file: str, data) -> None:
+    """
+    仅供配置事务内部使用的无锁写入原语；调用方必须已持有对应 FileLock。
+    """
+    _atomic_write_content(file, data)
+
 def read_file(file: str):
     """
     Read a file, support both .yaml and .json format.
@@ -48,26 +104,10 @@ def read_file(file: str):
     if not os.path.exists(file):
         return {}
 
-    _, ext = os.path.splitext(file)
     lock = FileLock(f"{file}.lock")
     with lock:
         logger.debug(f'read: {file}')
-        if ext == '.yaml':
-            with open(file, mode='r', encoding='utf-8') as f:
-                s = f.read()
-                data = list(yaml.safe_load_all(s))
-                if len(data) == 1:
-                    data = data[0]
-                if not data:
-                    data = {}
-                return data
-        elif ext == '.json':
-            with open(file, mode='r', encoding='utf-8') as f:
-                s = f.read()
-                return json.loads(s)
-        else:
-            logger.warning(f'Unsupported config file extension: {ext}')
-            return {}
+        return _read_file_unlocked(file)
 
 def write_file(file: str, data):
     """
@@ -81,24 +121,10 @@ def write_file(file: str, data):
     if not os.path.exists(folder):
         os.mkdir(folder)
 
-    _, ext = os.path.splitext(file)
     lock = FileLock(f"{file}.lock")
     with lock:
         logger.debug(f'write: {file}')
-        if ext == '.yaml':
-            with atomic_write(file, overwrite=True, encoding='utf-8', newline='') as f:
-                if isinstance(data, list):
-                    yaml.safe_dump_all(data, f, default_flow_style=False, encoding='utf-8', allow_unicode=True,
-                                       sort_keys=False)
-                else:
-                    yaml.safe_dump(data, f, default_flow_style=False, encoding='utf-8', allow_unicode=True,
-                                   sort_keys=False)
-        elif ext == '.json':
-            with atomic_write(file, overwrite=True, encoding='utf-8', newline='') as f:
-                s = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=False, default=str)
-                f.write(s)
-        else:
-            logger.warning(f'Unsupported config file extension: {ext}')
+        _write_file_unlocked(file, data)
 
 
 def deep_iter(data, depth=0, current_depth=1):

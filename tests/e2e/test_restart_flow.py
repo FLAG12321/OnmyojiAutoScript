@@ -16,7 +16,12 @@ class TestRestartE2E:
         from module.exception import TaskEnd
         from tests.e2e.recording import RecordingDevice
 
+        # Device 构造前后必须划定 COLD 启动边界，否则 serial_check 里的内部归一化
+        # （中文冒号 serial / benchmark / emulatorinfo 回写）会因缺少 provisional
+        # 快照直接抛 RuntimeError。
+        config.begin_device_initialization()
         real_device = Device(config=config)
+        config.freeze_startup_device_snapshot()
         rec_device = RecordingDevice(real_device, RECORD_DIR)
 
         task = ScriptTask(config=config, device=rec_device)

@@ -1,3 +1,5 @@
+import types
+
 import pytest
 from datetime import datetime, timedelta
 
@@ -49,11 +51,19 @@ class FakeQueueConfig:
         self.script = FakeScriptConfig(task)
         self.task = None
 
+    generation_mismatch = False
+
     def get_next(self):
         return self._task
 
     def get_schedule_data(self):
         return {}
+
+    def get_forbidden_time_end(self, task, now=None):
+        return None
+
+    def refresh_from_disk(self, trigger):
+        return types.SimpleNamespace(generation_mismatch=False)
 
 
 class FakeIdleDevice:

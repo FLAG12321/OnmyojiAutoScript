@@ -9,7 +9,7 @@ from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main
 from tasks.MultiAccountSignIn.assets import MultiAccountSignInAssets
-from tasks.MultiAccountSignIn.config import ACCOUNT_CONFIGS
+from tasks.MultiAccountSignIn.config import active_account_configs
 
 
 class ScriptTask(GameUi, MultiAccountSignInAssets):
@@ -19,14 +19,16 @@ class ScriptTask(GameUi, MultiAccountSignInAssets):
     def _load_accounts(self) -> list[tuple[str, AccountInfo]]:
         """从用户勾选的配置实例实时加载 MultiDailyAltAcc 账号列表。"""
         selection = self.config.multi_account_sign_in.account_config_selection
+        # 每次执行都通过 Store 完成恢复后枚举，避免 create/rename/delete 后沿用陈旧身份。
+        account_configs = active_account_configs(self.config.store)
         source_names = [
             config_name
-            for field_name, (config_name, _) in ACCOUNT_CONFIGS.items()
+            for field_name, (config_name, _) in account_configs.items()
             if getattr(selection, field_name, False)
         ]
         accounts = []
         for source_name in source_names:
-            source_config = Config(source_name)
+            source_config = Config(source_name, store=self.config.store)
             source_accounts = source_config.multi_daily_alt_acc.sup_account_list or []
             # 读取完整切号资料；账号别名允许为空，SwitchAccount 会优先匹配原账号。
             accounts.extend(

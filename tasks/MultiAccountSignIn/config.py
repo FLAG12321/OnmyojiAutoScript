@@ -1,16 +1,20 @@
 # This Python file uses the following encoding: utf-8
 import hashlib
-import json
-from pathlib import Path
 
-from pydantic import Field, create_model
+from pydantic import Field
 
 from tasks.Component.config_base import ConfigBase, TimeDelta
 from tasks.Component.config_scheduler import Scheduler
 
 
+def account_config_field_name(config_name: str) -> str:
+    """使用配置名稳定生成动态开关字段，避免规范化名称发生碰撞。"""
+    digest = hashlib.sha256(config_name.encode('utf-8')).hexdigest()[:16]
+    return f'config_{digest}'
+
+
 def _count_multi_daily_accounts(data: dict) -> int:
-    """统计配置文件中 MultiDailyAltAcc 的账号条目数。"""
+    """统计 canonical 配置中 MultiDailyAltAcc 的有效账号条目数。"""
     task_data = data.get('multi_daily_alt_acc', {})
     return sum(
         1
@@ -21,44 +25,28 @@ def _count_multi_daily_accounts(data: dict) -> int:
     )
 
 
-def _discover_account_configs() -> dict[str, tuple[str, int]]:
-    """扫描正式配置文件，并返回“配置字段名 -> (配置名, 账号数)”映射。"""
-    discovered = {}
-    for config_file in sorted((Path.cwd() / 'config').glob('*.json')):
-        try:
-            with config_file.open('r', encoding='utf-8') as file:
-                account_count = _count_multi_daily_accounts(json.load(file))
-        except (OSError, json.JSONDecodeError):
-            continue
+def active_account_configs(store) -> dict[str, tuple[str, int]]:
+    """通过已初始化 Store 枚举当前 active 且含有效账号的配置。
 
-        # 只列出实际包含 MultiDailyAltAcc 账号的配置，避免显示无关配置。
+    用 active_canonical_snapshots 一次拿齐 canonical：枚举后再逐个 load 会让每份配置
+    多走一遍身份锁与严格校验（OASX 打开本任务参数页时最坏取 150 次文件锁）。
+    锁超时仍由 Store 向上传播，任务不会把「暂时无法读取」误判为「没有选中账号」。
+    """
+    discovered = {}
+    for config_name, canonical in store.active_canonical_snapshots().items():
+        account_count = _count_multi_daily_accounts(canonical)
         if account_count == 0:
             continue
-        # 使用原始配置名的稳定摘要生成字段，避免大小写或特殊字符规范化后发生碰撞。
-        digest = hashlib.sha256(config_file.stem.encode('utf-8')).hexdigest()[:16]
-        field_name = f'config_{digest}'
-        discovered[field_name] = (config_file.stem, account_count)
+        discovered[account_config_field_name(config_name)] = (
+            config_name,
+            account_count,
+        )
     return discovered
 
 
-ACCOUNT_CONFIGS = _discover_account_configs()
-
-# 每个配置文件生成一个独立开关，标题保留文件名，说明中列出账号总数。
-AccountConfigSelection = create_model(
-    'AccountConfigSelection',
-    __base__=ConfigBase,
-    **{
-        field_name: (
-            bool,
-            Field(
-                default=False,
-                title=config_name,
-                description=f'{config_name} 账号总数：{account_count}',
-            ),
-        )
-        for field_name, (config_name, account_count) in ACCOUNT_CONFIGS.items()
-    },
-)
+class AccountConfigSelection(ConfigBase, extra='allow'):
+    # 动态 config_<sha256> 布尔字段由严格持久化边界校验，静态模型只负责保留 canonical 值。
+    pass
 
 
 class MultiAccountSignInScheduler(Scheduler):

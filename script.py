@@ -19,17 +19,13 @@ from typing import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from cached_property import cached_property
-from pydantic import BaseModel, ValidationError
 from threading import Thread
 from multiprocessing.queues import Queue
 
 
-from module.config.utils import convert_to_underscore
 from module.config.config import Config
-from module.config.config_model import ConfigModel
 from module.device.device import Device, EmulatorState
 from module.base.utils import load_module
-from module.base.decorator import del_cached_property
 from module.logger import logger
 from module.exception import *
 from module.server.i18n import I18n
@@ -69,6 +65,8 @@ class Script:
         logger.hr('Start', level=0)
         self.server = None
         self.state_queue: Queue = None
+        # 主进程→子进程配置变更提示队列（由 ScriptProcess.func 注入；独立运行脚本时为 None）
+        self.config_event_queue: Queue = None
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
         self.config_name = config_name
         # Skip first restart
@@ -91,6 +89,9 @@ class Script:
         try:
             from module.config.config import Config
             config = Config(config_name=self.config_name)
+            # 注册 HOT 状态上报 hook：HOT 提交/失败后立即向 state_queue 上报最新 config_state
+            # （规格 §11.1 点 4；reporter 幂等，state_queue 为 None 时 no-op）
+            config._state_reporter = self._report_config_state
             return config
         except RequestHumanTakeover:
             logger.critical('Request human takeover')
@@ -103,7 +104,11 @@ class Script:
     def device(self) -> "Device":
         try:
             from module.device.device import Device
+            # Device 构造前建立 provisional COLD 快照；构造完成后立即冻结为正式快照。
+            # 进程内游戏 Restart 不重建快照，只有新脚本进程/新 Config session 才重新划定边界。
+            self.config.begin_device_initialization()
             device = Device(config=self.config)
+            self.config.freeze_startup_device_snapshot()
             return device
         except RequestHumanTakeover:
             # 初始化阶段 full_recovery 失败，主动请求 server 级重启并退出。
@@ -198,12 +203,9 @@ class Script:
     def gui_set_task(self, task: str, group: str, argument: str, value) -> bool:
         """
         设置给gui显示的任务 的参数的具体值
+        统一走 ConfigStore.patch_user_argument，脚本是否存活不改变持久化路径
         :return:
         """
-        # 验证参数
-        task = convert_to_underscore(task)
-        group = convert_to_underscore(group)
-        argument = convert_to_underscore(argument)
         # pandtic验证
         if isinstance(value, str):
             if len(value) == 8:
@@ -212,24 +214,13 @@ class Script:
                 except ValueError:
                     pass
 
-
-        path = f'{task}.{group}.{argument}'
-        task_object = getattr(self.config.model, task, None)
-        group_object = getattr(task_object, group, None)
-        argument_object = getattr(group_object, argument, None)
-
-        if argument_object is None:
-            logger.error(f'Set arg {task}.{group}.{argument}.{value} failed')
-            return False
-
         try:
-            setattr(group_object, argument, value)
-            argument_object = getattr(group_object, argument, None)
-            logger.info(f'Set arg {task}.{group}.{argument}.{argument_object}')
-            self.config.save()  # 我是没有想到什么方法可以使得属性改变自动保存的
-            return True
-        except ValidationError as e:
-            logger.error(e)
+            result = self.config.store.patch_user_argument(self.config_name, task, group, argument, value)
+            if result.success:
+                logger.info(f'Set arg {task}.{group}.{argument}.{value}')
+            return result.success
+        except Exception as e:
+            logger.error(f'Set arg {task}.{group}.{argument}.{value} failed: {e}')
             return False
 
     @zerorpc.stream
@@ -307,6 +298,50 @@ class Script:
 
 
 
+    # ------------------------------------------------------------------ 跨进程配置事件
+
+    def _drain_config_events(self) -> list:
+        """非阻塞排空 config_event_queue，丢弃旧 generation 事件，返回本次累计 changed_paths。"""
+        queue = self.config_event_queue
+        if queue is None:
+            return []
+        changed_paths: list = []
+        while True:
+            try:
+                event = queue.get_nowait()
+            except Exception:
+                break
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") != "config_changed":
+                continue
+            if event.get("generation") and event["generation"] != self.config.generation:
+                # 旧 generation 事件直接丢弃；真正的身份变化由 refresh_from_disk 检测
+                continue
+            for p in (event.get("changed_paths") or []):
+                # str 路径视为单段，避免被 tuple() 拆成字符（防御）
+                changed_paths.append(tuple(p) if isinstance(p, (tuple, list)) else (p,))
+        if changed_paths:
+            self.config.report_config_changed(changed_paths)
+        return changed_paths
+
+    def _report_config_state(self) -> None:
+        """把最新 config_state 上报给主进程（经由 state_queue），供 WebSocket 定向首帧使用。"""
+        if self.state_queue:
+            self.state_queue.put({"config_state": self.config.config_state()})
+
+    def _config_checkpoint(self, trigger: str) -> None:
+        """任务边界/检查点：排空配置事件，执行 WARM/COLD 刷新并上报 config_state。
+
+        generation mismatch 或配置被删除时终止当前实例（规格 §10.3）。
+        """
+        self._drain_config_events()
+        result = self.config.refresh_from_disk(trigger)
+        self._report_config_state()
+        if result.generation_mismatch or self.config.generation_mismatch:
+            logger.critical(f'[{self.config_name}] Config generation changed, stop instance')
+            exit(1)
+
     def wait_until(self, future):
         """
         Wait until a specific time.
@@ -330,7 +365,15 @@ class Script:
 
             time.sleep(5)
 
-            if self.config.should_reload():
+            # 先排空配置事件；无事件仍以 mtime_ns 兜底检测（规格 §4.4）
+            self._drain_config_events()
+            if self.config.should_reload() or self.config.has_pending_changes():
+                result = self.config.refresh_from_disk("wait")
+                self._report_config_state()
+                # mismatch 时立即退出，不能忽略返回值继续调度（避免 wait 忙循环）
+                if result.generation_mismatch or self.config.generation_mismatch:
+                    logger.critical(f'[{self.config_name}] Config generation changed, stop instance')
+                    exit(1)
                 return False
 
     def get_next_task(self) -> str:
@@ -367,7 +410,12 @@ class Script:
                 self.device.release_during_wait()
 
                 if not self.wait_until(task.next_run):
-                    del_cached_property(self, 'config')
+                    result = self.config.refresh_from_disk("wait_return")
+                    if result.generation_mismatch or self.config.generation_mismatch:
+                        # exit 前补一次上报，避免主进程缓存停留在旧值直到 is_alive 轮询清理
+                        self._report_config_state()
+                        logger.critical(f'[{self.config_name}] Config generation changed, stop instance')
+                        exit(1)
                     continue
             else:
                 # 任务已到点：若当前落在该任务的禁止运行时间段内，推迟到区间结束并重新选择任务，
@@ -556,6 +604,9 @@ class Script:
             #     logger.info('Server or network is recovered. Restart game client')
             #     self.config.task_call('Restart')
 
+            # 下一任务创建前：排空配置事件并在任务边界做 WARM/COLD 刷新
+            self._config_checkpoint("before_task")
+
             # Get task
             task = self.get_next_task()
             # 更新 gui的任务
@@ -565,7 +616,7 @@ class Script:
             if self.is_first_task and task == 'Restart':
                 logger.info('Skip task `Restart` at scheduler start')
                 self.config.task_delay(task='Restart', success=True, server=True)
-                del_cached_property(self, 'config')
+                self._config_checkpoint("skip_first_restart")
                 continue
             _ = self.device  # trigger cached_property if first access
             if self._needs_recovery:
@@ -600,11 +651,12 @@ class Script:
             self.failure_record[task] = failed
 
             if success:
-                del_cached_property(self, 'config')
+                # 任务结束边界：WARM/COLD 刷新并上报 config_state
+                self._config_checkpoint("task_end")
                 continue
             elif self.config.script.error.handle_error:
-                # self.config.task_delay(success=False)
-                del_cached_property(self, 'config')
+                # 可恢复异常后边界：WARM/COLD 刷新并上报 config_state
+                self._config_checkpoint("task_end")
                 # self.checker.check_now()
                 continue
             else:

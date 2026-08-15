@@ -111,15 +111,18 @@ class Device(Platform, Screenshot, Control, AppControl):
         self._transition_to(EmulatorState.HEALTHY)
         # 桌面模式固定用 BitBlt 后台截图 + 后台窗口输入
         # （PrintWindow 对客户端的 DirectX 渲染窗口全 flag 返回纯黑，不可用）
+        # 通过 startup_normalize 只把声明路径合入 provisional COLD 快照，不依赖普通 save
+        updates = {}
         if self.config.script.device.screenshot_method in ('auto', 'printwindow'):
-            self.config.script.device.screenshot_method = 'window_background'
+            updates[("script", "device", "screenshot_method")] = 'window_background'
         if self.config.script.device.control_method != 'window_message':
             logger.warning(
                 f'Desktop mode requires control_method=window_message, '
                 f'current={self.config.script.device.control_method}, overriding'
             )
-            self.config.script.device.control_method = 'window_message'
-        self.config.save()
+            updates[("script", "device", "control_method")] = 'window_message'
+        if updates:
+            self.config.startup_normalize(updates)
         self.screenshot_interval_set()
         # 检测并调整桌面客户端窗口客户区到 1280x720，保证识别 1:1
         self.desktop_window_set_size()
@@ -227,9 +230,8 @@ class Device(Platform, Screenshot, Control, AppControl):
         from module.daemon.benchmark import Benchmark
         bench = Benchmark(config=self.config, device=self)
         method = bench.run_simple_screenshot_benchmark()
-        # Set
-        self.config.script.device.screenshot_method = method
-        self.config.save()
+        # startup_normalize 事务成功后由 session 合入 provisional 快照与 model/base
+        self.config.startup_normalize({("script", "device", "screenshot_method"): method})
 
     def handle_night_commission(self, daily_trigger='21:00', threshold=30):
         """
@@ -425,7 +427,15 @@ class Device(Platform, Screenshot, Control, AppControl):
 
 
 if __name__ == "__main__":
-    device = Device(config="oas1")
+    # 调试入口：Device 构造前后必须划定 COLD 启动边界，否则 serial_check 里的内部归一化
+    # （中文冒号 serial / benchmark / emulatorinfo 回写）会因缺少 provisional 快照抛
+    # RuntimeError。原来直接传配置名依赖 ConnectionAttr 内部构造 Config，拿不到实例做接线。
+    from module.config.config import Config
+
+    debug_config = Config("oas1", task=None)
+    debug_config.begin_device_initialization()
+    device = Device(config=debug_config)
+    debug_config.freeze_startup_device_snapshot()
     # cv2.imshow("imgSrceen", device.screenshot())  # 显示
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()

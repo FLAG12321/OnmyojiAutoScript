@@ -12,8 +12,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from module.config.config import Config
+from module.config.config_store import ConfigStore
 from module.exception import TaskEnd
 from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
+from tasks.MultiAccountSignIn.config import account_config_field_name
 
 ACCOUNTS = [
     ('oas1', SimpleNamespace(account='a@x.com', character='甲', svr='s1')),
@@ -50,6 +53,53 @@ def _stub_switch(monkeypatch, ok=True):
     monkeypatch.setattr(mod, 'SwitchAccount',
                         lambda config, device, account: SimpleNamespace(
                             switchAccount=lambda: ok))
+
+
+def _account_source(raw: dict, character: str) -> dict:
+    """构造一个严格合法且包含有效 MultiDailyAltAcc 账号的 canonical 配置。"""
+    source = raw.copy()
+    source['multi_daily_alt_acc'] = raw['multi_daily_alt_acc'].copy()
+    source['multi_daily_alt_acc']['sup_account_list_1'] = {
+        **raw['multi_daily_alt_acc']['sup_account_list_1'],
+        'character': character,
+        'svr': '测试服',
+        'account': f'{character}@example.com',
+    }
+    return source
+
+
+@pytest.mark.unit
+def test_load_accounts_reenumerates_active_store_identities(tmp_path):
+    """create/delete 后同一任务对象应实时使用 Store active 身份，不复用 import 常量。"""
+    import json
+    from pathlib import Path
+    from tasks.MultiAccountSignIn.script_task import ScriptTask
+
+    raw = json.loads((Path.cwd() / 'config' / 'template.json').read_text(encoding='utf-8'))
+    raw['meta_demon'].pop('md_strategies_1', None)
+    store = ConfigStore(config_root=tmp_path / 'config')
+    store.create_from_template('runner', raw)
+    store.create_from_template('source_a', _account_source(raw, '甲'))
+    store.patch_user_field(
+        'runner',
+        ('multi_account_sign_in', 'account_config_selection'),
+        {
+            account_config_field_name('source_a'): True,
+            account_config_field_name('source_b'): True,
+        },
+    )
+
+    task = object.__new__(ScriptTask)
+    task.config = Config('runner', store=store)
+    assert [(name, account.character) for name, account in task._load_accounts()] == [
+        ('source_a', '甲')
+    ]
+
+    store.create_from_template('source_b', _account_source(raw, '乙'))
+    store.delete_config('source_a')
+    assert [(name, account.character) for name, account in task._load_accounts()] == [
+        ('source_b', '乙')
+    ]
 
 
 @pytest.mark.unit

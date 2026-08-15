@@ -142,8 +142,13 @@ class BaseTask(GlobalGameAssets, CostumeBase):
     def screenshot(self):
         """
         截图 引入中间函数的目的是 为了解决如协作的这类突发的事件
+        外层安全检查点：HOT 刷新位于最外层截图入口开始前（规格 §12）。
+        _burst() 走的是 device.screenshot()，不经过本检查点，因此不存在嵌套刷新；
+        Config 内的 _refresh_in_progress 只串行化并发 prepare，不覆盖 _burst() 执行期。
+        生产默认 HOT 白名单为空，真实任务不发生中途替换。
         :return:
         """
+        self.config.refresh_hot_at_checkpoint(self)
         self.device.screenshot()
         # 判断勾协
         self._burst()
@@ -675,9 +680,11 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         return False
 
     def set_next_run(self, task: str, finish: bool = False,
-                     success: bool = None, server: bool = True, target: datetime = None) -> None:
+                     success: bool = None, server: bool = True, target: datetime = None,
+                     persist: bool = True) -> None:
         """
         设置下次运行时间  当然这个也是可以重写的
+        :param persist: 是否立即保存 next_run；False 时由调用方统一保存其他配置修改
         :param target: 可以自定义的下次运行时间
         :param server: True
         :param success: 判断是成功的还是失败的时间间隔
@@ -689,7 +696,12 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             start_time = datetime.now().replace(microsecond=0)
         else:
             start_time = self.start_time
-        self.config.task_delay(task, start_time=start_time, success=success, server=server, target=target)
+        if persist:
+            self.config.task_delay(task, start_time=start_time, success=success,
+                                   server=server, target=target)
+        else:
+            self.config.task_delay(task, start_time=start_time, success=success,
+                                   server=server, target=target, persist=False)
 
     def custom_next_run(self, task: str, custom_time: Time = None, time_delta: float = 1) -> None:
         """

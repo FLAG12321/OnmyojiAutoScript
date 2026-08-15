@@ -60,6 +60,15 @@ class FakeRecoveryFailureDevice:
         return False
 
 
+class FakeRecoveryConfig:
+    """伪 Config：只支撑 loop 顶部 WARM/COLD checkpoint，避免访问真实配置文件。"""
+
+    generation_mismatch = False
+
+    def refresh_from_disk(self, trigger):
+        return types.SimpleNamespace(generation_mismatch=False)
+
+
 class FakeRecoveryFailureScript(script_module.Script):
     """伪脚本：只运行 loop 中 full_recovery 失败后的重启链路。"""
 
@@ -69,6 +78,9 @@ class FakeRecoveryFailureScript(script_module.Script):
         self._needs_recovery = True
         self.is_first_task = False
         self._device = FakeRecoveryFailureDevice(self.calls)
+        self.config = FakeRecoveryConfig()
+        self.config_event_queue = None
+        self.state_queue = None
 
     @property
     def device(self):

@@ -73,10 +73,17 @@ class PlatformBase(EmulatorManagerBase):
 
     def _config_save_new(self, emulator: str, name: str, path: str):
         if hasattr(self, 'config'):
-            self.config.script.device.emulatorinfo_type = emulator
-            self.config.script.device.emulatorinfo_name = name
-            self.config.script.device.emulatorinfo_path = path
-            self.config.save()
+            # 通过 startup_normalize 只把声明路径合入 provisional COLD 快照与 session model/base，
+            # 调用方不得预改 model；正式快照冻结后禁止调用。
+            updates = {}
+            if self.config.script.device.emulatorinfo_type != emulator:
+                updates[("script", "device", "emulatorinfo_type")] = emulator
+            if self.config.script.device.emulatorinfo_name != name:
+                updates[("script", "device", "emulatorinfo_name")] = name
+            if self.config.script.device.emulatorinfo_path != path:
+                updates[("script", "device", "emulatorinfo_path")] = path
+            if updates:
+                self.config.startup_normalize(updates)
 
     @cached_property
     def emulator_info(self) -> EmulatorInfo:

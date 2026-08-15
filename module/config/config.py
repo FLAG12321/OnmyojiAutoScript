@@ -3,21 +3,34 @@
 # github https://github.com/runhey
 import copy
 import datetime
+import json
 import operator
 import threading
 import random
 
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Callable
 from cached_property import cached_property
 from threading import Lock
 
 from module.base.filter import Filter
+from module.config.config_generation import ConfigGenerationError
+from module.config.config_operations import MISSING, _eq, get_path, set_path
+from module.config.config_reload import COLD, HOT, DEFAULT_RELOAD_POLICY, ReloadPolicy, coerce_path
+from module.config.config_store import (
+    ConfigGenerationMismatchError,
+    ConfigJsonError,
+    ConfigNotFoundError,
+    ConfigStore,
+)
+from module.config.config_validation import ConfigValidationError
 from module.config.config_updater import ConfigUpdater
 from module.config.config_manual import ConfigManual
 from module.config.config_watcher import ConfigWatcher
 from module.config.config_menu import ConfigMenu
 from module.config.config_model import ConfigModel
-from module.config.config_state import ConfigState
+from module.config.config_state import ConfigState, ConfigStateResult
 from module.config.scheduler import TaskScheduler
 from module.config.utils import *
 from module.notify.notify import Notifier
@@ -90,6 +103,38 @@ def name_to_function(name):
     return function
 
 
+def _iter_subtree_paths(node_a: dict, node_b: dict, prefix: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    """遍历两棵子树键并集的所有路径，用于比较启动快照与磁盘 COLD 子树的差异。"""
+    keys: set = set()
+    if isinstance(node_a, dict):
+        keys.update(node_a)
+    if isinstance(node_b, dict):
+        keys.update(node_b)
+    paths: list[tuple[str, ...]] = []
+    for key in sorted(keys):
+        path = prefix + (key,)
+        paths.append(path)
+        a = node_a.get(key) if isinstance(node_a, dict) else None
+        b = node_b.get(key) if isinstance(node_b, dict) else None
+        if isinstance(a, dict) or isinstance(b, dict):
+            paths.extend(_iter_subtree_paths(
+                a if isinstance(a, dict) else {},
+                b if isinstance(b, dict) else {},
+                path,
+            ))
+    return paths
+
+
+def _blocked_overlaps(blocked_path, changed_set: set) -> bool:
+    """判断 blocked 路径是否与 HOT 变更路径有交集。
+
+    兼容 REPLACE_PATH_SET 的路径元组（path 是多个 tuple path 的 tuple）。
+    """
+    if isinstance(blocked_path, tuple) and blocked_path and all(isinstance(x, tuple) for x in blocked_path):
+        return any(x in changed_set for x in blocked_path)
+    return blocked_path in changed_set
+
+
 # 需要在调度层做"禁止运行时间段"保护的任务名 -> 配置子模型名。
 # 命中禁止区间时调度层会把任务推迟到区间结束，避免在区间内因游戏未运行触发 Restart 造成顶号。
 # 子模型需提供 forbidden_time_enable(bool) 与 forbidden_time_range(str) 字段。
@@ -100,19 +145,71 @@ FORBIDDEN_TIME_TASKS = {
 
 
 class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
+    """运行期配置会话：持有 model/base/generation/mtime 与 blocked 状态。
 
-    def __init__(self, config_name: str, task=None) -> None:
-        """
+    - model/base/generation 由 ConfigStore 读取与三方合并推进
+    - save() 是后台三方保存入口，tasks 里的 self.config.save() 无需逐个改写
+    - script.device 子树是 COLD：begin_device_initialization → startup_normalize
+      → freeze_startup_device_snapshot 划定启动快照，reload 永不让外部 device 修改进入运行模型
+    """
 
-        :param config_name:
-        :param task:
-        """
+    def __init__(self, config_name: str, task=None, store: ConfigStore = None,
+                 reload_policy: ReloadPolicy = None) -> None:
+        # 先初始化 session 状态字段，避免 __getattr__ 在父类 __init__ 期间递归访问 model
+        self._model: ConfigModel | None = None
+        self._base: dict | None = None
+        self.generation: str | None = None
+        self._mtime_ns: int = 0
+        self.session_lock = threading.RLock()
+        self.blocked_changes: list = []
+        self._startup_device_snapshot = None
+        self._provisional_device_snapshot = None
+        self.scheduler_update_dt = None
+        # HOT 两阶段提交状态（Task 5）：
+        # - _refresh_revision：会话 model/base 每提交一次即推进，锁外 prepare 候选据此失效
+        # - _refresh_in_progress：HOT 刷新进行中标记，作为 reentrancy guard
+        # - _hot_failed_fingerprints：prepare 失败时的 disk/local 指纹，同一指纹不重复 prepare
+        # - _state_reporter：HOT 提交/失败后向子进程 state_queue 上报 config_state 的可选 hook
+        self._refresh_revision: int = 0
+        self._refresh_in_progress: bool = False
+        self._hot_failed_fingerprints: set = set()
+        self._state_reporter: Callable | None = None
+
         super().__init__(config_name)  # 调用 ConfigState 的初始化方法
         super(ConfigManual, self).__init__()
         super(ConfigWatcher, self).__init__()
         super(ConfigMenu, self).__init__()
-        self.model = ConfigModel(config_name=config_name)
-        self.scheduler_update_dt = None  # 调度器更新时间
+        # WARM/COLD 分级热重载策略：默认 script.device 子树 COLD、无 HOT、其余 WARM。
+        self.reload_policy = reload_policy or DEFAULT_RELOAD_POLICY
+        self.store = store or ConfigStore(config_root=Path.cwd() / 'config')
+        loaded = self.store.load(self.config_name)
+        self._commit_loaded_state(loaded.model, copy.deepcopy(loaded.canonical), loaded)
+
+    # ------------------------------------------------------------------ 会话状态
+
+    def _commit_loaded_state(self, model: ConfigModel, base: dict, loaded) -> None:
+        """一次性提交 model/base/generation/mtime，避免部分状态被并发观察到。"""
+        # WARM 重建会替换 notifier 依赖的模型字段；丢弃旧缓存，避免继续向旧目标发送通知。
+        self.__dict__.pop("notifier", None)
+        self._model = model
+        self._base = base
+        self.generation = loaded.generation
+        self._mtime_ns = loaded.mtime_ns
+        # 同步推进 watcher 基线，避免同一磁盘状态被重复检测（规格 §4.4 mtime 兜底）
+        self._watch_mtime_ns = loaded.mtime_ns
+        self._watch_content_digest = loaded.content_digest
+        # 会话 model/base 整体替换：推进 HOT refresh revision 使锁外 prepare 候选失效，
+        # 并清除 prepare 失败指纹（WARM 重建已吸收磁盘值，重新分类）
+        self._refresh_revision += 1
+        self._hot_failed_fingerprints = set()
+
+    @property
+    def model(self) -> ConfigModel:
+        return self._model
+
+    @property
+    def base(self) -> dict:
+        return self._base
 
     def __getattr__(self, name):
         """
@@ -139,49 +236,539 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         logger.info(f'Notifier: {notifier.config_name}')
         return notifier
 
+    # ------------------------------------------------------------------ 保存与刷新
+
+    @property
+    def generation_mismatch(self) -> bool:
+        return self._generation_mismatch
+
+    @property
+    def mtime_ns(self) -> int:
+        return self._mtime_ns
+
+    def script_task(self, task: str) -> dict:
+        """生成 OASX 参数，并按当前 Store active 身份注入账号配置开关。"""
+        result = self.model.script_task(task)
+        if convert_to_underscore(task) != "multi_account_sign_in":
+            return result
+
+        from tasks.MultiAccountSignIn.config import active_account_configs
+
+        selection = self.model.multi_account_sign_in.account_config_selection
+        result["account_config_selection"] = [
+            {
+                "name": field_name,
+                "title": config_name,
+                "description": f"{config_name} 账号总数：{account_count}",
+                "default": False,
+                "value": getattr(selection, field_name, False),
+                "type": "boolean",
+            }
+            for field_name, (config_name, account_count)
+            in active_account_configs(self.store).items()
+        ]
+        return result
+
+    @property
+    def pending_restart_paths(self) -> set:
+        return set(self._pending_restart_paths)
+
+    @property
+    def pending_warm_paths(self) -> set:
+        return set(self._pending_warm_paths)
+
+    def save(self) -> None:
+        """后台三方保存入口：以会话 base/local/generation 执行 save_background 并推进状态。"""
+        if self._generation_mismatch:
+            # generation mismatch 后终止该 session 后续持久化（规格 §10.3）
+            return
+        with self.session_lock:
+            local = self.model.model_dump(mode="json")
+            try:
+                result = self.store.save_background(
+                    self.config_name,
+                    self._base,
+                    local,
+                    self.generation,
+                    self.blocked_changes,
+                )
+            except TimeoutError as e:
+                # 锁超时：另一进程持锁超过 timeout，本次保存失败；继续运行会以陈旧模型
+                # 持久化，停止更安全（filelock.Timeout 继承 TimeoutError）
+                logger.warning(f'[{self.config_name}] config save lock timeout, stop persistence: {e}')
+                self._generation_mismatch = True
+                self._request_instance_stop()
+                return
+            except (ConfigGenerationMismatchError, ConfigGenerationError) as e:
+                # 磁盘身份已变化或已 tombstone：终止持久化并请求实例停止，不自动 reload 后继续写
+                logger.warning(f'[{self.config_name}] config identity changed, stop persistence: {type(e).__name__}')
+                self._generation_mismatch = True
+                self._request_instance_stop()
+                return
+            self._apply_save_result(result)
+
+    def _apply_save_result(self, result) -> None:
+        self._base = result.base
+        self.blocked_changes = result.blocked
+        self._mtime_ns = result.mtime_ns
+        # save_background 已提交该磁盘版本，同步 watcher 避免把自身保存误判为外部更新。
+        # digest 由锁内采样带出：锁释放后再读文件可能读到并发进程刚写入的内容，
+        # 把对方的版本误记成自己的，导致漏检一次外部变更。
+        self._watch_mtime_ns = result.mtime_ns
+        self._watch_content_digest = result.content_digest
+        self.generation = result.generation
+        # 会话 base 推进：使锁外 HOT prepare 候选失效（避免提交陈旧候选）
+        self._refresh_revision += 1
+
+    def reload(self) -> None:
+        """从磁盘重载并把受保护 COLD 快照覆盖回新 model/base。
+
+        委托 refresh_from_disk 统一完成 COLD overlay、WARM/COLD pending 重算与
+        blocked/seen 清理，避免与边界刷新走两套平行状态推进（review 项 10）。
+        """
+        self.refresh_from_disk("reload")
+
+    # ------------------------------------------------------------------ WARM / COLD 状态
+
+    def report_config_changed(self, changed_paths) -> None:
+        """子进程排空 config_event_queue 后记录待生效路径。
+
+        COLD 路径只进 pending_restart；WARM 路径在任务边界前保持 pending_warm。
+        仅作为事件提示，COLD pending 的权威集合由 refresh_from_disk 从磁盘对比重算。
+        """
+        with self.session_lock:
+            for path in changed_paths:
+                path = coerce_path(path)
+                if self.reload_policy.classify(path) == COLD:
+                    self._pending_restart_paths.add(path)
+                else:
+                    self._pending_warm_paths.add(path)
+
+    def _config_load_failure_stop(self, reason: str) -> ConfigStateResult:
+        """load 失败（身份损坏/JSON 损坏/校验失败/锁超时）统一按 mismatch 语义干净停止。
+
+        锁超时意味着本次读写失败，继续运行会以陈旧模型持久化，停止更安全；
+        按 reason 区分日志，避免「generation changed」误导。
+        """
+        logger.warning(f'[{self.config_name}] config load failed ({reason}), stop instance')
+        self._generation_mismatch = True
+        self._pending_restart_paths = set()
+        self._pending_warm_paths = set()
+        self._request_instance_stop()
+        return ConfigStateResult(
+            status="restart_required",
+            pending_restart_paths=[],
+            pending_warm_paths=[],
+            mtime_ns=self._mtime_ns,
+            generation_mismatch=True,
+        )
+
+    def refresh_from_disk(self, trigger: str) -> ConfigStateResult:
+        """WARM 任务边界/检查点刷新：加载磁盘最新 model，覆盖回启动 COLD 快照后提交。
+
+        - COLD pending 由“磁盘 COLD vs 启动快照”独立计算，WARM 清理不得清除；
+        - generation mismatch 或配置无法加载（删除/损坏/锁超时）时终止 session 持久化并请求实例停止。
+        """
+        with self.session_lock:
+            try:
+                loaded = self.store.load(self.config_name)
+            except TimeoutError as e:
+                # 锁超时：另一进程持锁超过 timeout，本次读取失败，按 mismatch 语义干净停止
+                return self._config_load_failure_stop(f'lock timeout: {e}')
+            except (ConfigNotFoundError, ConfigGenerationError, ConfigJsonError, ConfigValidationError, OSError) as e:
+                # 配置 tombstone/缺失/身份损坏/JSON 损坏/校验失败：按 mismatch 语义干净停止，
+                # 不得以陈旧模型继续运行，也不让 load 异常穿透到子进程造成 traceback 崩溃
+                return self._config_load_failure_stop(f'{type(e).__name__}: {e}')
+            if loaded.generation != self.generation:
+                # mismatch：只推进 mtime，不吸收磁盘新身份；清空 WARM pending 使终端态收敛
+                self._generation_mismatch = True
+                self._pending_restart_paths = self._compute_cold_pending(loaded)
+                self._pending_warm_paths = set()
+                self._mtime_ns = loaded.mtime_ns
+                self._request_instance_stop()
+                return ConfigStateResult(
+                    status="restart_required",
+                    pending_restart_paths=[list(p) for p in sorted(self._pending_restart_paths)],
+                    pending_warm_paths=[],
+                    mtime_ns=loaded.mtime_ns,
+                    generation_mismatch=True,
+                )
+
+            loaded_model = loaded.model
+            loaded_base = copy.deepcopy(loaded.canonical)
+            protected_device = self._protected_device_snapshot()
+            if protected_device is not None:
+                loaded_model.script.device = copy.deepcopy(protected_device)
+                loaded_base["script"]["device"] = protected_device.model_dump(mode="json")
+
+            # WARM：提交覆盖后的 model/base；任务边界整体重载清空 blocked/deferred
+            self._commit_loaded_state(loaded_model, loaded_base, loaded)
+            self.blocked_changes = []
+            self._pending_warm_paths = set()
+            # COLD pending 独立计算，不受 WARM 清理影响
+            self._pending_restart_paths = self._compute_cold_pending(loaded)
+
+            return ConfigStateResult(
+                status=self._status(),
+                pending_restart_paths=[list(p) for p in sorted(self._pending_restart_paths)],
+                pending_warm_paths=[],
+                mtime_ns=self._mtime_ns,
+                generation_mismatch=False,
+            )
+
+    def config_state(self) -> dict[str, object]:
+        """返回排序去重 JSON-array paths、pending sets、mtime_ns 与最高优先级 status。
+
+        注意：warm_pending 是子进程内部瞬时态——任务边界 refresh 会先应用 WARM 再上报，
+        因此对外 WebSocket 首帧几乎只会看到 current/restart_required；COLD restart_required
+        才是用户可见的"重启后生效"提示。
+        """
+        with self.session_lock:
+            return {
+                "pending_restart_paths": [list(p) for p in sorted(self._pending_restart_paths)],
+                "pending_warm_paths": [list(p) for p in sorted(self._pending_warm_paths)],
+                "observed_mtime_ns": self._mtime_ns,
+                "status": self._status(),
+            }
+
+    def has_pending_changes(self) -> bool:
+        """是否存在尚未在任务边界应用的 WARM 变更。
+
+        COLD pending_restart 需要进程级重启才生效，不中止调度等待（wait_until）。
+        """
+        return bool(self._pending_warm_paths)
+
+    def _status(self) -> str:
+        """generation_mismatch > restart_required > warm_pending > current 取最高优先级。"""
+        if self._generation_mismatch:
+            return "restart_required"
+        if self._pending_restart_paths:
+            return "restart_required"
+        if self._pending_warm_paths:
+            return "warm_pending"
+        return "current"
+
+    def _compute_cold_pending(self, loaded) -> set:
+        """磁盘 script.device 子树 vs 启动 COLD 快照的差异路径集合。
+
+        独立于 WARM/deferred/blocked 计算；WARM 任务边界清理不得清除（规格 §11.2）。
+        只对叶子值做差异比较，dict 容器节点只递归不直接上报，避免重复路径。
+        """
+        snapshot = self._protected_device_snapshot()
+        if snapshot is None:
+            return set()
+        snapshot_raw = snapshot.model_dump(mode="json")
+        disk_device = get_path(loaded.canonical, ("script", "device"))
+        if not isinstance(disk_device, dict):
+            return set()
+        pending = set()
+        for rel_path in _iter_subtree_paths(snapshot_raw, disk_device):
+            full_path = ("script", "device") + tuple(rel_path)
+            if self.reload_policy.classify(full_path) != COLD:
+                continue
+            disk_val = get_path(disk_device, rel_path)
+            snapshot_val = get_path(snapshot_raw, rel_path)
+            if isinstance(disk_val, dict) or isinstance(snapshot_val, dict):
+                continue
+            if not _eq(disk_val, snapshot_val):
+                pending.add(full_path)
+        return pending
+
+    # ------------------------------------------------------------------ HOT 热重载
+
+    def _increment_refresh_revision_for_test(self) -> None:
+        """测试专用：手动推进 refresh revision，模拟 prepare 期间会话被其他刷新修改。"""
+        with self.session_lock:
+            self._refresh_revision += 1
+
+    @staticmethod
+    def _model_get(model, path: tuple[str, ...]):
+        """沿 canonical tuple path 读取 Pydantic 模型字段值（缺失抛 AttributeError）。"""
+        node = model
+        for key in path:
+            node = getattr(node, key)
+        return node
+
+    def _set_model_value(self, model, path: tuple[str, ...], value):
+        """沿 canonical tuple path 自底向上 model_copy 重建模型，不改动原实例。
+
+        value 必须已是 Pydantic 字段接受的类型（来自候选模型的已校验值）；
+        HOT 同步按已验证模型字段进行，避免对运行模型整体重校验破坏 transient 状态
+        （规格 §12 禁止把 canonical 动态 key 直接反向写入模型）。
+        """
+        keys = list(path)
+
+        def rebuild(node, i):
+            if i == len(keys) - 1:
+                return node.model_copy(update={keys[i]: value})
+            child = getattr(node, keys[i])
+            return node.model_copy(update={keys[i]: rebuild(child, i + 1)})
+
+        return rebuild(model, 0)
+
+    def _hot_changed_paths(self, disk_canonical: dict) -> list:
+        """返回磁盘相对会话基线发生变化的 HOT 白名单路径。
+
+        分类优先级 COLD prefix > HOT exact-path：即使字段声明在 hot_paths 中，
+        只要位于 COLD 子树内仍按 COLD 处理，不进入 HOT 候选。
+        """
+        changed: list = []
+        for path in sorted(self.reload_policy.hot_paths):
+            if self.reload_policy.classify(path) != HOT:
+                continue
+            disk_val = get_path(disk_canonical, path)
+            if disk_val is MISSING:
+                # HOT 不支持结构性删除；缺失路径交给 WARM 边界重建
+                continue
+            base_val = get_path(self._base, path)
+            if base_val is MISSING or not _eq(disk_val, base_val):
+                changed.append(path)
+        return changed
+
+    @staticmethod
+    def _fingerprint_value(value) -> str:
+        """把指纹中的值序列化为可哈希字符串；MISSING 与 None 严格区分。"""
+        if value is MISSING:
+            return "<MISSING>"
+        return json.dumps(value, sort_keys=True, default=str)
+
+    def _hot_fingerprint(self, changed_paths: list, disk_canonical: dict) -> tuple:
+        """disk/local 指纹：任何一侧变化都会改变指纹，从而解除失败标记并重新分类。"""
+        model_raw = self._model.model_dump(mode="json")
+        return tuple(
+            (
+                path,
+                self._fingerprint_value(get_path(disk_canonical, path)),
+                self._fingerprint_value(get_path(model_raw, path)),
+            )
+            for path in sorted(changed_paths)
+        )
+
+    def _mark_hot_failure(self, changed_paths: list, fingerprint: tuple) -> None:
+        """prepare 失败：保持 model/base/派生缓存原值，仅标为 WARM deferred 并记录失败指纹。
+
+        同一 disk/local 指纹在本任务内不再调用 prepare（规格 §11.1 第 5 条）。
+        """
+        self._pending_warm_paths.update(changed_paths)
+        self._hot_failed_fingerprints.add(fingerprint)
+        logger.warning(
+            f'[{self.config_name}] HOT prepare failed, paths deferred to WARM: {changed_paths}')
+
+    def refresh_hot_at_checkpoint(self, task) -> bool:
+        """外层安全检查点 HOT 刷新入口（规格 §11.1 / §12）。
+
+        两阶段提交：
+        ① RLock 内记录 revision、读取磁盘构造候选模型与 changed_paths，不替换运行字段；
+        ② 锁外调用 task.prepare_config_reload(candidate, changed_paths)，抛错则无运行态变更；
+        ③ 重取 RLock，revision 已变或 generation mismatch 则丢弃候选、下一检查点重新分类
+           （mismatch 由 refresh_from_disk mismatch / _config_load_failure_stop / save
+           锁超时或身份变化置位，均不推进 revision，提交前必须一并检查）；
+        ④ revision 未变则同一临界区替换允许的 HOT scalar、声明的派生缓存、
+           对应 base/blocked/deferred 与 revision；提交段异常绝不穿出，按失败转 WARM deferred；
+        ⑤ prepare 失败保持原值，仅记录 WARM deferred 与失败指纹，同一指纹不重复 prepare。
+
+        生产默认 HOT 白名单为空，真实任务不发生中途替换；HOT 基础设施
+        只由测试专用合成 Schema 注入 ReloadPolicy 验证。
+        """
+        has_prepare = hasattr(task, "prepare_config_reload")
+        with self.session_lock:
+            if self._refresh_in_progress or self._generation_mismatch:
+                return False
+            if not self.reload_policy.hot_paths:
+                # 生产默认无 HOT 字段：零开销快速返回
+                return False
+        # 最小刷新间隔：mtime_ns 未变化不解析配置（使用 st_mtime_ns，同秒多次修改可检出）
+        if self._disk_mtime_ns() <= self._mtime_ns:
+            return False
+        with self.session_lock:
+            if self._refresh_in_progress or self._generation_mismatch:
+                return False
+            try:
+                loaded = self.store.load(self.config_name)
+            except Exception as e:
+                # HOT 检查点不破坏截图主流程；读取失败/身份变化由 WARM 边界统一处理
+                logger.warning(
+                    f'[{self.config_name}] HOT checkpoint load failed: {type(e).__name__}: {e}')
+                return False
+            if loaded.generation != self.generation:
+                return False
+            changed_paths = self._hot_changed_paths(loaded.canonical)
+            if not changed_paths:
+                # 磁盘有变化但无 HOT 候选（仅 WARM/COLD 变化）：推进已检查 mtime 基线，
+                # 避免每帧全量 load+校验（规格 §12「避免每帧解析配置」）
+                self._mtime_ns = loaded.mtime_ns
+                return False
+            fingerprint = self._hot_fingerprint(changed_paths, loaded.canonical)
+            if fingerprint in self._hot_failed_fingerprints:
+                # 同一 disk/local 指纹失败过：不重复 prepare，交给 WARM 边界；
+                # 同样推进已检查 mtime 基线，磁盘再次变化才重新分类
+                self._mtime_ns = loaded.mtime_ns
+                return False
+            # 构造候选模型并覆盖回 COLD 启动快照，保持与运行实例一致的视角
+            candidate = copy.deepcopy(loaded.model)
+            protected = self._protected_device_snapshot()
+            if protected is not None:
+                candidate.script.device = copy.deepcopy(protected)
+            revision = self._refresh_revision
+            self._refresh_in_progress = True
+
+        # ② 锁外调用纯 prepare hook（不得在 FileLock/RLock 内执行 callback）。
+        # try/finally 确保无论 prepare 以何种方式退出（含 BaseException）都清除 guard，
+        # 避免 KeyboardInterrupt/SystemExit 后 HOT 被 guard 永久挡住。
+        prepared: dict = {}
+        prepare_error: Exception | None = None
+        if has_prepare:
+            try:
+                try:
+                    prepared = task.prepare_config_reload(candidate, changed_paths)
+                except Exception as e:
+                    prepare_error = e
+            finally:
+                with self.session_lock:
+                    self._refresh_in_progress = False
+        else:
+            with self.session_lock:
+                self._refresh_in_progress = False
+        if prepare_error is not None:
+            logger.warning(
+                f'[{self.config_name}] HOT prepare raised: {type(prepare_error).__name__}: {prepare_error}')
+            with self.session_lock:
+                # 失败同样推进已检查 mtime 基线：同一磁盘状态下一次检查点直接短路，
+                # 避免每个新指纹失败后都多一次全量 load（与 no-candidate/指纹命中分支一致）
+                self._mtime_ns = loaded.mtime_ns
+                self._mark_hot_failure(changed_paths, fingerprint)
+            self._report_hot_state()
+            return False
+        if has_prepare:
+            declared = frozenset(getattr(task, "HOT_RELOAD_DERIVED_FIELDS", frozenset()) or frozenset())
+            if not isinstance(prepared, dict) or set(prepared) - declared:
+                # 拒绝返回未声明字段：prepare 结果整体丢弃，按失败转 WARM（规格 §11.1）
+                logger.warning(
+                    f'[{self.config_name}] HOT prepare returned undeclared fields, deferred to WARM')
+                with self.session_lock:
+                    self._mark_hot_failure(changed_paths, fingerprint)
+                self._report_hot_state()
+                return False
+            prepared = {k: v for k, v in prepared.items() if k in declared}
+
+        # ③④ 重取 RLock 提交；revision 变化或 generation mismatch 则丢弃候选，
+        # 不得提交陈旧 prepare 结果（_generation_mismatch 由 refresh_from_disk mismatch /
+        # _config_load_failure_stop / save 锁超时或身份变化置位，均不推进 revision）
+        with self.session_lock:
+            if self._refresh_revision != revision or self._generation_mismatch:
+                return False
+            try:
+                changed_set = set(changed_paths)
+                for path in changed_paths:
+                    model_val = self._model_get(candidate, path)
+                    self._model = self._set_model_value(self._model, path, model_val)
+                    self._base = set_path(self._base, path, get_path(loaded.canonical, path))
+                    self._pending_warm_paths.discard(path)
+                if prepared:
+                    for name, value in prepared.items():
+                        setattr(task, name, value)
+                # 清除该路径对应的 blocked/deferred，避免 HOT 已生效但状态表残留
+                if self.blocked_changes:
+                    self.blocked_changes = [
+                        b for b in self.blocked_changes if not _blocked_overlaps(b.path, changed_set)
+                    ]
+                self._refresh_revision += 1
+                self._mtime_ns = loaded.mtime_ns
+                self._hot_failed_fingerprints.discard(fingerprint)
+            except Exception as e:
+                # 提交段异常（模型结构不匹配等）绝不穿出到 BaseTask.screenshot 破坏截图主流程：
+                # 按失败转 WARM deferred 并记录指纹，保持运行 model 原值（规格 §11.1）；
+                # 锁内直接调用同步内部标记，不重复获取 session_lock
+                logger.warning(
+                    f'[{self.config_name}] HOT commit failed, deferred to WARM: {type(e).__name__}: {e}')
+                self._mark_hot_failure(changed_paths, fingerprint)
+                return False
+        # 释放锁后广播最新 config_state（规格 §11.1 点 4）
+        self._report_hot_state()
+        return True
+
+    def _report_hot_state(self) -> None:
+        """HOT 提交/失败后向子进程 state_queue 上报最新 config_state。
+
+        必须锁外调用（规格 callback 在 FileLock/RLock 外执行）；无 reporter 时 no-op。
+        上报失败只记录日志，不中断截图主流程。
+        """
+        reporter = self._state_reporter
+        if reporter is None:
+            return
+        try:
+            reporter()
+        except Exception:
+            logger.warning(f'[{self.config_name}] HOT state report failed', exc_info=True)
+
+    def _request_instance_stop(self) -> None:
+        """generation mismatch 后终止持久化并请求实例停止；脚本主循环在边界检查后退出。"""
+        self._generation_mismatch = True
+
+    # ------------------------------------------------------------------ COLD 启动快照
+
+    def begin_device_initialization(self) -> None:
+        """Device 构造前读取一次锁内最新配置，并以此划定 COLD 启动边界。"""
+        # 启动期虽是单线程，但仍持 session_lock 保持「session RLock → lifecycle FileLock」
+        # 统一锁序，避免与 save/refresh 走两套顺序。
+        with self.session_lock:
+            if self._startup_device_snapshot is not None or self._provisional_device_snapshot is not None:
+                raise RuntimeError("device initialization has already started")
+            loaded = self.store.load(self.config_name)
+            self._commit_loaded_state(loaded.model, copy.deepcopy(loaded.canonical), loaded)
+            self._provisional_device_snapshot = copy.deepcopy(self.model.script.device)
+
+    def freeze_startup_device_snapshot(self) -> None:
+        """设备初始化完成后，将只含内部归一化的 provisional 快照转为正式快照。"""
+        with self.session_lock:
+            if self._provisional_device_snapshot is None:
+                raise RuntimeError("device initialization has not started")
+            self._startup_device_snapshot = copy.deepcopy(self._provisional_device_snapshot)
+            self._provisional_device_snapshot = None
+
+    def _protected_device_snapshot(self):
+        if self._startup_device_snapshot is not None:
+            return self._startup_device_snapshot
+        return self._provisional_device_snapshot
+
+    def startup_normalize(self, updates: dict[tuple[str, ...], object]) -> None:
+        """设备初始化阶段只把声明的 script.device 路径合入 provisional 快照与 session model/base。
+
+        正式快照冻结后调用必须失败；不吸收返回 LoadedConfig 中的其他并发 COLD 字段。
+        """
+        if not updates or any(path[:2] != ("script", "device") for path in updates):
+            raise ValueError("startup normalization only accepts device paths")
+        with self.session_lock:
+            protected = self._provisional_device_snapshot
+            if protected is None or self._startup_device_snapshot is not None:
+                raise RuntimeError("startup normalization requires active device initialization")
+
+            loaded = self.store.startup_normalize(
+                self.config_name,
+                updates,
+                self.generation,
+            )
+            next_device_raw = protected.model_dump(mode="json")
+            for path in updates:
+                relative_path = path[2:]
+                normalized_value = get_path(loaded.canonical, path)
+                next_device_raw = set_path(next_device_raw, relative_path, normalized_value)
+            next_device = type(protected).model_validate(next_device_raw)
+
+            loaded.model.script.device = copy.deepcopy(next_device)
+            loaded_base = copy.deepcopy(loaded.canonical)
+            loaded_base["script"]["device"] = next_device.model_dump(mode="json")
+            self._commit_loaded_state(loaded.model, loaded_base, loaded)
+            self._provisional_device_snapshot = next_device
+
+    # ------------------------------------------------------------------ GUI / 调度
+
     def gui_args(self, task: str) -> str:
         """
         获取给gui显示的参数
         :return:
         """
         return self.model.gui_args(task=task)
-
-    def get_arg(self, task: str, group: str, argument: str):
-        """
-
-        :param task:
-        :param group:
-        :param argument:
-        :return: str/int/float
-        """
-        try:
-            return self.data[task][group][argument]
-        except:
-            logger.exception(f'have no arg {task}.{group}.{argument}')
-
-    def set_arg(self, task: str, group: str, argument: str, value) -> None:
-        """
-
-        :param task:
-        :param group:
-        :param argument:
-        :param value:
-        :return:
-        """
-        try:
-            self.data[task][group][argument] = value
-        except:
-            logger.exception(f'have no arg {task}.{group}.{argument}')
-
-    def reload(self):
-        self.model = ConfigModel(config_name=self.config_name)
-
-    def save(self) -> None:
-        """
-        保存配置文件
-        :return:
-        """
-        self.model.write_json(self.config_name, self.model.dict())
 
     def update_scheduler(self) -> None:
         """
@@ -325,9 +912,11 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             return False
 
     def task_delay(self, task: str, start_time: datetime = None,
-                   success: bool = None, server: bool = True, target: datetime = None) -> None:
+                   success: bool = None, server: bool = True, target: datetime = None,
+                   persist: bool = True) -> None:
         """
         设置下次运行时间  当然这个也是可以重写的
+        :param persist: 是否立即保存；False 供同一事务继续修改其他配置后统一保存
         :param target: 可以自定义的下次运行时间
         :param server: True
         :param success: 判断是成功的还是失败的时间间隔
@@ -335,7 +924,7 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         :param finish: 是完成任务后的时间为基准还是开始任务的时间为基准
         :return:
         """
-        # 加载配置文件
+        # 加载配置文件（受 COLD 快照保护，外部 device 修改不进入运行模型）
         self.reload()
         # 任务预处理
         if not task:
@@ -411,7 +1000,8 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         self.lock_config.acquire()
         try:
             scheduler.next_run = next_run
-            self.save()
+            if persist:
+                self.save()
         finally:
             self.lock_config.release()
         # 设置

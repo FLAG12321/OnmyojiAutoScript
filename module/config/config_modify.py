@@ -24,8 +24,8 @@ class ConfigModify(Config):
 
     """
 
-    def __init__(self, config: str) -> None:
-        super().__init__(config)
+    def __init__(self, config: str, store=None) -> None:
+        super().__init__(config, store=store)
 
 
     def gui_args(self, task: str) -> str:
@@ -45,29 +45,16 @@ class ConfigModify(Config):
     def gui_set_task(self, task: str, group: str, argument: str, value) -> bool:
         """
         设置给gui显示的任务 的参数的具体值
+        统一走 ConfigStore 的 patch_user_argument，脚本是否存活不改变持久化路径
         :return:
         """
-        task = convert_to_underscore(task)
-        group = convert_to_underscore(group)
-        argument = convert_to_underscore(argument)
-
-        path = f'{task}.{group}.{argument}'
-        task_object = getattr(self.model, task, None)
-        group_object = getattr(task_object, group, None)
-        argument_object = getattr(group_object, argument, None)
-
-        if argument_object is None:
-            logger.error(f'gui_set_task {task}.{group}.{argument}.{value} failed')
-            return False
-
         try:
-            setattr(group_object, argument, value)
-            argument_object = getattr(group_object, argument, None)
-            logger.info(f'gui_set_task {task}.{group}.{argument}.{argument_object}')
-            super().save()  # 我是没有想到什么方法可以使得属性改变自动保存的
-            return True
-        except ValidationError as e:
-            logger.error(e)
+            result = self.store.patch_user_argument(self.config_name, task, group, argument, value)
+            if result.success:
+                logger.info(f'gui_set_task {task}.{group}.{argument}.{value}')
+            return result.success
+        except Exception as e:
+            logger.error(f'gui_set_task {task}.{group}.{argument}.{value} failed: {e}')
             return False
 
     def gui_task_list(self) -> str:

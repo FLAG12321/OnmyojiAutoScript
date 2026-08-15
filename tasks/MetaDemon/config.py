@@ -103,7 +103,9 @@ class MetaDemon(ConfigBase):
     @model_validator(mode='before')
     @classmethod
     def validator_all(cls, v: dict) -> Any:
-        strategy_count = v.get('meta_demon_config', {}).get('md_strategy_count', 1)
+        # 未提供配置时与 MetaDemonConfig.md_strategy_count 默认值 0 保持一致，
+        # 避免默认模型 dump 出 count=0 却携带 md_strategies_1 的非 canonical 形状。
+        strategy_count = v.get('meta_demon_config', {}).get('md_strategy_count', 0)
 
         def validator_list(list_name, data, item_type=None, list_size=1):
             if list_name not in data:

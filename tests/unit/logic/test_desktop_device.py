@@ -422,13 +422,22 @@ def test_screenshot_printwindow_uses_client_flag3(monkeypatch):
 
 def _desktop_device(config=None):
     dev = object.__new__(Device)
-    dev.config = config or types.SimpleNamespace(
-        script=types.SimpleNamespace(
-            device=types.SimpleNamespace(
-                serial='desktop', screenshot_method='auto', control_method='minitouch',
-            )
-        ),
-    )
+    if config is None:
+        config = types.SimpleNamespace(
+            script=types.SimpleNamespace(
+                device=types.SimpleNamespace(
+                    serial='desktop', screenshot_method='auto', control_method='minitouch',
+                )
+            ),
+        )
+
+        def startup_normalize(updates):
+            # 模拟 session.startup_normalize：只把声明路径写回 device 对象
+            for path, value in updates.items():
+                setattr(config.script.device, path[-1], value)
+
+        config.startup_normalize = startup_normalize
+    dev.config = config
     return dev
 
 
@@ -727,16 +736,17 @@ def test_script_task_desktop_enum_failure_falls_back_to_text(monkeypatch):
     assert 'enumEnum' not in item
 
 
-def test_script_set_arg_desktop_handle_stores_pure_pid():
+def test_script_set_arg_desktop_handle_stores_pure_pid(store):
     # 写回：桌面模式下选中展示串，落盘必须是纯 PID（Handle 按数字消费）
-    config = _config_model('desktop', '')
-    assert config.script_set_arg('script', 'device', 'handle',
-                                 '27272 (154,38)') is True
-    assert config.script.device.handle == '27272'
+    store.patch_user_field("oas1", ("script", "device", "serial"), "desktop")
+    result = store.patch_user_argument("oas1", "Script", "device", "handle", "27272 (154,38)")
+    assert result.success is True
+    assert store.load("oas1").canonical["script"]["device"]["handle"] == "27272"
 
 
-def test_script_set_arg_emulator_handle_keeps_title_text():
+def test_script_set_arg_emulator_handle_keeps_title_text(store):
     # 写回：模拟器模式下 handle 允许窗口标题等非数字文本，不能走桌面解析被剥空
-    config = _config_model('127.0.0.1:16384', '')
-    assert config.script_set_arg('script', 'device', 'handle', 'MuMuPlayer') is True
-    assert config.script.device.handle == 'MuMuPlayer'
+    store.patch_user_field("oas1", ("script", "device", "serial"), "127.0.0.1:16384")
+    result = store.patch_user_argument("oas1", "Script", "device", "handle", "MuMuPlayer")
+    assert result.success is True
+    assert store.load("oas1").canonical["script"]["device"]["handle"] == "MuMuPlayer"

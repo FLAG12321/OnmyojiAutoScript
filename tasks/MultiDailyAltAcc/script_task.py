@@ -714,6 +714,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""
+        # task_delay 会先 reload；必须先保存 next_run，再基于重载后的模型修改阶段开关。
+        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=18, minute=5), persist=False)
+        self.daily_conf = self.config.model.multi_daily_alt_acc
         # 每周奖励/神秘商店已改由早晨 6:05 那趟领取（_schedule_after_midnight 开启），
         # 这里显式关闭，避免 18:05 晚间这趟重复领取
         self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = False
@@ -727,13 +730,18 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
-
-        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=18, minute=5))
         self.save_config()
 
     def _schedule_after_midnight(self, start_time: datetime):
         """安排凌晨的运行时间"""
-        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5))
+        # returngift 完成后应直接进入三分钟后的同心战斗；必须在 6:05 落盘前分流，
+        # 避免两次 task_delay 之间退出时留下错误的中间调度状态。
+        if self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
+            self._schedule_alliedteam_after_returngift()
+            return
+
+        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5), persist=False)
+        self.daily_conf = self.config.model.multi_daily_alt_acc
 
         # 如果开启了同心战斗，则调整设置
         if self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
@@ -749,14 +757,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             if start_time.weekday() == 2 or start_time.weekday() == 5:
                 self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = True
             self._reset_one_shot_flags()
-            self.config.model.multi_daily_alt_acc = self.daily_conf
-
-            self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5))
-            self.save_config()
-        elif self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
-            self._schedule_alliedteam_after_returngift()
+        # 普通凌晨与同心战斗分支都必须提交内存中的 next_run；两者共用一次原子保存。
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+        self.save_config()
 
     def _schedule_alliedteam_after_returngift(self):
+        self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=3), persist=False)
+        self.daily_conf = self.config.model.multi_daily_alt_acc
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
@@ -765,12 +772,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
-
-        self.set_next_run("MultiDailyAltAcc", target=datetime.now() + timedelta(minutes=3))
         self.save_config()
 
     def _schedule_evening(self, start_time: datetime):
         """安排晚上的运行时间"""
+        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=0, minute=20) + timedelta(days=1),
+                          persist=False)
+        self.daily_conf = self.config.model.multi_daily_alt_acc
         self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
@@ -781,7 +789,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
-        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=0, minute=20) + timedelta(days=1))
         self.save_config()
         
 if __name__ == '__main__':

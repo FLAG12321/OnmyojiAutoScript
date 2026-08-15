@@ -81,16 +81,28 @@ def dynamic_hide(*fields: str,):
     return field_serializer(*fields)(serializer_exclude)
 
 
+def _strict_config_validation_active() -> bool:
+    # 延迟导入避免 config_validation -> config_model -> config_base 循环依赖
+    try:
+        from module.config.config_validation import STRICT_CONFIG_VALIDATION
+        return STRICT_CONFIG_VALIDATION.get()
+    except Exception:
+        return False
+
+
 class ConfigBase(BaseModel):
     def __init__(self, *args, **kwargs):
         try:
             super().__init__(*args, **kwargs)
         except ValidationError as exc:
             """
-            During the initialization of the ConfigBase class, 
-            if a ValidationError occurs, the default value of the field is used to initialize the field, 
+            During the initialization of the ConfigBase class,
+            if a ValidationError occurs, the default value of the field is used to initialize the field,
             and the exception is re-raised after the initialization is complete.
             """
+            # 严格持久化校验期间不允许把非法值降级为默认值，直接抛出，由校验入口记录磁盘问题
+            if _strict_config_validation_active():
+                raise
             exc_info = exc.errors()[0]
             val_error_type = exc_info.get('type', None)
             val_error_key = exc_info.get('loc', None)[0]

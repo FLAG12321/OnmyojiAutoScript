@@ -7,14 +7,13 @@ from typing import Dict, Any
 import re
 import inflection
 
-from pathlib import Path
-from pydantic import BaseModel, ValidationError, Field
+from pydantic import Field
 
 from module.config.utils import *
 from module.logger import logger
 
 # 导入配置的Python文件
-from tasks.Component.config_base import ConfigBase, TimeDelta
+from tasks.Component.config_base import ConfigBase
 from tasks.Exploration.config import Exploration
 from tasks.RyouToppa.config import RyouToppa
 from tasks.Dokan.config import Dokan
@@ -168,49 +167,9 @@ class ConfigModel(ConfigBase):
     demon_retreat: DemonRetreat = Field(default_factory=DemonRetreat)
     guild_activity_monitor: GuildActivityMonitor = Field(default_factory=GuildActivityMonitor)
 
-    def __init__(self, config_name: str=None) -> None:
-        """
-
-        :param config_name:
-        """
-        if not config_name:
-            super().__init__()
-            return
-        data = self.read_json(config_name)
-        data["config_name"] = config_name
-        super().__init__(**data)
-
-    def __setattr__(self, key, value):
-        """
-        只要修改属性就会触发这个函数 自动保存
-        :param key:
-        :param value:
-        :return:
-        """
-        super().__setattr__(key, value)
-        logger.info("auto save config")
-        self.save()
-
-    @staticmethod
-    def read_json(config_name: str) -> dict:
-        """
-        读文件 没有额外操作
-        :param config_name:  不带后缀
-        :return:
-        """
-        filepath = Path.cwd() / "config" / f"{config_name}.json"
-        return read_file(filepath)
-
-    @staticmethod
-    def write_json(config_name: str, data) -> None:
-        """
-
-        :param config_name: 不带后缀
-        :param data:  字典而不是字符串
-        :return:
-        """
-        filepath = Path.cwd() / "config" / f"{config_name}.json"
-        write_file(filepath, data)
+    # 注意：ConfigModel 只保留纯 Schema 与 UI/读取 helper。文件型 __init__、自动保存
+    # __setattr__、read_json/write_json/save/script_set_arg/copy/reset 等 I/O 与业务写操作
+    # 已在 Task 3 全部移入 ConfigStore；任何磁盘读写必须经 ConfigStore/公共 locked API。
 
     def gui_args(self, task: str) -> str:
         """
@@ -248,13 +207,6 @@ class ConfigModel(ConfigBase):
             logger.warning(f'{task_name} is no inexistence')
             return ''
         return task.json()
-
-    def save(self) -> None:
-        """
-
-        :return:
-        """
-        self.write_json(self.config_name, self.model_dump())
 
     @staticmethod
     def type(key: str) -> str:
@@ -422,143 +374,8 @@ class ConfigModel(ConfigBase):
             item['value'] = display
             break
 
-    def script_set_arg(self, task: str, group: str, argument: str, value) -> bool:
-        # 验证参数
-        task = convert_to_underscore(task)
-        group = convert_to_underscore(group)
-        argument = convert_to_underscore(argument)
-
-        # pandtic验证
-        if isinstance(value, str) and len(value) == 8:
-            try:
-                value = datetime.strptime(value, '%H:%M:%S').time()
-            except ValueError:
-                pass
-        if isinstance(value, str) and len(value) == 11:
-            try:
-                date_time = datetime.strptime(value, '%d %H:%M:%S')
-                value = TimeDelta(days=date_time.day, hours=date_time.hour, minutes=date_time.minute, seconds=date_time.second)
-            except ValueError:
-                pass
-        if isinstance(value, str) and len(value) == 19:
-            try:
-                value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                pass
-        if isinstance(value, str) and value == 'true':
-            value = True
-        if isinstance(value, str) and value == 'false':
-            value = False
-
-        task_object = getattr(self, task, None)
-        group_object = getattr(task_object, group, None)
-        if group_object is None:  # deal list
-            matchs = re.findall(r'\d+', group)
-            index = int(matchs[-1]) - 1 if matchs else None
-            task_object_list = list(dict(task_object))
-            for k, v in dict(task_object).items():
-                if k not in group:
-                    continue
-                group_object = v[index] if group_object is None else None
-        argument_object = getattr(group_object, argument, None)
-
-        if argument_object is None:
-            logger.error(f'Set arg {task}.{group}.{argument}.{value} failed')
-            return False
-
-        # XXX temp implementation to enable oasx control the datetime configuration globally rather than a single task
-        if task == "restart" and group == "task_config" and argument == "reset_task_datetime_enable" and value == True:
-            date_time = self.restart.task_config.reset_task_datetime
-            logger.info(f"reset_task_datetime={date_time}")
-            self.reset_datetime_for_all_enabled_tasks(date_time)
-
-        # 桌面模式下 handle 在界面上是下拉项，回传的是 "PID | 标题 (x,y)" 展示串，
-        # 落盘前剥回纯 PID，保证 Handle 按数字消费 handle 的逻辑不变。
-        # 必须限定在 desktop 模式：模拟器模式的 handle 允许填窗口标题等非数字文本，
-        # 那里不能走这个解析，否则标题会被剥成空串
-        if (task == 'script' and group == 'device' and argument == 'handle'
-                and isinstance(value, str) and self.script.device.serial == 'desktop'):
-            from module.device.handle import desktop_option2pid
-            resolved = desktop_option2pid(value)
-            if resolved != value:
-                logger.info(f'Desktop handle option resolved to PID: {resolved}')
-            value = resolved
-
-        # 设置参数
-        try:
-            setattr(group_object, argument, value)
-            logger.info(f'Set arg {self.config_name}.{task}.{group}.{argument}.{value}')
-            self.save()  # 我是没有想到什么方法可以使得属性改变自动保存的
-            return True
-        except ValidationError as e:
-            logger.error(e)
-            return False
-
-    def copy_script_task(self, task_name: str, source_task: BaseModel) -> bool:
-        model_task_name = convert_to_underscore(task_name)
-        try:
-            setattr(self, model_task_name, source_task)
-            self.save()
-            logger.info(f'Copy task {model_task_name} success')
-            return True
-        except ValidationError as e:
-            logger.error(e)
-            return False
-
-    def copy_task_group(self, task_name: str, group_name: str, source_task: BaseModel) -> bool:
-        model_task_name = convert_to_underscore(task_name)
-        model_group_name = convert_to_underscore(group_name)
-        task_object = getattr(self, model_task_name, None)
-        if not task_object:
-            return False
-        source_group_obj = getattr(source_task, model_group_name, None)
-        if not source_group_obj:
-            return False
-        try:
-            setattr(task_object, model_group_name, source_group_obj)
-            self.save()
-            logger.info(f'Copy task group {model_task_name}.{model_group_name} success')
-            return True
-        except ValidationError as e:
-            logger.error(e)
-            return False
-
-    def replace_next_run(self, d, dt: datetime):
-        for k, v in d.items():
-            if isinstance(v, dict):
-                self.replace_next_run(v, dt=dt)
-            elif k == "next_run":
-                d[k] = dt
-                # convert value to datetime if it's a str
-                if isinstance(v, str):
-                    current_time = datetime.strptime(v, "%Y-%m-%d %H:%M:%S")
-                    if current_time != dt:
-                        d[k] = dt.strftime("%Y-%m-%d %H:%M:%S")
-                # already a datetime value
-                elif isinstance(v, datetime) and v != dt:
-                    d[k] = dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    def reset_datetime_for_all_enabled_tasks(self, task_datetime: datetime):
-        logger.warn(f"trying to reset datetime of all tasks to: {task_datetime}")
-        # logger.info(f"current config: {self.dict()}")
-        data = self.dict()
-        self.replace_next_run(data, task_datetime)
-        # logger.info(f"new config: {data}")
-
-        # write to json config  file
-        self.write_json(self.config_name, data)
-
-        # reload from the newly modified json config file
-        data = self.read_json(self.config_name)
-        super().__init__(**data)
-
 
 if __name__ == "__main__":
-    try:
-        c = ConfigModel("oas1")
-    except ValidationError as e:
-        print(e)
-        c = ConfigModel()
-
+    c = ConfigModel()
     print(c.script_task('GuildBanquet'))
 

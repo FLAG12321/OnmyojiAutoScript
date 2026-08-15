@@ -6,15 +6,16 @@ import re
 from pathlib import Path
 from PySide6.QtCore import QObject, Slot, Signal
 
+from module.config.config_store import ConfigStore
 from module.logger import logger
 
 # 震惊到我姥姥家 除了第一个函数all_script_files是我自己写的
 # 后面的都是github copilot写的
 class Add(QObject):
-    
+
     def __init__(self) -> None:
         super(Add, self).__init__()
-
+        self.store = ConfigStore(config_root=Path.cwd() / 'config')
 
     @Slot(result="QVariantList")
     def all_script_files(self) -> list:
@@ -22,15 +23,7 @@ class Add(QObject):
         获取所有的脚本文件 除了tmplate
         :return: ['oas1', 'oas2']
         """
-        # 获取某个路径的所有json文件名
-        config_path = Path.cwd() / 'config'
-        json_files = config_path.glob('*.json')
-        result = []
-        for json in json_files:
-            if json.stem == 'template':
-                continue
-            result.append(json.stem)
-        return result
+        return self.store.active_config_names()
 
     @Slot(result="QVariantList")
     def all_json_file(self) -> list:
@@ -38,15 +31,10 @@ class Add(QObject):
         获取所有的json文件
         :return: ['oas1', 'oas2']
         """
-        # 获取某个路径的所有json文件名
-        config_path = Path.cwd() / 'config'
-        json_files = config_path.glob('*.json')
-        result = []
-        for json in json_files:
-            if json.stem == 'template':
-                result.insert(0, json.stem)
-            else:
-                result.append(json.stem)
+        result = self.store.active_config_names(include_template=True)
+        if 'template' in result:
+            result.remove('template')
+            result.insert(0, 'template')
         return result
 
 
@@ -58,18 +46,16 @@ class Add(QObject):
         :param template:
         :return:
         """
-        config_path = Path.cwd() / 'config'
-        template_path = config_path / f'{template}.json'
-        file_path = config_path / f'{file}.json'
-        if file_path.exists():
-            logger.error(f'{file_path} is exists')
-            return
-
-        with open(template_path, 'r', encoding='utf-8') as f:
-            template_content = f.read()
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(template_content)
-        logger.info(f'copy {template_path} to {file_path}')
+        try:
+            canonical = self.store.load(template).canonical
+            self.store.create_from_template(file, canonical)
+            logger.info(f'copy {template} to {file}')
+        except TimeoutError as e:
+            # Qt Slot 不能向事件循环抛异常，但锁超时是「稍后重试即可」，
+            # 必须与「名称非法/已存在」区分开，否则界面上只表现为点了没反应。
+            logger.error(f'copy {template} to {file} failed: config is locked by another process, retry later: {e}')
+        except Exception as e:
+            logger.error(f'copy {template} to {file} failed: {type(e).__name__}: {e}')
 
 
     @Slot(result="QString")

@@ -75,11 +75,13 @@ class ConnectionAttr:
         """
         serial check
         """
-        # Chinese colon
+        startup_updates = {}
+        # 中文冒号归一化必须进入 ConfigStore，保持磁盘、会话与 COLD 快照一致。
         if '：' in self.serial:
+            original_serial = self.serial
             self.serial = self.serial.replace('：', ':')
-            logger.warning(f'Serial {self.config.Emulator_Serial} is revised to {self.serial}')
-            self.config.Emulator_Serial = self.serial
+            logger.warning(f'Serial {original_serial} is revised to {self.serial}')
+            startup_updates[("script", "device", "serial")] = self.serial
         if self.is_bluestacks4_hyperv:
             self.serial = self.find_bluestacks4_hyperv(self.serial)
         if self.is_bluestacks5_hyperv:
@@ -92,9 +94,13 @@ class ConnectionAttr:
             self.serial = '127.0.0.1:58526'
             if self.config.script.device.screenshot_method != 'uiautomator2' \
                     or self.config.script.device.control_method != 'uiautomator2':
-                with self.config.multi_set():
-                    self.config.script.device.screenshot_method = 'uiautomator2'
-                    self.config.script.device.control_method = 'uiautomator2'
+                startup_updates.update({
+                    ("script", "device", "screenshot_method"): "uiautomator2",
+                    ("script", "device", "control_method"): "uiautomator2",
+                })
+        if startup_updates:
+            # 同一次启动归一化事务提交全部字段，失败时不推进运行会话和 provisional 快照。
+            self.config.startup_normalize(startup_updates)
         if self.is_over_http:
             if self.config.script.device.screenshot_method not in ["ADB", "uiautomator2", "aScreenCap"] \
                     or self.config.script.device.control_method not in ["ADB", "uiautomator2", "minitouch"]:
