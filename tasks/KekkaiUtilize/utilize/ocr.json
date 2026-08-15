@@ -25,5 +25,14 @@
     "method": "Default",
     "keyword": "",
     "description": "斗鱼或太古寄养数目"
+  },
+  {
+    "itemName": "ocr_name",
+    "roiFront": "309,177,158,424",
+    "roiBack": "800,421,150,33",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "",
+    "description": "检测好友名称"
   }
 ]
