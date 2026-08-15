@@ -28,7 +28,9 @@ class FakeConfig:
     def get_forbidden_time_end(self, task, now=None):
         return self.forbidden_end_by_task.get(task)
 
-    def task_delay(self, task, start_time=None, success=None, server=True, target=None):
+    def task_delay(self, task, start_time=None, success=None, server=True, target=None, **kwargs):
+        # 收 **kwargs 兼容真实 Config.task_delay 的后续扩参（如 persist），
+        # 避免替身签名落后于被替代接口时抛 TypeError
         self.task_delay_calls.append((task, target, server))
 
 

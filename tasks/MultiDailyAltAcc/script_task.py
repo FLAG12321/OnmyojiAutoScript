@@ -733,13 +733,12 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.save_config()
 
     def _schedule_after_midnight(self, start_time: datetime):
-        """安排凌晨的运行时间"""
-        # returngift 完成后应直接进入三分钟后的同心战斗；必须在 6:05 落盘前分流，
-        # 避免两次 task_delay 之间退出时留下错误的中间调度状态。
-        if self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
-            self._schedule_alliedteam_after_returngift()
-            return
+        """安排凌晨的运行时间
 
+        回礼阶段的分流由 next_run() 统一前置判断（优先级最高），进入本方法时
+        total_returngift_enable 必然为 False，因此这里不再重复判断回礼。
+        """
+        # task_delay 会先 reload；必须先保存 next_run，再基于重载后的模型修改阶段开关。
         self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5), persist=False)
         self.daily_conf = self.config.model.multi_daily_alt_acc
 

@@ -696,12 +696,8 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             start_time = datetime.now().replace(microsecond=0)
         else:
             start_time = self.start_time
-        if persist:
-            self.config.task_delay(task, start_time=start_time, success=success,
-                                   server=server, target=target)
-        else:
-            self.config.task_delay(task, start_time=start_time, success=success,
-                                   server=server, target=target, persist=False)
+        self.config.task_delay(task, start_time=start_time, success=success,
+                               server=server, target=target, persist=persist)
 
     def custom_next_run(self, task: str, custom_time: Time = None, time_delta: float = 1) -> None:
         """

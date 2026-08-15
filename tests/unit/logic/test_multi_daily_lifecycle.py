@@ -89,11 +89,6 @@ class _ReloadingConfig:
             {"total_alliedteam_battle_enable": False, "total_alliedteam_ap_enable": True},
         ),
         (
-            "_schedule_after_midnight",
-            {"total_returngift_enable": True},
-            {"total_returngift_enable": False, "total_alliedteam_battle_enable": True},
-        ),
-        (
             "_schedule_alliedteam_after_returngift",
             {"total_returngift_enable": True},
             {"total_returngift_enable": False, "total_alliedteam_battle_enable": True},
@@ -118,6 +113,67 @@ def test_phase_schedule_changes_survive_task_delay_reload(method, initial, expec
     assert len(config.task_delay_calls) == 1
     assert config.save_calls == 1
     assert config.disk.multi_daily_alt_acc.scheduler.next_run is not None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("initial", "hour", "expected"),
+    (
+        # 回礼优先级最高：与同心战斗同时开启时仍先走回礼分流
+        ({"total_returngift_enable": True, "total_alliedteam_battle_enable": True},
+         0, "_schedule_alliedteam_after_returngift"),
+        # 回礼在白天时段也必须优先于 _schedule_normal_day
+        ({"total_returngift_enable": True}, 10, "_schedule_alliedteam_after_returngift"),
+        # 回礼在晚间时段也必须优先于 _schedule_evening
+        ({"total_returngift_enable": True}, 20, "_schedule_alliedteam_after_returngift"),
+        # 回礼关闭时才按同心战斗 / 时段分流
+        ({"total_alliedteam_battle_enable": True}, 10, "_schedule_after_midnight"),
+        ({}, 10, "_schedule_normal_day"),
+        ({}, 3, "_schedule_after_midnight"),
+        ({}, 20, "_schedule_evening"),
+    ),
+)
+def test_next_run_dispatch_priority(initial, hour, expected, monkeypatch):
+    """回礼分流的唯一判断点在 next_run()，且优先级高于同心战斗与所有时段分支。
+
+    _schedule_after_midnight 内曾有一份重复的回礼判断，因外层已前置拦截而永不命中。
+    删除该死分支后，本测试直接守护外层分流的优先级，避免回归时白天时段
+    把待回礼的一趟错分到 _schedule_normal_day。
+    """
+    task = _make_task()
+    task.config = _ReloadingConfig(_phase_config(**initial))
+    task.daily_conf = task.config.model.multi_daily_alt_acc
+    task.start_time = datetime(2026, 8, 17, hour, 23)
+
+    called = []
+    for name in ("_schedule_normal_day", "_schedule_after_midnight",
+                 "_schedule_evening", "_schedule_alliedteam_after_returngift"):
+        monkeypatch.setattr(type(task), name,
+                            lambda self, *a, _n=name: called.append(_n))
+
+    task.next_run("MultiDailyAltAcc", success=True)
+    assert called == [expected]
+
+
+@pytest.mark.unit
+def test_no_duplicate_returngift_dispatch_in_after_midnight():
+    """回礼分流不得在 _schedule_after_midnight 内重复出现（单一判断点）。
+
+    只检查可执行语句，docstring 里说明「回礼由外层判断」是允许的。
+    """
+    import ast
+    from pathlib import Path
+
+    source = Path('tasks/MultiDailyAltAcc/script_task.py').read_text(encoding='utf-8')
+    node = next(
+        n for n in ast.walk(ast.parse(source))
+        if isinstance(n, ast.FunctionDef) and n.name == '_schedule_after_midnight'
+    )
+    # 剥掉 docstring 后再还原为源码文本，只对真实逻辑做断言
+    body = node.body[1:] if ast.get_docstring(node) else node.body
+    code = '\n'.join(ast.unparse(stmt) for stmt in body)
+    assert 'total_returngift_enable' not in code
+    assert '_schedule_alliedteam_after_returngift' not in code
 
 
 @pytest.mark.unit

@@ -1,6 +1,4 @@
 # This Python file uses the following encoding: utf-8
-from datetime import datetime
-
 from module.config.config import Config
 from module.device.device import Device
 from module.exception import (
@@ -29,13 +27,18 @@ class _ActivityShikigamiAdapter(ActivityShikigamiScriptTask):
     - 其他任务(如活动流程中处理悬赏邀请产生的 WantedQuests): 原样转发给父类。
     """
 
-    def set_next_run(self, task: str, finish: bool = False,
-                     success: bool = None, server: bool = True, target: datetime = None) -> None:
+    def set_next_run(self, task: str, **kwargs) -> None:
+        """按任务名过滤调度，其余参数一律原样转发。
+
+        只有 task 参与过滤判断，其他参数不做解释，因此收 **kwargs 转发：
+        基类 set_next_run 新增参数（如 persist）时无需同步修改本覆写，
+        避免调用方传新参数时在此处抛 TypeError。
+        """
         # 屏蔽单账号活动任务与御魂整理的调度，其余任务完整转发
         if task in ('ActivityShikigami', 'SoulsTidy'):
             logger.info(f'[MultiActivityShikigami] 屏蔽子任务调度: {task}')
             return
-        super().set_next_run(task=task, finish=finish, success=success, server=server, target=target)
+        super().set_next_run(task=task, **kwargs)
 
 
 class ScriptTask(GameUi):
