@@ -1549,6 +1549,23 @@ def test_mainmanager_initialize_recovers_before_enumerating(tmp_path):
     ]
 
 
+def test_script_menu_does_not_depend_on_template_config(client, monkeypatch):
+    """/script_menu 是静态菜单，template 配置损坏/校验失败时也必须仍能返回任务列表。"""
+    from module.server.main_manager import mm
+
+    def fail_config_cache(_name):
+        raise AssertionError("script_menu should not load template config")
+
+    monkeypatch.setattr(mm, "config_cache", fail_config_cache)
+
+    response = client.get("/script_menu")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, dict)
+    assert data.get("Daily Task")
+
+
 def test_get_args_uses_manager_injected_store(client, isolated_config_root):
     from module.server.main_manager import mm
 

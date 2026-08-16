@@ -17,6 +17,7 @@ from module.config.config_generation import (
     ConfigIdentityNameError,
     ConfigIdentityNotFoundError,
 )
+from module.config.config_menu import ConfigMenu
 from module.config.config_operations import MISSING
 from module.config.config_store import (
     ConfigGenerationMismatchError,
@@ -54,7 +55,8 @@ async def script_test():
 
 @script_app.get('/script_menu')
 async def script_menu():
-    return mm.config_cache('template').gui_menu_list
+    # 菜单是静态结构，不应因 template 配置校验失败而让前端任务列表整体不可用
+    return ConfigMenu().gui_menu_list
 # ----------------------------------   配置文件管理   ----------------------------------
 @script_app.get('/config_list')
 async def config_list():
