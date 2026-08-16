@@ -26,6 +26,12 @@ else:
         
 import threading
 
+# 必须早于任何 zerorpc / pyzmq 的 import：pyzmq 会与 onnxruntime 抢 DLL
+# 加载顺序，先加载 pyzmq 会让后续 OCR 后端初始化失败。详见 module/ocr/preload.py
+from module.ocr.preload import preload_ocr_backend
+
+preload_ocr_backend()
+
 from module.logger import logger
 from module.server.setting import State
 from module.server.server_logging import setup_server_logging

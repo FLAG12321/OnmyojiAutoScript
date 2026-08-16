@@ -660,7 +660,63 @@ class Updater(DeployConfig, GitManager, PipManager):
 
         prog.finish(True)
         logger.info('Update finished')
+        # 4. 代码已是最新，紧接着对齐 OCR 依赖与模型，让「一键更新」真正一键到位
+        self.align_ocr(prog)
         return True
+
+    def align_ocr(self, prog=None) -> bool:
+        """更新后对齐 PP-OCRv6 依赖与模型。
+
+        必须在独立子进程里执行：Windows 会锁定已加载的 onnxruntime.dll，
+        当前服务进程若换包会留下损坏的 distribution。先停掉 OCR RPC 服务
+        释放它持有的 DLL，再交给 deploy.ocr_deps 处理。
+
+        Args:
+            prog: 更新进度对象，用于把日志透出到前端；None 时只写日志。
+
+        Returns:
+            bool: 是否已对齐（跳过也算成功）。
+        """
+        emit = prog.append if prog else logger.info
+
+        if not self.OcrAutoAlignDeps:
+            emit('OcrAutoAlignDeps 关闭，跳过 OCR 依赖对齐')
+            return True
+
+        try:
+            from deploy.ocr_deps import OcrDepsManager
+            from module.ocr.rpc import ensure_ocr_server_started, shutdown_ocr_server
+
+            # 释放 OCR 服务进程持有的 onnxruntime.dll，否则卸载旧版会失败
+            shutdown_ocr_server()
+
+            manager = OcrDepsManager(file=self.file)
+            if manager.check():
+                emit('OCR 依赖已是 PP-OCRv6，无需变更')
+            else:
+                if prog:
+                    prog.set_step('对齐 OCR 依赖（PP-OCRv6）')
+                ok = self.execute_stream(
+                    f'"{manager.python}" -m deploy.ocr_deps',
+                    on_line=emit,
+                )
+                if not ok:
+                    emit('OCR 依赖对齐失败。若有实例正在运行，请全部停止后重启 OAS 重试。')
+                    return False
+
+            # 对齐开头为了释放 DLL 锁停掉了 OCR RPC 服务，这里按配置恢复它。
+            # 否则即使依赖本已对齐（check 直接返回），RPC 服务也会一直缺位，
+            # UseOcrServer=true 的多开机器会静默退回本地模型，省内存优化失效。
+            if self.StartOcrServer:
+                if ensure_ocr_server_started():
+                    emit('OCR RPC 服务已恢复')
+                else:
+                    emit('OCR RPC 服务启动失败，可稍后重启 OAS 恢复')
+            return True
+        except Exception as e:
+            logger.exception(e)
+            emit(f'OCR 依赖对齐异常：{e}')
+            return False
 
 
 

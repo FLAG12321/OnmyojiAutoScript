@@ -11,7 +11,11 @@ psutil==6.1.1
 pywin32==306
 
 # OCR
-ppocr-onnx==0.0.3.9
+# PP-OCRv6 引擎。onnxruntime 发行版故意不在这里声明：
+# onnxruntime 与 onnxruntime-directml 装的是同一个模块但是两个发行版名，
+# 一旦写进 requirements，pip 每次更新都会把 GPU 版覆盖成 CPU 版。
+# 版本与安装时机统一由 deploy/ocr_deps.py 管理。
+rapidocr==3.9.2
 cn2an==0.5.23
 
 # Web

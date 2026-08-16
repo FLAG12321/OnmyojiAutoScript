@@ -18,6 +18,9 @@ def updater(tmp_path):
     updater = Updater(file=str(deploy_file))
     # 隔离模板默认分支（模板 Branch 已改为 run_now_2），测试明确用 master 作为基线
     updater.Branch = 'master'
+    # execute_pull 尾段的 align_ocr 会按 StartOcrServer 恢复 OCR 服务，
+    # 单元测试不应真拉起子进程，显式关掉（模板默认值已是 true）
+    updater.StartOcrServer = False
     return updater
 
 
@@ -766,3 +769,78 @@ def test_update_info_returns_fetch_ok(updater, monkeypatch):
     updater.fetch_ok = True
     result = home_router.update_info()
     assert result['fetch_ok'] is True
+
+
+# 29. align_ocr：更新后按 StartOcrServer 恢复 OCR RPC 服务
+#    对齐流程开头会无条件 shutdown_ocr_server() 释放 DLL 锁，即使依赖本已对齐
+#    （check 直接返回）也会停掉服务。这里锁住「停掉后必须按配置恢复」的行为。
+@pytest.mark.unit
+def test_align_ocr_restarts_ocr_server_when_enabled(updater, monkeypatch):
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = True
+    calls = {'shutdown': 0, 'start': 0}
+
+    class FakeManager:
+        def check(self):
+            return True
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+
+    def fake_shutdown(*a, **k):
+        calls['shutdown'] += 1
+        return True
+
+    def fake_start(*a, **k):
+        calls['start'] += 1
+        return True
+
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server', fake_shutdown)
+    monkeypatch.setattr('module.ocr.rpc.ensure_ocr_server_started', fake_start)
+
+    assert updater.align_ocr() is True
+    assert calls['shutdown'] == 1, '必须先停掉旧服务以释放 onnxruntime.dll'
+    assert calls['start'] == 1, '依赖已对齐时也必须恢复 RPC 服务'
+
+
+@pytest.mark.unit
+def test_align_ocr_does_not_start_server_when_disabled(updater, monkeypatch):
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = False
+    calls = {'start': 0}
+
+    class FakeManager:
+        def check(self):
+            return True
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server',
+                        lambda *a, **k: True)
+
+    def fake_start(*a, **k):
+        calls['start'] += 1
+        return True
+
+    monkeypatch.setattr('module.ocr.rpc.ensure_ocr_server_started', fake_start)
+
+    assert updater.align_ocr() is True
+    assert calls['start'] == 0
+
+
+@pytest.mark.unit
+def test_align_ocr_returns_false_on_deps_failure(updater, monkeypatch):
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = False
+
+    class FakeManager:
+        def check(self):
+            return False
+
+        python = './toolkit/python.exe'
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server',
+                        lambda *a, **k: True)
+    monkeypatch.setattr(updater, 'execute_stream',
+                        lambda cmd, on_line=None: False)
+
+    assert updater.align_ocr() is False

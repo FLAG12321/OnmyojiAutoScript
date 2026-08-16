@@ -8,7 +8,7 @@ import cv2
 from enum import Enum
 from cached_property import cached_property
 from datetime import timedelta, datetime
-from ppocronnx.predict_system import BoxedResult
+from module.ocr.result import BoxedResult
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.GeneralRoom.general_room import GeneralRoom

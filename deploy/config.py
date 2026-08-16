@@ -36,10 +36,23 @@ class ConfigModel:
     InstallUiautomator2: bool = True
 
     # Ocr
-    UseOcrServer: bool = False
-    StartOcrServer: bool = False
+    # 脚本进程是否共用 OCR RPC 服务：多开时共享一份模型能显著省内存，
+    # 服务不可用时自动降级本地模型，不会让任务崩掉
+    UseOcrServer: bool = True
+    # 启动时是否托管 OCR RPC 服务，配合 UseOcrServer 一起开才有省内存效果
+    StartOcrServer: bool = True
     OcrServerPort: int = 22268
     OcrClientAddress: str = "127.0.0.1:22268"
+    # PP-OCRv6 推理设备：auto 先探 DirectML 再退 CPU，dml 强制 GPU，cpu 强制 CPU
+    OcrDevice: str = "auto"
+    # PP-OCRv6 模型档位：small 通用，medium 精度更高但仅在 GPU 下启用
+    OcrModelType: str = "small"
+    # v6 模型存放目录，必须在项目内，避免写到用户级缓存
+    OcrModelDir: str = "./toolkit/ocr_models"
+    # CPU 推理线程数，实测 4 是速度与占用的平衡点，多开时更稳定
+    OcrCpuThreads: int = 4
+    # 更新/安装阶段是否自动对齐 OCR 依赖与模型（一键更新的开关）
+    OcrAutoAlignDeps: bool = True
 
     # Update
     EnableReload: bool = True

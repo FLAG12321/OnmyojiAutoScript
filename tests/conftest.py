@@ -3,6 +3,13 @@ import hashlib
 import shutil
 from pathlib import Path
 
+# 与生产入口保持一致：pyzmq 会与 onnxruntime 抢 DLL 加载顺序，
+# 必须先占住 ORT，否则真实模型测试会在套件里因 DLL 初始化失败而假红。
+# 详见 module/ocr/preload.py
+from module.ocr.preload import preload_ocr_backend
+
+preload_ocr_backend()
+
 import numpy as np
 import pytest
 

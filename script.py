@@ -2,6 +2,12 @@
 # @author runhey
 # github https://github.com/runhey
 
+# 必须最先执行：pyzmq（zerorpc 的依赖）会与 onnxruntime 抢 DLL 加载顺序，
+# 先加载 pyzmq 会让后续 OCR 后端初始化失败。详见 module/ocr/preload.py
+from module.ocr.preload import preload_ocr_backend
+
+preload_ocr_backend()
+
 import zerorpc
 import zmq
 import msgpack

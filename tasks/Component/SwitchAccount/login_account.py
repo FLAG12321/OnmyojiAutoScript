@@ -12,7 +12,6 @@ from module.exception import GameNotRunningError
 from module.logger import logger
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
-from tasks.ActivityShikigami.script_task import _prepare_image_for_ocr
 from tasks.base_task import BaseTask
 def _prepare_image_for_ocr_1(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
     """
@@ -74,7 +73,9 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         @param svrName:
         @type svrName:
         """
-        self.O_SA_LOGIN_FORM_SVR_NAME.keyword = svrName
+        # 服务器名与角色名一样存在异体字：预设「猫川別馆」与表单读到的「猫川别馆」
+        # 必须视为同一服务器，统一归一成「别」再做严格相等比较
+        self.O_SA_LOGIN_FORM_SVR_NAME.keyword = svrName.replace('別', '别')
         if self.ocr_appear(self.O_SA_LOGIN_FORM_SVR_NAME):
             return True
         return self.switch_character(svrName)
@@ -131,6 +132,38 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT)
         return False """
 
+    # 游戏内角色等级为 1~60，因此粘连到角色名前的等级数字最多 2 位
+    MAX_LEVEL_DIGITS = 2
+
+    @classmethod
+    def _is_character_name(cls, ocr_text: str, characterName: str) -> bool:
+        """判断一条 OCR 文本是否就是目标角色名。
+
+        角色名左侧有一个圆形等级徽章，PP-OCRv6 识别率比旧引擎高，
+        会把徽章里的等级数字读进同一个文本框，例如目标 js47瑶光
+        实际读出 '60js47瑶光' 或 '60 js47瑶光'（数字与名字之间可能
+        带空格），严格相等比较就永远匹配不上。
+
+        从后往前匹配：先确认文本以目标角色名结尾（名字是文本的后缀），
+        再切断名字部分，检查剩余前缀是否符合等级格式——空（角色名本身
+        以数字开头时不被误剥）或 1~2 位数字（可带一个尾随空格，兼容
+        '60 js47瑶光' 这种检测框拆开的情况）。前缀过长或非数字一律拒绝，
+        避免把 js48 之类的相邻角色误判成目标。
+
+        同时统一异体字：游戏内显示「瑤/別」而配置里通常写「瑶/别」。
+        """
+        item = ocr_text.replace('瑤', '瑶').replace('別', '别')
+        characterName = characterName.replace('瑤', '瑶').replace('別', '别')
+        if not item.endswith(characterName):
+            return False
+        prefix = item[:-len(characterName)]
+        # 等级数字与角色名之间可能被识别出空格，切名后顺便吞掉这个空格
+        if prefix.endswith(' '):
+            prefix = prefix[:-1]
+        if len(prefix) > cls.MAX_LEVEL_DIGITS:
+            return False
+        return not prefix or prefix.isdigit()
+
     def switch_character(self, characterName: str):
         """
               需保证账号已登录 且处于登录界面
@@ -168,15 +201,13 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             if self.appear_then_click(self.I_CANCEL_TOINVITE,interval=1.5):
                 continue
             ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
-            # 去除角色等级数字
             characterNameList =[ocrResItem.ocr_text for ocrResItem in ocrRes]
             #logger.info(characterNameList)
             ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
             for index, item in enumerate(characterNameList):
-                item = item.replace('瑤', '瑶')
                 #logger.info(f"characterNameList[{index}]: {item}", )
                 #logger.info(f"characterName:{characterName}")
-                if item != characterName:
+                if not self._is_character_name(item, characterName):
                     continue
                 tmp = self.O_SA_SELECT_SVR_CHARACTER_LIST
                 from copy import deepcopy
@@ -244,7 +275,11 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 # 优先检查是否已经出现登录按钮（即账号已选中）
                 if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                     # 验证选中的账号是否正确
-                    ocr_result = self.O_SA_ACCOUNT_ACCOUNT_SELECTED.detect_and_ocr(_prepare_image_for_ocr(self.device.image, asset=self.O_SA_ACCOUNT_ACCOUNT_SELECTED))
+                    # 直接用原始截图：_prepare_image_for_ocr 的 OTSU 二值化会把字符
+                    # 抗锯齿边缘硬化，PP-OCRv6 失去区分 l / I / li 的灰度线索，
+                    # 实测把 ljjiang7@ 读成 lijjiang7@ / Ijjiang7@ 导致验证永远不通过。
+                    # 原始图分数更高（0.988 vs 0.94），无需预处理。
+                    ocr_result = self.O_SA_ACCOUNT_ACCOUNT_SELECTED.detect_and_ocr(self.device.image)
                     if any(accountInfo.is_account_alias(ocr_item.ocr_text) for ocr_item in ocr_result):
                         logger.info("Account already selected and verified, login button appeared")
                         return True
@@ -285,8 +320,9 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     continue
 
                 # 账号列表已打开状态
-                ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(_prepare_image_for_ocr(self.device.image, asset=self.O_SA_ACCOUNT_ACCOUNT_LIST))
-                
+                # 同上：账号名是长英文串，二值化后 l / I 无法区分，直接用原始截图
+                ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(self.device.image)
+
                 # 找到该账号
                 for index, ocr_account in enumerate([ocrResItem.ocr_text for ocrResItem in ocrRes]):
                     if not accountInfo.is_account_alias(ocr_account):

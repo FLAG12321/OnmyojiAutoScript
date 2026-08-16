@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from typing import Any
 
-from ppocronnx.predict_system import BoxedResult
+from module.ocr.result import BoxedResult
 from enum import Enum
 
 
@@ -14,7 +14,6 @@ from module.base.decorator import cached_property
 from module.base.utils import area_pad, crop, float2str
 #from typing import Any
 
-from module.ocr.onnx_paddle_ocr import ONNXPaddleOcr
 from module.ocr.models import get_ocr_model
 from module.exception import ScriptError
 from module.logger import logger
@@ -203,10 +202,12 @@ class BaseCor:
                     text=f'[{result}]')
         return result
 
-    def detect_and_ocr(self, image) -> list[BoxedResult]:
+    def detect_and_ocr(self, image, **model_kwargs) -> list[BoxedResult]:
         """
         注意：这里使用了预处理和后处理
         :param image:
+        :param model_kwargs: 转发给模型的调优参数，如 drop_score / box_thresh /
+            unclip_ratio / vertical。不传时使用模型默认值，保持原有行为。
         :return:
         """
         # pre process
@@ -216,7 +217,7 @@ class BaseCor:
         image = enlarge_canvas(image)
 
         # ocr
-        boxed_results: list[BoxedResult] = self.model.detect_and_ocr(image)
+        boxed_results: list[BoxedResult] = self.model.detect_and_ocr(image, **model_kwargs)
         results = []
         # after proces
         for result in boxed_results:
