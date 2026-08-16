@@ -253,12 +253,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         self.ui_get_current_page()
         self.ui_goto(page_main)
         
-        # RealmRaid任务完成后，将Orochi任务加入队列
-        # 设置Orochi任务开始时间为RealmRaid开始执行时的十分钟后
-        orochi_start_time = self.start_time + timedelta(minutes=10)
-        logger.info(f"RealmRaid task completed, scheduling Orochi task for {orochi_start_time}")
-        self.set_next_run(task='Orochi', success=False, finish=False, target=orochi_start_time)
-        
         # 设置RealmRaid下次运行时间
         self.set_next_run(task='RealmRaid', success=success, finish=True)
         
@@ -590,4 +584,3 @@ if __name__ == "__main__":
     t = ScriptTask(config, device)
 
     t.run()
-

@@ -45,21 +45,29 @@ class TestCollectFrontendKeys:
         assert 'Broken' in keys
 
     def test_dynamic_enum_values_not_collected(self):
-        # handle 的候选项在桌面模式下按运行时枚举窗口现算，值含每次开游戏都变的 PID，
-        # 收进翻译表只会不断追加无法复用也无法自动清理的垃圾条目
+        # handle 与 leader_instance 都按运行环境动态枚举，候选值不应进入翻译表。
         def task_with_handle(task_name):
-            return {'device': [
-                {'name': 'handle', 'description': 'handle_help', 'type': 'enum',
-                 'enumEnum': ['', '27272 (0,0)']},
-                {'name': 'screenshot_method', 'type': 'enum',
-                 'enumEnum': ['window_background']},
-            ]}
+            return {
+                'device': [
+                    {'name': 'handle', 'description': 'handle_help', 'type': 'enum',
+                     'enumEnum': ['', '27272 (0,0)']},
+                    {'name': 'screenshot_method', 'type': 'enum',
+                     'enumEnum': ['window_background']},
+                ],
+                'orochi_config': [
+                    {'name': 'leader_instance', 'description': 'leader_instance_help',
+                     'type': 'enum', 'enumEnum': ['', 'OAS1', 'OAS2']},
+                ],
+            }
 
         keys = I18n.collect_frontend_keys({'Daily': ['Demo']}, task_with_handle)
         # 字段名与 description 照常收集（它们是稳定 key）
         assert {'handle', 'handle_help'} <= keys
+        assert {'leader_instance', 'leader_instance_help'} <= keys
         # 动态候选项一律不收
         assert not any('27272' in k for k in keys)
+        assert 'OAS1' not in keys
+        assert 'OAS2' not in keys
         # 其余字段的静态枚举值不受影响
         assert 'window_background' in keys
 

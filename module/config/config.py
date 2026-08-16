@@ -254,9 +254,13 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         return self._mtime_ns
 
     def script_task(self, task: str) -> dict:
-        """生成 OASX 参数，并按当前 Store active 身份注入账号配置开关。"""
+        """生成 OASX 参数，并按当前 Store active 身份注入动态实例选项。"""
         result = self.model.script_task(task)
-        if convert_to_underscore(task) != "multi_account_sign_in":
+        task_name = convert_to_underscore(task)
+        if task_name == 'orochi':
+            self._inject_orochi_leader_options(result)
+            return result
+        if task_name != "multi_account_sign_in":
             return result
 
         from tasks.MultiAccountSignIn.config import active_account_configs
@@ -275,6 +279,29 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             in active_account_configs(self.store).items()
         ]
         return result
+
+    def _inject_orochi_leader_options(self, result: dict) -> None:
+        """把 leader_instance 参数改成当前有效实例下拉框。
+
+        字段仍以 str 持久化；这里只修改返回给前端的 item 展示信息，避免把运行期
+        实例列表固化到 Pydantic Schema。当前实例不应选择自己，已保存但暂时不在
+        active 列表中的值仍保留，防止配置页把原值静默显示为空。
+        """
+        items = result.get('orochi_config') or []
+        leader_item = next((item for item in items if item.get('name') == 'leader_instance'), None)
+        if leader_item is None:
+            return
+
+        current = str(leader_item.get('value') or '')
+        options = [
+            name for name in self.store.active_config_names()
+            if name != self.config_name
+        ]
+        if current and current not in options:
+            options.append(current)
+        options.insert(0, '')
+        leader_item['type'] = 'enum'
+        leader_item['enumEnum'] = options
 
     @property
     def pending_restart_paths(self) -> set:

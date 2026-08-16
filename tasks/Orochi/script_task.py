@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import random
-from time import sleep
+from time import sleep, monotonic
 from datetime import time, datetime, timedelta
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
@@ -14,6 +14,19 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_soul_zones, page_shikigami_records
 from tasks.Orochi.assets import OrochiAssets
 from tasks.Orochi.config import Orochi, UserStatus, Layer
+from tasks.Orochi.team_state import (
+    PHASE_FINISHED,
+    PHASE_INVITING,
+    PHASE_RESETTING,
+    PHASE_RUNNING,
+    PHASE_WAIT_NEXT_ROUND,
+    RESET_COMMAND,
+    RoundNotDueError,
+    StaleSessionError,
+    TeamSession,
+    TeamStateStore,
+    parse_state_datetime,
+)
 from module.logger import logger
 from module.exception import TaskEnd
 
@@ -21,6 +34,70 @@ from module.exception import TaskEnd
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets):
 
     def run(self) -> bool:
+        config: Orochi = self.config.orochi
+        self.current_count = 0
+        self.limit_count = config.orochi_config.limit_count
+        self.limit_time = self._time_to_delta(config.orochi_config.limit_time)
+        self.team_store: TeamStateStore | None = None
+        self.team_session: TeamSession | None = None
+        self.team_role: str | None = None
+        self.team_soul_buff_enable = config.orochi_config.soul_buff_enable
+        self.team_enable_realm_raid_chain = config.orochi_config.enable_realm_raid_chain
+        self._team_last_heartbeat = 0.0
+        self._soul_buff_should_close = False
+
+        is_team = config.orochi_config.user_status in {UserStatus.LEADER, UserStatus.MEMBER}
+        if is_team:
+            # 组队模式必须先完成 JSON 配对，队员随后使用队长发布的单轮限制。
+            self._connect_team()
+
+        self._switch_soul_before_battle()
+
+        success = True
+        if is_team:
+            success = self._prepare_team_round()
+        elif not self.is_in_battle(True):
+            self.ui_get_current_page()
+            self.ui_goto(page_main)
+            if config.orochi_config.soul_buff_enable:
+                self._set_soul_buff(True)
+                self._soul_buff_should_close = True
+
+        if success:
+            match config.orochi_config.user_status:
+                case UserStatus.LEADER:
+                    success = self.run_leader()
+                case UserStatus.MEMBER:
+                    success = self.run_member()
+                case UserStatus.ALONE:
+                    self.run_alone()
+                case UserStatus.WILD:
+                    success = self.run_wild()
+                case _:
+                    logger.error('Unknown user status')
+                    success = False
+
+        # 只有本次流程确认需要开启加成时才关闭，配对失败不会误操作加成开关。
+        if self._soul_buff_should_close:
+            self._set_soul_buff(False)
+
+        if is_team:
+            self._finish_team_task(success)
+        else:
+            self._finish_local_task(success)
+
+        raise TaskEnd('Orochi')
+
+    @staticmethod
+    def _time_to_delta(value: time) -> timedelta:
+        return timedelta(hours=value.hour, minutes=value.minute, seconds=value.second)
+
+    @staticmethod
+    def _time_to_seconds(value: time) -> int:
+        return value.hour * 3600 + value.minute * 60 + value.second
+
+    def _switch_soul_before_battle(self) -> None:
+        """保留原有三种换魂方式，但在组队模式下移动到配对成功之后。"""
         # 御魂切换方式一
         if self.config.orochi.switch_soul.enable:
             self.ui_get_current_page()
@@ -36,49 +113,304 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 根据选层切换御魂
         self.orochi_switch_soul()
 
-        limit_count = self.config.orochi.orochi_config.limit_count
-        limit_time = self.config.orochi.orochi_config.limit_time
-        self.current_count = 0
-        self.limit_count: int = limit_count
-        self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute, seconds=limit_time.second)
+    def _set_soul_buff(self, is_open: bool) -> None:
+        """统一开关御魂加成，便于准备屏障严格控制调用时机。"""
+        self.open_buff()
+        self.soul(is_open=is_open)
+        self.close_buff()
 
-        config: Orochi = self.config.orochi
-        if not self.is_in_battle(True):
-            self.ui_get_current_page()
-            self.ui_goto(page_main)
-            if config.orochi_config.soul_buff_enable:
-                self.open_buff()
-                self.soul(is_open=True)
-                self.close_buff()
+    def _sync_epoch(self, progress_epoch: str) -> None:
+        """把状态文件中的真实 Epoch 回写本实例，RESET 因此只会消费一次。"""
+        config = self.config.orochi.orochi_config
+        if config.epoch == progress_epoch:
+            return
+        config.epoch = progress_epoch
+        self.config.save()
 
-        success = True
-        match config.orochi_config.user_status:
-            case UserStatus.LEADER: success = self.run_leader()
-            case UserStatus.MEMBER: success = self.run_member()
-            case UserStatus.ALONE: self.run_alone()
-            case UserStatus.WILD: success = self.run_wild()
-            case _: logger.error('Unknown user status')
+    def _team_wait_seconds(self) -> int:
+        wait_time = self.config.orochi.invite_config.wait_time
+        return max(10, self._time_to_seconds(wait_time))
 
-        # 记得关掉
-        if config.orochi_config.soul_buff_enable:
-            self.open_buff()
-            self.soul(is_open=False)
-            self.close_buff()
-        # 下一次运行时间
+    def _schedule_reset_retry(self) -> bool:
+        """场次被 RESET 取代时复制状态内的统一时间，避免双方退回各自失败间隔。"""
+        if self.team_store is None:
+            return False
+        state = self.team_store.read()
+        if state.get('phase') != PHASE_RESETTING:
+            return False
+        next_run = parse_state_datetime(state.get('next_orochi_at'))
+        if next_run is None:
+            return False
+        self.set_next_run('Orochi', target=next_run, server=False)
+        return True
+
+    def _apply_team_round_config(self, state: dict) -> None:
+        """队员和队长都使用状态文件中的有效单轮限制，保证只有一个配置来源。"""
+        self.limit_count = int(state.get('effective_limit_count', 0) or 0)
+        self.limit_time = timedelta(seconds=int(state.get('effective_limit_seconds', 0) or 0))
+        self.team_soul_buff_enable = bool(state.get('soul_buff_enable'))
+        self.team_enable_realm_raid_chain = bool(state.get('enable_realm_raid_chain'))
+
+    def _connect_team(self) -> None:
+        """队长发布新 Join Token；队员只加入新鲜且开放的目标队长场次。"""
+        team_config = self.config.orochi.orochi_config
+        config_name = self.config.config_name
+
+        if team_config.user_status == UserStatus.LEADER:
+            self.team_role = 'leader'
+            self.team_store = TeamStateStore(config_name)
+            if str(team_config.epoch).strip().upper() == RESET_COMMAND:
+                reset_state = self.team_store.reset(config_name)
+                self._sync_epoch(reset_state['progress_epoch'])
+
+            # 队员可能与队长同时启动并先消费 RESET；检测到 RESETTING 后队长原地
+            # 重新发布一次即可，不必让双方等到各自失败调度间隔。
+            for _ in range(2):
+                try:
+                    state = self.team_store.open_round(
+                        round_limit_count=team_config.limit_count,
+                        round_limit_seconds=self._time_to_seconds(team_config.limit_time),
+                        total_limit_count=team_config.total_limit_count,
+                        total_limit_seconds=self._time_to_seconds(team_config.total_limit_time),
+                        soul_buff_enable=team_config.soul_buff_enable,
+                        enable_realm_raid_chain=team_config.enable_realm_raid_chain,
+                    )
+                except RoundNotDueError as exc:
+                    logger.info(f'组队御魂下一轮尚未到时: {exc.next_orochi_at}')
+                    self.set_next_run('Orochi', target=exc.next_orochi_at, server=False)
+                    raise TaskEnd('Orochi')
+
+                self._sync_epoch(state['progress_epoch'])
+                if state.get('phase') == PHASE_FINISHED:
+                    logger.info('组队御魂总次数或总时间已完成')
+                    self.set_next_run('Orochi', finish=True, success=True)
+                    raise TaskEnd('Orochi')
+
+                self.team_session = TeamSession.from_state(state)
+                self._apply_team_round_config(state)
+                joined_state = self._wait_team_state(
+                    lambda value: bool(value.get('member_instance')),
+                    timeout=self._team_wait_seconds(),
+                )
+                if joined_state is not None:
+                    return
+                current = self.team_store.read()
+                if current.get('phase') != PHASE_RESETTING:
+                    break
+                logger.info('检测到队员 RESET 请求，队长重新发布组队场次')
+
+            logger.warning('等待御魂队员连接超时，本轮不会开启加成')
+            return
+
+        leader_instance = str(team_config.leader_instance or '').strip()
+        if not leader_instance:
+            logger.error('队员未选择 leader_instance，无法进入组队御魂流程')
+            self.set_next_run('Orochi', finish=False, success=False)
+            raise TaskEnd('Orochi')
+        if leader_instance == config_name:
+            logger.error('leader_instance 不能选择当前队员实例自身')
+            self.set_next_run('Orochi', finish=False, success=False)
+            raise TaskEnd('Orochi')
+
+        self.team_role = 'member'
+        self.team_store = TeamStateStore(leader_instance)
+        if str(team_config.epoch).strip().upper() == RESET_COMMAND:
+            reset_state = self.team_store.reset(config_name)
+            self._sync_epoch(reset_state['progress_epoch'])
+
+        deadline = monotonic() + self._team_wait_seconds()
+        state = None
+        while monotonic() < deadline:
+            state = self.team_store.try_join_member(config_name)
+            if state is not None:
+                break
+            sleep(1)
+        if state is None:
+            logger.warning(f'未发现队长 {leader_instance} 发布的新组队场次')
+            if not self._schedule_reset_retry():
+                self.set_next_run('Orochi', finish=False, success=False)
+            raise TaskEnd('Orochi')
+
+        self._sync_epoch(state['progress_epoch'])
+        self.team_session = TeamSession.from_state(state)
+        self._apply_team_round_config(state)
+
+    def _team_session_matches(self, state: dict) -> bool:
+        return self.team_session is not None and TeamSession.from_state(state) == self.team_session
+
+    def _team_heartbeat_if_due(self) -> None:
+        if self.team_store is None or self.team_session is None or self.team_role is None:
+            return
+        now = monotonic()
+        if now - self._team_last_heartbeat < 5:
+            return
+        self.team_store.heartbeat(self.team_session, self.team_role)
+        self._team_last_heartbeat = now
+
+    def _wait_team_state(self, predicate, timeout: int) -> dict | None:
+        """轮询只读状态；运行期间每五秒刷新一次本角色心跳，任务结束后不再写。"""
+        deadline = monotonic() + timeout
+        while monotonic() < deadline:
+            try:
+                state = self.team_store.read()
+                if not self._team_session_matches(state):
+                    raise StaleSessionError('STALE_SESSION')
+                if predicate(state):
+                    return state
+                self._team_heartbeat_if_due()
+            except StaleSessionError as exc:
+                logger.warning(f'御魂组队场次已失效: {exc}')
+                return None
+            sleep(1)
+        return None
+
+    def _prepare_team_round(self) -> bool:
+        """双方换魂完成后才开加成，双方加成就绪后队长才允许邀请。"""
+        if self.team_store is None or self.team_session is None:
+            return False
+        try:
+            self.team_store.mark_ready(self.team_session, self.team_role, 'soul')
+            if self._wait_team_state(
+                lambda state: bool(state.get('leader_soul_ready') and state.get('member_soul_ready')),
+                timeout=self._team_wait_seconds(),
+            ) is None:
+                logger.warning('等待双方换魂完成超时，本轮不会开启加成')
+                return False
+
+            if self.team_soul_buff_enable:
+                self.ui_get_current_page()
+                self.ui_goto(page_main)
+                self._set_soul_buff(True)
+                self._soul_buff_should_close = True
+
+            self.team_store.mark_ready(self.team_session, self.team_role, 'buff')
+            if self._wait_team_state(
+                lambda state: bool(state.get('leader_buff_ready') and state.get('member_buff_ready')),
+                timeout=self._team_wait_seconds(),
+            ) is None:
+                logger.warning('等待双方加成就绪超时')
+                return False
+
+            if self.team_role == 'leader':
+                state = self.team_store.start_inviting(self.team_session)
+            else:
+                state = self._wait_team_state(
+                    lambda value: value.get('phase') in {PHASE_INVITING, PHASE_RUNNING},
+                    timeout=self._team_wait_seconds(),
+                )
+                if state is None:
+                    logger.warning('等待队长进入邀请阶段超时')
+                    return False
+            self._apply_team_round_config(state)
+            return True
+        except StaleSessionError as exc:
+            logger.warning(f'御魂组队准备被新场次取代: {exc}')
+            return False
+
+    def _team_limit_reached(self) -> bool:
+        if self.team_store is None or self.team_session is None:
+            return False
+        try:
+            self._team_heartbeat_if_due()
+            return self.team_store.round_limit_reached(self.team_session)
+        except StaleSessionError:
+            return True
+
+    def _team_can_start_battle(self) -> bool:
+        if self.team_store is None or self.team_session is None:
+            return True
+        try:
+            self._team_heartbeat_if_due()
+            return self.team_store.can_start_battle(self.team_session)
+        except StaleSessionError:
+            return False
+
+    def _run_team_invite(self, is_first: bool = False) -> bool:
+        """记录 click_fire 的最终门禁结果，避免 run_invite 把被拦截误判为成功。"""
+        self._team_fire_blocked = False
+        invited = self.run_invite(
+            config=self.config.orochi.invite_config,
+            is_first=is_first,
+        )
+        return invited and not self._team_fire_blocked
+
+    def click_fire(self):
+        """在每次实际点击挑战前同时确认游戏房间与当前 JSON 会话状态。"""
+        if getattr(self, 'team_store', None) is None:
+            return super().click_fire()
+        while 1:
+            self.screenshot()
+            if not self.is_in_room(False):
+                return True
+            if not self._team_can_start_battle():
+                logger.warning('组队 JSON 状态失效，禁止点击挑战')
+                self._team_fire_blocked = True
+                return False
+            if self.appear_then_click(self.I_FIRE, interval=1, threshold=0.7):
+                continue
+            if self.appear_then_click(self.I_FIRE_SEA, interval=1, threshold=0.7):
+                continue
+
+    def _finish_team_task(self, success: bool) -> None:
+        """队长唯一计算调度时间；队员等队长落盘后复制同一时间。"""
+        if self.team_store is None or self.team_session is None:
+            self.set_next_run('Orochi', finish=False, success=False)
+            return
+
+        state = None
+        if self.team_role == 'leader':
+            next_orochi_at = datetime.now().replace(microsecond=0) + timedelta(minutes=10)
+            next_realm_raid_at = None
+            if self.team_enable_realm_raid_chain:
+                next_realm_raid_at = datetime.now().replace(microsecond=0) + timedelta(minutes=1)
+            try:
+                state = self.team_store.finish_round(
+                    self.team_session,
+                    success=success,
+                    next_orochi_at=next_orochi_at,
+                    next_realm_raid_at=next_realm_raid_at,
+                )
+            except StaleSessionError as exc:
+                logger.warning(f'御魂组队结束状态写入失败: {exc}')
+        else:
+            state = self._wait_team_state(
+                lambda value: value.get('phase') in {PHASE_WAIT_NEXT_ROUND, PHASE_FINISHED},
+                timeout=max(60, self._team_wait_seconds()),
+            )
+
+        if state is None:
+            if not self._schedule_reset_retry():
+                self.set_next_run('Orochi', finish=False, success=False)
+            return
+
+        if state.get('phase') == PHASE_WAIT_NEXT_ROUND:
+            next_run = parse_state_datetime(state.get('next_orochi_at'))
+            if next_run is not None:
+                self.set_next_run('Orochi', target=next_run, server=False)
+            else:
+                self.set_next_run('Orochi', finish=False, success=False)
+        else:
+            self.set_next_run('Orochi', finish=True, success=bool(state.get('round_success')))
+
+        next_realm_raid = parse_state_datetime(state.get('next_realm_raid_at'))
+        if next_realm_raid is not None:
+            logger.info(f'组队御魂本轮完成，调度结界突破: {next_realm_raid}')
+            self.set_next_run('RealmRaid', target=next_realm_raid, server=False)
+
+    def _finish_local_task(self, success: bool) -> None:
+        """单人和野队保持原有调度行为。"""
         if success:
             self.set_next_run('Orochi', finish=True, success=True)
         else:
             self.set_next_run('Orochi', finish=False, success=False)
-        
+
         # 根据配置决定是否拉起RealmRaid任务
-        if config.orochi_config.enable_realm_raid_chain:
+        if self.config.orochi.orochi_config.enable_realm_raid_chain:
             logger.info("Orochi task completed, starting RealmRaid task")
             target=datetime.now() + timedelta(minutes=1)
             self.set_next_run(task='RealmRaid', target=target)
         else:
             logger.info("Orochi task completed, RealmRaid chain disabled")
-
-        raise TaskEnd('Orochi')
 
     def run_general_battle(self, config=None, buff=None) -> bool:
         """
@@ -107,6 +439,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.config.save()
             logger.info(f'Five times ticket used, remaining: {orochi_config.five_times_ticket}, '
                         f'current_count: {self.current_count}/{self.limit_count}')
+        # 组队总进度只允许队长写；队员仅刷新心跳，避免双方计数差异造成重复累计。
+        team_store = getattr(self, 'team_store', None)
+        team_session = getattr(self, 'team_session', None)
+        if team_store is not None and team_session is not None:
+            try:
+                if self.team_role == 'leader':
+                    team_store.update_progress(team_session, self.current_count)
+                else:
+                    team_store.heartbeat(team_session, 'member')
+                    self._team_last_heartbeat = monotonic()
+            except StaleSessionError as exc:
+                logger.warning(f'战斗完成时组队场次已失效: {exc}')
         return result
 
     def orochi_enter(self) -> bool:
@@ -199,14 +543,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_WIN_3, interval=1):
                 continue
 
-            if self.current_count >= self.limit_count:
+            if self._team_limit_reached():
                 if self.is_in_room():
                     logger.info('Orochi count limit out')
-                    break
-
-            if datetime.now() - self.start_time >= self.limit_time:
-                if self.is_in_room():
-                    logger.info('Orochi time limit out')
                     break
 
 
@@ -221,7 +560,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self.config.orochi.invite_config):
+                # JSON 准备状态与游戏内房间人数必须同时满足，才允许点击挑战。
+                if not self._team_can_start_battle():
+                    logger.warning('Team JSON state is not ready, stop inviting')
+                    success = False
+                    break
+                if self._run_team_invite():
+                    self.team_store.mark_running(self.team_session)
                     self.run_general_battle(config=self.config.orochi.general_battle_config)
                 else:
                     # 邀请失败，退出任务
@@ -231,12 +576,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self.config.orochi.invite_config, is_first=True):
+                if not self._team_can_start_battle():
+                    logger.warning('Team JSON state is not ready, stop first invitation')
+                    success = False
+                    break
+                if not self._run_team_invite(is_first=True):
                     logger.warning('Invite failed and exit this orochi task')
                     success = False
                     break
                 else:
                     is_first = False
+                    self.team_store.mark_running(self.team_session)
                     self.run_general_battle(config=self.config.orochi.general_battle_config)
 
         # 当结束或者是失败退出循环的时候只有两个UI的可能，在房间或者是在组队界面
@@ -270,11 +620,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_WIN_3, interval=1):
                 continue
 
-            if self.current_count >= self.limit_count:
+            if self._team_limit_reached():
                 logger.info('Orochi count limit out')
-                break
-            if datetime.now() - self.start_time >= self.limit_time:
-                logger.info('Orochi time limit out')
                 break
 
             if self.check_then_accept():
@@ -544,11 +891,3 @@ if __name__ == '__main__':
     t = ScriptTask(c, d)
 
     t.run()
-
-
-
-
-
-
-
-

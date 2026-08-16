@@ -450,10 +450,18 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
     <name>Args</name>
 	<message><source>OrochiConfig</source><translation>副本</translation></message>
 	<message><source>UserStatus</source><translation>身份</translation></message>
+	<message><source>Leader Instance</source><translation>队长实例</translation></message>
+	<message><source>Epoch</source><translation>组队场次 Epoch</translation></message>
 	<message><source>Layer</source><translation>挑战层数</translation></message>
+	<message><source>Total Limit Time</source><translation>御魂总战斗时间</translation></message>
+	<message><source>Total Limit Count</source><translation>御魂总战斗次数</translation></message>
 	<message><source>Soul Buff Enable</source><translation>开启御魂加成</translation></message>
 	<message><source>user_status_help</source><translation>可选队长、队员、单独刷（野队还不打算实现）</translation></message>
+	<message><source>leader_instance_help</source><translation>队员从当前有效实例中选择队长；队长身份可以留空</translation></message>
+	<message><source>epoch_help</source><translation>脚本自动维护；输入 RESET 后，下次运行会清空旧场次并生成新的 Epoch</translation></message>
 	<message><source>layer_help</source><translation> </translation></message>
+	<message><source>total_limit_time_help</source><translation>多轮组队御魂的累计战斗时间上限，以队长配置为准</translation></message>
+	<message><source>total_limit_count_help</source><translation>多轮组队御魂的累计次数上限，以队长配置为准；五倍券仍按一次计 5 次</translation></message>
 	<message><source>soul_buff_enable_help</source><translation>会在庭院开始的时候设置加成</translation></message>
 	<message><source>Five Times Enable</source><translation>开启五倍消耗</translation></message>
 	<message><source>Five Times Ticket</source><translation>五倍消耗券数量</translation></message>

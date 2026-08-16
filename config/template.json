@@ -733,9 +733,13 @@
     },
     "orochi_config": {
       "user_status": "leader",
+      "leader_instance": "",
+      "epoch": "",
       "layer": "悲鸣",
       "limit_time": "00:30:00",
       "limit_count": 30,
+      "total_limit_time": "04:00:00",
+      "total_limit_count": 300,
       "soul_buff_enable": false,
       "five_times_enable": false,
       "five_times_ticket": 0,
