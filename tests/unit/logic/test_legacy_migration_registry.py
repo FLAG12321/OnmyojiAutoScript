@@ -265,6 +265,16 @@ def test_every_before_validator_key_migration_is_registered():
     assert discovered <= registered
 
 
+def test_orochi_legacy_team_field_sources_are_registered():
+    registered = set(legacy_source_paths())
+    assert {
+        ("orochi", "orochi_config", "leader_instance"),
+        ("orochi", "orochi_config", "epoch"),
+        ("orochi", "orochi_config", "total_limit_time"),
+        ("orochi", "orochi_config", "total_limit_count"),
+    } <= registered
+
+
 def test_scanner_detects_alias_variable_and_assignment_migrations(tmp_path):
     task_dir = tmp_path / "AliasTask"
     task_dir.mkdir()

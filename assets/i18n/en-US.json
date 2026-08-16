@@ -5,8 +5,14 @@
   "epoch_help": "Managed automatically. Enter RESET to discard the old session and generate a new Epoch on the next run",
   "leader_instance": "Leader instance",
   "leader_instance_help": "Members select the leader from active instances; leaders may leave this empty",
+  "team_config": "Team Configuration",
+  "team_mode": "Team mode",
+  "team_mode_help": "Choose Team to run the scripted team flow with the team config; choose Solo to play with manual teammates or play alone by role",
+  "TeamMode": "Team Mode",
+  "team": "Team",
   "total_limit_count": "Total Orochi battle count",
   "total_limit_count_help": "Cumulative battle limit across team rounds, controlled by the leader; a five-times ticket still counts as 5",
   "total_limit_time": "Total Orochi battle time",
-  "total_limit_time_help": "Cumulative battle-time limit across team rounds, controlled by the leader"
+  "total_limit_time_help": "Cumulative battle-time limit across team rounds, controlled by the leader",
+  "user_status": "Role"
 }

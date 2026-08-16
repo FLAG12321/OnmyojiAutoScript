@@ -76,6 +76,10 @@
 </context>
 <context>
     <name>Args</name>
+    <message><source>OrochiTeamConfig</source><translation>Team Configuration</translation></message>
+    <message><source>TeamMode</source><translation>Team Mode</translation></message>
+    <message><source>Team Mode</source><translation>Team mode</translation></message>
+    <message><source>team_mode_help</source><translation>Choose Team to run the scripted team flow with the team config; choose Solo to play with manual teammates or play alone by role</translation></message>
     <message><source>Leader Instance</source><translation>Leader Instance</translation></message>
     <message><source>Epoch</source><translation>Team Session Epoch</translation></message>
     <message><source>Total Limit Time</source><translation>Total Orochi Battle Time</translation></message>

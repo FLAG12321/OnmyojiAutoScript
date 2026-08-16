@@ -73,8 +73,40 @@ def _migrate_master_battle_mode(raw: dict) -> None:
     section.setdefault("master_exp_exit_after_prepare", mapped)
 
 
+def _migrate_orochi_team_fields(raw: dict) -> None:
+    """orochi_config 旧组队字段迁移到 team_config，并从旧位置删除。
+
+    与 Orochi.migrate_legacy_team_fields 保持同一套补值规则；严格校验必须在
+    Pydantic before-validator 之前移除旧字段，否则 unknown 检查会先隔离配置。
+    """
+    task = raw.get("orochi")
+    if not isinstance(task, dict):
+        return
+    team = task.get("team_config")
+    if isinstance(team, dict):
+        # 兼容旧版 enable_team 布尔开关：True 转组队、False 转单人
+        if "enable_team" in team:
+            team.setdefault("team_mode", "team" if bool(team.pop("enable_team")) else "alone")
+    section = task.get("orochi_config")
+    if not isinstance(section, dict):
+        return
+    if not isinstance(team, dict):
+        team = {}
+        task["team_config"] = team
+    legacy_status = section.get("user_status")
+    if legacy_status is not None:
+        team.setdefault("team_mode", "team" if legacy_status in ("leader", "member") else "alone")
+    for key in ("leader_instance", "epoch", "total_limit_time", "total_limit_count"):
+        if key in section:
+            team.setdefault(key, section.pop(key))
+
+
 LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = (
     (("master_disciple", "master_disciple_config", "master_battle_mode"), _migrate_master_battle_mode),
+    (("orochi", "orochi_config", "leader_instance"), _migrate_orochi_team_fields),
+    (("orochi", "orochi_config", "epoch"), _migrate_orochi_team_fields),
+    (("orochi", "orochi_config", "total_limit_time"), _migrate_orochi_team_fields),
+    (("orochi", "orochi_config", "total_limit_count"), _migrate_orochi_team_fields),
 )
 
 

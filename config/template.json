@@ -731,15 +731,18 @@
       "delay_date": 1,
       "float_time": "00:00:00"
     },
-    "orochi_config": {
-      "user_status": "leader",
+    "team_config": {
+      "team_mode": "alone",
       "leader_instance": "",
       "epoch": "",
+      "total_limit_time": "04:00:00",
+      "total_limit_count": 300
+    },
+    "orochi_config": {
+      "user_status": "leader",
       "layer": "悲鸣",
       "limit_time": "00:30:00",
       "limit_count": 30,
-      "total_limit_time": "04:00:00",
-      "total_limit_count": 300,
       "soul_buff_enable": false,
       "five_times_enable": false,
       "five_times_ticket": 0,

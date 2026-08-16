@@ -448,6 +448,10 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 </context>
 <context>
     <name>Args</name>
+	<message><source>OrochiTeamConfig</source><translation>组队配置</translation></message>
+	<message><source>TeamMode</source><translation>组队模式</translation></message>
+	<message><source>Team Mode</source><translation>组队模式</translation></message>
+	<message><source>team_mode_help</source><translation>选择组队后进入脚本组队流程并使用组队配置；选择单人时按身份与手动队友组队或单人刷</translation></message>
 	<message><source>OrochiConfig</source><translation>副本</translation></message>
 	<message><source>UserStatus</source><translation>身份</translation></message>
 	<message><source>Leader Instance</source><translation>队长实例</translation></message>

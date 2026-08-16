@@ -259,6 +259,7 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         task_name = convert_to_underscore(task)
         if task_name == 'orochi':
             self._inject_orochi_leader_options(result)
+            self._hide_orochi_team_config(result)
             return result
         if task_name != "multi_account_sign_in":
             return result
@@ -287,7 +288,7 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         实例列表固化到 Pydantic Schema。当前实例不应选择自己，已保存但暂时不在
         active 列表中的值仍保留，防止配置页把原值静默显示为空。
         """
-        items = result.get('orochi_config') or []
+        items = result.get('team_config') or []
         leader_item = next((item for item in items if item.get('name') == 'leader_instance'), None)
         if leader_item is None:
             return
@@ -302,6 +303,18 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         options.insert(0, '')
         leader_item['type'] = 'enum'
         leader_item['enumEnum'] = options
+
+    def _hide_orochi_team_config(self, result: dict) -> None:
+        """单人模式只保留模式下拉框，隐藏其余组队配置，避免误改。"""
+        items = result.get('team_config') or []
+        if not items:
+            return
+        mode_item = next((item for item in items if item.get('name') == 'team_mode'), None)
+        if mode_item is None:
+            return
+        if str(mode_item.get('value') or 'alone') != 'alone':
+            return
+        result['team_config'] = [mode_item]
 
     @property
     def pending_restart_paths(self) -> set:

@@ -222,6 +222,72 @@ def test_legacy_alias_preserves_existing_new_fields():
     assert migrated["master_exp_exit_after_prepare"] is True
 
 
+def test_legacy_orochi_team_fields_run_before_unknown_rejection():
+    raw = canonical_template()
+    orochi = raw["orochi"]
+    old_team = orochi.pop("team_config")
+    section = orochi["orochi_config"]
+    section["leader_instance"] = old_team["leader_instance"]
+    section["epoch"] = old_team["epoch"]
+    section["total_limit_time"] = old_team["total_limit_time"]
+    section["total_limit_count"] = old_team["total_limit_count"]
+    section["user_status"] = "member"
+
+    _, canonical = validate_persisted_config(raw, "oas-test")
+
+    migrated = canonical["orochi"]["team_config"]
+    assert migrated["team_mode"] == "team"
+    assert migrated["leader_instance"] == old_team["leader_instance"]
+    assert migrated["epoch"] == old_team["epoch"]
+    assert migrated["total_limit_time"] == old_team["total_limit_time"]
+    assert migrated["total_limit_count"] == old_team["total_limit_count"]
+    assert "leader_instance" not in canonical["orochi"]["orochi_config"]
+    assert "epoch" not in canonical["orochi"]["orochi_config"]
+    assert "total_limit_time" not in canonical["orochi"]["orochi_config"]
+    assert "total_limit_count" not in canonical["orochi"]["orochi_config"]
+
+
+def test_legacy_orochi_team_fields_preserve_existing_team_config():
+    raw = canonical_template()
+    orochi = raw["orochi"]
+    orochi["team_config"]["team_mode"] = "alone"
+    orochi["team_config"]["leader_instance"] = "KEEP"
+    orochi["team_config"]["epoch"] = "keep"
+    orochi["team_config"]["total_limit_time"] = "01:00:00"
+    orochi["team_config"]["total_limit_count"] = 1
+    section = orochi["orochi_config"]
+    section["leader_instance"] = "OAS2"
+    section["epoch"] = "abc"
+    section["total_limit_time"] = "02:00:00"
+    section["total_limit_count"] = 100
+    section["user_status"] = "member"
+
+    _, canonical = validate_persisted_config(raw, "oas-test")
+
+    migrated = canonical["orochi"]["team_config"]
+    assert migrated["team_mode"] == "alone"
+    assert migrated["leader_instance"] == "KEEP"
+    assert migrated["epoch"] == "keep"
+    assert migrated["total_limit_time"] == "01:00:00"
+    assert migrated["total_limit_count"] == 1
+    assert "leader_instance" not in canonical["orochi"]["orochi_config"]
+
+
+def test_legacy_orochi_enable_team_switch_is_converted():
+    raw = canonical_template()
+    team = raw["orochi"]["team_config"]
+    team.pop("team_mode")
+    team["enable_team"] = True
+    team["leader_instance"] = "OAS2"
+
+    _, canonical = validate_persisted_config(raw, "oas-test")
+
+    migrated = canonical["orochi"]["team_config"]
+    assert migrated["team_mode"] == "team"
+    assert migrated["leader_instance"] == "OAS2"
+    assert "enable_team" not in migrated
+
+
 def test_strict_validation_rejects_range_while_runtime_constructor_keeps_fallback():
     raw = canonical_template()
     raw["find_jade"]["find_jade_config"]["invite_info_count"] = 0

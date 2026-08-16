@@ -54,7 +54,7 @@ class TestCollectFrontendKeys:
                     {'name': 'screenshot_method', 'type': 'enum',
                      'enumEnum': ['window_background']},
                 ],
-                'orochi_config': [
+                'team_config': [
                     {'name': 'leader_instance', 'description': 'leader_instance_help',
                      'type': 'enum', 'enumEnum': ['', 'OAS1', 'OAS2']},
                 ],

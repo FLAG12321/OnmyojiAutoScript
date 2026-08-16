@@ -560,7 +560,19 @@ Item {
         for(let task in group){
             const argument = MP.parseArgument(args.definitions, group[task])
             const groupLetter = groups[group[task]]
-            const argumentVuale = MP.mergeArgument(argument, values[groupLetter])
+            let argumentVuale = MP.mergeArgument(argument, values[groupLetter])
+            // 御魂单人模式只保留组队模式下拉框，隐藏其余组队配置
+            if(groupLetter === "team_config"
+                    && values[groupLetter]
+                    && values[groupLetter].team_mode === "alone"){
+                const filtered = []
+                for(let i = 0; i < argumentVuale.length; i++){
+                    if(argumentVuale[i].name === "team_mode"){
+                        filtered.push(argumentVuale[i])
+                    }
+                }
+                argumentVuale = filtered
+            }
 //            console.debug(JSON.stringify( argumentVuale ))
 //            console.debug("---------------------------------------------------------------")
             createGroup(groupLetter, group[task], argumentVuale)
