@@ -66,20 +66,40 @@ Deploy:
     InstallUiautomator2: true
 
   Ocr:
-    # Run Ocr as a service, can reduce memory usage by not import mxnet everytime you start an alas instance
+    # Run Ocr as a service, can reduce memory usage by not loading the model in every script process
 
     # Whether to use ocr server
-    # [Default] false
-    UseOcrServer: false
+    # [Default] true
+    UseOcrServer: true
     # Whether to start ocr server when start GUI
-    # [Default] false
-    StartOcrServer: false
+    # [Default] true
+    StartOcrServer: true
     # Port of ocr server runs by GUI
     # [Default] 22268
     OcrServerPort: 22268
     # Address of ocr server for alas instance to connect
     # [Default] 127.0.0.1:22268
     OcrClientAddress: 127.0.0.1:22268
+    # PP-OCRv6 inference device
+    # 'auto' probe DirectML(GPU) first, fall back to CPU when unavailable
+    # 'dml' force DirectML(GPU), raise when unavailable
+    # 'cpu' force CPU
+    # [Default] auto
+    OcrDevice: auto
+    # PP-OCRv6 model type
+    # 'small' works on both GPU and CPU
+    # 'medium' higher accuracy, GPU only, auto downgrade to small on CPU
+    # [Default] small
+    OcrModelType: small
+    # Directory of PP-OCRv6 onnx models, must stay inside project folder
+    # [Default] ./toolkit/ocr_models
+    OcrModelDir: ./toolkit/ocr_models
+    # Threads of CPU inference
+    # [Default] 4
+    OcrCpuThreads: 4
+    # Align ocr dependencies and models automatically on install/update
+    # [In most cases] Use true, this makes one-click update configure OCR itself
+    OcrAutoAlignDeps: true
 
   Update:
     # Use auto update and builtin updater feature
