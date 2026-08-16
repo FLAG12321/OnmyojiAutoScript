@@ -1,3 +1,12 @@
 {
-
+  "enable_realm_raid_chain": "Run Realm Raid after each round",
+  "enable_realm_raid_chain_help": "Schedule Realm Raid after every Orochi round",
+  "epoch": "Team session Epoch",
+  "epoch_help": "Managed automatically. Enter RESET to discard the old session and generate a new Epoch on the next run",
+  "leader_instance": "Leader instance",
+  "leader_instance_help": "Members select the leader from active instances; leaders may leave this empty",
+  "total_limit_count": "Total Orochi battle count",
+  "total_limit_count_help": "Cumulative battle limit across team rounds, controlled by the leader; a five-times ticket still counts as 5",
+  "total_limit_time": "Total Orochi battle time",
+  "total_limit_time_help": "Cumulative battle-time limit across team rounds, controlled by the leader"
 }

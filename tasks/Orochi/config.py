@@ -37,12 +37,20 @@ class Layer(str, Enum):
 class OrochiConfig(ConfigBase):
     # 身份
     user_status: UserStatus = Field(default=UserStatus.LEADER, description='user_status_help')
+    # 队员通过运行中的实例列表选择队长；队长身份下可以留空
+    leader_instance: str = Field(default='', description='leader_instance_help')
+    # 场次 Epoch 由脚本自动回写，输入固定值 RESET 可丢弃旧场次并重新配对
+    epoch: str = Field(default='', description='epoch_help')
     # 层数
     layer: Layer = Field(default=Layer.ELEVEN, description='layer_help')
-    # 限制时间
+    # 单轮限制时间，以队长配置为唯一来源
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
-    # 限制次数
+    # 单轮限制次数，以队长配置为唯一来源
     limit_count: int = Field(default=30, description='limit_count_help')
+    # 多轮累计战斗时间，仅组队模式使用
+    total_limit_time: Time = Field(default=Time(hour=4), description='total_limit_time_help')
+    # 多轮累计战斗次数，仅组队模式使用
+    total_limit_count: int = Field(default=300, description='total_limit_count_help')
     # 是否开启御魂加成
     soul_buff_enable: bool = Field(default=False, description='soul_buff_enable_help')
     # 是否开启五倍消耗（游戏内五倍卡需已开启，脚本只负责按五倍计数并扣减券）
@@ -75,4 +83,3 @@ class Orochi(ConfigBase):
     invite_config: InviteConfig = Field(default_factory=InviteConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     switch_soul: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
-

@@ -5,8 +5,8 @@ from pathlib import Path
 from module.logger import logger
 
 # 候选项在运行时按环境现算、值不稳定的字段，其 enumEnum 不参与翻译 key 收集。
-# handle 在桌面模式下是"已开客户端窗口"下拉，值含每次开游戏都变的 PID。
-DYNAMIC_ENUM_FIELDS = frozenset({'handle'})
+# handle 与 leader_instance 都由运行环境动态枚举，不应把候选值写进翻译表。
+DYNAMIC_ENUM_FIELDS = frozenset({'handle', 'leader_instance'})
 
 
 class Addition:
