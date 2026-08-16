@@ -274,6 +274,9 @@
     "utilize_config": {
       "utilize_rule": "default",
       "select_friend_list": "same_server",
+      "priority_search_names": "",
+      "priority_search_min_fish": 0,
+      "priority_search_min_taiko": 0,
       "shikigami_class": "N",
       "shikigami_order": 4,
       "harvest_guild_max_times": 0,

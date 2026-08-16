@@ -198,12 +198,30 @@
     "description": "description"
   },
   {
-    "itemName": "select_realm_on_4",
-    "imageName": "select_realm_on_4.png",
-    "roiFront": "607,516,21,59",
-    "roiBack": "607,516,21,59",
+    "itemName": "select_realm_on",
+    "imageName": "select_realm_on.png",
+    "roiFront": "609,253,22,39",
+    "roiBack": "227,139,415,474",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "serach_name",
+    "imageName": "utilize_serach_name.png",
+    "roiFront": "584,109,38,35",
+    "roiBack": "553,94,93,70",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "点击以显示或隐藏搜索栏"
+  },
+  {
+    "itemName": "serach_on",
+    "imageName": "utilize_serach_on.png",
+    "roiFront": "547,172,58,35",
+    "roiBack": "527,161,98,54",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "点击开始搜索"
   }
 ]

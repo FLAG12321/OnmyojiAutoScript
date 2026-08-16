@@ -128,7 +128,11 @@ class KekkaiUtilizeAssets:
 	# description 
 	I_SELECT_REALM_ON_3 = RuleImage(roi_front=(607,404,21,59), roi_back=(607,404,21,59), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/select_realm_on_3.png")
 	# description 
-	I_SELECT_REALM_ON_4 = RuleImage(roi_front=(607,516,21,59), roi_back=(607,516,21,59), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/select_realm_on_4.png")
+	I_SELECT_REALM_ON = RuleImage(roi_front=(609,253,22,39), roi_back=(227,139,415,474), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/select_realm_on.png")
+	# 点击以显示或隐藏搜索栏 
+	I_SERACH_NAME = RuleImage(roi_front=(584,109,38,35), roi_back=(553,94,93,70), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_serach_name.png")
+	# 点击开始搜索 
+	I_SERACH_ON = RuleImage(roi_front=(547,172,58,35), roi_back=(527,161,98,54), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_serach_on.png")
 
 
 	# Image Rule Assets
@@ -158,7 +162,9 @@ class KekkaiUtilizeAssets:
 	# 斗鱼或太古寄养数目 
 	O_CARD_NUM = RuleOcr(roi=(800,421,150,33), area=(800,421,150,33), mode="Single", method="Default", keyword="", name="card_num")
 	# 检测好友名称 
-	O_OCR_NAME = RuleOcr(roi=(309,177,158,424), area=(800,421,150,33), mode="Full", method="Default", keyword="", name="ocr_name")
+	O_NAME_LIST = RuleOcr(roi=(309,212,159,393), area=(309,212,159,393), mode="Full", method="Default", keyword="", name="name_list")
+	# 检测姓名输入 
+	O_NAME_CHECK = RuleOcr(roi=(223,170,267,36), area=(223,170,267,36), mode="Full", method="Default", keyword="", name="name_check")
 
 
 	# Swipe Rule Assets
