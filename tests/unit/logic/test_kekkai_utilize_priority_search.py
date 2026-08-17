@@ -7,13 +7,21 @@ import pytest
 from module.ocr.result import BoxedResult
 from tasks.KekkaiUtilize.config import SelectFriendList, UtilizeRule
 from tasks.KekkaiUtilize.script_task import ScriptTask
-from tasks.KekkaiUtilize.utils import CardClass
 from tasks.Utils.config_enum import ShikigamiClass
 
 
 def make_task() -> ScriptTask:
     """构造绕过设备初始化的任务实例。"""
     return ScriptTask.__new__(ScriptTask)
+
+
+def stub_priority_card_guards(task: ScriptTask, unavailable: bool = False) -> None:
+    """屏蔽选中行校验与结界可用性校验，让用例只关注收益判定。
+
+    这两项校验都要截图，各自已有专门用例覆盖；只关心最低值门槛的用例不必再造截图。
+    """
+    task._selected_row_matches_name = lambda name, name_area: True
+    task._priority_card_unavailable = lambda name: unavailable
 
 
 @pytest.mark.unit
@@ -404,25 +412,35 @@ def test_select_from_priority_names_checks_duplicate_names_in_order():
 
 
 @pytest.mark.unit
-def test_select_priority_name_card_accepts_matching_resource(monkeypatch):
-    """指定行命中目标卡且详情 OCR 有效时应返回成功。"""
+def test_select_priority_name_card_accepts_by_ocr_without_template_match():
+    """选中角色后直接 OCR 收益即可达标，不再依赖结界卡模板匹配。
+
+    回归用例：151 满值斗鱼卡的模板匹配不上，原实现会因 matches 为空而静默
+    返回 False，把达标卡跳过。
+    """
     task = make_task()
+    task.config = SimpleNamespace(
+        kekkai_utilize=SimpleNamespace(
+            utilize_config=SimpleNamespace(
+                priority_search_min_fish=143,
+                priority_search_min_taiko=56,
+            )
+        )
+    )
+    # 不提供 order_targets / _ensure_card_selected：命中它们即说明还在走模板匹配
+    task.__dict__['order_targets'] = property(
+        lambda self: pytest.fail('不应再使用结界卡模板匹配'))
+    task._ensure_card_selected = lambda area: pytest.fail('不应再点击定位结界卡')
+    task.check_card_num = lambda: ('斗鱼', 151)
+    stub_priority_card_guards(task)
 
-    class FakeTarget:
-        """只返回一个太鼓模板匹配的假资源。"""
+    assert task._select_priority_name_card('夜空和星夜', (330, 236, 139, 33)) is True
 
-        threshold = 0.8
-        roi_back = (541, 183, 75, 398)
 
-        def match_all_any(self, image, threshold, roi, nms_threshold):
-            """记录目标行内固定的一张模板匹配。"""
-            self.roi_back = roi
-            return [(0.95, 543, 253, 62, 54)]
-
-    target = FakeTarget()
-    task.__dict__['order_targets'] = SimpleNamespace(images=[target])
-    task.__dict__['order_cards'] = [CardClass.TAIKO6]
-    task.device = SimpleNamespace(image=object())
+@pytest.mark.unit
+def test_select_priority_name_card_rejects_invalid_ocr():
+    """收益 OCR 失败（类型未知或数值非正）时应返回失败且不记录数值。"""
+    task = make_task()
     task.config = SimpleNamespace(
         kekkai_utilize=SimpleNamespace(
             utilize_config=SimpleNamespace(
@@ -431,24 +449,72 @@ def test_select_priority_name_card_accepts_matching_resource(monkeypatch):
             )
         )
     )
-    task.C_SELECT_CARD = SimpleNamespace(roi_front=None)
-    task.screenshot = lambda: None
-    selected = []
-    task._ensure_card_selected = lambda area: selected.append(area) or True
-    task.check_card_num = lambda: ('太鼓', 76)
-    monkeypatch.setattr(
-        'tasks.KekkaiUtilize.script_task.target_to_card_class',
-        lambda matched: CardClass.TAIKO6,
-    )
+    task.priority_friend_records = {}
+    task.check_card_num = lambda: ('unknown', 0)
+    stub_priority_card_guards(task)
 
-    assert task._select_priority_name_card('瑶光', (325, 252, 108, 33)) is True
-    assert selected == [(543, 253, 62, 54)]
-    assert target.roi_back == (541, 183, 75, 398)
+    assert task._select_priority_name_card('瑶光', (325, 252, 108, 33)) is False
+    assert task.priority_friend_records == {}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('appear, selected_roi, expected', [
+    # 没有选中标记：点击可能没生效，不能读收益
+    (False, (300, 240, 340, 70), False),
+    # 选中标记落在别的行：中心 Y 相差一整行，不能读收益
+    (True, (300, 340, 340, 70), False),
+    # 选中标记与角色名同行：中心 Y 接近，允许读收益
+    (True, (300, 237, 340, 70), True),
+])
+def test_selected_row_matches_name(appear, selected_roi, expected):
+    """只有选中标记确实落在目标角色那一行时，才允许继续识别收益。"""
+    task = make_task()
+    task.screenshot = lambda: None
+    task.appear = lambda image: appear
+    task.I_SELECT_REALM_ON = SimpleNamespace(roi_front=list(selected_roi))
+
+    assert task._selected_row_matches_name('瑶光', (325, 252, 108, 33)) is expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('status_text, expected', [
+    ('未公开', True),
+    ('已占用', True),
+    # 正常可寄养时该区域读到的是收益等其它文字
+    ('体力+151', False),
+    ('', False),
+])
+def test_priority_card_unavailable_detects_status(status_text, expected):
+    """结界状态栏读到未公开或已占用时判定为不可用。"""
+    task = make_task()
+    task.device = SimpleNamespace(image=object())
+    task.O_CHECK_OPEN = SimpleNamespace(ocr=lambda image: status_text)
+
+    assert task._priority_card_unavailable('瑶光') is expected
+
+
+@pytest.mark.unit
+def test_select_priority_name_card_skips_unavailable_realm_without_ocr():
+    """结界未公开/已占用时直接判失败，既不读收益也不记录数值。
+
+    被占用的结界即使收益很高也寄养不进去，若记录进数值池会让最佳值兜底反复搜索它。
+    """
+    task = make_task()
+    task.priority_friend_records = {}
+    task._selected_row_matches_name = lambda name, name_area: True
+    task._priority_card_unavailable = lambda name: True
+    task.check_card_num = lambda: pytest.fail('结界不可用时不应识别收益')
+
+    assert task._select_priority_name_card('瑶光', (325, 252, 108, 33)) is False
+    assert task.priority_friend_records == {}
 
 
 @pytest.mark.unit
 def test_perform_swipe_action_uses_fast_overlapping_gesture(monkeypatch):
-    """好友列表滑动应使用一秒手势并保留行重叠。"""
+    """好友列表滑动应使用一秒手势、垂直向上并清理点击记录。
+
+    不断言具体滑动距离：该距离是需要按实机手感调的参数，钉死数值会让调参必然改测试。
+    """
     task = make_task()
     swipes = []
     clear_count = []
@@ -461,7 +527,13 @@ def test_perform_swipe_action_uses_fast_overlapping_gesture(monkeypatch):
 
     task.perform_swipe_action()
 
-    assert swipes == [((400, 540), (400, 180), 1.0)]
+    assert len(swipes) == 1
+    (start, end, duration) = swipes[0]
+    assert duration == 1.0
+    # 垂直向上滑动：横坐标不变，终点在起点上方
+    assert start == (400, 540)
+    assert end[0] == 400
+    assert end[1] < start[1]
     assert clear_count == [True]
 
 
@@ -615,22 +687,9 @@ def test_meets_min_value_unset_keeps_positive():
 
 
 @pytest.mark.unit
-def test_select_priority_name_card_respects_min_value_threshold(monkeypatch):
+def test_select_priority_name_card_respects_min_value_threshold():
     """配置最低值后，低于门槛的结界卡不寄养，达到门槛才寄养。"""
     task = make_task()
-
-    class FakeTarget:
-        threshold = 0.8
-        roi_back = (541, 183, 75, 398)
-
-        def match_all_any(self, image, threshold, roi, nms_threshold):
-            self.roi_back = roi
-            return [(0.95, 543, 253, 62, 54)]
-
-    monkeypatch.setattr(
-        'tasks.KekkaiUtilize.script_task.target_to_card_class',
-        lambda matched: CardClass.TAIKO6,
-    )
     task.config = SimpleNamespace(
         kekkai_utilize=SimpleNamespace(
             utilize_config=SimpleNamespace(
@@ -639,12 +698,8 @@ def test_select_priority_name_card_respects_min_value_threshold(monkeypatch):
             )
         )
     )
-    task.__dict__['order_targets'] = SimpleNamespace(images=[FakeTarget()])
-    task.__dict__['order_cards'] = [CardClass.TAIKO6]
-    task.device = SimpleNamespace(image=object())
-    task.C_SELECT_CARD = SimpleNamespace(roi_front=None)
-    task.screenshot = lambda: None
-    task._ensure_card_selected = lambda area: True
+    task.priority_friend_records = {}
+    stub_priority_card_guards(task)
 
     # 太鼓 60 低于门槛 67，不应寄养
     task.check_card_num = lambda: ('太鼓', 60)
@@ -868,23 +923,10 @@ def test_select_optimal_card_gives_up_when_no_card_recorded():
 
 
 @pytest.mark.unit
-def test_select_priority_name_card_records_unmet_value(monkeypatch):
+def test_select_priority_name_card_records_unmet_value():
     """未达最低值的结界卡应记录到优先好友数值池，供后续最佳值匹配。"""
     task = make_task()
     task.priority_friend_records = {}
-
-    class FakeTarget:
-        threshold = 0.8
-        roi_back = (541, 183, 75, 398)
-
-        def match_all_any(self, image, threshold, roi, nms_threshold):
-            self.roi_back = roi
-            return [(0.95, 543, 253, 62, 54)]
-
-    monkeypatch.setattr(
-        'tasks.KekkaiUtilize.script_task.target_to_card_class',
-        lambda matched: CardClass.TAIKO6,
-    )
     task.config = SimpleNamespace(
         kekkai_utilize=SimpleNamespace(
             utilize_config=SimpleNamespace(
@@ -893,15 +935,10 @@ def test_select_priority_name_card_records_unmet_value(monkeypatch):
             )
         )
     )
-    task.__dict__['order_targets'] = SimpleNamespace(images=[FakeTarget()])
-    task.__dict__['order_cards'] = [CardClass.TAIKO6]
-    task.device = SimpleNamespace(image=object())
-    task.C_SELECT_CARD = SimpleNamespace(roi_front=None)
-    task.screenshot = lambda: None
-    task._ensure_card_selected = lambda area: True
 
     # 太鼓 60 低于门槛 67，不寄养但记录该好友数值
     task.check_card_num = lambda: ('太鼓', 60)
+    stub_priority_card_guards(task)
     assert task._select_priority_name_card('瑶光', (325, 252, 108, 33)) is False
     assert task.priority_friend_records == {'瑶光': {'太鼓': 60}}
 

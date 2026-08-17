@@ -15,7 +15,7 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
-from tasks.KekkaiUtilize.utils import CardClass, target_to_card_class
+from tasks.KekkaiUtilize.utils import CardClass
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild
 from module.base.utils import point2str
@@ -33,6 +33,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     CARD_SELECTED_Y_THRESHOLD = 40
     # 未选中目标卡片时最多等待两秒，识别到选中标记后立即继续
     CARD_SELECTION_TIMEOUT = 2
+    # O_CHECK_OPEN 命中这些状态说明该好友结界无法寄养，不必再识别收益
+    PRIORITY_CARD_UNAVAILABLE_KEYWORDS = ('未公开', '已占用')
     last_best_index = 99
     utilize_add_count = 0
     ap_max_num = 0
@@ -703,14 +705,6 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         logger.warning('点击后未识别到角色选中标记: %s @ %s', name, name_area)
         return False
 
-    @staticmethod
-    def _priority_card_roi(name_area: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
-        """根据角色名所在行限制结界卡识别范围，避免检查到其他同名角色。"""
-        _, name_y, _, name_h = name_area
-        top = max(0, int(name_y) - 35)
-        height = min(720 - top, max(80, int(name_h) + 60))
-        return 520, top, 120, height
-
     @classmethod
     def _card_matches_selected_row(
             cls,
@@ -762,47 +756,71 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     def _select_priority_name_card(self, name: str,
                                    name_area: tuple[int, int, int, int],
                                    check_min: bool = True) -> bool:
-        """检查指定角色所在行的结界卡。
+        """校验选中标记在目标角色行后，直接 OCR 结界卡收益判断是否达标。
 
-        check_min=True 时需达到对应类型的最低门槛才选中，未达标的结界卡数值会被记录
-        供后续最佳值兜底；check_min=False 时直接选中该行结界卡（兜底搜索路径）。
+        点击角色名时游戏已同时选中该行的结界卡，收益可直接由 O_CARD_NUM 读出，
+        无需再用 I_U_FISH_6 / I_U_FISH_5 等模板定位卡片图标：模板会因卡面差异匹配
+        不到（实测 151 满值斗鱼卡就匹配不上），导致达标的卡被静默跳过。
+
+        但 OCR 前必须确认选中标记确实落在目标角色那一行，否则会把上一次残留或
+        其它行的收益当成本角色的数值。
+
+        check_min=True 时需达到对应类型的最低门槛；未达标的数值会被记录，供后续
+        最佳值兜底时直接搜索该好友。check_min=False 时只要收益有效就选中。
+        """
+        if not self._selected_row_matches_name(name, name_area):
+            return False
+        # 未公开/已占用的结界不可寄养，视为识别失败且不记录数值，避免占用最佳值兜底名额
+        if self._priority_card_unavailable(name):
+            return False
+
+        card_type, card_value = self.check_card_num()
+        if card_type == 'unknown' or card_value <= 0:
+            logger.warning('优先角色%s的结界卡收益识别失败: %s@%s @ %s',
+                           name, card_type, card_value, name_area)
+            return False
+
+        min_value = self._priority_search_min_for(card_type)
+        if check_min and not self._meets_min_value(card_value, min_value):
+            # 未达标：记录该好友结界卡数值，供最佳值匹配后直接搜索该好友
+            self._record_priority_friend_value(name, card_type, card_value)
+            logger.info('优先角色%s的结界卡不满足要求: %s@%s (最低值 %s)', name, card_type, card_value, min_value)
+            return False
+        logger.info('优先角色%s的结界卡满足要求: %s@%s (最低值 %s)', name, card_type, card_value, min_value)
+        return True
+
+    def _selected_row_matches_name(self, name: str,
+                                   name_area: tuple[int, int, int, int]) -> bool:
+        """确认当前选中标记落在目标角色所在行，避免 OCR 读到其它行的收益。
+
+        复用 _card_matches_selected_row 的中心纵坐标比对：选中标记与角色名同属
+        一行时两者中心 Y 接近，跨行则至少相差 100 像素以上。
         """
         self.screenshot()
-        card_roi = self._priority_card_roi(name_area)
-        matches = []
-        for order, target in enumerate(self.order_targets.images):
-            original_roi = target.roi_back
-            try:
-                target_matches = target.match_all_any(
-                    self.device.image,
-                    threshold=target.threshold,
-                    roi=card_roi,
-                    nms_threshold=0.3,
-                )
-            finally:
-                target.roi_back = original_roi
-            for score, x, y, width, height in target_matches:
-                matches.append((order, target, score, (x, y, width, height)))
+        if not self.appear(self.I_SELECT_REALM_ON):
+            logger.warning('优先角色%s未识别到选中标记，跳过收益识别 @ %s', name, name_area)
+            return False
+        selected_area = tuple(self.I_SELECT_REALM_ON.roi_front)
+        if not self._card_matches_selected_row(selected_area, name_area):
+            logger.warning('优先角色%s的选中标记不在该行，跳过收益识别: 标记%s 角色行%s',
+                           name, selected_area, name_area)
+            return False
+        return True
 
-        matches.sort(key=lambda item: (item[0], item[3][1], -item[2]))
-        for _, target, _, card_area in matches:
-            card_class = target_to_card_class(target)
-            if card_class not in self.order_cards:
-                continue
-            if not self._ensure_card_selected(card_area):
-                continue
-            card_type, card_value = self.check_card_num()
-            expected_type = '太鼓' if card_class.value.startswith('taiko') else '斗鱼'
-            if card_type != expected_type:
-                continue
-            min_value = self._priority_search_min_for(card_type)
-            if check_min and not self._meets_min_value(card_value, min_value):
-                # 未达标：记录该好友结界卡数值，供最佳值匹配后直接搜索该好友
-                self._record_priority_friend_value(name, card_type, card_value)
-                logger.info('优先角色%s的结界卡不满足要求: %s@%s (最低值 %s)', name, card_type, card_value, min_value)
-                continue
-            logger.info('优先角色%s的结界卡满足要求: %s@%s (最低值 %s)', name, card_type, card_value, min_value)
-            return True
+    def _priority_card_unavailable(self, name: str) -> bool:
+        """OCR 结界状态栏，判断该好友结界是否未公开或已占用。
+
+        未公开/已占用时结界卡区域不显示可寄养的收益，继续 OCR 只会读到脏数据；
+        这里提前短路，让调用方按「收益识别失败」处理，同时不记录数值——被占用的
+        结界即使收益很高也寄养不进去，不能参与最佳值兜底。
+
+        复用 _selected_row_matches_name 刚截的图，不额外截屏。
+        """
+        status_text = self._normalize_priority_name(self.O_CHECK_OPEN.ocr(self.device.image))
+        for keyword in self.PRIORITY_CARD_UNAVAILABLE_KEYWORDS:
+            if keyword in status_text:
+                logger.info('优先角色%s的结界%s，跳过收益识别', name, keyword)
+                return True
         return False
 
     def _record_priority_friend_value(self, name: str, card_type: str, card_value: int) -> None:
@@ -1369,7 +1387,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         safe_pos_x = random.randint(340, 600)
         safe_pos_y = random.randint(500, 565)
         p1 = (safe_pos_x, safe_pos_y)
-        p2 = (safe_pos_x, safe_pos_y - 360)
+        p2 = (safe_pos_x, safe_pos_y - 300)
         logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
         self.device.swipe_adb(p1, p2, duration=duration)
 
@@ -1451,9 +1469,10 @@ if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('switch')
+    c = Config('oas2')
     d = Device(c)
     t = ScriptTask(c, d)
+    t.run()
     for i in range(10):
         t.perform_swipe_action()
     t.recive_guild_ap_or_assets()
