@@ -1,12 +1,16 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import os
 import re
+import subprocess
+import time
 import ctypes
 from ctypes import c_long, byref, POINTER, Structure, wintypes
 
 from contextlib import contextmanager
 from enum import Enum
+from pathlib import Path
 from time import sleep
 from cached_property import cached_property
 from anytree import NodeMixin, RenderTree, PreOrderIter
@@ -14,20 +18,28 @@ from win32api import GetSystemMetrics, SendMessage, MAKELONG, PostMessage
 from win32print import GetDeviceCaps
 from win32process import GetWindowThreadProcessId
 from win32gui import (GetWindowText, EnumWindows, FindWindow, FindWindowEx,
-                      IsWindow, GetWindowRect, GetWindowDC, DeleteObject,
-                      SetForegroundWindow, IsWindowVisible, GetDC, GetParent,
-                      EnumChildWindows, GetClientRect, ClientToScreen,
-                      GetWindowLong, SetWindowPos)
+                      IsWindow, IsIconic, ShowWindow, GetWindowRect,
+                      GetWindowDC, DeleteObject, SetForegroundWindow,
+                      IsWindowVisible, GetDC, GetParent, EnumChildWindows,
+                      GetClientRect, ClientToScreen, GetWindowLong, SetWindowPos,
+                      GetClassName)
 from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       WM_LBUTTONDOWN, WM_ACTIVATE, WA_ACTIVE, MK_LBUTTON,
                       WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE,
-                      GWL_STYLE, GWL_EXSTYLE, HWND_TOP, SWP_NOMOVE, SWP_SHOWWINDOW)
+                      WM_CLOSE, WM_KEYDOWN, WM_KEYUP, VK_RETURN,
+                      GWL_STYLE, GWL_EXSTYLE, HWND_TOP, SWP_NOMOVE,
+                      SWP_SHOWWINDOW, SW_RESTORE)
 from module.config.config import Config
 from module.logger import logger
 from module.exception import *
 
 # 桌面客户端窗口标题（官方桌面版，多开共用同一标题）
 DESKTOP_WINDOW_TITLES = ('阴阳师-网易游戏', '阴阳师-MuMu模拟器专版')
+
+# 网易 MPay 账号登录弹窗的窗口类名。它是与游戏主窗口同 PID 的独立顶层窗口
+# （DirectUI 绘制，无子控件），不在游戏渲染面内，因此主窗口 BitBlt 截不到它，
+# 也无法用图像识别处理，只能按类名单独定位并注入消息。
+DESKTOP_LOGIN_POPUP_CLASS = 'MPAY_LOGIN'
 
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2，SetThreadDpiAwarenessContext 的入参
 _PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
@@ -100,6 +112,7 @@ def list_desktop_windows() -> list:
         result.append({
             'pid': GetWindowThreadProcessId(hwnd)[1],
             'title': GetWindowText(hwnd),
+            'hwnd': hwnd,
             'x': rect[0],
             'y': rect[1],
         })
@@ -376,10 +389,84 @@ class Handle:
         logger.error(f'Desktop client window not found, PID={pid}')
         raise EmulatorNotRunningError(f'Desktop client window not found, PID={pid}')
 
-    def desktop_window_exists(self) -> bool:
-        """桌面模式：目标 PID 对应窗口仍存在即视为客户端运行中。"""
+    def desktop_pid(self):
+        """返回当前桌面客户端 PID（int）；取不到返回 None。
+
+        优先用实例 root_handle（运行时自动启动绑定后的新 PID），未设置时回退配置里的
+        handle。script.device 是 COLD 受保护子树，任务边界 reload 会覆盖运行模型，
+        因此本会话的 PID 判断必须以实例状态为准，否则重新拉起后会误判。
+        """
+        pid = getattr(self, 'root_handle', None) or self.config.script.device.handle
         try:
-            self.find_desktop_window_by_pid(self.config.script.device.handle)
+            return int(str(pid))
+        except (TypeError, ValueError):
+            return None
+
+    def find_desktop_login_popup(self) -> int:
+        """按 PID + 类名查找 MPay 账号登录弹窗，返回句柄；没有则返回 0。
+
+        弹窗与游戏主窗口同 PID 但是独立顶层窗口（owner 为主窗口，非子窗口），
+        既不在主窗口的截图里，也没有子控件可枚举，只能按窗口类名定位。
+        按 PID 过滤保证多开时各实例只处理自己客户端的弹窗。
+        """
+        pid_int = self.desktop_pid()
+        if pid_int is None:
+            return 0
+
+        def enum_cb(hwnd, param):
+            param.append(hwnd)
+            return True
+
+        windows = []
+        EnumWindows(enum_cb, windows)
+        for hwnd in windows:
+            try:
+                if GetClassName(hwnd) != DESKTOP_LOGIN_POPUP_CLASS:
+                    continue
+                if not IsWindowVisible(hwnd):
+                    continue
+                if GetWindowThreadProcessId(hwnd)[1] == pid_int:
+                    return hwnd
+            except Exception:
+                # 窗口在枚举与取属性之间被关闭，跳过即可
+                continue
+        return 0
+
+    def desktop_confirm_login_popup(self, wait: float = 15.0) -> bool:
+        """确认 MPay 账号登录弹窗（点“进入游戏”），返回是否发现过弹窗。
+
+        弹窗是 DirectUI 独立顶层窗口，"进入游戏"只是绘制出来的像素、没有真实控件，
+        实测后台鼠标消息（WM_MOUSEMOVE/LBUTTONDOWN/LBUTTONUP，Post 与 Send 都试过）
+        完全无响应；回车走键盘消息可触发默认按钮，弹窗随即消失、游戏推进到登录页。
+        因此这里只发回车，并在 wait 秒内轮询确认弹窗真的消失。
+
+        返回 True 表示本次发现了弹窗（无论是否在超时内关闭，调用方都应重新截图再判断），
+        False 表示当前没有弹窗，不需要处理。
+        """
+        if not self.find_desktop_login_popup():
+            return False
+        logger.info('Desktop MPay login popup found, press Enter to enter game')
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            hwnd = self.find_desktop_login_popup()
+            if not hwnd:
+                logger.info('Desktop MPay login popup confirmed')
+                return True
+            self._desktop_send_enter(hwnd)
+            time.sleep(1)
+        logger.warning(f'Desktop MPay login popup still present after {wait}s')
+        return True
+
+    def desktop_window_exists(self) -> bool:
+        """桌面模式：目标 PID 对应窗口仍存在即视为客户端运行中。
+
+        优先用实例 root_handle（运行时自动启动绑定后的新 PID），未设置时回退配置里的
+        handle。script.device 是 COLD 受保护子树，任务边界 reload 会覆盖运行模型，
+        因此本会话的窗口存在性判断必须以实例状态为准，否则重新拉起后会误判为未运行。
+        """
+        pid = getattr(self, 'root_handle', None) or self.config.script.device.handle
+        try:
+            self.find_desktop_window_by_pid(pid)
             return True
         except EmulatorNotRunningError:
             return False
@@ -447,6 +534,255 @@ class Handle:
                 logger.info(f'Calibrate desktop window to {total_w}x{total_h}, current client {cw}x{ch}')
                 SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
             return True
+
+    # ------------------------------------------------------------------ 桌面客户端自动生命周期
+
+    # 桌面客户端从启动到进入登录页约需的等待秒数（客户端加载较慢，登录流程依赖此等待）
+    DESKTOP_LOGIN_WAIT_SECONDS = 20
+
+    def desktop_resolve_install_root(self) -> str:
+        """解析桌面客户端安装目录：优先 desktop_game_path 配置，其次自动发现。
+
+        只认含 bin\\onmyoji.exe（或根目录 Launch.exe）的安装目录，找不到返回空串。
+        仅桌面模式调用，不影响模拟器流程。
+        """
+        configured = getattr(self.config.script.device, 'desktop_game_path', '') or ''
+        if configured:
+            root = self._desktop_root_from_path(configured)
+            if root is not None:
+                return str(root)
+            logger.warning(f'desktop_game_path 配置无效: {configured}，尝试自动发现')
+        root = self._desktop_discover_install_root()
+        return str(root) if root else ''
+
+    @staticmethod
+    def _desktop_root_from_path(value: str):
+        """把用户填的路径归一化成安装目录；无效返回 None。"""
+        path = Path(value).expanduser()
+        if path.is_file():
+            # 允许直接填 bin\\onmyoji.exe 或 Launch.exe 的完整路径
+            if path.name.lower() == 'onmyoji.exe' and path.parent.name.lower() == 'bin':
+                path = path.parent.parent
+            elif path.name.lower() == 'launch.exe':
+                path = path.parent
+            else:
+                path = path.parent
+        candidate = path / 'bin' / 'onmyoji.exe'
+        if candidate.is_file():
+            return path.resolve()
+        return None
+
+    @staticmethod
+    def _desktop_discover_install_root():
+        """按 %ProgramFiles%\\Onmyoji 与注册表 Uninstall 的 InstallLocation 自动发现安装目录。"""
+        for env in ('ProgramFiles', 'ProgramFiles(x86)'):
+            raw = os.environ.get(env)
+            if raw and (Path(raw) / 'Onmyoji' / 'bin' / 'onmyoji.exe').is_file():
+                return (Path(raw) / 'Onmyoji').resolve()
+        try:
+            import winreg
+            roots = (
+                (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'),
+                (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'),
+                (winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'),
+            )
+            for hive, key_path in roots:
+                try:
+                    with winreg.OpenKey(hive, key_path) as parent:
+                        for index in range(winreg.QueryInfoKey(parent)[0]):
+                            try:
+                                with winreg.OpenKey(parent, winreg.EnumKey(parent, index)) as child:
+                                    display, _ = winreg.QueryValueEx(child, 'DisplayName')
+                                    if '阴阳师' not in str(display) and 'Onmyoji' not in str(display):
+                                        continue
+                                    location, _ = winreg.QueryValueEx(child, 'InstallLocation')
+                                    if location and (Path(location) / 'bin' / 'onmyoji.exe').is_file():
+                                        return Path(location).resolve()
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def desktop_game_exe(root) -> str:
+        """返回游戏可执行文件路径；找不到返回空串。"""
+        root = Path(root)
+        for name in ('bin/onmyoji.exe', 'Launch.exe'):
+            exe = root / name
+            if exe.is_file():
+                return str(exe)
+        return ''
+
+    def launch_desktop_client(self, timeout: int = 90) -> bool:
+        """自动启动桌面客户端并绑定新窗口的 PID/HWND，成功返回 True。
+
+        只认启动后新出现的桌面客户端窗口（PID 不在启动前集合），避免误绑其他实例已开
+        着的客户端；连续两次采样同一句柄才确认，避免把瞬态窗口当作主窗口。
+        """
+        root = self.desktop_resolve_install_root()
+        if not root:
+            logger.error('未找到阴阳师桌面客户端安装目录，请在 设置-Script-设备 中填写 desktop_game_path')
+            return False
+        exe = self.desktop_game_exe(root)
+        if not exe:
+            logger.error(f'未找到游戏程序（bin\\onmyoji.exe 或 Launch.exe）：{root}')
+            return False
+        before_pids = {w['pid'] for w in list_desktop_windows()}
+        logger.info(f'自动启动桌面客户端: {exe}')
+        try:
+            subprocess.Popen([exe], cwd=root,
+                             creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+        except Exception as e:
+            logger.error(f'启动桌面客户端失败: {e}')
+            return False
+        deadline = time.time() + timeout
+        stable_hwnd = 0
+        stable_count = 0
+        while time.time() < deadline:
+            candidates = [w for w in list_desktop_windows() if w['pid'] not in before_pids]
+            if candidates:
+                candidate = candidates[0]
+                if candidate['hwnd'] == stable_hwnd:
+                    stable_count += 1
+                else:
+                    stable_hwnd = candidate['hwnd']
+                    stable_count = 1
+                if stable_count >= 2:
+                    self.desktop_bind_pid(candidate['pid'], candidate['hwnd'])
+                    logger.info(f'桌面客户端已自动启动并绑定 PID={candidate["pid"]}')
+                    # 绑定窗口后等客户端加载到登录页，否则后续 restart 登录流程会对着加载画面空转
+                    logger.info(f'等待桌面客户端加载到登录页（约 {self.DESKTOP_LOGIN_WAIT_SECONDS} 秒）')
+                    time.sleep(self.DESKTOP_LOGIN_WAIT_SECONDS)
+                    if not self.desktop_window_exists():
+                        logger.warning('等待登录页期间桌面客户端窗口已消失，可能启动失败')
+                        return False
+                    return True
+            time.sleep(1)
+        logger.error(f'桌面客户端进程已启动，但 {timeout} 秒内未识别到游戏窗口')
+        return False
+
+    def desktop_bind_pid(self, pid, hwnd=0) -> None:
+        """把新 PID/HWND 绑定到实例，并尽量持久化到配置。"""
+        self.root_handle = str(pid)
+        if hwnd:
+            self.root_handle_num = hwnd
+        self.root_handle_title = DESKTOP_WINDOW_TITLES[0]
+        self.is_desktop_window = True
+        # 新绑定的客户端刚启动，必然未登录，需先走 restart 登录流程
+        self._desktop_login_done = False
+        logger.info(f'Desktop client bound: PID={pid}, hwnd={hwnd}')
+        try:
+            config = self.config
+            # 设备初始化阶段走 startup_normalize（同步 provisional 快照，避免 COLD 快照
+            # 永久把 handle 报成待重启）；运行期（快照已冻结）以实例状态为准，仅持久化磁盘
+            try:
+                config.startup_normalize({("script", "device", "handle"): str(pid)})
+            except RuntimeError:
+                config.script.device.handle = str(pid)
+                config.save()
+        except Exception as e:
+            logger.warning(f'持久化桌面 PID 到配置失败: {e}')
+
+    def _desktop_send_enter(self, hwnd) -> None:
+        """向窗口发送回车键，用于确认 MPay 账号登录弹窗的默认按钮"进入游戏"。
+
+        窗口可能在两条消息之间被销毁（回车已生效），此时忽略异常即可。
+        """
+        try:
+            SendMessage(hwnd, WM_KEYDOWN, VK_RETURN, 0)
+            SendMessage(hwnd, WM_KEYUP, VK_RETURN, 0)
+        except Exception as e:
+            logger.info(f'Send Enter to window {hwnd} failed (window may be closed): {e}')
+
+    def _desktop_wait_closed(self, wait: float) -> bool:
+        """在 wait 秒内轮询等待桌面客户端窗口消失，返回是否已关闭。"""
+        deadline = time.time() + wait
+        while True:
+            if not self.desktop_window_exists():
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.5)
+
+    def desktop_stop_client(self) -> None:
+        """关闭桌面客户端：直接强杀进程，用关闭游戏等待时长确认窗口真的消失。
+
+        客户端的退出确认框画在游戏窗口内部（不是独立顶层窗口），实测回车确认经常无效
+        （进程不退出、主窗口只是被移到屏幕外），走 WM_CLOSE + 确认反而要多等几秒还未必
+        关得掉，因此这里不发任何窗口消息，直接强杀进程。
+
+        关闭后保留原 PID 在配置里；下次检测到该 PID 无效（客户端未运行）时，
+        由启动/重拉链路重启客户端并把配置更新为重启后的新 PID。
+        """
+        # 客户端关闭后必然未登录，下次启动需重新走登录流程
+        self._desktop_login_done = False
+        hwnd = self.root_handle_num
+        if not hwnd or not IsWindow(hwnd):
+            logger.info('Desktop client not running, skip stop')
+            return
+        logger.info('Stopping desktop client: force kill')
+        self.desktop_force_kill()
+        wait = self._desktop_close_wait_seconds()
+        if self._desktop_wait_closed(wait):
+            logger.info('Desktop client closed')
+            return
+        logger.warning(f'Desktop client force kill but window still present after {wait}s')
+
+    def _desktop_close_wait_seconds(self) -> int:
+        """关闭游戏等待时长（秒），读 config.script.optimization.close_game_wait_duration。"""
+        try:
+            t = self.config.script.optimization.close_game_wait_duration
+            return t.hour * 3600 + t.minute * 60 + t.second
+        except Exception:
+            return 10
+
+    def desktop_force_kill(self) -> None:
+        """强杀桌面客户端进程（WM_CLOSE 超时未退出的兜底）。"""
+        pid = getattr(self, 'root_handle', None) or self.config.script.device.handle
+        try:
+            pid_int = int(str(pid))
+        except (TypeError, ValueError):
+            logger.error(f'Invalid desktop PID: {pid}, skip force kill')
+            return
+        kernel32 = ctypes.windll.kernel32
+        # PROCESS_TERMINATE(0x0001)
+        handle = kernel32.OpenProcess(0x0001, False, pid_int)
+        if not handle:
+            # 进程已自行退出
+            return
+        try:
+            kernel32.TerminateProcess(handle, 0)
+            logger.info(f'Desktop client PID={pid_int} force terminated')
+        finally:
+            kernel32.CloseHandle(handle)
+
+    def desktop_window_restore_if_minimized(self, wait: float = 3.0) -> bool:
+        """桌面窗口被最小化（用户误操作）时还原并等待客户区恢复，返回是否发生过还原。
+
+        还原成功后若客户区尺寸偏离目标（1280x720），一并重校准，保证识别 1:1。
+        """
+        if not getattr(self, 'is_desktop_window', False):
+            return False
+        hwnd = self.root_handle_num
+        if not hwnd or not IsIconic(hwnd):
+            return False
+        logger.warning('Desktop client window is minimized, restoring')
+        ShowWindow(hwnd, SW_RESTORE)
+        deadline = time.time() + wait
+        restored = False
+        while time.time() < deadline:
+            with dpi_awareness():
+                rect = GetClientRect(hwnd)
+            if (rect[2] - rect[0]) > 0 and (rect[3] - rect[1]) > 0:
+                restored = True
+                break
+            time.sleep(0.2)
+        if restored:
+            self.desktop_window_set_size()
+        return restored
 
     @staticmethod
     def all_windows() -> list:

@@ -19,6 +19,11 @@ class RuleInput(Connection):
         Args:
             text (str): 要输入的文本
         """
+        # 桌面客户端模式没有 adb/uiautomator2，改用 Windows 消息注入
+        if self.device.is_desktop:
+            self.device.input_text_desktop(text)
+            logger.info(f"成功输入文本: {text}")
+            return
         # 使用设备的输入方法直接输入
         try:
             # 直接使用u2的send_keys方法输入
@@ -36,6 +41,11 @@ class RuleInput(Connection):
         Args:
             text (str): 蟊要输入的文本
         """
+        # 桌面端逐字符与一次性输入走同一条 Windows 消息注入路径
+        if self.device.is_desktop:
+            self.device.input_text_desktop(text)
+            logger.info(f"逐字符输入文本: {text}")
+            return
         try:
             for char in text:
                 if char == ' ':
@@ -62,6 +72,11 @@ class RuleInput(Connection):
         Args:
             number (int/float/str): 要输入的数字
         """
+        # 桌面端数字输入同样走 Windows 消息注入
+        if self.device.is_desktop:
+            self.device.input_text_desktop(str(number))
+            logger.info(f"成功输入数字: {number}")
+            return
         try:
             number_str = str(number)
             for digit in number_str:

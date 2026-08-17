@@ -18,7 +18,8 @@ from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       WM_LBUTTONDOWN, WM_ACTIVATE, WA_ACTIVE, MK_LBUTTON,
                       WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE,
                       WM_PARENTNOTIFY, WM_MOUSEACTIVATE, WM_MOUSEWHEEL,
-                      WM_SETFOCUS, WM_CAPTURECHANGED)
+                      WM_SETFOCUS, WM_CAPTURECHANGED,
+                      WM_CHAR, WM_KEYDOWN, WM_KEYUP, VK_RETURN)
 from win32ui import CreateDCFromHandle, CreateBitmap
 from win32api import GetSystemMetrics, SendMessage, MAKELONG, PostMessage
 from win32con import SRCCOPY
@@ -40,6 +41,8 @@ class Window(Handle):
     # 移动仅用于让客户端更新悬停状态，点越少越快；上限保证跨屏移动也不会拖慢。
     DESKTOP_MOVE_STEP = 60
     DESKTOP_MOVE_MAX_POINTS = 12
+    # 桌面模式清空输入框时发送的退格次数，取昵称长度上限，空框时为无害空操作
+    DESKTOP_CLEAR_BACKSPACE = 20
 
     def __init__(self, *args, **kwargs):
         logger.info("Window init")
@@ -98,6 +101,8 @@ class Window(Handle):
         画面左上角，不含标题栏，因此不需要偏移。PrintWindow 对该 DirectX 渲染窗口
         全 flag 返回纯黑，故桌面模式统一走 BitBlt。
         """
+        # 用户可能把桌面窗口最小化（误操作），先还原再截图；还原失败仍按原逻辑报错
+        self.desktop_window_restore_if_minimized()
         with dpi_awareness():
             client_rect = GetClientRect(self.screenshot_handle_num)
             widthScreen = client_rect[2] - client_rect[0]
@@ -278,6 +283,8 @@ class Window(Handle):
         桌面客户端是鼠标语义（不同于模拟器的触摸协议），控件普遍依赖 hover 状态，
         直接在目标点发 down/up 会被部分控件忽略，因此必须带鼠标移动过程。
         """
+        # 最小化的窗口收不到有效的后台点击，误操作导致最小化时先还原
+        self.desktop_window_restore_if_minimized()
         hwnd = self.root_handle_num
         # 后台消息点击由客户端按 down/up 事件判定，无需模拟真人按压时长；
         # 保留小幅随机抖动避免固定间隔特征
@@ -394,6 +401,8 @@ class Window(Handle):
 
     def long_click_desktop_window_message(self, x: int, y: int, duration: float):
         """桌面客户端后台长按：先沿轨迹移到目标点，按下保持 duration 秒后释放。"""
+        # 最小化时后台长按同样不可靠，先还原窗口
+        self.desktop_window_restore_if_minimized()
         hwnd = self.root_handle_num
         self.move_desktop_window_message(x, y)
         lparam = MAKELONG(*self.desktop_message_coord(x, y))
@@ -467,6 +476,8 @@ class Window(Handle):
 
     def swipe_desktop_window_message(self, startPos: list, endPos: list) -> None:
         """桌面客户端后台滑动：贝塞尔轨迹 PostMessage，与模拟器路径同一套拟人参数。"""
+        # 最小化时后台滑动不可靠，先还原窗口
+        self.desktop_window_restore_if_minimized()
         hwnd = self.root_handle_num
         interval: int = 10
         trace = self.desktop_trace(startPos, endPos, interval=interval)
@@ -489,6 +500,42 @@ class Window(Handle):
         PostMessage(hwnd, WM_LBUTTONUP, 0, end_lparam)
         SendMessage(hwnd, WM_CAPTURECHANGED, 0, 0)
         self._desktop_cursor = (int(endPos[0]), int(endPos[1]))
+
+    def input_text_desktop(self, text: str, clear: bool = False) -> None:
+        """桌面客户端后台文本输入：向目标窗口逐字符注入键盘消息。
+
+        桌面模式没有 adb/uiautomator2，只能通过 Windows 消息模拟键盘输入。
+        文本统一只发 WM_CHAR（Unicode 码点，ASCII 与中文同路径）——若同时补发
+        WM_KEYDOWN，客户端经 TranslateMessage 转译会重复生成字符；SendMessage
+        同步直达窗口过程，不经消息队列，也不会被转译。clear=True 时先发若干次
+        WM_CHAR(0x08) 退格清空输入框，对齐 uiautomator2 的 send_keys(clear=True)
+        语义（不用 Ctrl+A：后台注入无法更新全局键状态，标准控件不识别 Ctrl+A，
+        退格对空框无害、对已填内容可整框清空）。
+
+        注意：客户端输入框是否在后台状态走标准 WM_CHAR 消息循环未知，需实测；
+        若游戏不识别 WM_CHAR，可降级为剪贴板 + Ctrl+V 方案。
+        """
+        # 最小化时注入的消息可能被客户端丢弃，先还原窗口
+        self.desktop_window_restore_if_minimized()
+        hwnd = self.root_handle_num
+
+        if clear:
+            # 退格次数取昵称长度上限，空框时为无害空操作
+            for _ in range(self.DESKTOP_CLEAR_BACKSPACE):
+                SendMessage(hwnd, WM_CHAR, 0x08, 0)
+            time.sleep(0.05)
+
+        for char in text:
+            code = ord(char)
+            if code == 0x0A:
+                # 换行
+                SendMessage(hwnd, WM_KEYDOWN, VK_RETURN, 0)
+                SendMessage(hwnd, WM_KEYUP, VK_RETURN, 0)
+            else:
+                # 字符一律只发 WM_CHAR，携带真实 Unicode 码点
+                SendMessage(hwnd, WM_CHAR, code, 0)
+            # 逐字符小间隔，避免消息过快被客户端丢弃或乱序
+            time.sleep(0.03)
 
     def swipe_vector_window_message2(self, startPos: list, endPos: list) -> None:
         """

@@ -12,9 +12,9 @@ class AppControl(Adb, Uiautomator2):
     _app_u2_family = ['uiautomator2', 'minitouch', 'scrcpy']
 
     def app_is_running(self) -> bool:
-        # 桌面模式：目标窗口存在即游戏在运行，不做 ADB 探测
+        # 桌面模式：目标窗口存在 且 已完成登录（OAS 自动启动的客户端在登录页，需先走 restart 登录流程）
         if self.is_desktop:
-            return self.desktop_window_exists()
+            return self.desktop_window_exists() and getattr(self, '_desktop_login_done', True)
         method = self.config.script.device.control_method
         # if self.is_wsa:
         #     package = self.app_current_wsa()

@@ -272,13 +272,42 @@ def test_move_desktop_window_message_caps_points(monkeypatch):
 
 
 def test_screenshot_desktop_bitblt_raises_when_minimized(monkeypatch):
-    # 窗口最小化时客户区为 0x0，应给出可读错误而非 reshape 崩溃
+    # 窗口最小化且还原失败（客户区仍 0x0）→ 应给出可读错误而非 reshape 崩溃
     w = object.__new__(Window)
     w.is_desktop_window = True
     w.root_handle_num = 0x200
+    monkeypatch.setattr(Window, 'desktop_window_restore_if_minimized', lambda self: False)
     monkeypatch.setattr('module.device.method.windows_impl.GetClientRect', lambda h: (0, 0, 0, 0))
     with pytest.raises(RequestHumanTakeover):
         w.screenshot_desktop_bitblt()
+
+
+def test_screenshot_desktop_bitblt_restores_before_capture(monkeypatch):
+    # 截图前会先尝试还原最小化窗口；还原成功后正常截取
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0x200
+    w.screenshot_size = (1280, 720)
+    restore_calls = []
+    monkeypatch.setattr(Window, 'desktop_window_restore_if_minimized',
+                        lambda self: restore_calls.append(True) or True)
+    fake_save_dc = MagicMock()
+    fake_mfc_dc = MagicMock()
+    fake_mfc_dc.CreateCompatibleDC.return_value = fake_save_dc
+    fake_bitmap = MagicMock()
+    fake_bitmap.GetBitmapBits.return_value = b'\x00' * (1280 * 720 * 4)
+    fake_bitmap.CreateCompatibleBitmap = lambda dc, w, h: None
+    fake_bitmap.GetHandle = lambda: 1
+    fake_mfc_dc.CreateCompatibleBitmap.return_value = fake_bitmap
+    fake_save_dc.BitBlt = lambda *a, **k: None
+    monkeypatch.setattr('module.device.method.windows_impl.GetDC', lambda h: 1)
+    monkeypatch.setattr('module.device.method.windows_impl.GetClientRect', lambda h: (0, 0, 1280, 720))
+    monkeypatch.setattr('module.device.method.windows_impl.CreateDCFromHandle', lambda dc: fake_mfc_dc)
+    monkeypatch.setattr('module.device.method.windows_impl.CreateBitmap', lambda: fake_bitmap)
+    monkeypatch.setattr('module.device.method.windows_impl.DeleteObject', lambda h: None)
+    img = w.screenshot_desktop_bitblt()
+    assert restore_calls == [True]
+    assert img.shape == (720, 1280, 3)
 
 
 class _IntervalTimer:
@@ -426,7 +455,7 @@ def _desktop_device(config=None):
         config = types.SimpleNamespace(
             script=types.SimpleNamespace(
                 device=types.SimpleNamespace(
-                    serial='desktop', screenshot_method='auto', control_method='minitouch',
+                    serial='desktop', handle='4242', screenshot_method='auto', control_method='minitouch',
                 )
             ),
         )
@@ -467,8 +496,18 @@ def test_init_desktop_replaces_printwindow():
     assert dev.config.script.device.screenshot_method == 'window_background'
 
 
-def test_app_is_running_desktop_uses_window_existence():
-    # 桌面 app_is_running：窗口存在即 True
+def test_app_is_running_desktop_requires_login_done():
+    # 桌面 app_is_running：窗口存在 且 登录完成才判定运行中（OAS 自动启动的客户端在登录页）
+    dev = _desktop_device()
+    dev.desktop_window_exists = lambda: True
+    dev._desktop_login_done = False
+    assert dev.app_is_running() is False
+    dev._desktop_login_done = True
+    assert dev.app_is_running() is True
+
+
+def test_app_is_running_desktop_defaults_logged_in():
+    # 默认登录态 True：用户已开着的客户端不强制登录
     dev = _desktop_device()
     dev.desktop_window_exists = lambda: True
     assert dev.app_is_running() is True
@@ -490,23 +529,64 @@ def test_full_recovery_desktop_window_missing():
     assert dev.full_recovery() is False
 
 
-def test_app_start_stop_desktop_noop():
-    # 桌面 app_start/app_stop 为 no-op，不调用 ADB
+def test_app_start_desktop_skips_when_window_exists():
+    # 窗口在 → app_start 不自动启动，不调用 ADB
     dev = _desktop_device()
-    calls = {'start': 0, 'stop': 0}
     dev.config.script.error = types.SimpleNamespace(handle_error=True)
-
-    def fake_start():
-        calls['start'] += 1
-    def fake_stop():
-        calls['stop'] += 1
-    dev.super_start = fake_start
-    dev.super_stop = fake_stop
-    # 直接验证桌面分支提前 return
+    dev.desktop_window_exists = lambda: True
+    launched = []
+    dev.launch_desktop_client = lambda: launched.append(True) or True
     Device.app_start(dev)
+    assert launched == []
+
+
+def test_app_start_desktop_launches_when_window_missing():
+    # 窗口缺失 → app_start 自动启动并绑定 PID（空闲关闭后由 Restart 链路拉起）
+    dev = _desktop_device()
+    dev.config.script.error = types.SimpleNamespace(handle_error=True)
+    dev.desktop_window_exists = lambda: False
+    launched = []
+    dev.launch_desktop_client = lambda: launched.append(True) or True
+    Device.app_start(dev)
+    assert launched == [True]
+
+
+def test_app_stop_desktop_calls_stop_client():
+    # 桌面 app_stop 走 desktop_stop_client 关闭客户端，不调用 ADB
+    dev = _desktop_device()
+    dev.config.script.error = types.SimpleNamespace(handle_error=True)
+    stopped = []
+    dev.desktop_stop_client = lambda: stopped.append(True)
     Device.app_stop(dev)
-    assert calls['start'] == 0
-    assert calls['stop'] == 0
+    assert stopped == [True]
+
+
+def test_desktop_ensure_launched_window_present_no_launch():
+    # 窗口可用 → 不启动
+    dev = _desktop_device()
+    dev.desktop_window_exists = lambda: True
+    launched = []
+    dev.launch_desktop_client = lambda: launched.append(True) or True
+    assert dev._desktop_ensure_launched() is True
+    assert launched == []
+
+
+def test_desktop_ensure_launched_stale_pid_restarts():
+    # 配置里的 PID 已失效（对应窗口不存在）→ 自动重启客户端并重新绑定
+    dev = _desktop_device()  # handle='4242' 已失效
+    dev.desktop_window_exists = lambda: False
+    launched = []
+    dev.launch_desktop_client = lambda: launched.append(True) or True
+    assert dev._desktop_ensure_launched() is True
+    assert launched == [True]
+
+
+def test_desktop_ensure_launched_empty_handle_launches():
+    # PID 未绑定（handle 空）→ 直接启动，不依赖窗口存在性探测
+    dev = _desktop_device()
+    dev.config.script.device.handle = ''
+    dev.launch_desktop_client = lambda: True
+    assert dev._desktop_ensure_launched() is True
 
 
 def test_desktop_window_set_size_noop_when_match(monkeypatch):
@@ -607,6 +687,48 @@ def test_dpi_awareness_restores_previous_context(monkeypatch):
     # 第一次传入 PER_MONITOR_AWARE_V2，退出时传回上一次返回的上下文
     assert len(calls) == 2
     assert calls[1] == 0x1234
+
+
+def _desktop_input_window(monkeypatch):
+    """构造 input_text_desktop 桩：捕获 SendMessage 序列，跳过 sleep。"""
+    w = object.__new__(Window)
+    w.root_handle_num = 0x200
+    w.DESKTOP_CLEAR_BACKSPACE = 20
+    calls = []
+    monkeypatch.setattr('module.device.method.windows_impl.SendMessage',
+                        lambda h, m, wp, lp=0: calls.append((h, m, wp)) or 0)
+    monkeypatch.setattr('module.device.method.windows_impl.time.sleep', lambda s: None)
+    return w, calls
+
+
+def test_input_text_desktop_ascii_and_chinese(monkeypatch):
+    # 中英文统一走 WM_CHAR：ASCII 与中文码点同路径，不补 WM_KEYDOWN
+    w, calls = _desktop_input_window(monkeypatch)
+    w.input_text_desktop('测试a')
+    assert calls == [
+        (0x200, win32con.WM_CHAR, 0x6D4B),  # 测
+        (0x200, win32con.WM_CHAR, 0x8BD5),  # 试
+        (0x200, win32con.WM_CHAR, 0x61),    # a
+    ]
+
+
+def test_input_text_desktop_clear_sends_backspace(monkeypatch):
+    # clear=True 发 DESKTOP_CLEAR_BACKSPACE 次退格，且不产生字符消息
+    w, calls = _desktop_input_window(monkeypatch)
+    w.input_text_desktop('', clear=True)
+    assert len(calls) == 20
+    assert all(msg == win32con.WM_CHAR and wp == 0x08 for _, msg, wp in calls)
+
+
+def test_input_text_desktop_newline_uses_vk_return(monkeypatch):
+    # 换行发 VK_RETURN 的 keydown/keyup，其余仍走 WM_CHAR
+    w, calls = _desktop_input_window(monkeypatch)
+    w.input_text_desktop('\nX')
+    assert calls == [
+        (0x200, win32con.WM_KEYDOWN, win32con.VK_RETURN),
+        (0x200, win32con.WM_KEYUP, win32con.VK_RETURN),
+        (0x200, win32con.WM_CHAR, 0x58),  # X
+    ]
 
 
 def test_connection_init_desktop_skips_adb(monkeypatch):
@@ -750,3 +872,543 @@ def test_script_set_arg_emulator_handle_keeps_title_text(store):
     result = store.patch_user_argument("oas1", "Script", "device", "handle", "MuMuPlayer")
     assert result.success is True
     assert store.load("oas1").canonical["script"]["device"]["handle"] == "MuMuPlayer"
+
+
+# ---------------- 桌面客户端自动生命周期：窗口存在性 / 启动绑定 / 关闭 / 最小化还原 ----------------
+
+def test_desktop_window_exists_prefers_instance_root_handle(monkeypatch):
+    # 实例 root_handle（运行时重新绑定后的新 PID）优先于配置 handle
+    handle = object.__new__(Handle)
+    handle.config = _handle_config(handle='4242')
+    handle.root_handle = '9999'
+    called = []
+    def fake_find(self, pid):
+        called.append(pid)
+        return 0x200
+    monkeypatch.setattr(Handle, 'find_desktop_window_by_pid', fake_find)
+    assert handle.desktop_window_exists() is True
+    assert called == ['9999']
+
+
+def test_desktop_window_exists_falls_back_to_config_handle(monkeypatch):
+    # root_handle 未设置（Handle 尚未按 PID 定位）→ 用配置 handle
+    handle = object.__new__(Handle)
+    handle.config = _handle_config(handle='4242')
+    called = []
+    def fake_find(self, pid):
+        called.append(pid)
+        return 0x200
+    monkeypatch.setattr(Handle, 'find_desktop_window_by_pid', fake_find)
+    assert handle.desktop_window_exists() is True
+    assert called == ['4242']
+
+
+def test_desktop_resolve_install_root_from_config(tmp_path):
+    # 配置填安装目录 → 解析成功
+    (tmp_path / 'bin').mkdir()
+    (tmp_path / 'bin' / 'onmyoji.exe').touch()
+    w = object.__new__(Window)
+    w.config = types.SimpleNamespace(script=types.SimpleNamespace(
+        device=types.SimpleNamespace(desktop_game_path=str(tmp_path), handle='4242')))
+    assert w.desktop_resolve_install_root() == str(tmp_path.resolve())
+
+
+def test_desktop_resolve_install_root_accepts_exe_path(tmp_path):
+    # 配置直接填 bin\\onmyoji.exe 完整路径 → 归一到安装目录
+    (tmp_path / 'bin').mkdir()
+    (tmp_path / 'bin' / 'onmyoji.exe').touch()
+    w = object.__new__(Window)
+    w.config = types.SimpleNamespace(script=types.SimpleNamespace(
+        device=types.SimpleNamespace(desktop_game_path=str(tmp_path / 'bin' / 'onmyoji.exe'), handle='4242')))
+    assert w.desktop_resolve_install_root() == str(tmp_path.resolve())
+
+
+def test_desktop_resolve_install_root_invalid_falls_back(tmp_path, monkeypatch):
+    # 配置路径无效 → 回退自动发现
+    w = object.__new__(Window)
+    w.config = types.SimpleNamespace(script=types.SimpleNamespace(
+        device=types.SimpleNamespace(desktop_game_path=str(tmp_path / 'nonexistent'), handle='4242')))
+    monkeypatch.setattr(Window, '_desktop_discover_install_root', lambda self: tmp_path.resolve())
+    assert w.desktop_resolve_install_root() == str(tmp_path.resolve())
+
+
+def test_desktop_discover_install_root_programfiles(tmp_path, monkeypatch):
+    # 自动发现：%ProgramFiles%\\Onmyoji\\bin\\onmyoji.exe 存在即命中
+    root = tmp_path / 'PF' / 'Onmyoji'
+    (root / 'bin').mkdir(parents=True)
+    (root / 'bin' / 'onmyoji.exe').touch()
+    monkeypatch.setenv('ProgramFiles', str(tmp_path / 'PF'))
+    monkeypatch.setenv('ProgramFiles(x86)', str(tmp_path / 'PFX86'))
+    w = object.__new__(Window)
+    assert w._desktop_discover_install_root() == root.resolve()
+
+
+def test_launch_desktop_client_binds_new_window(monkeypatch):
+    # 启动：只认新出现的桌面窗口，连续两次采样确认后绑定 PID/HWND
+    w = object.__new__(Window)
+    w.config = _handle_config(handle='4242')
+    monkeypatch.setattr(Window, 'desktop_resolve_install_root', lambda self: 'C:/Games/Onmyoji')
+    monkeypatch.setattr(Window, 'desktop_game_exe', lambda self, root: 'C:/Games/Onmyoji/bin/onmyoji.exe')
+    launched = []
+    monkeypatch.setattr('module.device.handle.subprocess.Popen',
+                        lambda *a, **k: launched.append(a[0][0]) or types.SimpleNamespace(pid=9999))
+    state = {'n': 0}
+    def fake_list():
+        # 第一次采样时新窗口还没出现，之后出现
+        state['n'] += 1
+        if state['n'] == 1:
+            return [{'pid': 4242, 'title': '阴阳师-网易游戏', 'x': 0, 'y': 0}]
+        return [{'pid': 4242, 'title': '阴阳师-网易游戏', 'x': 0, 'y': 0},
+                {'pid': 9999, 'title': '阴阳师-网易游戏', 'x': 100, 'y': 0, 'hwnd': 0x300}]
+    monkeypatch.setattr('module.device.handle.list_desktop_windows', fake_list)
+    sleeps = []
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: sleeps.append(s))
+    bound = []
+    w.desktop_bind_pid = lambda pid, hwnd=0: bound.append((pid, hwnd))
+    w.desktop_window_exists = lambda: True
+    assert w.launch_desktop_client(timeout=5) is True
+    assert launched == ['C:/Games/Onmyoji/bin/onmyoji.exe']
+    assert bound == [(9999, 0x300)]
+    # 绑定后等待 20 秒让客户端进入登录页
+    assert 20 in sleeps
+
+
+def test_desktop_bind_pid_init_uses_startup_normalize():
+    # 设备初始化阶段：走 startup_normalize 持久化（同步 provisional 快照）
+    w = object.__new__(Window)
+    w.root_handle = ''
+    w.root_handle_num = 0
+    w.is_desktop_window = False
+    w.config = _handle_config(handle='')
+    calls = []
+    w.config.startup_normalize = lambda updates: calls.append(updates)
+    w.desktop_bind_pid('1234', 0x100)
+    assert calls == [{("script", "device", "handle"): '1234'}]
+    assert w.root_handle == '1234'
+    assert w.root_handle_num == 0x100
+    assert w.is_desktop_window is True
+    # 新绑定的客户端刚启动，登录态必须重置为 False（需先走 restart 登录流程）
+    assert w._desktop_login_done is False
+
+
+def test_desktop_bind_pid_runtime_falls_back_to_save():
+    # 运行期（快照已冻结，startup_normalize 抛 RuntimeError）→ 写运行模型并 save()
+    w = object.__new__(Window)
+    w.root_handle = 'old'
+    w.root_handle_num = 0
+    w.is_desktop_window = False
+    w.config = _handle_config(handle='old')
+    w.config.startup_normalize = lambda updates: (_ for _ in ()).throw(RuntimeError('frozen'))
+    saved = []
+    w.config.save = lambda: saved.append(True)
+    w.desktop_bind_pid('9999', 0x300)
+    assert w.root_handle == '9999'
+    assert w.root_handle_num == 0x300
+    assert w.is_desktop_window is True
+    assert w.config.script.device.handle == '9999'
+    assert saved == [True]
+
+
+def _desktop_restore_stub(monkeypatch):
+    """构造 desktop_window_restore_if_minimized 桩：屏蔽真实 win32，控制 IsIconic/GetClientRect。"""
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0x200
+    w.desktop_window_set_size = lambda: False
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    return w
+
+
+def test_desktop_restore_noop_when_not_iconic(monkeypatch):
+    # 非最小化 → 不还原，不调 ShowWindow
+    w = _desktop_restore_stub(monkeypatch)
+    monkeypatch.setattr('module.device.handle.IsIconic', lambda h: False)
+    calls = []
+    monkeypatch.setattr('module.device.handle.ShowWindow', lambda h, cmd: calls.append(cmd))
+    assert w.desktop_window_restore_if_minimized() is False
+    assert calls == []
+
+
+def test_desktop_restore_when_iconic(monkeypatch):
+    # 最小化 → ShowWindow(SW_RESTORE)，客户区恢复后返回 True 并重校准尺寸
+    w = _desktop_restore_stub(monkeypatch)
+    monkeypatch.setattr('module.device.handle.IsIconic', lambda h: True)
+    poll = {'n': 0}
+    def fake_client_rect(h):
+        poll['n'] += 1
+        return (0, 0, 0, 0) if poll['n'] == 1 else (0, 0, 1280, 720)
+    monkeypatch.setattr('module.device.handle.GetClientRect', fake_client_rect)
+    calls = []
+    monkeypatch.setattr('module.device.handle.ShowWindow', lambda h, cmd: calls.append(cmd))
+    calibrated = []
+    w.desktop_window_set_size = lambda: calibrated.append(True) or True
+    assert w.desktop_window_restore_if_minimized() is True
+    assert calls == [win32con.SW_RESTORE]
+    assert calibrated == [True]
+
+
+def test_desktop_restore_returns_false_when_still_minimized(monkeypatch):
+    # 还原后客户区仍 0x0（客户端未恢复）→ 返回 False，不重校准
+    w = _desktop_restore_stub(monkeypatch)
+    monkeypatch.setattr('module.device.handle.IsIconic', lambda h: True)
+    monkeypatch.setattr('module.device.handle.GetClientRect', lambda h: (0, 0, 0, 0))
+    calls = []
+    monkeypatch.setattr('module.device.handle.ShowWindow', lambda h, cmd: calls.append(cmd))
+    w.desktop_window_set_size = lambda: (_ for _ in ()).throw(AssertionError('不应重校准'))
+    assert w.desktop_window_restore_if_minimized(wait=0.2) is False
+    assert calls == [win32con.SW_RESTORE]
+
+
+def test_desktop_stop_client_force_kills_directly(monkeypatch):
+    # 关闭客户端：不发任何窗口消息（退出确认框回车无效），直接强杀，窗口消失即返回
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0x200
+    w._desktop_close_wait_seconds = lambda: 10
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
+    monkeypatch.setattr('module.device.handle.PostMessage',
+                        lambda *a: (_ for _ in ()).throw(AssertionError('关闭客户端不应发窗口消息')))
+    monkeypatch.setattr('module.device.handle.SendMessage',
+                        lambda *a: (_ for _ in ()).throw(AssertionError('关闭客户端不应发回车')))
+    w.desktop_window_exists = lambda: False
+    killed = []
+    w.desktop_force_kill = lambda: killed.append(True)
+    w.desktop_stop_client()
+    assert killed == [True]
+    # 关闭客户端后登录态重置，下次启动需重新走登录流程
+    assert w._desktop_login_done is False
+
+
+def test_desktop_stop_client_skips_when_window_gone(monkeypatch):
+    # 窗口已不存在 → 直接跳过，不强杀
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0
+    killed = []
+    w.desktop_force_kill = lambda: killed.append(True)
+    w.desktop_stop_client()
+    assert killed == []
+
+
+def test_desktop_stop_client_warns_when_window_remains(monkeypatch):
+    # 强杀后窗口仍在（罕见：权限不足/句柄残留）→ 记警告，不抛异常阻塞调度
+    import time as _time
+    _real_sleep = _time.sleep
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0x200
+    w._desktop_close_wait_seconds = lambda: 1
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: _real_sleep(0.01))
+    w.desktop_window_exists = lambda: True
+    killed = []
+    w.desktop_force_kill = lambda: killed.append(True)
+    w.desktop_stop_client()
+    assert killed == [True]
+
+
+def _popup_handle(monkeypatch, windows, pid=4242):
+    """构造带 MPay 弹窗枚举桩的 Handle：windows 为 [(hwnd, class, visible, pid)]。"""
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle = str(pid)
+    w.config = _handle_config(handle=str(pid))
+    monkeypatch.setattr('module.device.handle.EnumWindows',
+                        lambda cb, lst: [lst.append(h[0]) for h in windows])
+    monkeypatch.setattr('module.device.handle.GetClassName',
+                        lambda h: dict((x[0], x[1]) for x in windows)[h])
+    monkeypatch.setattr('module.device.handle.IsWindowVisible',
+                        lambda h: dict((x[0], x[2]) for x in windows)[h])
+    monkeypatch.setattr('module.device.handle.GetWindowThreadProcessId',
+                        lambda h: (0, dict((x[0], x[3]) for x in windows)[h]))
+    return w
+
+
+def test_find_desktop_login_popup_matches_class_and_pid(monkeypatch):
+    # 按类名 MPAY_LOGIN + 同 PID 定位弹窗（主窗口/适龄提示/其他实例的弹窗都不能命中）
+    windows = [
+        (0x100, 'Win32Window', True, 4242),
+        (0x200, 'MPAY_AGE_TIPS', True, 4242),
+        (0x300, 'MPAY_LOGIN', True, 9999),  # 其他实例的弹窗
+        (0x400, 'MPAY_LOGIN', True, 4242),
+    ]
+    w = _popup_handle(monkeypatch, windows)
+    assert w.find_desktop_login_popup() == 0x400
+
+
+def test_find_desktop_login_popup_skips_invisible(monkeypatch):
+    # 不可见的弹窗（已关闭但未销毁）不算命中
+    windows = [(0x400, 'MPAY_LOGIN', False, 4242)]
+    w = _popup_handle(monkeypatch, windows)
+    assert w.find_desktop_login_popup() == 0
+
+
+def test_find_desktop_login_popup_none_when_absent(monkeypatch):
+    # 没有弹窗 → 返回 0
+    windows = [(0x100, 'Win32Window', True, 4242)]
+    w = _popup_handle(monkeypatch, windows)
+    assert w.find_desktop_login_popup() == 0
+
+
+def test_desktop_confirm_login_popup_sends_enter_until_gone(monkeypatch):
+    # 发现弹窗 → 发回车（鼠标消息对 DirectUI 弹窗无效）→ 弹窗消失返回 True
+    import time as _time
+    _real_sleep = _time.sleep
+    w = object.__new__(Window)
+    keys = []
+    monkeypatch.setattr('module.device.handle.SendMessage',
+                        lambda hwnd, msg, wp, lp: keys.append((hwnd, msg, wp)))
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: _real_sleep(0.01))
+    found = [0x400, 0x400, 0]  # 第一次探测有、发回车后再探测仍有、第三次消失
+    w.find_desktop_login_popup = lambda: found.pop(0) if found else 0
+    assert w.desktop_confirm_login_popup(wait=5) is True
+    assert [msg for _, msg, _ in keys] == [win32con.WM_KEYDOWN, win32con.WM_KEYUP]
+    assert all(hwnd == 0x400 for hwnd, _, _ in keys)
+
+
+def test_desktop_confirm_login_popup_no_popup_returns_false(monkeypatch):
+    # 没有弹窗 → 不发任何消息，返回 False（调用方无需重新截图）
+    w = object.__new__(Window)
+    monkeypatch.setattr('module.device.handle.SendMessage',
+                        lambda *a: (_ for _ in ()).throw(AssertionError('无弹窗不应发消息')))
+    w.find_desktop_login_popup = lambda: 0
+    assert w.desktop_confirm_login_popup() is False
+
+
+def test_desktop_confirm_login_popup_timeout_still_true(monkeypatch):
+    # 回车后弹窗始终不消失 → 超时返回 True，让调用方重新截图再判断（不抛异常）
+    import time as _time
+    _real_sleep = _time.sleep
+    w = object.__new__(Window)
+    monkeypatch.setattr('module.device.handle.SendMessage', lambda *a: None)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: _real_sleep(0.01))
+    w.find_desktop_login_popup = lambda: 0x400
+    assert w.desktop_confirm_login_popup(wait=0.1) is True
+
+
+def test_desktop_send_enter_ignores_dead_window(monkeypatch):
+    # 回车发送过程中窗口被销毁（回车已生效）→ 吞掉异常，不影响后续流程
+    w = object.__new__(Window)
+    monkeypatch.setattr('module.device.handle.SendMessage',
+                        lambda *a: (_ for _ in ()).throw(Exception('invalid window handle')))
+    w._desktop_send_enter(0x400)
+
+
+def test_desktop_pid_prefers_instance_root_handle():
+    # PID 优先取实例 root_handle（运行期重新绑定的新 PID），未设置时回退配置
+    w = object.__new__(Window)
+    w.config = _handle_config(handle='4242')
+    w.root_handle = '9999'
+    assert w.desktop_pid() == 9999
+    w2 = object.__new__(Window)
+    w2.config = _handle_config(handle='4242')
+    assert w2.desktop_pid() == 4242
+    w3 = object.__new__(Window)
+    w3.config = _handle_config(handle='not-a-pid')
+    assert w3.desktop_pid() is None
+
+
+def test_desktop_close_wait_seconds_reads_config():
+    # 关闭游戏等待时长换算成秒（时*3600+分*60+秒）
+    w = object.__new__(Window)
+    opt = types.SimpleNamespace(close_game_wait_duration=types.SimpleNamespace(hour=0, minute=10, second=0))
+    w.config = types.SimpleNamespace(script=types.SimpleNamespace(optimization=opt))
+    assert w._desktop_close_wait_seconds() == 600
+
+
+def test_desktop_force_kill_calls_terminate_process(monkeypatch):
+    # 强杀：OpenProcess + TerminateProcess + CloseHandle
+    w = object.__new__(Window)
+    w.root_handle = '9999'
+    kernel = MagicMock()
+    kernel.OpenProcess.return_value = 0xABC
+    fake_windll = MagicMock()
+    fake_windll.kernel32 = kernel
+    monkeypatch.setattr('module.device.handle.ctypes.windll', fake_windll)
+    w.desktop_force_kill()
+    kernel.OpenProcess.assert_called_once_with(0x0001, False, 9999)
+    kernel.TerminateProcess.assert_called_once_with(0xABC, 0)
+    kernel.CloseHandle.assert_called_once_with(0xABC)
+
+
+def test_swipe_adb_desktop_routes_to_window_message():
+    # 桌面模式无 adb 设备：任务直连 swipe_adb 也改走窗口消息路径（不调 adb_shell）
+    dev = _desktop_device()
+    swiped = []
+    dev.swipe_window_message = lambda p1, p2: swiped.append((p1, p2))
+    dev.adb_shell = lambda *a: (_ for _ in ()).throw(AssertionError('桌面模式不应调用 adb'))
+    dev.swipe_adb((537, 527), (537, 167), duration=1.0)
+    assert swiped == [((537, 527), (537, 167))]
+
+
+def test_swipe_adb_emulator_keeps_adb_shell():
+    # 模拟器路径字节不变：仍走 adb_shell input swipe
+    dev = object.__new__(Device)
+    dev.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(device=types.SimpleNamespace(serial='127.0.0.1:16384')))
+    calls = []
+    dev.adb_shell = lambda *a: calls.append(a)
+    dev.swipe_adb((10, 20), (30, 40), duration=0.1)
+    assert calls == [(['input', 'swipe', 10, 20, 30, 40, 100],)]
+
+
+def test_desktop_mark_logged_in_sets_flag():
+    # 登录成功后标记登录态，app_is_running 转 True
+    dev = _desktop_device()
+    dev.desktop_window_exists = lambda: True
+    dev._desktop_login_done = False
+    dev.desktop_mark_logged_in()
+    assert dev._desktop_login_done is True
+    assert dev.app_is_running() is True
+
+
+def test_app_restart_desktop_skips_stop():
+    # 桌面分支：客户端可能刚被 OAS 自动启动（已在登录页），不做 app_stop 避免白关一次
+    from tasks.Restart.script_task import ScriptTask
+    t = object.__new__(ScriptTask)
+    t.device = _desktop_device()
+    stopped = []
+    t.device.app_stop = lambda: stopped.append(True)
+    started = []
+    t.device.app_start = lambda: started.append(True)
+    t.app_handle_login = lambda: None
+    t.set_next_run = lambda **kw: None
+    t.config = types.SimpleNamespace(
+        restart=types.SimpleNamespace(harvest_config=types.SimpleNamespace(enable_ap=False)))
+    ScriptTask.app_restart(t)
+    assert stopped == []
+    assert started == [True]
+
+
+def test_app_restart_emulator_stops_first():
+    # 模拟器流程不变：app_restart 仍先停后开
+    from tasks.Restart.script_task import ScriptTask
+    t = object.__new__(ScriptTask)
+    dev = object.__new__(Device)
+    dev.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(device=types.SimpleNamespace(serial='127.0.0.1:16384')))
+    t.device = dev
+    stopped = []
+    t.device.app_stop = lambda: stopped.append(True)
+    started = []
+    t.device.app_start = lambda: started.append(True)
+    t.app_handle_login = lambda: None
+    t.set_next_run = lambda **kw: None
+    t.config = types.SimpleNamespace(
+        restart=types.SimpleNamespace(harvest_config=types.SimpleNamespace(enable_ap=False)))
+    ScriptTask.app_restart(t)
+    assert stopped == [True]
+    assert started == [True]
+
+
+def test_app_handle_login_marks_desktop_logged_in():
+    # 桌面登录成功后标记登录态，使 app_is_running 判定为已在游戏中
+    from tasks.Restart.login import LoginHandler
+    t = object.__new__(LoginHandler)
+    t.device = _desktop_device()
+    t.device.stuck_record_clear = lambda: None
+    t.device.click_record_clear = lambda: None
+    t.device._desktop_login_done = False
+    t._app_handle_login = lambda: True
+    t.config = types.SimpleNamespace(
+        restart=types.SimpleNamespace(harvest_config=types.SimpleNamespace(enable=False)))
+    assert t.app_handle_login() is True
+    assert t.device._desktop_login_done is True
+
+
+def test_app_handle_login_emulator_not_marked():
+    # 模拟器登录不触发桌面登录态标记
+    from tasks.Restart.login import LoginHandler
+    t = object.__new__(LoginHandler)
+    dev = object.__new__(Device)
+    dev.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(device=types.SimpleNamespace(serial='127.0.0.1:16384')))
+    dev.stuck_record_clear = lambda: None
+    dev.click_record_clear = lambda: None
+    t.device = dev
+    t._app_handle_login = lambda: True
+    t.config = types.SimpleNamespace(
+        restart=types.SimpleNamespace(harvest_config=types.SimpleNamespace(enable=False)))
+    assert t.app_handle_login() is True
+    # 默认登录态仍为 True（类属性），未被桌面标记逻辑改动
+    assert dev._desktop_login_done is True
+
+
+class _AlwaysReachedTimer:
+    """登录循环用的 Timer 桩：所有计时器立即到点，让循环一轮内跑完判定"""
+
+    def __init__(self, limit, count=0):
+        pass
+
+    def start(self):
+        return self
+
+    def reached(self):
+        return True
+
+    def reset(self):
+        return self
+
+
+def _login_handler_for_popup(monkeypatch, device):
+    """构造 LoginHandler 桩：只让"式神录按钮出现"判定为真，一轮循环即跳出。"""
+    from tasks.Restart.login import LoginHandler
+    monkeypatch.setattr('tasks.Restart.login.Timer', _AlwaysReachedTimer)
+    t = object.__new__(LoginHandler)
+    t.device = device
+    t.device.stuck_record_add = lambda name: None
+    t.device.get_orientation = lambda: None
+    t.screenshot = lambda: None
+    t.skip_onmyoji_genie = True
+    # 除"式神录按钮出现"外的图像判定统一为假，让循环只走弹窗分支与跳出判定
+    t.appear_then_click = lambda *a, **kw: False
+    t.click = lambda *a, **kw: False
+    t.ocr_appear_click = lambda *a, **kw: False
+    t.appear = lambda rule, **kw: rule is LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS
+    return t
+
+
+def test_app_handle_login_desktop_confirms_popup_before_loop(monkeypatch):
+    # 桌面分支：进循环前先确认 MPay 弹窗，循环内发现弹窗则确认后重新截图（continue）
+    dev = _desktop_device()
+    results = [True, True, False]  # 进循环前、循环内第一轮都有弹窗，第二轮已消失
+    calls = []
+
+    def confirm(*a, **kw):
+        calls.append(True)
+        return results.pop(0) if results else False
+
+    dev.desktop_confirm_login_popup = confirm
+    t = _login_handler_for_popup(monkeypatch, dev)
+    t._app_handle_login()
+    # 进循环前 1 次 + 循环内 2 次（第一次返回 True 触发 continue，第二次无弹窗后继续判定）
+    assert len(calls) == 3
+
+
+def test_app_handle_login_emulator_never_touches_popup(monkeypatch):
+    # 模拟器流程不受影响：完全不调用桌面弹窗确认
+    dev = object.__new__(Device)
+    dev.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(device=types.SimpleNamespace(serial='127.0.0.1:16384')))
+    dev.desktop_confirm_login_popup = lambda *a, **kw: (_ for _ in ()).throw(
+        AssertionError('模拟器流程不应确认桌面弹窗'))
+    t = _login_handler_for_popup(monkeypatch, dev)
+    t._app_handle_login()
+
+
+def test_emulator_stop_desktop_closes_client():
+    # 空闲关闭（close_emulator_or_*）桌面分支：走 desktop_stop_client 关客户端，不碰模拟器
+    dev = _desktop_device()
+    stopped = []
+    dev.desktop_stop_client = lambda: stopped.append(True)
+    dev.desktop_window_exists = lambda: False
+    assert dev.emulator_stop() is True
+    assert stopped == [True]
+
+
+def test_emulator_stop_desktop_returns_false_when_window_remains():
+    # 客户端未关闭成功（窗口仍在）→ 返回 False
+    dev = _desktop_device()
+    dev.desktop_stop_client = lambda: None
+    dev.desktop_window_exists = lambda: True
+    assert dev.emulator_stop() is False

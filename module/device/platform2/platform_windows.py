@@ -618,6 +618,10 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         return False
 
     def emulator_stop(self):
+        # 桌面客户端模式：无模拟器生命周期，空闲关闭改走关闭桌面客户端（用关闭游戏等待时长判断是否关闭完成）
+        if getattr(self, 'is_desktop', False):
+            self.desktop_stop_client()
+            return not self.desktop_window_exists()
         logger.hr('Emulator stop', level=1)
         for trial in range(3):
             if self._emulator_function_wrapper(self._emulator_stop):

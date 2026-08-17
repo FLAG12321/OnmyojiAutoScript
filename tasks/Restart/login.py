@@ -32,6 +32,12 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         confirm_timer = Timer(1.5, count=2).start()
         orientation_timer = Timer(10)
         login_success = False
+        # 桌面分支：MPay 账号登录弹窗是独立顶层窗口，不在游戏截图里，只能按窗口类名探测。
+        # 客户端刚启动时必然有它，加载慢或重登时也可能中途弹出，因此进循环前先确认一次，
+        # 循环内再按 popup_timer 周期性复查（模拟器无此弹窗，两处都隔离在桌面分支）
+        popup_timer = Timer(2, count=1).start()
+        if self.device.is_desktop:
+            self.device.desktop_confirm_login_popup()
 
         while 1:
             # Watch device rotation
@@ -41,6 +47,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 orientation_timer.reset()
 
             self.screenshot()
+            # 桌面分支：登录弹窗挡在前面时游戏不会推进，发现就回车确认并重新截图
+            if self.device.is_desktop and popup_timer.reached():
+                popup_timer.reset()
+                if self.device.desktop_confirm_login_popup():
+                    continue
             # 取消继续战斗
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')

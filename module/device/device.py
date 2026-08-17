@@ -46,6 +46,9 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_timer_long = Timer(300, count=300).start()
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
     retry_times :int = 0
+    # 桌面客户端登录态：OAS 自动启动/重启客户端后为 False（需先走 restart 登录流程），
+    # 登录成功由 desktop_mark_logged_in() 置 True；默认 True 表示假设已在游戏中（不强制登录）
+    _desktop_login_done = True
     def __init__(self, *args, cancel_event=None, **kwargs):
         # cancel_event: 可选取消信号（threading.Event）。Web 标注采集线程断开时置位，
         # 用于在模拟器拉起链路的检查点尽快放弃拉起。默认 None 表示从不取消，行为与原先一致。
@@ -65,10 +68,11 @@ class Device(Platform, Screenshot, Control, AppControl):
             emulator_down = True
             logger.warning('super().__init__ saw EmulatorNotRunningError — will run full_recovery')
 
-        # 桌面客户端模式：无模拟器生命周期，直接进入 HEALTHY；窗口缺失则报错退出
+        # 桌面客户端模式：无模拟器生命周期；窗口缺失或 PID 未绑定时自动启动客户端并绑定
         if self.is_desktop:
-            if emulator_down:
-                logger.critical('Desktop client window not found, please start the game and bind PID first')
+            if not self._desktop_ensure_launched():
+                logger.critical('Desktop client window not found and auto-launch failed, '
+                                'please start the game and bind PID first')
                 raise RequestHumanTakeover from None
             self._init_desktop()
             return
@@ -104,6 +108,20 @@ class Device(Platform, Screenshot, Control, AppControl):
         # Auto-select the fastest screenshot method
         if self.config.script.device.screenshot_method == 'auto':
             self.run_simple_screenshot_benchmark()
+
+    def _desktop_ensure_launched(self) -> bool:
+        """桌面模式确保客户端已启动并绑定 PID：窗口缺失/PID 未绑定时自动启动。
+
+        返回 True 表示客户端窗口可用（可能刚自动启动完成）；False 表示启动失败需人工接管。
+        仅桌面模式调用，不影响模拟器流程。
+        """
+        if not self.config.script.device.handle or not self.desktop_window_exists():
+            return self.launch_desktop_client()
+        return True
+
+    def desktop_mark_logged_in(self) -> None:
+        """标记桌面客户端已完成登录（仅桌面模式由 Restart 登录流程成功后调用）。"""
+        self._desktop_login_done = True
 
     def _init_desktop(self) -> None:
         """桌面客户端模式初始化：跳过模拟器健康检查/full_recovery。"""
@@ -400,9 +418,11 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.stuck_record_check = empty_function
 
     def app_start(self):
-        # 桌面模式：用户手动管理客户端生命周期，不做任何拉起
+        # 桌面模式：窗口缺失时自动启动客户端并绑定 PID（空闲关闭后由 Restart 链路重新拉起）
         if self.is_desktop:
-            logger.info('Desktop mode: app_start no-op, user manages the client')
+            if not self._desktop_ensure_launched():
+                logger.error('Desktop client not running and auto-launch failed, '
+                             'please start the game manually or check desktop_game_path')
             return
         if not self.config.script.error.handle_error:
             logger.critical('No app stop/start, because HandleError disabled')
@@ -413,9 +433,9 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.click_record_clear()
 
     def app_stop(self):
-        # 桌面模式：绝不杀用户已开的客户端进程
+        # 桌面模式：关闭客户端并等待其退出（用关闭游戏等待时长判断 kill 是否完成）
         if self.is_desktop:
-            logger.info('Desktop mode: app_stop no-op, user manages the client')
+            self.desktop_stop_client()
             return
         if not self.config.script.error.handle_error:
             logger.critical('No app stop/start, because HandleError disabled')
