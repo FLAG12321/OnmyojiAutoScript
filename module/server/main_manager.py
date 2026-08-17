@@ -15,6 +15,7 @@ from module.config.config_generation import (
 )
 from module.server.script_process import ScriptProcess, ScriptState
 from module.server.config_manager import ConfigManager
+from module.server.setting import State
 
 
 # 缺失属性与合法的 inactive/None 终态必须严格区分。
@@ -181,6 +182,11 @@ class MainManager(ConfigManager):
                 return
             except SystemExit:
                 logger.info('Kill the main process')
+                # kill_server 已确认全部实例停止：通知 uvicorn 优雅退出整个服务。
+                # 测试环境下 State.server 为 None，保持只结束推送线程的既有行为。
+                server = State.server
+                if server is not None:
+                    server.should_exit = True
                 return
             except Exception as e:
                 logger.exception(f'push data loop failed, retrying: {e}')

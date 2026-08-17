@@ -1284,6 +1284,70 @@ def test_kill_signal_retries_failed_batch_until_success(tmp_path):
             manager.push_data_thread.join(timeout=2)
 
 
+def test_kill_signal_notifies_uvicorn_to_exit(tmp_path):
+    """kill 确认全部实例停止后，必须通知 uvicorn 优雅退出整个服务。
+
+    修复：/home/kill_server 此前只停脚本进程与推送线程，uvicorn 主进程仍在监听，
+    导致 OASX 重开时 /test 探测成功、直接进入操作界面。现在通过 State.server.should_exit
+    让 uvicorn 优雅退出；测试环境下 State.server 为 None 时保持原行为。
+    """
+    import asyncio
+    from module.server.main_manager import MainManager
+    from module.server.setting import State
+
+    class RetryProcess:
+        # 明确声明合法 stop 终态，避免把测试替身的缺失属性当成成功。
+        state = 0
+        _process = None
+
+        def __init__(self):
+            self.stop_calls = 0
+            self.loop = None
+
+        async def stop(self):
+            self.loop = asyncio.get_running_loop()
+            self.stop_calls += 1
+
+    class FakeServer:
+        def __init__(self):
+            self.should_exit = False
+
+    manager = MainManager(store=ConfigStore(config_root=tmp_path / "config"))
+    manager._push_interval = 0.001
+    process = RetryProcess()
+    fake_server = FakeServer()
+
+    old_signal = MainManager.signal_kill_server
+    old_server = State.server
+    MainManager.signal_kill_server = False
+    State.server = fake_server
+
+    try:
+        async def scenario():
+            manager._main_loop = asyncio.get_running_loop()
+            with manager._registry_lock:
+                manager.script_process = {"oas1": process}
+            manager.start_push_data_thread()
+            await asyncio.sleep(0.02)
+            MainManager.signal_kill_server = True
+            for _ in range(400):
+                if not manager.push_data_thread.is_alive():
+                    break
+                await asyncio.sleep(0.005)
+            assert manager.push_data_thread.is_alive() is False
+            assert process.stop_calls >= 1
+            # 实例停止确认后必须触发 uvicorn 优雅退出，而不是只结束推送线程。
+            assert fake_server.should_exit is True
+
+        asyncio.run(scenario())
+    finally:
+        MainManager.signal_kill_server = old_signal
+        State.server = old_server
+        manager._push_shutdown_event.set()
+        if manager.push_data_thread is not None:
+            manager.push_data_thread.join(timeout=2)
+
+
 @pytest.fixture
 def client(isolated_config_root, monkeypatch):
     """把 mm.store 替换为隔离 Store，并禁用推送线程，再启动 TestClient lifespan。"""

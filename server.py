@@ -94,11 +94,16 @@ def fun(ev: threading.Event):
     ensure_ocr_server_started()
 
     try:
-        uvicorn.run("module.server.app:fastapi_app",
-                    host=host,
-                    port=port,
-                    factory=True,
-                    log_config=None)
+        # 保留 Server 实例引用：/home/kill_server 通过 State.server.should_exit 让 uvicorn
+        # 优雅退出整个服务（跑 lifespan 关闭 + finally 清理 OCR），而不是只停脚本进程。
+        config = uvicorn.Config("module.server.app:fastapi_app",
+                                host=host,
+                                port=port,
+                                factory=True,
+                                log_config=None)
+        server = uvicorn.Server(config)
+        State.server = server
+        server.run()
     finally:
         shutdown_ocr_server()
 

@@ -60,6 +60,7 @@ class State:
 
     restart_event: threading.Event = None
     manager: SyncManager = None
+    server = None  # 由 server.py 注入 uvicorn.Server 实例，供 kill_server 触发整个服务优雅退出
 
     @classmethod
     def init(cls):
