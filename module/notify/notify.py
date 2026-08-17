@@ -50,8 +50,11 @@ class Notifier:
     def push(self, **kwargs) -> bool:
         if not self.enable:
             return False
-        # 更新配置
-        kwargs["title"] = f"{self.config_name} {kwargs['title']}"
+        # 默认在标题前拼接 config_name（保留空格），与既有全局行为一致；
+        # 若调用方已自带完整标题（含 config 前缀，如协作汇总「小号1｜多账号日常完成」），
+        # 可传 skip_config_prefix=True 跳过前缀拼接，不影响其他调用方。
+        if not kwargs.pop("skip_config_prefix", False):
+            kwargs["title"] = f"{self.config_name} {kwargs['title']}"
         self.config.update(kwargs)
         # pre check
         for key in self.required:

@@ -467,6 +467,12 @@ class Script:
         return task_name
 
     def _should_notify_task_end(self, task_name: str) -> bool:
+        # MultiDailyAltAcc 整轮完成汇总由任务内 _notify_daily_completion 统一发送
+        # （「多账号日常完成」），此处通用「任务提醒」会与之重复，故对 MultiDailyAltAcc 抑制；
+        # 其他任务保持原有完成提醒，全局 notifier 行为不变。
+        if self._normalize_task_name(task_name) == 'multidailyaltacc':
+            logger.info('MultiDailyAltAcc TaskEnd notify suppressed (coop summary covers it)')
+            return False
         notify_task_end_list = self.TASK_END_NOTIFY_LIST
         if isinstance(notify_task_end_list, str):
             notify_task_end_list = [notify_task_end_list]

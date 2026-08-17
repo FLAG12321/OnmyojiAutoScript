@@ -135,11 +135,14 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                         phase_failed = True
                         Script.save_error_log(self)
                         break
-            self._notify_daily_completion()
             if phase_failed:
                 # 有账号失败：保留进度文件，10 分钟后重调度接续未完成部分
                 self.next_run("MultiDailyAltAcc", success=False)
             else:
+                # 整轮真正完成：先发送最终协作汇总（此时 coop 尚未 clear）。
+                # 放在 next_run(success=True) 之前，避免「phase_flags 已改、coop 未发」窗口；
+                # 通知失败只记日志，不影响后续收尾（见 _notify_daily_completion）。
+                self._notify_daily_completion()
                 # 检查是否需要关机
                 if self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish and self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
                     self._coordinated_shutdown_system(config_name)
@@ -634,10 +637,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         
         match msg_type:
             case MSGType.cooperation:
-                self.config.notifier.push(
-                    content=self._build_notify_content(account_info),
-                    title=self._build_notify_title(msg_content, "协作任务提醒"),
-                )
+                # 不再「发现一条立即推送」：结构化事件 + 当前账号信息落盘到本轮
+                # ProgressStore，整轮真正完成时统一发送一条汇总（_notify_daily_completion）。
+                self._persist_coop_event(msg_content, account_info)
             case MSGType.mshop:
                 self.config.notifier.push(
                     content=self._build_notify_content(account_info),
@@ -654,6 +656,31 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 
         return should_retry
 
+    def _persist_coop_event(self, event, account_info):
+        """把结构化协作事件 + 当前账号信息落盘到当前配置的 ProgressStore。
+
+        每个配置独立累计（进度文件按 config 命名）；立即 _save()，中途退出不丢。
+        """
+        if not isinstance(event, dict):
+            # 旧版纯字符串事件不再推送，仅记录日志，避免破坏兼容
+            logger.info(f'协作事件（旧格式，跳过推送）: {event}')
+            return
+        record = {
+            "account": str(getattr(account_info, "account", "") or ""),
+            "character": str(getattr(account_info, "character", "") or ""),
+            "svr": str(getattr(account_info, "svr", "") or ""),
+            # 平台：True=安卓，False=iOS（来自账号配置，不从角色名猜测）
+            "apple_or_android": bool(getattr(account_info, "apple_or_android", False)),
+            "type": str(event.get("type", "") or ""),
+            "real": bool(event.get("real", False)),
+            "food_kind": event.get("food_kind"),
+            "label": str(event.get("label", "") or ""),
+        }
+        if self._progress is not None:
+            self._progress.append_coop(record)
+        else:
+            logger.info(f'协作事件（无进度存储，仅记录）: {record}')
+
     @staticmethod
     def _build_notify_title(msg_content, fallback_title):
         clean_content = str(msg_content).strip()
@@ -669,11 +696,119 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         ])
 
     def _notify_daily_completion(self):
-        """通知日常任务完成"""
-        for info in self.daily_conf.sup_account_list:
-            logger.info(f"Account: {info.character}, Last time: {info.last_complete_time}")
-            
-        #self.config.notifier.push(content="Daily任务执行完毕", title="任务提醒")
+        """整轮真正完成：发送一条协作汇总 PushPlus（每个配置每轮一条，最多一次）。
+
+        首次进入完成分支：coop_notified 为 false/不存在 → 发送 → 发送成功后才写
+        coop_notified=true 并 _save()，从而消除「push 成功后、clear 前崩溃导致重启
+        后重复推送」的窗口；已标记（如崩溃后重启接续再次进入完成分支）→ 跳过推送，
+        继续正常 next_run / clear。PushPlus 失败不写标记，仍不阻塞整轮收尾（best-effort）。
+        """
+        if self._progress is None:
+            return
+        if self._progress.is_coop_notified():
+            logger.info('本轮协作已完成通知，跳过重复推送')
+            return
+        coops = self._progress.load_coops()
+        try:
+            # title 自带完整前缀「config_name｜…」，并跳过 Notifier 的全局 config_name 拼接，
+            # 保证显示为「小号1｜多账号日常完成」且不影响其他通知的「config_name 标题」格式。
+            cfg = getattr(self.daily_conf, 'multi_daily_alt_acc_config', None)
+            show_account = bool(getattr(cfg, 'coop_notify_show_account', False))
+            show_system = bool(getattr(cfg, 'coop_notify_show_system', True))
+            ok = self.config.notifier.push(
+                content=self._build_summary_content(
+                    coops, show_account=show_account, show_system=show_system),
+                title=f"{self.config.config_name}｜多账号日常完成",
+                skip_config_prefix=True,
+            )
+        except Exception as e:
+            logger.warning(f'协作汇总通知发送失败（不影响整轮结果）: {e}')
+            return
+        if ok:
+            self._progress.mark_coop_notified()
+        else:
+            # best-effort：失败不标记已通知、不重试、不阻塞收尾（可能漏通知，可接受）
+            logger.warning('协作汇总通知返回失败（不标记已通知，整轮仍视为成功）')
+
+    @classmethod
+    def _build_summary_content(cls, coops, completed_at=None, show_account=False,
+                               show_system=True) -> str:
+        """按固定 7 类顺序格式化协作汇总文本；无协作时输出空轮完成通知。
+
+        show_system=True 时显示平台（安卓/iOS，取自 apple_or_android 字段）；
+        show_account=True 时在角色行尾追加账号/邮箱（account 原值）。
+        svr/account/platform 任一为空都不产生空分隔符。
+        """
+        now_str = (completed_at or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+        if not coops:
+            return "\n".join([
+                "多账号日常完成",
+                "",
+                f"完成时间：{now_str}",
+                "发现协作角色：0",
+                "协作任务数量：0",
+                "",
+                "本轮未发现协作任务。",
+            ])
+        roles = set()
+        for r in coops:
+            char = (r.get("character") or "").strip()
+            if char:
+                roles.add((char, r.get("svr") or ""))
+        lines = [
+            "多账号日常完成",
+            "",
+            f"完成时间：{now_str}",
+            f"发现协作角色：{len(roles)}",
+            f"协作任务数量：{len(coops)}",
+        ]
+        for category, matcher in cls._coop_category_order():
+            items = [r for r in coops if matcher(r)]
+            if not items:
+                continue
+            counter = {}
+            first_rec = {}
+            for r in items:
+                char = (r.get("character") or "").strip()
+                if not char:
+                    continue
+                key = (char, r.get("svr") or "")
+                counter[key] = counter.get(key, 0) + 1
+                first_rec.setdefault(key, r)
+            lines.append("")
+            lines.append(f"{category}（{len(items)}）")
+            for (char, svr), count in sorted(counter.items()):
+                rec = first_rec[(char, svr)]
+                role_line = f"• {char}"
+                meta = []
+                if svr:
+                    meta.append(svr)
+                # 平台：True=安卓，False=iOS；show_system 关闭或旧记录无该字段则不显示
+                platform = rec.get("apple_or_android")
+                if show_system and platform is not None:
+                    meta.append("安卓" if platform else "iOS")
+                # 账号/邮箱：可选开关，开启后直接显示 account 原值
+                if show_account and rec.get("account"):
+                    meta.append(str(rec["account"]))
+                if meta:
+                    role_line += f"（{'｜'.join(meta)}）"
+                if count > 1:
+                    role_line += f" ×{count}"
+                lines.append(role_line)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _coop_category_order():
+        """固定 7 个展示类别（含匹配规则），顺序：现世勾协/现世体协/普通勾协/普通体协/狗粮/猫粮/金币。"""
+        return [
+            ("现世勾协", lambda r: r.get("type") == "jade" and bool(r.get("real"))),
+            ("现世体协", lambda r: r.get("type") == "sushi" and bool(r.get("real"))),
+            ("普通勾协", lambda r: r.get("type") == "jade" and not bool(r.get("real"))),
+            ("普通体协", lambda r: r.get("type") == "sushi" and not bool(r.get("real"))),
+            ("狗粮协作", lambda r: r.get("type") == "food" and r.get("food_kind") == "dog"),
+            ("猫粮协作", lambda r: r.get("type") == "food" and r.get("food_kind") == "cat"),
+            ("金币协作", lambda r: r.get("type") == "gold"),
+        ]
 
     def save_config(self):
         """保存配置"""

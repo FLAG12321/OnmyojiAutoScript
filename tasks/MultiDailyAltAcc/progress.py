@@ -7,7 +7,11 @@
 
 本模块只做文件读写，不依赖 device / Config，便于单元测试。
 """
+import json
 from datetime import datetime
+from pathlib import Path
+
+from module.logger import logger
 
 from tasks.Component.MultiAccountRunner.progress import (
     # 重新导出，保持既有 import 面不变：
@@ -19,6 +23,7 @@ from tasks.Component.MultiAccountRunner.progress import (
     STATUS_PENDING,
     STATUS_SKIPPED,
     ProgressStore as _BaseProgressStore,
+    _write_json_atomic,
     acc_key,
 )
 
@@ -29,18 +34,114 @@ __all__ = [
     'STATUS_FAILED',
     'STATUS_PENDING',
     'STATUS_SKIPPED',
+    'COOP_ARCHIVE_LIMIT',
     'ProgressStore',
     'acc_key',
     'phase_flags_of',
     'phase_id_of',
 ]
 
+# 协作归档保留份数：只保留最近 N 份，避免无限积累（轻量容量策略）
+COOP_ARCHIVE_LIMIT = 5
+
 
 class ProgressStore(_BaseProgressStore):
-    """MultiDailyAltAcc 的进度存储，固定文件名 multi_daily_progress_<config>.json。"""
+    """MultiDailyAltAcc 的进度存储，固定文件名 multi_daily_progress_<config>.json。
+
+    协作汇总记录挂在本进度文件的顶层 ``coop`` 列表，跟随现有 ensure_phase / clear
+    生命周期：与账号进度共用同一轮次边界——接续则继续累计，新阶段/成功收尾则重建或清除，
+    天然满足「重启/十分钟接续恢复 + 下一轮不污染」。
+    """
 
     def __init__(self, config_name: str, base_dir='config/tasks_config'):
         super().__init__('multi_daily', config_name, base_dir)
+
+    # -------------------------------------------------- 本轮协作汇总
+
+    def append_coop(self, record: dict) -> None:
+        """立即持久化一条协作记录到进度文件顶层 ``coop`` 列表。
+
+        每发现一条协作就调用（沿用现有原子 JSON 写入 _save），即使 OAS/Python 中途
+        退出，已保存的协作也不丢；下一轮/新阶段由 ensure_phase / clear 统一清理。
+        """
+        coops = self._data.setdefault('coop', [])
+        if not isinstance(coops, list):
+            coops = []
+            self._data['coop'] = coops
+        coops.append(dict(record))
+        self._save()
+
+    def load_coops(self) -> list:
+        """读取本轮已保存的协作记录。"""
+        coops = self._data.get('coop', [])
+        return list(coops) if isinstance(coops, list) else []
+
+    # ------------------------------------------------ 本轮已通知标记
+
+    def is_coop_notified(self) -> bool:
+        """本轮是否已成功发送最终协作汇总（coop_notified=true）。"""
+        return bool(self._data.get('coop_notified', False))
+
+    def mark_coop_notified(self) -> None:
+        """持久化「本轮协作已完成通知」。
+
+        仅在 PushPlus 发送成功后调用；随后即使 next_run/clear 前崩溃，重启接续
+        后 _notify_daily_completion 也会因标记存在而跳过，消除重复通知窗口。
+        clear() 删除整个进度文件时该标记自然消失，不会带入下一轮。
+        """
+        self._data['coop_notified'] = True
+        self._save()
+
+    def archive_pending_coops(self) -> int:
+        """重建前兜底：把尚未正常完成通知的协作归档到独立 JSON，返回归档条数。
+
+        触发场景：phase_flags 已变 / 进度过期导致 ensure_phase 准备重建覆盖，而旧 coop
+        尚未发送最终汇总。为避免协作数据永久丢失，先把它们复制到
+        ``multi_daily_coop_archive_<config>.json``（按 config 隔离，保留最近
+        COOP_ARCHIVE_LIMIT 份）。归档失败只记日志，绝不阻断主任务。
+        """
+        coops = self.load_coops()
+        if not coops:
+            return 0
+        archive_path = self.path.parent / f'{self.task_name}_coop_archive_{self.config_name}.json'
+        try:
+            existing = []
+            if archive_path.exists():
+                try:
+                    with open(archive_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                    if not isinstance(existing, list):
+                        existing = []
+                except (json.JSONDecodeError, OSError, ValueError):
+                    existing = []
+            existing.append({
+                'archived_at': datetime.now().isoformat(),
+                'coops': coops,
+            })
+            existing = existing[-COOP_ARCHIVE_LIMIT:]
+            _write_json_atomic(archive_path, existing)
+            logger.info(f'已归档 {len(coops)} 条未通知协作 -> {archive_path}')
+            return len(coops)
+        except Exception as e:
+            logger.warning(f'协作归档失败（不影响主任务）: {e}')
+            return 0
+
+    def ensure_phase(self, phase_flags: dict, phase_id: str) -> bool:
+        """在基类判定前做「重建前归档」兜底：仅当本轮即将被重建且还有未通知 coop 时归档。
+
+        保持基类 ensure_phase 的接续/重建语义完全不变：归档只是旁路留痕，绝不改变
+        现有账号进度的接续规则，也不影响新建/重建结果。
+        """
+        data = self._load()
+        resumable = (
+            bool(data)
+            and data.get('phase_flags') == phase_flags
+            and not self._is_stale(data)
+        )
+        if not resumable and isinstance(data.get('coop'), list) and data['coop']:
+            self._data = dict(data)
+            self.archive_pending_coops()
+        return super().ensure_phase(phase_flags, phase_id)
 
 
 # 参与阶段判定的开关白名单：只收 _schedule_* 会改写的键。

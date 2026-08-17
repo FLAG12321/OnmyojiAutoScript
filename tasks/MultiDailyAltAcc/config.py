@@ -53,6 +53,10 @@ class MultiDailyAltAccConfig(ConfigBase):
     total_summon_up_enable: bool = Field(default=False, description='是否开启UP召唤领取礼包')
     total_publish_sr_enable: bool = Field(default=False, description='是否发布SR碎片')
     shutdown_after_finish: bool = Field(default=False, description='日常任务完成后是否关机')
+    # 协作整轮汇总：是否显示系统（安卓/iOS），默认开
+    coop_notify_show_system: bool = Field(default=True, title='推送显示系统', description='推送显示系统')
+    # 协作整轮汇总：是否显示账号/邮箱（默认关；开启后直接显示 account 原值）
+    coop_notify_show_account: bool = Field(default=False, title='推送显示账号', description='推送显示账号')
 
 class MultiDailyAltAcc(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)

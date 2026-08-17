@@ -106,35 +106,48 @@ class Cooperation(DailyAltAccBase):
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
                     self.push_notify(content=f"    发现现世勾协", title="协作任务提醒")
-                    self.msg.append([MSGType.cooperation,"发现现世勾协"])
+                    self.msg.append([MSGType.cooperation,
+                                     {"type": "jade", "real": True, "label": "现世勾协"}])
                 else:
                     logger.info(f"find  jade cooperation ")
                     self.push_notify(content=f"    发现普通勾协", title="协作任务提醒")
-                    self.msg.append([MSGType.cooperation,"发现普通勾协"])
+                    self.msg.append([MSGType.cooperation,
+                                     {"type": "jade", "real": False, "label": "普通勾协"}])
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
                 logger.info(f"find dog food cooperation ")
+                # 狗粮协作：不区分现世/普通，food_kind 固定为 dog（模板已人工确认为狗粮）
+                self.msg.append([MSGType.cooperation,
+                                 {"type": "food", "real": False, "food_kind": "dog", "label": "狗粮协作"}])
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_CAT_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
                 logger.info(f"find cat food cooperation ")
+                # 猫粮协作：不区分现世/普通，food_kind 固定为 cat（模板已人工确认为猫粮）
+                self.msg.append([MSGType.cooperation,
+                                 {"type": "food", "real": False, "food_kind": "cat", "label": "猫粮协作"}])
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_SUSHI_" + str(index + 1))):
                 retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn, 'real': real_flag})
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")
-                    self.msg.append([MSGType.cooperation,"发现现世体协"])
+                    self.msg.append([MSGType.cooperation,
+                                     {"type": "sushi", "real": True, "label": "现世体协"}])
                     self.push_notify(content=f"    发现现世体协", title="协作任务提醒")
                 else:
                     logger.info(f"find  sushi cooperation ")
-                    self.msg.append([MSGType.cooperation,"发现普通体协"])
+                    self.msg.append([MSGType.cooperation,
+                                     {"type": "sushi", "real": False, "label": "普通体协"}])
                     self.push_notify(content=f"    发现普通体协", title="协作任务提醒")
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Gold, 'inviteBtn': btn, 'real': real_flag})
                 logger.info(f"find gold cooperation ")
+                # 金币协作：不区分现世/普通
+                self.msg.append([MSGType.cooperation,
+                                 {"type": "gold", "real": False, "label": "金币协作"}])
                 continue
         logger.info(f"get cooperation size {len(retList)}")
         # 将本轮识别到的协作按明细写入 STAT，便于前端区分类型和现世标记。
