@@ -18,6 +18,16 @@ class MoonSeaMap(MoonSeaSkills):
     def enter_island(self):
         self.screenshot()
         logger.info(f'Entering island self.cnt_skill101={self.cnt_skill101}, self.cnt_skillpower={self.cnt_skillpower}')
+        # 万相铃不足：点击宁息之屿后弹出「是否仍要进入宁息之屿？」确认框（左取消/右进入）。
+        # 必须点右侧「进入」——用 SixRealms 专用模板 I_NINGXI_INSUFFICIENT_ENTER 识别，
+        # 否则下一轮遍历 island_list 会把左侧「取消」当作 I_UI_CANCEL 点掉，
+        # 形成 A_NINGXI→取消→A_NINGXI→取消 死循环并报 TooManyClick。
+        # 该分支在 island_list 扫描之前，且仅作用于本方法（选岛阶段），
+        # 不影响其他场景对 I_UI_CANCEL / I_UI_CONFIRM 的使用。
+        if self.appear(self.I_NINGXI_INSUFFICIENT_ENTER):
+            logger.info('Wanxiangling insufficient: confirm enter Ningxi island')
+            self.ui_click_until_disappear(self.I_NINGXI_INSUFFICIENT_ENTER, interval=1)
+            return True
         if self.cnt_skill101 < 1 and self.cnt_skillpower < self._conf.power_enhance_level:
             i=0
             for i in range(6):
