@@ -32,7 +32,7 @@ def run_success(self):
 # - KekkaiActivation / KekkaiUtilize：DailyAltAcc 内部用写死的 DAILY 配置跑挂卡与寄养，
 #   与大号自己的挂卡/寄养设置无关，却会把大号的下次运行时间拖到几分钟后甚至当下。
 # 其余任务（如流程中处理悬赏邀请产生的 WantedQuests）一律原样转发，与
-# MultiActivityShikigami 的 Adapter 策略保持一致。
+# MultiTasks 的 Adapter 策略保持一致。
 BLOCKED_SELF: tuple[str, ...] = ('DailyAltAcc',)
 BLOCKED_NESTED: tuple[str, ...] = ('KekkaiActivation', 'KekkaiUtilize')
 OWNER = 'MultiDailyAltAcc'

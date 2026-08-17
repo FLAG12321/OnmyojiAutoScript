@@ -52,7 +52,7 @@ def test_shield_blocks_daily_alt_acc_own_schedule():
 
 @pytest.mark.unit
 def test_shield_forwards_unrelated_tasks():
-    """非屏蔽任务（如勾协产生的 WantedQuests）必须原样转发，与 MultiActivityShikigami 策略一致。"""
+    """非屏蔽任务（如勾协产生的 WantedQuests）必须原样转发，与 MultiTasks 策略一致。"""
     config = FakeConfig()
     task = _bare(_injected_daily_cls(), config)
 
