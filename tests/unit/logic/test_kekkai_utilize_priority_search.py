@@ -181,6 +181,83 @@ def test_reset_priority_search_switches_once_across_zones():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize('zones_appear, friend_appear, expected', [
+    (True, False, SelectFriendList.DIFFERENT_SERVER),
+    (False, True, SelectFriendList.SAME_SERVER),
+    # 两个分组标签都识别不到时，按"刚进入列表必定同区"的游戏行为回退
+    (False, False, SelectFriendList.SAME_SERVER),
+])
+def test_detect_friend_list_zone(zones_appear, friend_appear, expected):
+    """能截图分辨时按标签判断区服，识别不到则回退为同区。"""
+    task = make_task()
+    task.screenshot = lambda: None
+
+    def fake_appear(target):
+        if target is task.I_UTILIZE_ZONES_GROUP:
+            return zones_appear
+        if target is task.I_UTILIZE_FRIEND_GROUP:
+            return friend_appear
+        return False
+
+    task.appear = fake_appear
+
+    assert task._detect_friend_list_zone() == expected
+
+
+@pytest.mark.unit
+def test_run_utilize_first_round_switches_when_first_name_is_cross_server():
+    """首轮配置跨区且首个名称也标跨区时，必须真的切到跨区再搜索。
+
+    回归用例：刚进入蹭卡列表必定是同区，若直接把配置值当成当前区服，
+    _goto_priority_zone 会判定"已在跨区"而不切换，导致在同区列表里搜跨区好友。
+    """
+    task = make_task()
+    task.first_utilize = True
+    task.config = SimpleNamespace(
+        kekkai_utilize=SimpleNamespace(
+            utilize_config=SimpleNamespace(priority_search_names='跨区:哈基狮')
+        )
+    )
+    switched = []
+    task.switch_friend_list = lambda friend: switched.append(friend)
+    # 首轮屏幕真实区服：刚进列表是同区
+    task._detect_friend_list_zone = lambda: SelectFriendList.SAME_SERVER
+    task._open_priority_name_search = lambda: False
+    task._reset_priority_search = lambda current, target: target
+    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order, list_friend=None: False
+    task.swipe = lambda target, interval: None
+
+    assert task.run_utilize(friend=SelectFriendList.DIFFERENT_SERVER) is False
+    # 同区 -> 跨区 必须发生一次真实切换，而不是被误判为已在跨区
+    assert SelectFriendList.DIFFERENT_SERVER in switched
+
+
+@pytest.mark.unit
+def test_run_utilize_first_round_skips_switch_when_already_in_detected_zone():
+    """首轮探测到的区服与首个名称一致时，遍历阶段不应多余切换。"""
+    task = make_task()
+    task.first_utilize = True
+    task.config = SimpleNamespace(
+        kekkai_utilize=SimpleNamespace(
+            utilize_config=SimpleNamespace(priority_search_names='同区:瑶光')
+        )
+    )
+    switched = []
+    task._detect_friend_list_zone = lambda: SelectFriendList.SAME_SERVER
+    task._open_priority_name_search = lambda: False
+    # 只观察遍历阶段：把后续回退流程全部截断，避免其切换污染断言
+    task._reset_priority_search = lambda current, target: (
+        switched.append(('reset', current, target)) or target)
+    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order, list_friend=None: False
+    task.switch_friend_list = lambda friend: switched.append(('switch', friend))
+    task.swipe = lambda target, interval: None
+
+    assert task.run_utilize(friend=SelectFriendList.SAME_SERVER) is False
+    # 遍历阶段第一个动作必须不是切区服：探测同区 + 首个名称同区 → 直接搜
+    assert ('switch', SelectFriendList.SAME_SERVER) not in switched[:1]
+
+
+@pytest.mark.unit
 def test_goto_priority_zone_skips_switch_in_same_zone():
     """遍历优先名称时同区服不切换，输入框由 I_NAME_DELETE 负责清空。"""
     task = make_task()
@@ -987,6 +1064,8 @@ def test_run_utilize_does_not_swipe_when_priority_succeeds():
     swipes = []
     task.swipe = lambda *args, **kwargs: swipes.append(args)
     task.switch_friend_list = lambda friend: True
+    # 本例只关心滑动行为，首轮区服探测直接给定，避免走真实截图
+    task._detect_friend_list_zone = lambda: SelectFriendList.SAME_SERVER
     task._select_from_priority_names = lambda names, current, shikigami_class, shikigami_order: (True, current)
     task._select_optimal_resource_card = lambda *args, **kwargs: pytest.fail('优先搜索成功不应走原流程')
     task._enter_realm_and_utilize = lambda *args, **kwargs: pytest.fail('优先搜索成功不应再进入结界')
@@ -1010,6 +1089,8 @@ def test_run_utilize_swipes_after_priority_failure():
     switched = []
     task.swipe = lambda *args, **kwargs: swipes.append(args)
     task.switch_friend_list = lambda friend: switched.append(friend) or True
+    # 本例只关心滑动与刷新列表的切换次序，首轮区服探测直接给定
+    task._detect_friend_list_zone = lambda: SelectFriendList.SAME_SERVER
     task._select_from_priority_names = lambda names, current, shikigami_class, shikigami_order: (False, current)
     task._reset_priority_search = lambda current, target: target
     task._select_optimal_resource_card = lambda shikigami_class, shikigami_order, list_friend=None: True

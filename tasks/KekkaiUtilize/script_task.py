@@ -470,6 +470,23 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.switch_friend_list(target_friend)
         return target_friend
 
+    def _detect_friend_list_zone(self) -> SelectFriendList:
+        """截图判断好友列表当前处于同区还是跨区。
+
+        同区/跨区两个分组标签本身就是 switch_friend_list 的判定依据，可直接复用：
+        识别到跨区标签即跨区，否则按游戏行为回退为同区——刚进入蹭卡列表必定是同区。
+        """
+        self.screenshot()
+        if self.appear(self.I_UTILIZE_ZONES_GROUP):
+            logger.info('当前好友列表区服: 跨区')
+            return SelectFriendList.DIFFERENT_SERVER
+        if self.appear(self.I_UTILIZE_FRIEND_GROUP):
+            logger.info('当前好友列表区服: 同区')
+            return SelectFriendList.SAME_SERVER
+        # 两个标签都没识别到时按游戏默认行为处理：刚进入列表必定是同区
+        logger.info('未识别到好友列表分组标签，按刚进入列表的默认区服处理: 同区')
+        return SelectFriendList.SAME_SERVER
+
     def _goto_priority_zone(self, current_friend: SelectFriendList,
                             target_friend: SelectFriendList) -> SelectFriendList:
         """遍历优先名称时切到目标区服，仅在区服不同时才切换。
@@ -1039,7 +1056,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.config.kekkai_utilize.utilize_config.priority_search_names
         )
         selected = False
-        current_friend = friend
+        # 首轮没有实际切换过区服，靠截图判断屏幕真实区服（识别不到则按刚进列表的同区处理），
+        # 否则配置为跨区且首个名称也标跨区时会误判为已在跨区而不切换，在同区列表里搜跨区好友
+        current_friend = friend if not first_round else self._detect_friend_list_zone()
         if priority_names:
             # 优先搜索成功时已在内部进入结界并寄养
             selected, current_friend = self._select_from_priority_names(
