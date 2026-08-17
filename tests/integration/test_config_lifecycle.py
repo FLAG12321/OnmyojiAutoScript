@@ -150,7 +150,7 @@ def test_enumeration_takes_constant_locks_per_identity(tmp_path):
 
     原实现每个名称各走一遍「validation 锁 + 全量 recover（逐身份再取锁）」，
     把枚举放大成 O(N²) 次 FileLock：本机 7 份配置时 OASX 打开
-    MultiAccountSignIn 参数页最坏要取 150 次文件锁。
+    MultiTasks 参数页最坏要取 150 次文件锁。
     """
     import filelock
 

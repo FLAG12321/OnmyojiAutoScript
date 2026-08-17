@@ -1605,7 +1605,7 @@ def test_mainmanager_initialize_recovers_before_enumerating(tmp_path):
     assert store.generation.read_active_generation("old").state == "tombstone"
     assert store.generation.read_active_generation("stale").state == "tombstone"
     account_items = mm.config_cache("new").script_task(
-        "MultiAccountSignIn"
+        "MultiTasks"
     )["account_config_selection"]
     expected_field = "config_" + hashlib.sha256(b"new").hexdigest()[:16]
     assert [(item["name"], item["title"]) for item in account_items] == [

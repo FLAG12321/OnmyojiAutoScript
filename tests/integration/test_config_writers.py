@@ -1,10 +1,9 @@
 # This Python file uses the following encoding: utf-8
 # 集成测试：Task 3 全部写入方迁移到 ConfigStore，验证 copy/import/reset、离线 GUI、
-# ConfigModify、MultiActivityShikigami 扫描、Device startup normalization 与 template。
+# ConfigModify、MultiTasks 账号来源扫描、Device startup normalization 与 template。
 import json
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -182,18 +181,6 @@ def test_config_modify_gui_set_task_uses_store_patch(store):
     assert store.load("oas1").model.orochi.orochi_config.limit_count == 7
     # 非法值走 Store 校验失败，磁盘不变
     assert cm.gui_set_task("FindJade", "findJadeConfig", "inviteInfoCount", 0) is False
-
-
-def test_multi_activity_shikigami_scans_via_store(store):
-    from tasks.MultiActivityShikigami.script_task import ScriptTask
-
-    task = object.__new__(ScriptTask)
-    task.config = SimpleNamespace(store=store)
-    execution_items, unmatched, load_failure = task._load_execution_items(["甲"])
-    # 模板默认账号无切号资料，全部 unmatched，但扫描本身不裸读配置文件
-    assert load_failure is False
-    assert unmatched == ["甲"]
-    assert execution_items == []
 
 
 def test_template_replace_preserves_generation(store):

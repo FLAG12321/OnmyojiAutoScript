@@ -103,7 +103,7 @@ MIGRATION_RULES = {
     "find_jade.invite_info_list": "raise",
     "find_jade.sup_account_list": "raise",
     "multi_daily_alt_acc.sup_account_list": "raise",
-    "multi_acc_exp.sup_account_list": "raise",
+    "multi_tasks.sup_account_list": "raise",
     "meta_demon.md_strategies": "exact",
     "master_disciple.disciple_account_list": "contiguous",
     "bondling_fairyland.switch_account_list": "single",
