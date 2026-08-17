@@ -1,5 +1,5 @@
 from tasks.DailyAltAcc.config import  DailyAltAccConfig,GeneralBattleConfig,DailyAltAcc
-from module.logger import logger
+from tasks.Component.SchedulingShield import shield_scheduling
 def get_config(self):
     config=DailyAltAcc()
     config.daily_alt_acc_config.alliedteam_battle_enable = self.account_info.alliedteam_battle_enable
@@ -24,3 +24,30 @@ def get_config(self):
 def run_success(self):
     self.daily_conf.update_account_login_history
     self.config.save()
+
+
+# 多账号批量执行时必须屏蔽的调度任务名。
+# 这些任务在 MultiDailyAltAcc 里都是「被小号借用」的：
+# - DailyAltAcc：本任务就是它的多账号版本，每个小号都改一次大号的下次运行时间纯属污染；
+# - KekkaiActivation / KekkaiUtilize：DailyAltAcc 内部用写死的 DAILY 配置跑挂卡与寄养，
+#   与大号自己的挂卡/寄养设置无关，却会把大号的下次运行时间拖到几分钟后甚至当下。
+# 其余任务（如流程中处理悬赏邀请产生的 WantedQuests）一律原样转发，与
+# MultiActivityShikigami 的 Adapter 策略保持一致。
+BLOCKED_SELF: tuple[str, ...] = ('DailyAltAcc',)
+BLOCKED_NESTED: tuple[str, ...] = ('KekkaiActivation', 'KekkaiUtilize')
+OWNER = 'MultiDailyAltAcc'
+
+
+def shield_self(base_cls: type) -> type:
+    """屏蔽 DailyAltAcc 自身调度的子类。"""
+    return shield_scheduling(base_cls, BLOCKED_SELF, OWNER)
+
+
+def create_nested_task(self, task_cls: type):
+    """覆写 DailyAltAcc._create_nested_task：嵌套子任务换成屏蔽调度的子类。
+
+    挂卡/寄养是 DailyAltAcc 内部另行实例化的独立对象，走的是自己的
+    BaseTask.set_next_run，注入在 DailyAltAcc 上的 set_next_run 覆写拦不住它们，
+    必须在创建这一步换成屏蔽后的子类。
+    """
+    return shield_scheduling(task_cls, BLOCKED_NESTED, OWNER)(self.config, self.device)
