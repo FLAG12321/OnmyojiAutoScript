@@ -45,13 +45,24 @@ def _make_task(sub_task=SubTaskType.ACTIVITY_SIGN_IN,
 
 
 def _redirect_store(tmp_path, monkeypatch):
-    """把 script_task 模块内的 ProgressStore 构造重定向到 tmp_path。"""
+    """把进度文件全部重定向到 tmp_path，避免污染仓库 config/tasks_config。
+
+    有两套独立的进度文件，都要重定向：
+    - ProgressStore：账号级续做进度（本任务自己建的）
+    - MultiAccountRunner._get_progress_file：Runner 的运行态标记文件
+      （run() 内部 _mark_task_start / _mark_task_completed 写，路径硬编码
+      ./config/tasks_config/{task_name}_progress.json）
+    """
     import tasks.MultiTasks.script_task as mod
+    from tasks.Component.MultiAccountRunner import MultiAccountRunner
 
     def factory(task_name, config_name, base_dir='config/tasks_config'):
         return ProgressStore(task_name, config_name, base_dir=tmp_path)
 
     monkeypatch.setattr(mod, 'ProgressStore', factory)
+    runner_path = tmp_path / 'runner_progress.json'
+    monkeypatch.setattr(MultiAccountRunner, '_get_progress_file',
+                        lambda self: runner_path)
 
 
 def _stub_source(monkeypatch, items, warnings=None, load_failure=False):
