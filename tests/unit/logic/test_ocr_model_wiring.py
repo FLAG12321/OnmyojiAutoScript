@@ -227,6 +227,54 @@ def test_vertical_text_uses_stable_params():
     assert model.kwargs == {'drop_score': 0.1, 'box_thresh': 0.2, 'vertical': True}
 
 
+# ---------------- Single 竖排 fallback ----------------
+
+class _VerticalFallbackModel:
+    """竖排文本：ocr_single_line(use_det=False) 识别为空，detect_and_ocr 兜底识别。"""
+
+    def __init__(self):
+        self.detect_called = False
+
+    def ocr_single_line(self, image):
+        return '', 0.0
+
+    def detect_and_ocr(self, image, **kwargs):
+        from module.ocr.result import BoxedResult
+        self.detect_called = True
+        return [BoxedResult([[0, 0], [1, 0], [1, 1], [0, 1]], None, '幽火姥姥', 0.9)]
+
+
+def _make_single_cor(model):
+    from module.ocr.sub_ocr import Single
+
+    cor = Single(name='ocr_vertical', mode='Single', method='Default',
+                 roi=(0, 0, 46, 175), area=(0, 0, 46, 175), keyword='')
+    cor.__dict__['model'] = model
+    return cor
+
+
+def test_ocr_single_vertical_fallback():
+    """竖排文字必须走 detect 兜底：ocr_single_line 返回空时由 detect_and_ocr 识别。"""
+    model = _VerticalFallbackModel()
+    cor = _make_single_cor(model)
+    # 46x175 的竖排裁剪图
+    assert cor.ocr_single(np.zeros((175, 46, 3), dtype=np.uint8)) == '幽火姥姥'
+    assert model.detect_called
+
+
+def test_ocr_single_horizontal_no_fallback():
+    """横排文字直接由 ocr_single_line 识别，不触发 detect 兜底。"""
+    class _HorizontalModel:
+        def ocr_single_line(self, image):
+            return '横排文字', 0.99
+
+        def detect_and_ocr(self, image, **kwargs):
+            raise AssertionError('横排文字不应走 detect 兜底')
+
+    cor = _make_single_cor(_HorizontalModel())
+    assert cor.ocr_single(np.zeros((40, 100, 3), dtype=np.uint8)) == '横排文字'
+
+
 def test_vertical_text_allows_caller_override():
     """调用方显式传参时应覆盖默认值，而不是重复传参报错。"""
     from tasks.SixRealms.oas_ocr import VerticalText

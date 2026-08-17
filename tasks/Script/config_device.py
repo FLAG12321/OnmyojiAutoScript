@@ -55,6 +55,10 @@ class Device(BaseModel):
                         description='serial_help')
     handle: str = Field(default='',
                         description='handle_help')
+    # 桌面客户端自动启动用：游戏安装目录（含 bin\onmyoji.exe 或 Launch.exe 的根目录），
+    # 留空时按 %ProgramFiles%\Onmyoji 与注册表 InstallLocation 自动发现；仅桌面模式使用
+    desktop_game_path: str = Field(default='',
+                                   description='桌面客户端游戏安装目录，留空自动发现（仅桌面模式）')
     package_name: PackageName = Field(title='Package Name',
                                       default=PackageName.AUTO,
                                       description='package_name_help')

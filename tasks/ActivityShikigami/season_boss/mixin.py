@@ -198,7 +198,8 @@ class SeasonBossMixin(BaseTask):
         返回 (group, team) 或 None(不切队伍预设)。
         """
         self.screenshot()
-        monster_name = self.O_SEASON_BOSS_MONSTER_NAME.ocr_single_line(self.device.image)
+        # 怪物名是竖排文字, ocr_single_line 不旋转竖排会识别为空; 用 ocr_single 走 detect 兜底
+        monster_name = self.O_SEASON_BOSS_MONSTER_NAME.ocr_single(self.device.image)
         rank = self.O_SEASON_BOSS_RANK.ocr_single_line(self.device.image)
         logger.info(f'season_boss monster name=[{monster_name}] rank=[{rank}]')
         if not self.sb_conf.enable_preset:

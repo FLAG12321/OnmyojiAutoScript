@@ -84,11 +84,13 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         logger.info("start switchAccount %s-%s", self.to_account_info.character, self.to_account_info.svr)
         # 判断所处界面
         self.screenshot()
-        curPage = self.ui_get_current_page()
+        # 切号时游戏本就要停在登录页，显式允许把 page_login 当合法当前页返回，
+        # 否则 ui_get_current_page 默认会把它误判为掉线抛 GameNotRunningError 触发 Restart
+        curPage = self.ui_get_current_page(accept_login=True)
 
         if curPage != page_login and curPage != page_main:
             self.ui_goto(page_main)
-            curPage = self.ui_get_current_page()
+            curPage = self.ui_get_current_page(accept_login=True)
         if curPage == page_main:
             self.exitGame()
 

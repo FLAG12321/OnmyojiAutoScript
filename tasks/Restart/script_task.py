@@ -36,7 +36,10 @@ class ScriptTask(LoginHandler):
 
     def app_restart(self):
         logger.hr('App restart')
-        self.device.app_stop()
+        # 桌面分支：客户端可能刚被 OAS 自动启动（已在登录页），直接停掉会白关一次再重开，
+        # 只需确保客户端运行并走登录；交互与模拟器不同，隔离在桌面分支
+        if not self.device.is_desktop:
+            self.device.app_stop()
         self.device.app_start()
         self.app_handle_login()
 

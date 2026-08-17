@@ -93,10 +93,12 @@ class GameUi(BaseTask, GameUiAssets):
             skip_first_screenshot = False
         return False
 
-    def ui_get_current_page(self, skip_first_screenshot=True) -> Page:
+    def ui_get_current_page(self, skip_first_screenshot=True, accept_login: bool = False) -> Page:
         """
         获取当前页面
         :param skip_first_screenshot:
+        :param accept_login: True 时把登录页当作合法当前页返回（切号场景需要停在登录页操作），
+                             False 时检测到登录页抛 GameNotRunningError 交由 Restart 重新登录
         :return:
         """
         #logger.info("UI get current page")
@@ -129,6 +131,11 @@ class GameUi(BaseTask, GameUiAssets):
                 if self.ui_page_appear(page=page, interval=None):
                     logger.attr("UI", page.name)
                     if page == page_login:
+                        # 默认语义：登录页=掉线信号，抛异常让调度器走 Restart 重新登录；
+                        # 仅切号流程（accept_login=True）把登录页当合法当前页，用于选账号/角色
+                        if accept_login:
+                            self.ui_current = page
+                            return page
                         raise GameNotRunningError("Login page detected")
                     self.ui_current = page
                     return page

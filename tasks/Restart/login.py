@@ -193,6 +193,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             self.device.click_record_clear()
             try:
                 self._app_handle_login()
+                # 桌面分支：登录成功标记登录态，使 app_is_running 判定为已在游戏中
+                if self.device.is_desktop:
+                    self.device.desktop_mark_logged_in()
                 if self.config.restart.harvest_config.enable:
                     self.harvest()
                 return True
