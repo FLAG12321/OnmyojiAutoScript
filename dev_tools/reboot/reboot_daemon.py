@@ -333,6 +333,14 @@ class RebootDaemon:
         self.instance_states: dict[str, str] = {}
         self.instance_restart_counts: dict[str, int] = defaultdict(int)
         self.instance_last_restart: dict[str, float] = {}
+        # 实例调度快照（server 通过 WS 推送的 get_schedule_data 结果）：
+        # pending 非空表示有任务已过期该跑，据此区分「正常空闲」与「异常停止」
+        self.instance_schedules: dict[str, dict] = {}
+        # 待验证的拉起：拉起后需在下个监控周期确认仍是 RUNNING 才算成功并归零计数，
+        # 否则「start 指令送达即归零」会让重启上限永远失效
+        self.instance_pending_verify: dict[str, bool] = {}
+        # 已放弃自动拉起的实例（达重启上限）：不重置，直到守护进程重启
+        self.instance_gave_up: dict[str, bool] = {}
 
         # WebSocket 长连接相关（延迟初始化，必须在事件循环中创建）
         self.ws_connections: dict = {}
@@ -723,6 +731,10 @@ class RebootDaemon:
 
                         # 处理调度信息
                         elif 'schedule' in data:
+                            # 存下调度快照：pending 非空 = 有任务已过期该跑，
+                            # 是区分「正常空闲」与「异常停止」的唯一可靠判据
+                            if isinstance(data['schedule'], dict):
+                                self.instance_schedules[instance_name] = data['schedule']
                             self.logger.debug(
                                 f"实例 {instance_name} 调度信息: {data['schedule']}")
 
@@ -836,17 +848,46 @@ class RebootDaemon:
 
     # ──────────────── 实例监控与自动恢复 ────────────────
 
+    def _has_enabled_task(self, instance_name: str) -> bool:
+        """实例是否还有启用的任务（据 server 推送的调度快照判断）。
+
+        OAS 跑完任务会主动退出到 INACTIVE，所以「空闲」与「崩溃」的当前状态完全一样，
+        靠状态本身无法区分。判据是快照里还有没有任务：不论已过期的 pending、正在跑的
+        running，还是等未来时刻的 waiting，只要还有一个，这个实例就还有活要干，
+        进程就不该是死的——没有进程在等，那个 waiting 任务永远不会被执行。
+
+        原先只认 pending/running，把「在等未来任务」与「已死」混为一谈：实例正好崩在
+        只剩 waiting 任务的时刻就永远等不到拉起（实测配置损坏退出后无人接管）。
+        而「实例活着但空闲」那个担心的场景状态是 RUNNING，本来就不触发拉起判定。
+
+        三者全空说明所有任务都禁用了，拉起也没意义，返回 False 避免空转。
+        取不到快照同样返回 False：每轮都会重新收到推送，宁可晚一轮也不空拉。
+        """
+        schedule = self.instance_schedules.get(instance_name)
+        if not isinstance(schedule, dict):
+            return False
+        return bool(schedule.get('pending')
+                    or schedule.get('running')
+                    or schedule.get('waiting'))
+
     def _should_auto_restart(self, instance_name: str) -> bool:
         """判断实例是否应该自动重启"""
         ic = self.instance_configs.get(instance_name)
         if not ic or not ic.enabled or not ic.auto_restart:
             return False
 
+        # 已达上限放弃过的实例不再拉起，直到守护进程重启
+        if self.instance_gave_up.get(instance_name):
+            return False
+
         restart_count = self.instance_restart_counts.get(instance_name, 0)
         if restart_count >= ic.max_restart_attempts:
-            self.logger.warning(
-                f"实例 {instance_name} 连续重启失败 {restart_count} 次，"
-                f"已达上限 {ic.max_restart_attempts}，暂停自动重启")
+            self.logger.error(
+                f"实例 {instance_name} 连续拉起失败 {restart_count} 次，"
+                f"已达上限 {ic.max_restart_attempts}，放弃自动拉起"
+                f"（守护进程重启后才会重新接管）")
+            self.instance_gave_up[instance_name] = True
+            self._notify_give_up(instance_name, restart_count)
             return False
 
         last_restart = self.instance_last_restart.get(instance_name, 0)
@@ -858,8 +899,24 @@ class RebootDaemon:
 
         return True
 
+    def _notify_give_up(self, instance_name: str, restart_count: int) -> None:
+        """实例被放弃自动拉起时打醒目日志。
+
+        这里不走 NapCat 推送：NapCat 本身是被守护对象，用它报警会在它挂掉时静默，
+        而那正是需要报警的场景之一。留作日志，由外部日志监控或人工发现。
+        """
+        self.logger.error("=" * 60)
+        self.logger.error(f"实例 {instance_name} 已放弃自动拉起（累计失败 {restart_count} 次）")
+        self.logger.error("请人工检查该实例；守护进程重启后会重新接管")
+        self.logger.error("=" * 60)
+
     async def _restart_instance(self, instance_name: str) -> bool:
-        """重启指定实例"""
+        """重启指定实例。
+
+        注意：这里不再因为 start 指令送达就把失败计数归零——那会让重启上限永远失效
+        （实例启动后立刻又死也算成功）。改为标记待验证，由监控循环在下个周期确认
+        实例仍是 RUNNING 才归零，否则计数 +1。
+        """
         self.logger.info(f"正在重启实例 {instance_name}...")
         self.instance_last_restart[instance_name] = time.time()
 
@@ -870,8 +927,10 @@ class RebootDaemon:
         # 再启动
         success = await self._ws_start_instance(instance_name)
         if success:
-            self.instance_restart_counts[instance_name] = 0
-            self.logger.info(f"实例 {instance_name} 重启成功")
+            # 指令送达 ≠ 真的活着，留到下个周期验证
+            self.instance_pending_verify[instance_name] = True
+            self.logger.info(
+                f"实例 {instance_name} 启动指令已下发，待下个周期验证是否稳定运行")
         else:
             self.instance_restart_counts[instance_name] += 1
             self.logger.error(
@@ -909,7 +968,23 @@ class RebootDaemon:
 
                 state = self.instance_states.get(name, 'UNKNOWN')
 
-                if state in ('INACTIVE', 'WARNING', 'UNKNOWN'):
+                # 3.1 先验证上一轮拉起的结果：仍是 RUNNING 才算真成功并归零计数
+                if self.instance_pending_verify.get(name):
+                    self.instance_pending_verify[name] = False
+                    if state == 'RUNNING':
+                        self.instance_restart_counts[name] = 0
+                        self.logger.info(f"实例 {name} 拉起后稳定运行，重置失败计数")
+                    else:
+                        self.instance_restart_counts[name] += 1
+                        self.logger.warning(
+                            f"实例 {name} 拉起后未能稳定运行（当前 {state}），"
+                            f"累计失败 {self.instance_restart_counts[name]} 次")
+
+                # 3.2 判定异常：INACTIVE 需配合「实例还有启用任务」才算异常。
+                # OAS 跑完任务会主动退出到 INACTIVE，两者状态一样；只要还有任务
+                # （含等未来时刻的 waiting），就必须有进程在等它，否则那个任务
+                # 永远不会执行。全部任务禁用时不拉起，避免无意义空转
+                if state in ('WARNING', 'UNKNOWN') or (state == 'INACTIVE' and self._has_enabled_task(name)):
                     if self._should_auto_restart(name):
                         self.logger.warning(
                             f"实例 {name} 状态异常: {state}，尝试自动重启")

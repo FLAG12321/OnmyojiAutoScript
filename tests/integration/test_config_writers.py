@@ -206,6 +206,8 @@ def test_device_init_desktop_uses_startup_normalize(tmp_path):
     dev.config = session
     dev._transition_to = lambda target: None
     dev.screenshot_interval_set = lambda: None
+    # 本用例只关注配置写入路径，客户端启动与窗口尺寸调整都桩掉
+    dev._desktop_ensure_launched = lambda: True
     dev.desktop_window_set_size = lambda: False
 
     Device._init_desktop(dev)

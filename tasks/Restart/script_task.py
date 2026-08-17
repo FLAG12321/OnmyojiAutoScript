@@ -10,7 +10,11 @@ from tasks.base_task import BaseTask, Time
 from datetime import datetime, time
 
 from module.logger import logger
-from module.exception import TaskEnd, RequestHumanTakeover
+from module.exception import TaskEnd, RequestHumanTakeover, GameNotRunningError
+
+# 桌面模式客户端启动失败后的重建轮数。Restart 必须自己扛住启动失败，
+# 抛给调度器会被 task_call('Restart') 打回这里形成无限循环
+DESKTOP_RESTART_ATTEMPTS = 2
 
 
 class ScriptTask(LoginHandler):
@@ -40,8 +44,11 @@ class ScriptTask(LoginHandler):
         # 只需确保客户端运行并走登录；交互与模拟器不同，隔离在桌面分支
         if not self.device.is_desktop:
             self.device.app_stop()
-        self.device.app_start()
-        self.app_handle_login()
+        if self.device.is_desktop:
+            self._desktop_start_and_login()
+        else:
+            self.device.app_start()
+            self.app_handle_login()
 
         # self.config.task_delay(server_update=True)
         self.set_next_run(task='Restart', success=True, finish=True, server=True)
@@ -57,6 +64,29 @@ class ScriptTask(LoginHandler):
             # 如果时间在20:00-23:59之间则设定时间为次日 12 时
             else:
                 self.custom_next_run(task='Restart', custom_time=Time(12, 0), time_delta=1)
+
+    def _desktop_start_and_login(self) -> None:
+        """桌面模式：启动客户端并登录，客户端没起来就重建，不把异常抛给调度器。
+
+        Restart 是负责启动客户端的那个任务，所以它必须自己扛住客户端起不来的情况：
+        若把 GameNotRunningError 抛出去，script.py 接住后又会 task_call('Restart')
+        重新进到这里，形成无限重启循环——每轮日志都「正常」，比直接崩更难排查。
+        因此这里就地重试：杀掉残留进程后重新走一遍启动+登录，连续失败才交人工。
+        """
+        for attempt in range(1, DESKTOP_RESTART_ATTEMPTS + 1):
+            try:
+                self.device.app_start()
+                self.app_handle_login()
+                return
+            except GameNotRunningError as e:
+                logger.warning(f'桌面客户端启动后仍未就绪（第 {attempt}/{DESKTOP_RESTART_ATTEMPTS} 轮）: {e}')
+                if attempt >= DESKTOP_RESTART_ATTEMPTS:
+                    break
+                # 本轮可能留下半死的客户端进程，先清掉再重建，避免新窗口识别撞上残留窗口
+                logger.info('清理残留客户端后重建')
+                self.device.desktop_stop_client()
+        logger.critical(f'桌面客户端连续 {DESKTOP_RESTART_ATTEMPTS} 轮启动失败，请检查客户端与机器状态')
+        raise RequestHumanTakeover
 
     def delay_pending_tasks(self) -> bool:
         """

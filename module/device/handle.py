@@ -30,6 +30,7 @@ from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       GWL_STYLE, GWL_EXSTYLE, HWND_TOP, SWP_NOMOVE,
                       SWP_SHOWWINDOW, SW_RESTORE)
 from module.config.config import Config
+from module.base.decorator import del_cached_property
 from module.logger import logger
 from module.exception import *
 
@@ -40,6 +41,11 @@ DESKTOP_WINDOW_TITLES = ('阴阳师-网易游戏', '阴阳师-MuMu模拟器专�
 # （DirectUI 绘制，无子控件），不在游戏渲染面内，因此主窗口 BitBlt 截不到它，
 # 也无法用图像识别处理，只能按类名单独定位并注入消息。
 DESKTOP_LOGIN_POPUP_CLASS = 'MPAY_LOGIN'
+
+# 调整窗口尺寸时撞上客户端重建窗口的重试轮数与间隔（秒）。客户端确认登录弹窗后销毁
+# 登录界面、重建游戏主窗口，实测这段空窗期在几百毫秒到数秒之间，6 轮 × 1s 足够覆盖
+DESKTOP_RESIZE_ATTEMPTS = 6
+DESKTOP_RESIZE_RETRY_INTERVAL = 1.0
 
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2，SetThreadDpiAwarenessContext 的入参
 _PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
@@ -368,7 +374,13 @@ class Handle:
         # screenshot_handle_num 和 screenshot_size 延迟到首次截屏时按需求值，不在初始化时预计算
 
     def find_desktop_window_by_pid(self, pid) -> int:
-        """按 PID 查找桌面客户端窗口，返回窗口句柄；未找到抛 EmulatorNotRunningError。"""
+        """按 PID 查找桌面客户端窗口，返回窗口句柄；未找到抛 EmulatorNotRunningError。
+
+        「找不到窗口」记 warning 而非 error：本方法的调用方多为探测存在性
+        （desktop_window_exists 判断是否需要重拉、_desktop_wait_closed 确认已关闭），
+        找不到是正常答案。真正的故障由上层在拿到 EmulatorNotRunningError 后判定，
+        这样真故障不会被淹没在每轮任务收尾都出现的噪音里。
+        """
         try:
             pid_int = int(str(pid))
         except (TypeError, ValueError):
@@ -386,7 +398,7 @@ class Handle:
                 _, win_pid = GetWindowThreadProcessId(hwnd)
                 if win_pid == pid_int:
                     return hwnd
-        logger.error(f'Desktop client window not found, PID={pid}')
+        logger.warning(f'Desktop client window not found, PID={pid}')
         raise EmulatorNotRunningError(f'Desktop client window not found, PID={pid}')
 
     def desktop_pid(self):
@@ -493,20 +505,93 @@ class Handle:
         rect = GetClientRect(self.screenshot_handle_num)
         return rect[2] - rect[0], rect[3] - rect[1]
 
+    def _desktop_client_size(self, hwnd):
+        """读窗口客户区物理尺寸，句柄已失效返回 None。
+
+        客户端从登录界面切到游戏主窗口时会销毁重建渲染窗口，因此调整窗口期间的任何
+        一次 Win32 调用都可能撞上失效句柄。GetClientRect 对废句柄抛
+        (1400, '无效的窗口句柄')，不接住会直接崩掉整个脚本进程。
+        """
+        if not IsWindow(hwnd):
+            return None
+        try:
+            rect = GetClientRect(hwnd)
+        except Exception as e:
+            logger.warning(f'GetClientRect failed (hwnd={hwnd}): {e}')
+            return None
+        return rect[2] - rect[0], rect[3] - rect[1]
+
+    def _desktop_clear_handle_cache(self) -> None:
+        """失效截图相关 cached_property，使其按当前 root_handle_num 重新求值。
+
+        桌面模式下 screenshot_handle_num 直接返回 root_handle_num，但它是
+        cached_property：客户端重开后 root_handle_num 已换成新 hwnd，缓存仍指向
+        旧句柄，截图时 GetClientRect 会拿废句柄抛 (1400)。
+        """
+        for prop in ('screenshot_handle_num', 'screenshot_size'):
+            if prop in self.__dict__:
+                del_cached_property(self, prop)
+
+    def _desktop_rebind_window(self) -> bool:
+        """按 PID 重新查找客户端窗口并绑定新 hwnd，返回是否绑定成功。
+
+        用于窗口重建（登录界面切游戏主窗口）后刷新句柄：进程还活着，不需要重拉客户端，
+        只要拿到重建后的新窗口即可。
+        """
+        try:
+            hwnd = self.find_desktop_window_by_pid(self.root_handle)
+        except EmulatorNotRunningError:
+            return False
+        if hwnd != self.root_handle_num:
+            logger.info(f'Desktop window rebuilt, rebind hwnd {self.root_handle_num} -> {hwnd}')
+            self.root_handle_num = hwnd
+            self._desktop_clear_handle_cache()
+        return True
+
     def desktop_window_set_size(self, width: int = 1280, height: int = 720) -> bool:
         """桌面模式：检测窗口客户区尺寸，非目标大小时用 SetWindowPos 调整到 width×height。
 
         窗口位置保持不变；返回是否执行了调整。全过程在 DPI 感知上下文内完成，
         GetClientRect/SetWindowPos 处理的都是物理像素，因此目标尺寸无需按缩放比换算，
         调整后客户区物理尺寸恰为 width×height，游戏画面与资产 1:1 对应。
+
+        客户端确认登录弹窗后会销毁登录界面、重建游戏主窗口，调整过程中旧 hwnd 随时可能
+        失效。此时不抛异常也不重拉客户端（进程还活着），而是按 PID 重新绑定重建后的
+        窗口再试，最多 DESKTOP_RESIZE_ATTEMPTS 轮。
         """
         if not getattr(self, 'is_desktop_window', False):
             return False
+        for attempt in range(1, DESKTOP_RESIZE_ATTEMPTS + 1):
+            result = self._desktop_try_set_size(width, height)
+            if result is not None:
+                return result
+            if attempt >= DESKTOP_RESIZE_ATTEMPTS:
+                break
+            logger.info(f'Desktop window invalid, rebind and retry resize '
+                        f'({attempt}/{DESKTOP_RESIZE_ATTEMPTS})')
+            time.sleep(DESKTOP_RESIZE_RETRY_INTERVAL)
+            self._desktop_rebind_window()
+        logger.warning(f'Desktop window resize gave up after {DESKTOP_RESIZE_ATTEMPTS} attempts, '
+                       f'window kept invalid')
+        return False
+
+    def _desktop_try_set_size(self, width: int, height: int):
+        """单轮尝试调整窗口尺寸。
+
+        返回 True/False 表示本轮已得出结论（是否执行了调整）；返回 None 表示句柄失效，
+        需由调用方重新绑定窗口后再试。三态的意义在于把「尺寸本来就对」（False）和
+        「窗口正在重建」（None）区分开，否则前者会白等重试。
+        """
         hwnd = self.root_handle_num
+        if not hwnd or not IsWindow(hwnd):
+            logger.warning(f'Desktop window handle invalid (hwnd={hwnd})')
+            return None
         with dpi_awareness():
-            client_rect = GetClientRect(hwnd)
-            client_w = client_rect[2] - client_rect[0]
-            client_h = client_rect[3] - client_rect[1]
+            size = self._desktop_client_size(hwnd)
+            if size is None:
+                logger.warning(f'Desktop window vanished before resize (hwnd={hwnd})')
+                return None
+            client_w, client_h = size
             logger.info(f'Desktop client size: {client_w}x{client_h} (physical), target {width}x{height}')
             if client_w == width and client_h == height:
                 logger.info('Desktop client size already matches target')
@@ -523,22 +608,28 @@ class Handle:
                 logger.error(f'SetWindowPos failed: {e}. '
                              f'请以管理员身份运行 OAS，或手动把游戏窗口设为 1280x720')
                 return False
-            # 校准：SetWindowPos 后的实际客户区可能与目标差几像素，按差值持续修正
+            # 校准：SetWindowPos 后的实际客户区可能与目标差几像素，按差值持续修正。
+            # SetWindowPos 本身可能正好撞上客户端重建窗口，因此每轮都要重新确认句柄有效
             for _ in range(5):
-                cr = GetClientRect(hwnd)
-                cw, ch = cr[2] - cr[0], cr[3] - cr[1]
+                size = self._desktop_client_size(hwnd)
+                if size is None:
+                    logger.warning(f'Desktop window vanished during resize (hwnd={hwnd}), '
+                                   f'client is rebuilding its window')
+                    return None
+                cw, ch = size
                 if cw == width and ch == height:
                     return True
                 total_w += width - cw
                 total_h += height - ch
                 logger.info(f'Calibrate desktop window to {total_w}x{total_h}, current client {cw}x{ch}')
-                SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
+                try:
+                    SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
+                except Exception as e:
+                    logger.warning(f'SetWindowPos failed during calibration (hwnd={hwnd}): {e}')
+                    return None
             return True
 
     # ------------------------------------------------------------------ 桌面客户端自动生命周期
-
-    # 桌面客户端从启动到进入登录页约需的等待秒数（客户端加载较慢，登录流程依赖此等待）
-    DESKTOP_LOGIN_WAIT_SECONDS = 20
 
     def desktop_resolve_install_root(self) -> str:
         """解析桌面客户端安装目录：优先 desktop_game_path 配置，其次自动发现。
@@ -608,7 +699,12 @@ class Handle:
 
     @staticmethod
     def desktop_game_exe(root) -> str:
-        """返回游戏可执行文件路径；找不到返回空串。"""
+        """返回游戏可执行文件路径；找不到返回空串。
+
+        顺序即优先级：必须优先游戏本体 bin/onmyoji.exe。
+        Launch.exe 是登录器，它会再拉起 bin/onmyoji.exe，
+        导致双开且 OAS 绑定到登录器 PID 上找不到游戏窗口。
+        """
         root = Path(root)
         for name in ('bin/onmyoji.exe', 'Launch.exe'):
             exe = root / name
@@ -619,8 +715,11 @@ class Handle:
     def launch_desktop_client(self, timeout: int = 90) -> bool:
         """自动启动桌面客户端并绑定新窗口的 PID/HWND，成功返回 True。
 
-        只认启动后新出现的桌面客户端窗口（PID 不在启动前集合），避免误绑其他实例已开
-        着的客户端；连续两次采样同一句柄才确认，避免把瞬态窗口当作主窗口。
+        单轮 = 启动 exe → 等新窗口出现并稳定 → 绑定其 PID/HWND。到此启动即完成；
+        MPay 登录弹窗与进游戏属登录流程，由 Restart 的 app_handle_login 负责。
+        timeout 内没等到窗口说明客户端起歪了（卡加载、崩在启动期等），强杀本轮进程后
+        整轮重跑一次；第二轮仍失败则记 error 返回 False，由上层停下等人工，不无限重试。
+        安装目录/exe 找不到属配置问题，重试无意义，直接返回 False。
         """
         root = self.desktop_resolve_install_root()
         if not root:
@@ -630,14 +729,40 @@ class Handle:
         if not exe:
             logger.error(f'未找到游戏程序（bin\\onmyoji.exe 或 Launch.exe）：{root}')
             return False
+
+        for attempt in (1, 2):
+            pids = self._desktop_launch_attempt(exe, root, timeout, attempt)
+            if pids is None:
+                # Popen 本身失败，重试也起不来
+                return False
+            bound_pid, spawned_pid = pids
+            if bound_pid:
+                return True
+            if attempt == 1:
+                # 只杀本轮确切启动的进程：绑定阶段就失败时 root_handle 仍是上一次的陈旧
+                # PID，直接调 desktop_force_kill 会误杀（PID 可能已被系统复用）
+                logger.warning('第 1 轮启动未就绪，清理本轮客户端后重试')
+                self._desktop_kill_pids(spawned_pid)
+        logger.error('桌面客户端连续 2 轮启动均未就绪，请检查客户端状态与机器负载')
+        return False
+
+    def _desktop_launch_attempt(self, exe: str, root: str, timeout: int, attempt: int):
+        """启动客户端并绑定其窗口的单轮尝试。
+
+        返回 (bound_pid, spawned_pid)：bound_pid 非 0 表示本轮成功；spawned_pid 是本轮
+        Popen 出的进程与绑定到的窗口 PID 集合，供失败清理精确定位。Popen 失败返回 None。
+        """
         before_pids = {w['pid'] for w in list_desktop_windows()}
-        logger.info(f'自动启动桌面客户端: {exe}')
+        logger.info(f'自动启动桌面客户端（第 {attempt} 轮）: {exe}')
+        spawned = set()
         try:
-            subprocess.Popen([exe], cwd=root,
-                             creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            proc = subprocess.Popen([exe], cwd=root,
+                                    creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            spawned.add(proc.pid)
         except Exception as e:
             logger.error(f'启动桌面客户端失败: {e}')
-            return False
+            return None
+
         deadline = time.time() + timeout
         stable_hwnd = 0
         stable_count = 0
@@ -652,17 +777,38 @@ class Handle:
                     stable_count = 1
                 if stable_count >= 2:
                     self.desktop_bind_pid(candidate['pid'], candidate['hwnd'])
+                    spawned.add(candidate['pid'])
                     logger.info(f'桌面客户端已自动启动并绑定 PID={candidate["pid"]}')
-                    # 绑定窗口后等客户端加载到登录页，否则后续 restart 登录流程会对着加载画面空转
-                    logger.info(f'等待桌面客户端加载到登录页（约 {self.DESKTOP_LOGIN_WAIT_SECONDS} 秒）')
-                    time.sleep(self.DESKTOP_LOGIN_WAIT_SECONDS)
-                    if not self.desktop_window_exists():
-                        logger.warning('等待登录页期间桌面客户端窗口已消失，可能启动失败')
-                        return False
-                    return True
+                    # 到这里启动就完成了：进程在跑、窗口句柄已绑定。
+                    # MPay 登录弹窗与进游戏属于登录流程，由 Restart 的 app_handle_login
+                    # 负责（它进循环前确认一次、循环内每 2s 复查，弹窗中途冒出来也能接住）。
+                    # 这里不再等弹窗：启动侧等一遍、登录侧再确认一遍是串行叠加的重复工作，
+                    # 实测白等约 20 秒，而登录循环本可以边截图边处理掉它
+                    return candidate['pid'], spawned
             time.sleep(1)
-        logger.error(f'桌面客户端进程已启动，但 {timeout} 秒内未识别到游戏窗口')
-        return False
+        logger.warning(f'桌面客户端进程已启动，但 {timeout} 秒内未识别到游戏窗口')
+        return 0, spawned
+
+    def _desktop_kill_pids(self, pids) -> None:
+        """强杀指定 PID 集合（本轮启动失败的清理），逐个容错。"""
+        kernel32 = ctypes.windll.kernel32
+        for pid in pids:
+            try:
+                pid_int = int(pid)
+            except (TypeError, ValueError):
+                continue
+            # PROCESS_TERMINATE(0x0001)
+            handle = kernel32.OpenProcess(0x0001, False, pid_int)
+            if not handle:
+                # 进程已自行退出
+                continue
+            try:
+                kernel32.TerminateProcess(handle, 0)
+                logger.info(f'清理桌面客户端 PID={pid_int}')
+            finally:
+                kernel32.CloseHandle(handle)
+        # 等窗口真的消失，避免残留窗口干扰下一轮的新窗口识别
+        self._desktop_wait_closed(self._desktop_close_wait_seconds())
 
     def desktop_bind_pid(self, pid, hwnd=0) -> None:
         """把新 PID/HWND 绑定到实例，并尽量持久化到配置。"""
@@ -671,6 +817,8 @@ class Handle:
             self.root_handle_num = hwnd
         self.root_handle_title = DESKTOP_WINDOW_TITLES[0]
         self.is_desktop_window = True
+        # 换了新 hwnd，截图句柄缓存必须同步失效，否则截图仍走上一个客户端的废句柄
+        self._desktop_clear_handle_cache()
         # 新绑定的客户端刚启动，必然未登录，需先走 restart 登录流程
         self._desktop_login_done = False
         logger.info(f'Desktop client bound: PID={pid}, hwnd={hwnd}')
@@ -726,7 +874,14 @@ class Handle:
         logger.info('Stopping desktop client: force kill')
         self.desktop_force_kill()
         wait = self._desktop_close_wait_seconds()
-        if self._desktop_wait_closed(wait):
+        closed = self._desktop_wait_closed(wait)
+        # 进程已杀，hwnd 随窗口销毁立即失效。必须清零，否则后续在同一个 device 对象
+        # 生命周期内被唤醒的任务（如配置变更触发的即时调度）会跳过 Handle.__init__，
+        # 直接拿这个废句柄去 GetClientRect，抛 (1400, '无效的窗口句柄') 搞崩整个进程
+        self.root_handle_num = 0
+        # 截图句柄缓存指向的也是刚被销毁的窗口，一并失效
+        self._desktop_clear_handle_cache()
+        if closed:
             logger.info('Desktop client closed')
             return
         logger.warning(f'Desktop client force kill but window still present after {wait}s')

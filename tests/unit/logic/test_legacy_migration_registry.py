@@ -275,6 +275,30 @@ def test_orochi_legacy_team_field_sources_are_registered():
     } <= registered
 
 
+def test_dropped_desktop_login_wait_is_migrated_away():
+    """已删字段 desktop_login_wait 必须被迁移丢弃，否则整份配置会被判非法隔离。
+
+    回归：删模型字段但不配迁移，_reject_unknown_keys 会拒绝磁盘上的残留键 →
+    ConfigGenerationError → 实例停止。任何装过旧版的用户升级后都会中。
+    """
+    from module.config.config_validation import normalize_legacy_config
+
+    registered = set(legacy_source_paths())
+    assert ("script", "device", "desktop_login_wait") in registered
+
+    raw = {"script": {"device": {"serial": "desktop", "handle": "4242",
+                                 "desktop_login_wait": 180}}}
+    normalized = normalize_legacy_config(raw, "oas1")
+    assert "desktop_login_wait" not in normalized["script"]["device"]
+    # 同级字段不受影响，且不修改入参
+    assert normalized["script"]["device"]["handle"] == "4242"
+    assert raw["script"]["device"]["desktop_login_wait"] == 180
+
+    # 字段本就不存在时是无操作，迁移必须幂等
+    clean = normalize_legacy_config({"script": {"device": {"handle": "1"}}}, "oas1")
+    assert clean["script"]["device"] == {"handle": "1"}
+
+
 def test_scanner_detects_alias_variable_and_assignment_migrations(tmp_path):
     task_dir = tmp_path / "AliasTask"
     task_dir.mkdir()

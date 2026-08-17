@@ -499,9 +499,14 @@ class Script:
             logger.error(f'Invalid command `{command}`')
 
         try:
-            self.device.screenshot()
-            if command not in self.SKIP_APP_CHECK_TASKS and not self.device.app_is_running():
-                raise GameNotRunningError('Game not running')
+            # SKIP_APP_CHECK_TASKS 里的任务不要求游戏已在运行，启动前截图对它们没有意义：
+            # 桌面模式下客户端未启动时截图会抛 GameNotRunningError，而 Restart 正是负责
+            # 启动客户端的那个任务，若它自己也被挡在截图这一步就永远起不来（bootstrap 死锁）。
+            # 这些任务进入后自行 app_start 拉起客户端再截图。
+            if command not in self.SKIP_APP_CHECK_TASKS:
+                self.device.screenshot()
+                if not self.device.app_is_running():
+                    raise GameNotRunningError('Game not running')
             module_name = 'script_task'
             module_path = str(Path.cwd() / 'tasks' / command / (module_name+'.py'))
             logger.info(f'module_path: {module_path}, module_name: {module_name}')
