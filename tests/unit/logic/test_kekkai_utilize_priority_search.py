@@ -147,7 +147,7 @@ def test_ensure_card_selected_returns_false_after_timeout():
 
 @pytest.mark.unit
 def test_reset_priority_search_switches_through_opposite_zone():
-    """同区内下一轮搜索也必须先切到跨区清空状态。"""
+    """翻列表与好友同区服时，必须先切到对面再切回来才能真正重建列表。"""
     task = make_task()
     switched = []
     task.switch_friend_list = lambda friend: switched.append(friend)
@@ -165,8 +165,56 @@ def test_reset_priority_search_switches_through_opposite_zone():
 
 
 @pytest.mark.unit
-def test_priority_names_reset_between_each_search_round():
-    """每个配置名称之间都应通过另一区服重置搜索。"""
+def test_reset_priority_search_switches_once_across_zones():
+    """翻列表与好友区服不同时，直接切过去即可，切换本身就会重建列表。"""
+    task = make_task()
+    switched = []
+    task.switch_friend_list = lambda friend: switched.append(friend)
+
+    result = task._reset_priority_search(
+        SelectFriendList.DIFFERENT_SERVER,
+        SelectFriendList.SAME_SERVER,
+    )
+
+    assert result == SelectFriendList.SAME_SERVER
+    assert switched == [SelectFriendList.SAME_SERVER]
+
+
+@pytest.mark.unit
+def test_goto_priority_zone_skips_switch_in_same_zone():
+    """遍历优先名称时同区服不切换，输入框由 I_NAME_DELETE 负责清空。"""
+    task = make_task()
+    switched = []
+    task.switch_friend_list = lambda friend: switched.append(friend)
+
+    result = task._goto_priority_zone(
+        SelectFriendList.SAME_SERVER,
+        SelectFriendList.SAME_SERVER,
+    )
+
+    assert result == SelectFriendList.SAME_SERVER
+    assert switched == []
+
+
+@pytest.mark.unit
+def test_goto_priority_zone_switches_once_across_zones():
+    """遍历优先名称时区服不同只切一次，不绕对面。"""
+    task = make_task()
+    switched = []
+    task.switch_friend_list = lambda friend: switched.append(friend)
+
+    result = task._goto_priority_zone(
+        SelectFriendList.SAME_SERVER,
+        SelectFriendList.DIFFERENT_SERVER,
+    )
+
+    assert result == SelectFriendList.DIFFERENT_SERVER
+    assert switched == [SelectFriendList.DIFFERENT_SERVER]
+
+
+@pytest.mark.unit
+def test_priority_names_switch_zone_only_when_different():
+    """遍历配置名称时只在区服变化处切换，同区服连续搜索不再切区服。"""
     task = make_task()
     switched = []
     task.switch_friend_list = lambda friend: switched.append(friend)
@@ -184,12 +232,8 @@ def test_priority_names_reset_between_each_search_round():
 
     assert selected is False
     assert current_friend == SelectFriendList.DIFFERENT_SERVER
-    assert switched == [
-        SelectFriendList.SAME_SERVER,
-        SelectFriendList.DIFFERENT_SERVER,
-        SelectFriendList.SAME_SERVER,
-        SelectFriendList.DIFFERENT_SERVER,
-    ]
+    # 首个名称已在入参区服、第二个同区服，均不切换；只有第三个跨区才切一次
+    assert switched == [SelectFriendList.DIFFERENT_SERVER]
 
 
 @pytest.mark.unit
@@ -345,6 +389,98 @@ def test_perform_swipe_action_uses_fast_overlapping_gesture(monkeypatch):
 
 
 @pytest.mark.unit
+def test_run_utilize_skips_second_realm_entry_when_select_already_utilized():
+    """选卡阶段内部已寄养（搜索优先好友路径）时，不应再进一次结界。"""
+    task = make_task()
+    task.first_utilize = False
+    task.config = SimpleNamespace(
+        kekkai_utilize=SimpleNamespace(
+            utilize_config=SimpleNamespace(priority_search_names='同区:瑶光')
+        )
+    )
+    task.switch_friend_list = lambda friend: True
+    task._select_from_priority_names = lambda names, current, shikigami_class, shikigami_order: (
+        False, SelectFriendList.SAME_SERVER)
+    task._reset_priority_search = lambda current, target: target
+
+    def fake_select(shikigami_class, shikigami_order, list_friend=None):
+        # 模拟内部走搜索优先好友路径完成寄养
+        task.utilized_in_select = True
+        return True
+
+    task._select_optimal_resource_card = fake_select
+    task._enter_realm_and_utilize = lambda shikigami_class, shikigami_order: pytest.fail(
+        '选卡阶段已寄养，不应再进入结界')
+
+    assert task.run_utilize(friend=SelectFriendList.SAME_SERVER) is True
+
+
+@pytest.mark.unit
+def test_run_utilize_enters_realm_when_select_only_picked_card():
+    """选卡阶段只选中卡未寄养时，仍须由 run_utilize 进结界上式神。"""
+    task = make_task()
+    task.first_utilize = False
+    task.config = SimpleNamespace(
+        kekkai_utilize=SimpleNamespace(
+            utilize_config=SimpleNamespace(priority_search_names='')
+        )
+    )
+    task.switch_friend_list = lambda friend: True
+    entered = []
+    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order, list_friend=None: True
+    task._enter_realm_and_utilize = lambda shikigami_class, shikigami_order: (
+        entered.append(True) or 'ok')
+
+    assert task.run_utilize(friend=SelectFriendList.SAME_SERVER) is True
+    assert entered == [True]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('texts, expected', [
+    (['一'], ''),
+    (['1'], ''),
+    (['|'], ''),
+    (['请输入好友昵称或备注'], '请输入好友昵称或备注'),
+    (['js15瑤光'], 'js15瑶光'),
+    (['一', 'js15瑤光'], 'js15瑶光'),
+])
+def test_priority_input_text_drops_cursor_noise(texts, expected):
+    """输入光标被 OCR 误识别成单字符时应作为噪声丢弃，多字符文本保留。"""
+    from tasks.KekkaiUtilize.script_task import ScriptTask
+
+    assert ScriptTask._priority_input_text(texts) == expected
+
+
+@pytest.mark.unit
+def test_input_priority_name_treats_cursor_noise_as_empty(monkeypatch):
+    """输入框只剩光标噪声时应视为空框直接输入，不触发删除。"""
+    task = make_task()
+    calls = []
+    task.device = SimpleNamespace(
+        u2=SimpleNamespace(
+            send_keys=lambda text, clear=False: calls.append(('send', text, clear)),
+            set_fastinput_ime=lambda enable: calls.append(('ime', enable)),
+        ),
+        image=object(),
+    )
+    task.screenshot = lambda: None
+    # 首次只读到光标噪声「一」，聚焦后读到目标名
+    texts = iter((['一'], ['js15瑤光']))
+    task._priority_name_check_texts = lambda: next(texts, ['js15瑤光'])
+    task._clear_priority_name_input = lambda: pytest.fail('光标噪声不应触发删除')
+    task._focus_priority_name_input = lambda: calls.append(('focus',)) or True
+    monkeypatch.setattr('tasks.KekkaiUtilize.script_task.time.sleep', lambda seconds: None)
+
+    assert task._input_priority_name('js15瑤光') is True
+    assert calls == [
+        ('focus',),
+        ('send', '', True),
+        ('send', 'js15瑤光', False),
+        ('ime', False),
+    ]
+
+
+@pytest.mark.unit
 def test_run_utilize_falls_back_to_original_card_selection():
     """全部优先名称失败后应重置区服并调用原选卡流程。"""
     task = make_task()
@@ -362,7 +498,7 @@ def test_run_utilize_falls_back_to_original_card_selection():
     task._reset_priority_search = lambda current, target: (
         calls.append(('reset', current, target)) or target
     )
-    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order: calls.append(('original',)) or False
+    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order, list_friend=None: calls.append(('original',)) or False
 
     assert task.run_utilize(friend=SelectFriendList.SAME_SERVER) is False
     assert calls == [
@@ -474,24 +610,96 @@ def test_select_from_priority_names_skips_occupied_and_tries_next():
 
 
 @pytest.mark.unit
-def test_input_priority_name_uses_char_by_char_input(monkeypatch):
-    """输入方式与 SearchId 一致：先清空再逐字符输入，并 OCR 校验。"""
+def test_input_priority_name_uses_one_shot_input(monkeypatch):
+    """输入框为空时应聚焦后一次性 send_keys 整串名称，并收起输入法。"""
     task = make_task()
     calls = []
     task.device = SimpleNamespace(
-        u2=SimpleNamespace(send_keys=lambda text, clear=True: calls.append(('clear', text, clear))),
+        u2=SimpleNamespace(
+            send_keys=lambda text, clear=False: calls.append(('send', text, clear)),
+            set_fastinput_ime=lambda enable: calls.append(('ime', enable)),
+        ),
         image=object(),
     )
     task.screenshot = lambda: None
-    task.input_text_alternative = lambda name: calls.append(('char', name))
-    task._priority_name_check_texts = lambda: ['瑶光']
+    # 首次读到占位文字（空输入框），聚焦后读到目标名
+    texts = iter((['请输入好友昵称或备注'], ['瑶光']))
+    task._priority_name_check_texts = lambda: next(texts, ['瑶光'])
+    task._focus_priority_name_input = lambda: calls.append(('focus',)) or True
     monkeypatch.setattr('tasks.KekkaiUtilize.script_task.time.sleep', lambda seconds: None)
 
     assert task._input_priority_name('瑶光') is True
     assert calls == [
-        ('clear', '', True),
-        ('char', '瑶光'),
+        ('focus',),
+        ('send', '', True),
+        ('send', '瑶光', False),
+        ('ime', False),
     ]
+
+
+@pytest.mark.unit
+def test_input_priority_name_skips_when_already_expected():
+    """输入框已是目标角色名时直接复用，不再删除或重新输入。"""
+    task = make_task()
+    calls = []
+    task.device = SimpleNamespace(
+        u2=SimpleNamespace(
+            send_keys=lambda text, clear=False: calls.append(('send', text, clear)),
+        ),
+        image=object(),
+    )
+    task.screenshot = lambda: None
+    task._priority_name_check_texts = lambda: ['瑶光']
+    task._clear_priority_name_input = lambda: calls.append(('clear',)) or True
+    task._focus_priority_name_input = lambda: calls.append(('focus',)) or True
+
+    assert task._input_priority_name('瑶光') is True
+    assert calls == []
+
+
+@pytest.mark.unit
+def test_input_priority_name_deletes_stale_name_first(monkeypatch):
+    """输入框残留其它角色名时应先点删除清空，再重新聚焦后输入。"""
+    task = make_task()
+    calls = []
+    task.device = SimpleNamespace(
+        u2=SimpleNamespace(
+            send_keys=lambda text, clear=False: calls.append(('send', text, clear)),
+            set_fastinput_ime=lambda enable: calls.append(('ime', enable)),
+        ),
+        image=object(),
+    )
+    task.screenshot = lambda: None
+    # 首次读到上一个好友的残留名，清空并聚焦后读到目标名
+    texts = iter((['角色甲'], ['角色乙']))
+    task._priority_name_check_texts = lambda: next(texts, ['角色乙'])
+    task._clear_priority_name_input = lambda: calls.append(('clear',)) or True
+    task._focus_priority_name_input = lambda: calls.append(('focus',)) or True
+    monkeypatch.setattr('tasks.KekkaiUtilize.script_task.time.sleep', lambda seconds: None)
+
+    assert task._input_priority_name('角色乙') is True
+    assert calls == [
+        ('clear',),
+        ('focus',),
+        ('send', '', True),
+        ('send', '角色乙', False),
+        ('ime', False),
+    ]
+
+
+@pytest.mark.unit
+def test_clear_priority_name_input_clicks_until_placeholder(monkeypatch):
+    """清空输入框应持续点击删除按钮，直到占位文字重新出现。"""
+    task = make_task()
+    clicks = []
+    task.screenshot = lambda: None
+    texts = iter((['角色甲'], ['请输入好友昵称或备注']))
+    task._priority_name_check_texts = lambda: next(texts, ['请输入好友昵称或备注'])
+    task.appear_then_click = lambda target, interval: clicks.append(target) or True
+    monkeypatch.setattr('tasks.KekkaiUtilize.script_task.time.sleep', lambda seconds: None)
+
+    assert task._clear_priority_name_input() is True
+    assert clicks == [task.I_NAME_DELETE]
 
 
 @pytest.mark.unit
@@ -645,12 +853,62 @@ def test_select_optimal_card_uses_matched_friend_directly():
         return pytest.fail('匹配到优先好友后不应翻第二轮确认')
 
     task._current_select_best = fake_explore
-    task._search_priority_friend_and_utilize = lambda name, friend, shikigami_class, shikigami_order: (
-        calls.append((name, friend)) or True)
+    task._search_priority_friend_and_utilize = (
+        lambda name, friend, shikigami_class, shikigami_order, list_friend=None: (
+            calls.append((name, friend, list_friend)) or True)
+    )
 
-    assert task._select_optimal_resource_card() is True
-    # 最佳值 80 匹配瑶光记录 → 直接搜瑶光，不翻第二轮
-    assert calls == [('瑶光', SelectFriendList.SAME_SERVER)]
+    assert task._select_optimal_resource_card(
+        list_friend=SelectFriendList.DIFFERENT_SERVER) is True
+    # 最佳值 80 匹配瑶光记录 → 直接搜瑶光，不翻第二轮；翻列表区服须透传下去
+    assert calls == [(
+        '瑶光',
+        SelectFriendList.SAME_SERVER,
+        SelectFriendList.DIFFERENT_SERVER,
+    )]
+
+
+@pytest.mark.unit
+def test_select_optimal_card_resets_list_after_friend_search_failed():
+    """搜索优先好友寄养失败后，回落翻列表前必须先重置列表解除搜索过滤。"""
+    task = make_task()
+    task.priority_friend_records = {
+        '瑶光': {'zone': SelectFriendList.DIFFERENT_SERVER, '斗鱼': 80},
+    }
+    task.config = SimpleNamespace(
+        kekkai_utilize=SimpleNamespace(
+            utilize_config=SimpleNamespace(utilize_rule=UtilizeRule.DEFAULT)
+        )
+    )
+    task.screenshot = lambda: None
+    calls = []
+
+    def fake(best_card_type=None, best_card_num=0, selected_card=False):
+        calls.append(('list', best_card_type, best_card_num, selected_card))
+        if not selected_card:
+            # 探索记录斗鱼最佳值 80，与瑶光记录相同 → 触发搜索好友
+            task.ap_max_num = 80
+            task.jade_max_num = 0
+            return None
+        return True
+
+    task._current_select_best = fake
+    task._search_priority_friend_and_utilize = (
+        lambda name, friend, shikigami_class, shikigami_order, list_friend=None: (
+            calls.append(('search', name)) or False)
+    )
+    task._reset_priority_search = lambda current, target: (
+        calls.append(('reset', current, target)) or target)
+
+    assert task._select_optimal_resource_card(
+        list_friend=SelectFriendList.SAME_SERVER) is True
+    # 搜好友失败 → 先重置回翻列表区服，再翻第二轮确认最佳值
+    assert calls == [
+        ('list', None, 0, False),
+        ('search', '瑶光'),
+        ('reset', SelectFriendList.DIFFERENT_SERVER, SelectFriendList.SAME_SERVER),
+        ('list', '斗鱼', 80, True),
+    ]
 
 
 @pytest.mark.unit
@@ -754,7 +1012,7 @@ def test_run_utilize_swipes_after_priority_failure():
     task.switch_friend_list = lambda friend: switched.append(friend) or True
     task._select_from_priority_names = lambda names, current, shikigami_class, shikigami_order: (False, current)
     task._reset_priority_search = lambda current, target: target
-    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order: True
+    task._select_optimal_resource_card = lambda shikigami_class, shikigami_order, list_friend=None: True
     task._enter_realm_and_utilize = lambda shikigami_class, shikigami_order: 'ok'
 
     assert task.run_utilize(friend=SelectFriendList.SAME_SERVER) is True

@@ -223,5 +223,14 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "点击开始搜索"
+  },
+  {
+    "itemName": "name_delete",
+    "imageName": "utilize_name_delete.png",
+    "roiFront": "497,177,28,24",
+    "roiBack": "472,156,73,68",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "删除名字"
   }
 ]

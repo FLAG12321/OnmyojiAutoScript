@@ -40,6 +40,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     first_utilize = True
     # 优先搜索中未达标好友的结界卡数值记录：{好友名: {'zone': 区服, '斗鱼': 值, '太鼓': 值}}
     priority_friend_records: dict = {}
+    # 选卡阶段内部是否已完成寄养（搜索优先好友路径会自行进结界上式神）
+    utilized_in_select = False
     msg: list = []
     def run(self):
         con = self.config.kekkai_utilize.utilize_config
@@ -430,6 +432,22 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         """统一空白和常见异体字，降低好友名称 OCR 的比较误差。"""
         return re.sub(r'\s+', '', str(text or '')).replace('瑤', '瑶').replace('別', '别')
 
+    @classmethod
+    def _priority_input_text(cls, texts: list[str]) -> str:
+        """把输入框 OCR 结果拼成用于状态判断的文本，并剔除光标噪声。
+
+        输入框聚焦后会显示闪烁的竖线光标，OCR 常把它误识别成「一」「1」「|」等
+        单字符；这类噪声会让状态机把空输入框误判成「残留其它内容」而多删一次。
+        因此只保留长度大于 1 的片段，单字符片段一律视为噪声丢弃。
+        """
+        merged = ''
+        for text in texts:
+            piece = cls._normalize_priority_name(text)
+            if len(piece) <= 1:
+                continue
+            merged += piece
+        return merged
+
     @staticmethod
     def _opposite_friend_list(friend: SelectFriendList) -> SelectFriendList:
         """返回另一个好友区服，用于清空当前搜索状态。"""
@@ -439,10 +457,27 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
     def _reset_priority_search(self, current_friend: SelectFriendList,
                                target_friend: SelectFriendList) -> SelectFriendList:
-        """通过切到另一区服重置搜索，再进入下一项目标区服。"""
-        reset_friend = self._opposite_friend_list(current_friend)
-        self.switch_friend_list(reset_friend)
-        if reset_friend != target_friend:
+        """切区服重建好友列表，用于翻列表之后需要确定地解除搜索过滤的场景。
+
+        区服不同时直接切过去即可：切换本身就是一次真实的 tab 点击，列表会重建。
+        区服相同时必须先绕对面一趟——switch_friend_list 的循环条件是"目标 tab 已
+        高亮就退出"，已在该区服时调用会立即返回、不做任何点击，达不到重置效果。
+        """
+        if current_friend != target_friend:
+            self.switch_friend_list(target_friend)
+            return target_friend
+        self.switch_friend_list(self._opposite_friend_list(current_friend))
+        self.switch_friend_list(target_friend)
+        return target_friend
+
+    def _goto_priority_zone(self, current_friend: SelectFriendList,
+                            target_friend: SelectFriendList) -> SelectFriendList:
+        """遍历优先名称时切到目标区服，仅在区服不同时才切换。
+
+        与 _reset_priority_search 不同，这里不需要重建列表：输入框由
+        I_NAME_DELETE 负责清空，同区服时无须多切一趟。
+        """
+        if current_friend != target_friend:
             self.switch_friend_list(target_friend)
         return target_friend
 
@@ -476,53 +511,101 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.device.click(click_x, click_y, control_name=self.O_NAME_CHECK.name)
             time.sleep(0.3)
             self.screenshot()
-            current_text = ''.join(
-                self._normalize_priority_name(text) for text in self._priority_name_check_texts()
-            )
+            current_text = self._priority_input_text(self._priority_name_check_texts())
             if placeholder not in current_text:
                 return True
         logger.warning('好友名称输入框未能获得焦点')
         return False
 
-    def _input_priority_name(self, name: str) -> bool:
-        """输入角色名，并等待输入框 OCR 确认名称已经写入。
+    def _clear_priority_name_input(self) -> bool:
+        """点击删除按钮清空搜索输入框，占位文字重新出现即确认已清空。
 
-        与 SearchId 一致采用逐字符输入，避免一次性 send_keys 输入中文昵称时
-        出现乱码或内容不被游戏识别；send_keys(clear=True) 仅作兜底。
+        游戏侧点击删除后输入框会失去焦点、重新显示占位文字，所以调用方随后
+        需要再走一次 _focus_priority_name_input 才能继续输入。
+        """
+        timeout = Timer(6).start()
+        placeholder = self._normalize_priority_name(self.PRIORITY_NAME_PLACEHOLDER)
+        while not timeout.reached():
+            self.screenshot()
+            current_text = self._priority_input_text(self._priority_name_check_texts())
+            if placeholder in current_text:
+                logger.info('搜索输入框已清空')
+                return True
+            if not self.appear_then_click(self.I_NAME_DELETE, interval=0.6):
+                continue
+        logger.warning('清空搜索输入框超时')
+        return False
+
+    def _input_priority_name(self, name: str) -> bool:
+        """把角色名写入搜索输入框，并等待输入框 OCR 确认。
+
+        先按输入框当前 OCR 状态分支，避免盲目重复输入：
+        - 已经是目标名：上一次输入的残留可直接复用，跳过输入
+        - 占位文字（空）：聚焦后输入
+        - 其它残留名：先点 I_NAME_DELETE 清空，删除会失去焦点故需重新聚焦再输入
+
+        输入本身一次性 send_keys 整串角色名（内部走 fastinput IME 广播，中文不会
+        乱码），不逐字符输入；结束后收起 fastinput 浮动条，防止遮挡结界卡识别。
         """
         expected = self._normalize_priority_name(name)
-        fallback_used = False
+        placeholder = self._normalize_priority_name(self.PRIORITY_NAME_PLACEHOLDER)
+
+        self.screenshot()
+        current_text = self._priority_input_text(self._priority_name_check_texts())
+        if expected in current_text:
+            logger.info('搜索输入框已是目标角色名，跳过输入: %s', name)
+            return True
+        if placeholder not in current_text and current_text:
+            # 残留了别的角色名，先删掉再重新聚焦
+            logger.info('搜索输入框残留其它内容[%s]，先清空', current_text)
+            if not self._clear_priority_name_input():
+                return False
+        if not self._focus_priority_name_input():
+            return False
+
+        is_desktop = getattr(self.device, 'is_desktop', False)
         for attempt in range(3):
             try:
-                # 先清空输入框，避免重试时把同一个角色名重复追加
-                self.device.u2.send_keys('', clear=True)
-                # 逐字符输入，降低一次性输入长串中文被游戏漏识别的概率
-                self.input_text_alternative(name)
+                if is_desktop:
+                    # 桌面端没有 uiautomator2，清空与输入统一走 Windows 消息注入
+                    self.device.input_text_desktop('', clear=True)
+                    self.device.input_text_desktop(name)
+                else:
+                    # 兜底再清一次，避免 OCR 漏检残留把角色名重复追加
+                    self.device.u2.send_keys('', clear=True)
+                    # 一次性输入整串角色名，避免逐字符消息抖动导致漏字
+                    self.device.u2.send_keys(name)
             except Exception as error:
-                if fallback_used:
-                    logger.warning('好友名称输入失败: %s', error)
-                    break
-                logger.warning('逐字符输入不可用，改用清空后一次性输入: %s', error)
-                try:
-                    self.device.u2.send_keys(name, clear=True)
-                except Exception as error2:
-                    logger.warning('清空后一次性输入也不可用: %s', error2)
-                fallback_used = True
+                logger.warning('好友名称输入失败: %s', error)
+                continue
 
             check_timer = Timer(3).start()
             while not check_timer.reached():
                 time.sleep(0.3)
                 self.screenshot()
-                current_text = ''.join(
-                    self._normalize_priority_name(text) for text in self._priority_name_check_texts()
-                )
+                current_text = self._priority_input_text(self._priority_name_check_texts())
                 if expected in current_text:
                     logger.info('优先搜索名称已输入: %s', name)
+                    self._restore_priority_name_ime()
                     return True
-            if fallback_used:
-                break
             logger.warning('第%d次输入后未识别到角色名: %s', attempt + 1, name)
+        self._restore_priority_name_ime()
         return False
+
+    def _restore_priority_name_ime(self) -> None:
+        """收起 uiautomator2 fastinput 输入法浮动条，避免遮挡结界卡素材识别。
+
+        一次性 send_keys 会把系统 IME 切到 com.github.uiautomator/.FastInputIME，
+        输入框聚焦时屏幕底部会显示 ∞ 浮动工具条（clear Text / switch IME）；
+        禁用后系统自动回退到默认输入法，下一次 send_keys 会再次自动启用。
+        桌面客户端模式没有 Android IME，直接跳过。
+        """
+        if getattr(self.device, 'is_desktop', False):
+            return
+        try:
+            self.device.u2.set_fastinput_ime(False)
+        except Exception as error:
+            logger.warning('收起好友搜索输入法失败: %s', error)
 
     def _click_priority_search(self) -> bool:
         """连续点击两到三次搜索按钮，降低单次点击丢失的概率。"""
@@ -733,20 +816,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # 确保实例属性存在，避免误改类属性造成跨轮污染
         if 'priority_friend_records' not in self.__dict__:
             self.priority_friend_records = {}
-        for index, (target_friend, name) in enumerate(priority_names):
+        for target_friend, name in priority_names:
             # 记录该好友所在区服，供后续最佳值匹配后直接搜索该好友
             self.priority_friend_records.setdefault(name, {})['zone'] = target_friend
-            if index == 0:
-                self.switch_friend_list(target_friend)
-            else:
-                current_friend = self._reset_priority_search(current_friend, target_friend)
-            current_friend = target_friend
+            # 输入框由 I_NAME_DELETE 清空，这里只在区服不同时切换
+            current_friend = self._goto_priority_zone(current_friend, target_friend)
             logger.info('开始优先搜索好友: %s [%s]', name, target_friend.value)
 
             if not self._open_priority_name_search():
                 continue
-            if not self._focus_priority_name_input():
-                continue
+            # 聚焦已收进 _input_priority_name，避免两处都点输入框导致状态打架
             if not self._input_priority_name(name):
                 continue
             if not self._click_priority_search():
@@ -774,10 +853,19 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
     def _search_priority_friend_and_utilize(self, name: str, friend: SelectFriendList,
                                             shikigami_class: ShikigamiClass,
-                                            shikigami_order: int) -> bool:
-        """直接搜索指定优先好友并寄养（不检查最低值），用于最佳值匹配好友时免翻列表。"""
+                                            shikigami_order: int,
+                                            list_friend: SelectFriendList = None) -> bool:
+        """直接搜索指定优先好友并寄养（不检查最低值），用于最佳值匹配好友时免翻列表。
+
+        进来之前刚翻过列表，搜索框状态不可知，所以先 _reset_priority_search 切区服
+        重建列表：好友与翻列表处于同一区服时会绕对面一趟，不同区服则直接切过去。
+        :param list_friend: 翻列表时所处的区服，缺省按好友区服处理
+        """
+        if list_friend is None:
+            list_friend = friend
+        current_friend = self._reset_priority_search(list_friend, friend)
         selected, _ = self._select_from_priority_names(
-            [(friend, name)], friend, shikigami_class, shikigami_order, check_min=False)
+            [(friend, name)], current_friend, shikigami_class, shikigami_order, check_min=False)
         return selected
 
     def _enter_realm_and_utilize(self, shikigami_class: ShikigamiClass,
@@ -969,8 +1057,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 else:
                     self.switch_friend_list(SelectFriendList.SAME_SERVER)
                     self.switch_friend_list(SelectFriendList.DIFFERENT_SERVER)
-            if not self._select_optimal_resource_card(shikigami_class, shikigami_order):
+            # 回退到原流程后始终在配置的优先好友区服翻列表
+            # 选卡阶段可能内部就完成了寄养（搜索优先好友路径），用标志区分
+            self.utilized_in_select = False
+            if not self._select_optimal_resource_card(
+                    shikigami_class, shikigami_order, list_friend=friend):
                 return False
+            if self.utilized_in_select:
+                # 选卡阶段已进结界并上式神，不能再进一次
+                logger.info('选卡阶段已完成寄养，跳过重复进入结界')
+                return True
             # 原选卡流程选中的卡，进入结界寄养；占用时保持原行为直接返回
             result = self._enter_realm_and_utilize(shikigami_class, shikigami_order)
             if result == 'occupied':
@@ -982,8 +1078,12 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
     def _select_optimal_resource_card(self,
                                       shikigami_class: ShikigamiClass = ShikigamiClass.N,
-                                      shikigami_order: int = 7):
-        """整合后的智能选卡主逻辑（无嵌套函数版）"""
+                                      shikigami_order: int = 7,
+                                      list_friend: SelectFriendList = SelectFriendList.SAME_SERVER):
+        """整合后的智能选卡主逻辑（无嵌套函数版）
+
+        :param list_friend: 翻列表时所处的区服，回头搜优先好友时决定怎么切区服重置
+        """
         # 类常量声明（需在类中定义）
         RESOURCE_PRESETS = {
             '斗鱼': [151, 143, 134, 126, 101, 84],
@@ -1043,17 +1143,24 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
             # 第三阶段：执行选卡操作
             logger.hr('第三阶段：执行选卡操作', 2)
-            # 若最佳值恰好来自某个优先好友的结界卡，直接搜索该好友寄养，避免再次翻列表
+            # 若最佳值恰好来自某个优先好友的结界卡（好友值不低于最佳值），
+            # 直接搜索该好友寄养，避免再次翻列表；好友值更低时仍翻列表确认
             friend_name = self._priority_friend_matching(target, res_type)
             if friend_name:
                 friend_zone = self.priority_friend_records.get(friend_name, {}).get(
                     'zone', SelectFriendList.SAME_SERVER)
                 if self._search_priority_friend_and_utilize(
-                        friend_name, friend_zone, shikigami_class, shikigami_order):
+                        friend_name, friend_zone, shikigami_class, shikigami_order,
+                        list_friend=list_friend):
                     logger.info(f'✅ 搜索优先好友{friend_name}寄养成功')
                     self.ap_max_num, self.jade_max_num = 0, 0
+                    # 搜索好友路径内部已完成进结界与上式神，通知调用方不要再进一次
+                    self.utilized_in_select = True
                     return True
                 logger.warning(f'❌ 搜索优先好友{friend_name}寄养失败，回落翻列表确认')
+                # 搜索好友时留下了过滤状态、且可能停在好友所在区服，
+                # 回落翻列表前按重置原则切回翻列表区服并重建完整列表
+                self._reset_priority_search(friend_zone, list_friend)
             if self._current_select_best(res_type, target, selected_card=True):
                 logger.info(f'✅ {res_type}卡确认成功，重置状态')
                 self.ap_max_num, self.jade_max_num = 0, 0

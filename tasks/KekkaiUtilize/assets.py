@@ -133,6 +133,8 @@ class KekkaiUtilizeAssets:
 	I_SERACH_NAME = RuleImage(roi_front=(584,109,38,35), roi_back=(553,94,93,70), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_serach_name.png")
 	# 点击开始搜索 
 	I_SERACH_ON = RuleImage(roi_front=(547,172,58,35), roi_back=(527,161,98,54), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_serach_on.png")
+	# 删除名字 
+	I_NAME_DELETE = RuleImage(roi_front=(497,177,28,24), roi_back=(472,156,73,68), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_name_delete.png")
 
 
 	# Image Rule Assets
