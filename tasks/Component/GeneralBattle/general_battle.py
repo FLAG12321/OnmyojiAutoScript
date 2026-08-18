@@ -232,6 +232,12 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         logger.info("Get reward")
         while 1:
             self.screenshot()
+            # 战斗胜利后队长弹出「是否邀请队友继续进行战斗」确认框：
+            # 奖励阶段已结束，退出循环交给任务层 check_and_invite 处理，
+            # 避免结算左上角 EXTRA_INFO 在弹窗上仍命中导致持续误点（Too many click）
+            if self.appear(GeneralInviteAssets.I_GI_SURE):
+                logger.info("Invite teammate dialog detected, exit reward loop")
+                break
             # 如果出现领奖励
             action_click = random.choice(self.reward_click_actions())
             if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
