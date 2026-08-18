@@ -147,17 +147,58 @@ def test_repeated_failure_does_not_resend_mail():
     # 开发级错误：吞掉会掩盖 bug，维持旧行为直达 script.py
     ScriptError('dev mistake'),
 ])
-def test_device_level_errors_propagate_without_marking(exc):
+def test_device_level_errors_propagate_and_mark_failed(exc):
     store = FakeStore()
     task, notifier = _make_task(store)
 
     def boom():
         raise exc
 
-    # 设备级异常必须上抛，交给账号级重试/调度级恢复，且不能标 failed
+    # 设备级异常必须上抛，交给账号级重试/调度级恢复
     with pytest.raises(type(exc)):
-        task._run_with_stat('alliedteam', boom)
-    assert store.marks == []
+        task._run_with_stat('courtyard', boom)
+    # 同时标记 failed：卡死往往源自该子任务自身的 UI 分支，不标记会导致
+    # 每轮重调度接续时重复同一次失败（实测同一账号连续三轮同点报错）
+    key, name, status, extra = store.marks[0]
+    assert (name, status) == ('courtyard', STATUS_FAILED)
+    assert extra['etype'] == type(exc).__name__
+    # 首次迁移发且只发一封通知，内容需标明账号与子任务，便于人工定位
+    assert len(notifier.pushes) == 1
+    content = notifier.pushes[0]['content']
+    assert 'courtyard' in content
+    assert type(exc).__name__ in content
+
+
+@pytest.mark.unit
+def test_device_level_error_notify_includes_account_context():
+    # 多账号运行时通知必须能看出是「哪个账号/角色」的子任务失败
+    store = FakeStore()
+    task, notifier = _make_task(store)
+    task._stat_ctx = {'acc': 'a@b.com', 'char': 'js61瑶光', 'svr': '雾山隐'}
+
+    def boom():
+        raise GameTooManyClickError('Too many click for a button: COURTYARD_FINISH')
+
+    with pytest.raises(GameTooManyClickError):
+        task._run_with_stat('courtyard', boom)
+    content = notifier.pushes[0]['content']
+    assert 'js61瑶光' in content
+    assert '雾山隐' in content
+    assert 'a@b.com' in content
+    assert 'courtyard' in content
+
+
+@pytest.mark.unit
+def test_device_level_repeated_failure_does_not_resend_mail():
+    # store 报告非首次迁移时不再发通知，避免每 10 分钟轰炸一次
+    store = FakeStore(first_failed=False)
+    task, notifier = _make_task(store)
+
+    def boom():
+        raise GameStuckError('Wait too long')
+
+    with pytest.raises(GameStuckError):
+        task._run_with_stat('courtyard', boom)
     assert notifier.pushes == []
 
 

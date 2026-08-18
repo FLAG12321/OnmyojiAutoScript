@@ -149,6 +149,11 @@ class DailyAltAccAssets:
 	I_T_SIGN_FLAG2 = RuleImage(roi_front=(869,452,63,34), roi_back=(803,387,203,275), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/courtyard/t_sign_flag2.png")
 
 
+	# Ocr Rule Assets
+	# 经验提取弹窗 
+	O_EXP_DAILOG = RuleOcr(roi=(443,247,399,112), area=(698,399,93,52), mode="Full", method="Default", keyword="提取", name="exp_dailog")
+
+
 	# Image Rule Assets
 	# description 
 	I_DONATE = RuleImage(roi_front=(270,494,27,26), roi_back=(243,465,80,87), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/donatejade/donatejade_donate.png")

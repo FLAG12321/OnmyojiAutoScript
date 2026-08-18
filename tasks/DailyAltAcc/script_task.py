@@ -58,13 +58,14 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
     _alliedteam_limit: int = 0
 
     # 设备级异常：不属于某个子任务的问题，必须上抛给账号级重试/调度级恢复，
-    # 不能标记 failed（否则会把可恢复的环境问题误判成子任务本身有病）。
-    # GameStuckError / GameTooManyClickError / GameBugError 由 script.py 捕获后
-    # task_call('Restart') 重启游戏，一旦在这里被吞掉，游戏会一直卡着，
-    # 后续子任务每个都超时抛错、逐个标 failed 并各发一封邮件。
+    # 不能被吞掉。GameStuckError / GameTooManyClickError / GameBugError 由
+    # script.py 捕获后 task_call('Restart') 重启游戏，一旦在这里被吞掉，
+    # 游戏会一直卡着，后续子任务每个都超时抛错、逐个标 failed 并各发一封邮件。
     # GamePageUnknownError 是页面持续无法识别（活动弹窗/更新公告等），同属
     # 环境故障——吞掉会连锁误标所有后续子任务并把账号误判完成；
     # ScriptError 是开发级错误，吞掉会掩盖 bug，维持旧行为直达 script.py。
+    # 注意：异常照旧上抛，但当前子任务会先被标记 failed（见 _run_with_stat）——
+    # 卡死往往就源自该子任务自身的 UI 分支，不标记会导致每轮接续重复同一次失败。
     # 若增删此清单，须同步 MultiDailyAltAcc.ScriptTask._DEVICE_LEVEL_ERRORS。
     _DEVICE_LEVEL_ERRORS = (
         GameNotRunningError,
@@ -112,15 +113,30 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             return False
 
     def _notify_task_failed(self, task_key: str, error: Exception) -> None:
-        """子任务首次失败时推送通知，说明本轮后续接续会跳过它。"""
-        lines = [f'子任务：{task_key}']
-        if task_key == 'alliedteam' and self._progress is not None:
-            done = self._progress.get_battle_count(self._progress_key)
-            lines.append(f'已打场次：{done}/{self._alliedteam_limit}')
-        lines.append(f'异常：{error.__class__.__name__} - {str(error).splitlines()[0] if str(error) else ""}')
-        lines.append('本轮后续接续将跳过该子任务')
-        lines.append(f'如需重试请删除进度文件：{getattr(self._progress, "path", "")}')
+        """子任务首次失败时推送通知，说明本轮后续接续会跳过它。
+
+        整体包 try：设备级异常路径下本方法在 raise 之前调用，
+        组装通知内容时的任何取值异常都不能打断异常上抛。
+        """
         try:
+            # 账号上下文取多账号运行注入的 _stat_ctx，单实例直跑时退化为配置实例名，
+            # 保证通知里始终能看出是「哪个账号/角色的哪个子任务」失败
+            ctx = getattr(self, '_stat_ctx', None) or {}
+            lines = []
+            char = ctx.get('char')
+            if char:
+                lines.append(f'角色：{char}（{ctx.get("svr") or "未知区服"}）')
+                if ctx.get('acc'):
+                    lines.append(f'账号：{ctx["acc"]}')
+            else:
+                lines.append(f'实例：{getattr(self.config, "config_name", "未知实例")}')
+            lines.append(f'子任务：{task_key}')
+            if task_key == 'alliedteam' and self._progress is not None:
+                done = self._progress.get_battle_count(self._progress_key)
+                lines.append(f'已打场次：{done}/{self._alliedteam_limit}')
+            lines.append(f'异常：{error.__class__.__name__} - {str(error).splitlines()[0] if str(error) else ""}')
+            lines.append('本轮后续接续将跳过该子任务')
+            lines.append(f'如需重试请删除进度文件：{getattr(self._progress, "path", "")}')
             self.config.notifier.push(content='\n'.join(lines), title='子任务异常已跳过')
         except Exception:
             logger.exception('推送子任务异常通知失败')
@@ -130,7 +146,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
 
         业务异常（UI 卡死、OCR 失败等）不再炸掉整个账号：标记 failed、发一封
         通知后吞掉异常返回 None，让 run() 继续执行该账号的下一个子任务。
-        设备级异常仍原样上抛。
+        设备级异常仍原样上抛给 script.py 走恢复，但同样先标记 failed，
+        使接续时跳过该子任务，避免同一失败每轮无限重复。
         """
         start_time = time.time()
         self.emit_stat(StatEvent.TASK_START, task=task_key)
@@ -147,12 +164,17 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             )
             raise
         except self._DEVICE_LEVEL_ERRORS as e:
-            # 设备级异常不归因到子任务，不标记进度，直接上抛
+            # 设备级异常仍原样上抛给 script.py 走 Restart/恢复，但**先把当前子任务标记
+            # failed**：否则重调度接续时会再跑同一个子任务，若卡死源自该子任务自身的
+            # UI 分支（如结界经验弹窗与【一键完成】互点触发 GameTooManyClickError），
+            # 就会 10 分钟一轮无限重复同一次失败（实测同一账号连续三轮同点报错）。
+            # 代价：真正可恢复的环境故障也不再重试该子任务，改由通知告知人工介入。
+            emsg = str(e).splitlines()[0] if str(e) else ""
             self.emit_stat(
                 StatEvent.ERROR,
                 task=task_key,
                 etype=e.__class__.__name__,
-                emsg=str(e).splitlines()[0] if str(e) else "",
+                emsg=emsg,
             )
             self.emit_stat(
                 StatEvent.TASK_END,
@@ -160,6 +182,9 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 ok=False,
                 dur=round(time.time() - start_time, 3),
             )
+            # 首次「未失败 → failed」迁移才发通知，避免每轮重调度重复轰炸
+            if self._mark_progress(task_key, STATUS_FAILED, etype=e.__class__.__name__, emsg=emsg):
+                self._notify_task_failed(task_key, e)
             raise
         except Exception as e:
             emsg = str(e).splitlines()[0] if str(e) else ""
