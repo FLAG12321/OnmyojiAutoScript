@@ -1014,6 +1014,127 @@ def test_stuck_with_window_gone_reports_game_died():
         Device.stuck_record_check(dev)
 
 
+def test_launch_desktop_client_records_launcher_pid_for_cleanup(monkeypatch):
+    """启动成功后必须留档本轮拉起的全部 PID，供关闭时清理启动器。
+
+    回归启动器泄漏：onmyoji.exe 是启动器，Popen 得到的是它的 PID（8932），它随后派生
+    真正的游戏窗口进程（6816）并自己继续存活、无窗口。OAS 靠枚举游戏窗口只能绑到
+    6816，旧代码在启动成功时丢掉了 spawned 集合，于是没有任何地方知道 8932 的存在，
+    关闭时它必然残留。
+    """
+    w = object.__new__(Window)
+    w.config = _handle_config(handle='4242')
+    monkeypatch.setattr(Window, 'desktop_resolve_install_root', lambda self: 'C:/Games/Onmyoji')
+    monkeypatch.setattr(Window, 'desktop_game_exe', lambda self, root: 'C:/Games/Onmyoji/bin/onmyoji.exe')
+    # Popen 拿到的是启动器 PID 8932
+    monkeypatch.setattr('module.device.handle.subprocess.Popen',
+                        lambda *a, **k: types.SimpleNamespace(pid=8932))
+    # 枚举到的新窗口属于派生出的窗口进程 6816——与启动器 PID 不同，这是真机行为。
+    # 首次采样是启动前快照（before_pids），新窗口须在其后才出现，否则会被当成旧窗口排除
+    state = {'n': 0}
+
+    def fake_list():
+        state['n'] += 1
+        if state['n'] == 1:
+            return [{'pid': 4242, 'title': '阴阳师-网易游戏', 'x': 0, 'y': 0}]
+        return [{'pid': 4242, 'title': '阴阳师-网易游戏', 'x': 0, 'y': 0},
+                {'pid': 6816, 'title': '阴阳师-网易游戏', 'x': 100, 'y': 0, 'hwnd': 0x300}]
+
+    monkeypatch.setattr('module.device.handle.list_desktop_windows', fake_list)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    bound = []
+    w.desktop_bind_pid = lambda pid, hwnd=0: bound.append(pid)
+    w.desktop_window_exists = lambda: True
+
+    assert w.launch_desktop_client(timeout=5) is True
+    # 绑定的是窗口进程
+    assert bound == [6816]
+    # 但启动器 PID 必须被记下来，否则关闭时无从得知它的存在
+    assert 8932 in w._desktop_spawned_pids
+
+
+def test_desktop_stop_client_kills_spawned_launcher_leftover(monkeypatch):
+    """关闭时必须连自己拉起的启动器一起收，不能只杀绑定的窗口进程。
+
+    回归启动器泄漏：onmyoji.exe 是启动器，Popen 起来后它派生真正的游戏窗口进程、
+    自己继续存活且没有窗口（实测启动器 8932 派生窗口进程 6816，89 线程 42s CPU、
+    主窗口句柄为 0）。OAS 靠枚举游戏窗口只绑到 6816，旧代码杀完 6816 就报
+    released——验证本身没错，但验证对象漏了启动器，8932 成了无主残留。
+    """
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle = '6816'
+    w.root_handle_num = 0x200
+    w.config = _handle_config(handle='6816')
+    w._desktop_close_wait_seconds = lambda: 1
+    w._desktop_clear_handle_cache = lambda: None
+    # 启动成功时留档的两个 PID：启动器 8932 + 绑定的窗口进程 6816
+    w._desktop_spawned_pids = {8932, 6816}
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+
+    alive = {6816: True, 8932: True}
+    w.desktop_window_exists = lambda: alive[6816]
+    w._desktop_pid_alive = lambda pid: alive.get(int(pid), False)
+    w.desktop_force_kill = lambda: alive.__setitem__(6816, False)
+    killed = []
+
+    def kill_pids(pids):
+        killed.extend(sorted(pids))
+        for p in pids:
+            alive[int(p)] = False
+
+    w._desktop_kill_pids = kill_pids
+
+    assert w.desktop_stop_client() is True
+    # 只补杀启动器，绑定的窗口进程由主流程负责，不重复杀
+    assert killed == [8932]
+    assert alive[8932] is False
+    # 留档已清空，避免下次关闭去杀早已复用的 PID
+    assert w._desktop_spawned_pids == set()
+
+
+def test_desktop_stop_client_reports_false_when_launcher_survives(monkeypatch):
+    """启动器杀不掉 → 返回 False，不能因为窗口进程已退出就报成功。"""
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle = '6816'
+    w.root_handle_num = 0x200
+    w.config = _handle_config(handle='6816')
+    w._desktop_close_wait_seconds = lambda: 1
+    w._desktop_clear_handle_cache = lambda: None
+    w._desktop_spawned_pids = {8932}
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+
+    alive = {6816: True, 8932: True}
+    w.desktop_window_exists = lambda: alive[6816]
+    w._desktop_pid_alive = lambda pid: alive.get(int(pid), False)
+    w.desktop_force_kill = lambda: alive.__setitem__(6816, False)
+    # 启动器杀不掉（权限被拒等）
+    w._desktop_kill_pids = lambda pids: None
+
+    assert w.desktop_stop_client() is False
+
+
+def test_desktop_stop_client_no_spawned_record_is_noop(monkeypatch):
+    """没有启动记录时（如接管用户手开的客户端）不做任何补杀。"""
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle = '6816'
+    w.root_handle_num = 0x200
+    w.config = _handle_config(handle='6816')
+    w._desktop_close_wait_seconds = lambda: 1
+    w._desktop_clear_handle_cache = lambda: None
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    w.desktop_window_exists = lambda: False
+    w._desktop_pid_alive = lambda pid: False
+    w.desktop_force_kill = lambda: None
+    w._desktop_kill_pids = lambda pids: pytest.fail('无启动记录时不应补杀任何进程')
+    assert w.desktop_stop_client() is True
+
+
 def test_desktop_client_size_returns_physical(monkeypatch):
     # 客户区尺寸在 DPI 感知上下文内读取，返回物理像素
     handle = object.__new__(Handle)

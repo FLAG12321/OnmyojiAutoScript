@@ -742,6 +742,11 @@ class Handle:
                 return False
             bound_pid, spawned_pid = pids
             if bound_pid:
+                # 启动成功也要记住本轮拉起的全部 PID：onmyoji.exe 是启动器，它会派生出
+                # 真正的游戏窗口进程后自己继续存活（实测启动器 8932 派生窗口进程 6816，
+                # 89 线程 42s CPU 却无窗口）。OAS 靠枚举窗口只绑到窗口进程，关闭时若只杀
+                # 它，启动器就成了无主残留。这里留档，交给 desktop_stop_client 一并清理
+                self._desktop_spawned_pids = set(spawned_pid)
                 return True
             if attempt == 1:
                 # 只杀本轮确切启动的进程：绑定阶段就失败时 root_handle 仍是上一次的陈旧
@@ -942,23 +947,58 @@ class Handle:
         if (not hwnd or not IsWindow(hwnd)) and not self._desktop_pid_alive(pid):
             logger.info('Desktop client not running, skip stop')
             self._reset_desktop_handle_state()
+            # 窗口进程已没了也要收启动器：它无窗口，只看窗口永远发现不了
+            self._desktop_kill_spawned_leftovers(pid)
             return True
 
         wait = self._desktop_close_wait_seconds()
+        released = False
         for attempt in range(1, DESKTOP_KILL_ATTEMPTS + 1):
             logger.info(f'Stopping desktop client: force kill '
                         f'({attempt}/{DESKTOP_KILL_ATTEMPTS}, PID={pid})')
             self.desktop_force_kill()
             if self._desktop_wait_released(pid, wait):
                 logger.info(f'Desktop client released (PID={pid})')
-                self._reset_desktop_handle_state()
-                return True
+                released = True
+                break
             logger.warning(f'Desktop client PID={pid} still present after {wait}s, retry kill')
-        # 到这里客户端确实没关掉：句柄状态照常清零（它已不可信），但把失败如实报出去
-        logger.error(f'Desktop client PID={pid} not released after '
-                     f'{DESKTOP_KILL_ATTEMPTS} force kill attempts, manual cleanup needed')
+        if not released:
+            # 到这里客户端确实没关掉：句柄状态照常清零（它已不可信），但把失败如实报出去
+            logger.error(f'Desktop client PID={pid} not released after '
+                         f'{DESKTOP_KILL_ATTEMPTS} force kill attempts, manual cleanup needed')
         self._reset_desktop_handle_state()
-        return False
+        # 无论窗口进程是否关掉，本轮自己拉起的启动器都要一并收掉
+        leftovers_cleared = self._desktop_kill_spawned_leftovers(pid)
+        return released and leftovers_cleared
+
+    def _desktop_kill_spawned_leftovers(self, bound_pid) -> bool:
+        """清理本次自己拉起、但没被绑定的客户端进程，返回是否已全部清掉。
+
+        onmyoji.exe 是启动器：Popen 起来后它派生真正的游戏窗口进程，自己继续存活且
+        没有窗口（实测启动器 89 线程、42s CPU、主窗口句柄为 0）。OAS 靠枚举游戏窗口
+        绑定，只会绑到窗口进程，关闭时若只杀它，启动器就成了无主残留——既占内存，
+        也让下一轮启动的窗口识别多一个干扰源。这些 PID 由 launch_desktop_client
+        在启动成功时留档到 _desktop_spawned_pids。
+        """
+        spawned = getattr(self, '_desktop_spawned_pids', None)
+        if not spawned:
+            return True
+        try:
+            bound = int(str(bound_pid))
+        except (TypeError, ValueError):
+            bound = None
+        # 已绑定的那个由主流程负责，这里只收剩下的
+        leftovers = {p for p in spawned if p != bound and self._desktop_pid_alive(p)}
+        self._desktop_spawned_pids = set()
+        if not leftovers:
+            return True
+        logger.info(f'清理本次启动残留的客户端进程（启动器）: {sorted(leftovers)}')
+        self._desktop_kill_pids(leftovers)
+        still = {p for p in leftovers if self._desktop_pid_alive(p)}
+        if still:
+            logger.error(f'客户端启动器进程无法清理: {sorted(still)}，可能需要手动结束')
+            return False
+        return True
 
     def _reset_desktop_handle_state(self) -> None:
         """清零桌面窗口句柄与截图句柄缓存。
