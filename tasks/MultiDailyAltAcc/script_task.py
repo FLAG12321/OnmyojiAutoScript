@@ -143,8 +143,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 # 放在 next_run(success=True) 之前，避免「phase_flags 已改、coop 未发」窗口；
                 # 通知失败只记日志，不影响后续收尾（见 _notify_daily_completion）。
                 self._notify_daily_completion()
-                # 检查是否需要关机
-                if self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish and self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
+                # 检查是否需要关机：仅闲时(00:00-08:00)触发，避免整轮白天完成时误关机
+                if (self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish
+                        and self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable
+                        and datetime.now().hour < 8):
                     self._coordinated_shutdown_system(config_name)
                 # 先安排下一阶段（_schedule_* 改写开关并落盘），最后才删进度文件：
                 # 若反过来先删，进程在开关落盘前被杀会导致「开关没变 + 进度没了」，

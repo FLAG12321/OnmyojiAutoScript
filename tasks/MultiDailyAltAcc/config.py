@@ -5,7 +5,7 @@ from pydantic import Field, BaseModel, model_validator, model_serializer, Valida
 
 from deploy.logger import logger
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
-from tasks.Component.config_base import ConfigBase, DateTime
+from tasks.Component.config_base import ConfigBase
 from tasks.Component.config_scheduler import Scheduler
 from tasks.WantedQuests.config import CooperationSelectMaskDescription, CooperationSelectMask, CooperationType
 
@@ -20,6 +20,9 @@ class ExtendedAccountInfo(AccountInfo):
     courtyard_enable: bool = Field(default=True, description='是否开启庭院事务')
     mail_enable: bool = Field(default=True, description='是否开启领取邮件')
     cooperation_enable: bool = Field(default=True, description='是否开启寻找协作')
+    # ================================================================
+    # 以下任务建议单独开启（蹭卡和挂卡可以同时开启）
+    # ================================================================
     returngift_enable: bool = Field(default=True, description='是否开启回礼')
     weekaward_enable: bool = Field(default=True, description='是否领取每周奖励')
     mysteryshop_enable: bool = Field(default=True, description='是否开启神秘商店')
@@ -33,26 +36,25 @@ class ExtendedAccountInfo(AccountInfo):
 class MultiDailyAltAccConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
-    total_alliedteam_battle_enable: bool = Field(default=False, description='同心模式')
+    total_alliedteam_battle_enable: bool = Field(default=False, description='同心寮三十,建议单独开启（单独开启）')
     total_alliedteam_ap_enable: bool = Field(default=True, description='补充同心体力')
     total_donatejade_enable: bool = Field(default=True, description='捐勾')
     total_courtyard_enable: bool = Field(default=True, description='庭院事务')
     total_mail_enable: bool = Field(default=True, description='邮件')
     total_cooperation_enable: bool = Field(default=True, description='协作')
     total_returngift_enable: bool = Field(default=True, description='回礼')
-    total_weekaward_enable: bool = Field(default=True, description='领取每周奖励')
-    total_mysteryshop_enable: bool = Field(default=False, description='神秘商店')
-    # 以下两个字段已弃用：账号是否已完成改由 config/tasks_config/multi_daily_progress_<config>.json 判定。
-    # 保留字段仅为兼容既有配置文件与 GUI 翻译键，代码不再读写。
-    need_login: bool = Field(default=True, description='无视时间登录（已弃用，改由进度文件判定）')
-    need_login_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"),description='需要登录时间点（已弃用，改由进度文件判定）')
-    total_kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
-    total_KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
-    total_tree_planting_enable: int = Field(default=0, description='种树:0不运行 1买花 2买花捐树')
-    total_trialbattle_enable: bool = Field(default=False, description='试炼战斗')
-    total_summon_up_enable: bool = Field(default=False, description='是否开启UP召唤领取礼包')
-    total_publish_sr_enable: bool = Field(default=False, description='是否发布SR碎片')
-    shutdown_after_finish: bool = Field(default=False, description='日常任务完成后是否关机')
+    total_weekaward_enable: bool = Field(default=True, description='寄售券,蓝票,黑蛋领取')
+    total_mysteryshop_enable: bool = Field(default=False, description='金蛇皮,逢魔皮,二花黑碎提醒')
+    total_kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡（只能和蹭卡/挂卡开启）')
+    total_KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡（只能和蹭卡/挂卡开启）')
+    total_tree_planting_enable: int = Field(default=0, description='种树:0不运行 1买花 2买花捐树（单独开启）')
+    total_trialbattle_enable: bool = Field(default=False, description='集结六张蓝票领取（单独开启）')
+    total_summon_up_enable: bool = Field(default=False, description='活动UP召唤伴生礼包领取（需要等三天礼包解锁，单独开启）')
+    total_publish_sr_enable: bool = Field(default=False, description='是否发布SR碎片（单独开启）')
+    # ================================================================
+    # 以下为配置字段并非任务
+    # ================================================================
+    shutdown_after_finish: bool = Field(default=False, description='0点-8点期间同心战斗完成后检测是否关机')
     # 协作整轮汇总：是否显示系统（安卓/iOS），默认开
     coop_notify_show_system: bool = Field(default=True, title='推送显示系统', description='推送显示系统')
     # 协作整轮汇总：是否显示账号/邮箱（默认关；开启后直接显示 account 原值）

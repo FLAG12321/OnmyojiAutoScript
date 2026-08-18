@@ -190,6 +190,21 @@ def _migrate_drop_desktop_login_wait(raw: dict) -> None:
         device.pop("desktop_login_wait", None)
 
 
+def _migrate_drop_multi_daily_need_login(raw: dict) -> None:
+    """丢弃已废弃的 multi_daily_alt_acc_config.need_login / need_login_time。
+
+    账号完成判定已完全由进度文件驱动，字段从模型删除后磁盘残留会被
+    _reject_unknown_keys 判为非法整份配置隔离，所以必须在严格校验前 pop 掉。
+    """
+    task = raw.get("multi_daily_alt_acc")
+    if not isinstance(task, dict):
+        return
+    section = task.get("multi_daily_alt_acc_config")
+    if isinstance(section, dict):
+        section.pop("need_login", None)
+        section.pop("need_login_time", None)
+
+
 LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = (
     (("master_disciple", "master_disciple_config", "master_battle_mode"), _migrate_master_battle_mode),
     (("orochi", "orochi_config", "leader_instance"), _migrate_orochi_team_fields),
@@ -203,6 +218,9 @@ LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]
     (("multi_activity_shikigami",), _migrate_multi_tasks),
     # 纯删除：等登录弹窗已移交 Restart 登录流程，该配置项不再有读取方
     (("script", "device", "desktop_login_wait"), _migrate_drop_desktop_login_wait),
+    # 纯删除：多账号完成判定已由进度文件驱动，旧字段随配置残留须 pop 掉
+    (("multi_daily_alt_acc", "multi_daily_alt_acc_config", "need_login"), _migrate_drop_multi_daily_need_login),
+    (("multi_daily_alt_acc", "multi_daily_alt_acc_config", "need_login_time"), _migrate_drop_multi_daily_need_login),
 )
 
 

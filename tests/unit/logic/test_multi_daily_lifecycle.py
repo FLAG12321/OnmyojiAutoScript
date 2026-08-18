@@ -350,13 +350,3 @@ def test_account_retry_loop_preserved():
     source = Path('tasks/MultiDailyAltAcc/script_task.py').read_text(encoding='utf-8')
     assert 'max_retries = 3' in source
     assert 'while retry_count < max_retries:' in source
-
-
-@pytest.mark.unit
-def test_deprecated_fields_are_labelled():
-    """保留字段兼容老配置，但描述必须标明已弃用，避免用户以为还有效。"""
-    from tasks.MultiDailyAltAcc.config import MultiDailyAltAccConfig
-
-    fields = MultiDailyAltAccConfig.model_fields
-    assert '已弃用' in fields['need_login'].description
-    assert '已弃用' in fields['need_login_time'].description

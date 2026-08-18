@@ -59,8 +59,7 @@ DailyAltAcc/               # 单账号执行层
 
 - `sup_account_count`: 小号数量
 - `total_*_enable`: 各子任务的全局开关
-- `need_login` / `need_login_time`: 已弃用（见下方「子任务进度持久化」），仅为兼容保留
-- `shutdown_after_finish`: 完成后是否关机
+- `shutdown_after_finish`: 0点-8点期间同心战斗完成后检测是否关机
 
 ### 账号配置（ExtendedAccountInfo）
 
@@ -73,7 +72,7 @@ DailyAltAcc/               # 单账号执行层
 3. 过滤已完成的账号（基于进度文件 `logs/multi_daily_progress_<配置名>.json`）
 4. 依次切换到每个小号，调用 `DailyAltAcc` 执行日常任务
 5. 每个账号最多重试 3 次
-6. 全部完成后根据配置决定是否关机
+6. 全部完成后在0点-8点闲时期间检测是否关机
 
 ## 注意事项
 
@@ -104,4 +103,4 @@ DailyAltAcc/               # 单账号执行层
   删除该进度文件即可（异常通知里附了文件路径）。
 - 进度超过 18 小时视为过期：某阶段连续失败重调度超过该时长后会全量重建，
   已完成的账号与同心战斗场次会重新执行（宁多跑不漏跑的兜底）。
-- `need_login` / `need_login_time` 已弃用，不再影响任何判定。
+- 原 `need_login` / `need_login_time` 字段已删除，账号完成判定完全由进度文件驱动。

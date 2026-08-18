@@ -16,8 +16,8 @@
         config=self.config,
         device=self.device,
         account_list=self.daily_conf.sup_account_list,
-        need_login=self.daily_conf.multi_daily_alt_acc_config.need_login,
-        login_time=self.daily_conf.multi_daily_alt_acc_config.need_login_time,
+        need_login=False,
+        login_time=self.start_time,
         update_login_history_func=self.daily_conf.update_account_login_history,
         save_config_func=self.save_config,
     )

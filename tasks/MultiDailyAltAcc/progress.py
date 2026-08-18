@@ -173,8 +173,7 @@ def phase_flags_of(base_config) -> dict:
     这些键由 _schedule_normal_day / _schedule_evening / _schedule_after_midnight /
     _schedule_alliedteam_after_returngift 在成功收尾时改写，因此快照变化恰好
     等价于「任务已分配下一次要做什么」，正是进度失效的边界。
-    need_login / need_login_time 不纳入：失败分支会改写 need_login，
-    若纳入会把失败重试误判成新阶段。
+    need_login / need_login_time 已删除，账号完成与否完全由进度文件判定。
     """
     return {name: getattr(base_config, name, None) for name in PHASE_FLAG_KEYS}
 
