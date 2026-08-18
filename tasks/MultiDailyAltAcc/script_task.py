@@ -710,9 +710,22 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         coop_notified=true 并 _save()，从而消除「push 成功后、clear 前崩溃导致重启
         后重复推送」的窗口；已标记（如崩溃后重启接续再次进入完成分支）→ 跳过推送，
         继续正常 next_run / clear。PushPlus 失败不写标记，仍不阻塞整轮收尾（best-effort）。
+
+        协作汇总跟随「寻找协作」总开关（total_cooperation_enable）：开关明确关闭时
+        汇总体系退出，恢复原版 TaskEnd「任务提醒」语义（script.py 此时不再抑制）；
+        读不到开关配置（如测试环境）时保持原发送行为，避免误吞完成通知。
         """
         if self._progress is None:
             return
+        # 寻找协作关闭 → 协作汇总不发送（恢复原版 TaskEnd 完成提醒）
+        try:
+            cfg = getattr(self.daily_conf, 'multi_daily_alt_acc_config', None)
+            if cfg is not None and not bool(getattr(cfg, 'total_cooperation_enable', True)):
+                logger.info('寻找协作关闭，跳过协作汇总通知（恢复原版 TaskEnd 任务提醒）')
+                return
+        except Exception:
+            # 读取开关失败（如测试环境无 daily_conf）→ 保持原行为，不阻断完成通知
+            pass
         if self._progress.is_coop_notified():
             logger.info('本轮协作已完成通知，跳过重复推送')
             return

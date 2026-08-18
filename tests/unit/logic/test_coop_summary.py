@@ -706,6 +706,123 @@ def test_should_notify_task_end_suppresses_multidaily():
     assert Script._should_notify_task_end(s, 'Orochi') is True
 
 
+def _task_with_coop_cfg(tmp_path, coop_enable=True, notifier=None, config_name='oas1'):
+    """构造带 total_cooperation_enable 开关配置 + 真实 ProgressStore 的任务。"""
+    cfg = SimpleNamespace(total_cooperation_enable=coop_enable)
+    task = _make_task()
+    task.config = _fake_config(notifier, config_name=config_name,
+                               multi_daily_alt_acc=SimpleNamespace(multi_daily_alt_acc_config=cfg))
+    task.daily_conf = task.config.multi_daily_alt_acc
+    task._progress = ProgressStore(config_name, base_dir=tmp_path)
+    task._progress.ensure_phase(FLAGS_A, '20260817-0605')
+    return task
+
+
+@pytest.mark.unit
+def test_notify_skipped_when_coop_toggle_off(tmp_path):
+    """寻找协作关闭：整轮完成也不发送新增协作汇总，且不写 coop_notified。"""
+    task = _task_with_coop_cfg(tmp_path, coop_enable=False)
+    task._progress.append_coop(_COOP_A)
+    task._notify_daily_completion()
+    assert task.config.notifier.pushes == []
+    assert task._progress.is_coop_notified() is False
+
+
+@pytest.mark.unit
+def test_notify_empty_round_when_toggle_on(tmp_path):
+    """寻找协作开启 + coop=0：仍发送 0 角色/0 任务的空轮汇总。"""
+    task = _task_with_coop_cfg(tmp_path, coop_enable=True)
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    content = task.config.notifier.pushes[0]['content']
+    assert '发现协作角色：0' in content
+    assert '协作任务数量：0' in content
+    assert '本轮未发现协作任务。' in content
+
+
+@pytest.mark.unit
+def test_notify_with_coop_when_toggle_on(tmp_path):
+    """寻找协作开启 + coop>0：正常发送新协作汇总并标记已通知。"""
+    task = _task_with_coop_cfg(tmp_path, coop_enable=True)
+    task._progress.append_coop(_COOP_B)
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    assert '协作任务数量：1' in task.config.notifier.pushes[0]['content']
+    assert task._progress.is_coop_notified() is True
+
+
+@pytest.mark.unit
+def test_task_end_notify_follows_coop_toggle():
+    """TaskEnd 抑制跟随寻找协作开关：开→抑制；关→回落原版（返回 True）。"""
+    from script import Script
+
+    def script_with(coop_enable):
+        s = object.__new__(Script)
+        s.config = SimpleNamespace(
+            multi_daily_alt_acc=SimpleNamespace(
+                multi_daily_alt_acc_config=SimpleNamespace(total_cooperation_enable=coop_enable)))
+        return s
+
+    # 寻找协作开启 → 协作汇总承担完成通知 → 抑制原 TaskEnd 提醒
+    assert Script._should_notify_task_end(script_with(True), 'MultiDailyAltAcc') is False
+    # 寻找协作关闭 → 恢复原版（MultiDailyAltAcc 在 TASK_END_NOTIFY_LIST → 推送）
+    assert Script._should_notify_task_end(script_with(False), 'MultiDailyAltAcc') is True
+    # 其他任务不受影响
+    assert Script._should_notify_task_end(script_with(False), 'Orochi') is True
+
+
+@pytest.mark.unit
+def test_task_end_toggle_three_configs_isolated(tmp_path):
+    """三个 config 的寻找协作开关相互独立：开/关/关 各自行为互不影响。"""
+    on = _task_with_coop_cfg(tmp_path, coop_enable=True, config_name='小号1')
+    off1 = _task_with_coop_cfg(tmp_path, coop_enable=False, config_name='小号2')
+    off2 = _task_with_coop_cfg(tmp_path, coop_enable=False, config_name='小号3')
+    for t in (on, off1, off2):
+        t._progress.append_coop(_COOP_A)
+    on._notify_daily_completion()
+    off1._notify_daily_completion()
+    off2._notify_daily_completion()
+    assert len(on.config.notifier.pushes) == 1
+    assert off1.config.notifier.pushes == []
+    assert off2.config.notifier.pushes == []
+
+
+@pytest.mark.unit
+def test_run_coop_off_error_still_notifies(tmp_path, monkeypatch):
+    """寻找协作关闭 + 账号异常：不发协作汇总，原 ERROR 通知正常。"""
+    from module.exception import TaskEnd
+
+    notifier = _FakeNotifier()
+    task = _make_run_task(tmp_path, monkeypatch, notifier,
+                          phase_overrides={'total_cooperation_enable': False},
+                          seed_coops=[_COOP_A])
+    calls = []
+    acc = _account()
+
+    def boom(ai):
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr(task, '_get_sorted_accounts', lambda: [acc])
+    monkeypatch.setattr(task, '_process_single_account', boom)
+    monkeypatch.setattr(task, '_mark_task_start', lambda *a, **k: None)
+    monkeypatch.setattr(task, '_mark_task_completed', lambda *a, **k: None)
+    monkeypatch.setattr(task, '_update_task_returngift_enable', lambda *a, **k: None)
+    monkeypatch.setattr(task, 'emit_stat', lambda *a, **k: None)
+    monkeypatch.setattr(task, 'next_run', lambda task_name, **kw: calls.append(('next_run', kw.get('success'))))
+    monkeypatch.setattr(task, '_coordinated_shutdown_system', lambda *a, **k: calls.append(('shutdown',)))
+    import script
+    monkeypatch.setattr(script.Script, 'save_error_log', lambda *a, **k: None)
+
+    with pytest.raises(TaskEnd):
+        task.run()
+
+    # 寻找协作关闭：无任何协作汇总
+    assert not any(p.get('title') == SUMMARY_TITLE for p in notifier.pushes)
+    # 原 ERROR 通知不受开关影响
+    assert any(p.get('title') == 'ERROR' for p in notifier.pushes)
+    assert calls == [('next_run', False)]
+
+
 @pytest.mark.unit
 def test_summary_platform_android_and_ios():
     coops = [

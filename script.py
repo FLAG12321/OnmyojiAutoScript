@@ -468,11 +468,15 @@ class Script:
 
     def _should_notify_task_end(self, task_name: str) -> bool:
         # MultiDailyAltAcc 整轮完成汇总由任务内 _notify_daily_completion 统一发送
-        # （「多账号日常完成」），此处通用「任务提醒」会与之重复，故对 MultiDailyAltAcc 抑制；
+        # （「多账号日常完成」）的前提是「寻找协作」总开关开启；此时此处通用「任务提醒」
+        # 会与之重复，故对 MultiDailyAltAcc 抑制。若「寻找协作」关闭，协作汇总不发送，
+        # 回落下方原版 TASK_END_NOTIFY_LIST 判断（MultiDailyAltAcc 在列表中，恢复完成提醒）。
         # 其他任务保持原有完成提醒，全局 notifier 行为不变。
         if self._normalize_task_name(task_name) == 'multidailyaltacc':
-            logger.info('MultiDailyAltAcc TaskEnd notify suppressed (coop summary covers it)')
-            return False
+            if self._multidaily_coop_notify_enabled():
+                logger.info('MultiDailyAltAcc TaskEnd notify suppressed (coop summary covers it)')
+                return False
+            logger.info('MultiDailyAltAcc coop summary disabled, fallback to default task-end notify')
         notify_task_end_list = self.TASK_END_NOTIFY_LIST
         if isinstance(notify_task_end_list, str):
             notify_task_end_list = [notify_task_end_list]
@@ -494,6 +498,27 @@ class Script:
         hit = normalized_task_name in normalized_notify_list
         logger.info(f'TaskEnd notify list {"hit" if hit else "miss"}: {task_name}')
         return hit
+
+    def _multidaily_coop_notify_enabled(self) -> bool:
+        """当前 MultiDailyAltAcc 配置是否启用协作汇总通知（跟随「寻找协作」总开关）。
+
+        协作汇总承担 MultiDailyAltAcc 整轮完成通知；仅当能明确读到
+        total_cooperation_enable=False（寻找协作关闭）时，协作汇总体系退出并回落
+        原版 TaskEnd「任务提醒」；读取失败/默认按启用处理（与既有抑制行为一致）。
+
+        注意：必须通过 __dict__ 读已缓存的 config 实例，避免触发 config cached_property
+        （其内部失败路径会直接 exit(1)）；TaskEnd 抛出前 run() 已访问过 self.config，
+        缓存必然已就绪。
+        """
+        try:
+            conf = self.__dict__.get('config')
+            if conf is None:
+                return True
+            mda = getattr(conf, 'multi_daily_alt_acc', None)
+            cfg = getattr(mda, 'multi_daily_alt_acc_config', None)
+            return bool(getattr(cfg, 'total_cooperation_enable', True))
+        except Exception:
+            return True
 
     def run(self, command: str) -> bool:
         """
