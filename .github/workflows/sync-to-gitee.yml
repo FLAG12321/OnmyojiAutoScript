@@ -19,5 +19,8 @@ jobs:
       - name: Force push to Gitee
         run: |
           cd source
-          # --mirror 推送并 prune，保证 Gitee 与 GitHub 完全一致；Gitee 私人令牌作为 HTTPS 密码认证
-          git push --mirror https://flag12321:${{ secrets.GITEE_TOKEN }}@gitee.com/flag12321/OnmyojiAutoScript.git
+          # 只推送分支与 tag 并 prune 删除远端已删的对应 ref，保证 Gitee 与 GitHub 分支/tag 一致
+          # 不能用 --mirror 全量推送：--mirror 克隆会带回 GitHub 的 refs/pull/*（PR 引用），Gitee 拒绝更新（deny updating a hidden ref）
+          # Gitee 私人令牌作为 HTTPS 密码认证
+          git push --prune https://flag12321:${{ secrets.GITEE_TOKEN }}@gitee.com/flag12321/OnmyojiAutoScript.git \
+            '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
