@@ -37,7 +37,7 @@ from tasks.WantedQuests.config import WantedQuests
 from tasks.Tako.config import Tako
 from tasks.AutoCheckinBigGod.config import AutoCheckinBigGod
 from tasks.DailyAltAcc.config import DailyAltAcc
-from tasks.MultiAccExp.config import MultiAccExp
+from tasks.ActivitySignIn.config import ActivitySignIn
 from tasks.MasterDisciple.config import MasterDisciple
 # ----------------------------------------------------------------------------------------------------------------------
 from tasks.Orochi.config import Orochi
@@ -56,7 +56,6 @@ from tasks.GuildActivityMonitor.config import GuildActivityMonitor
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
-from tasks.MultiActivityShikigami.config import MultiActivityShikigami
 from tasks.MetaDemon.config import MetaDemon
 from tasks.FrogBoss.config import FrogBoss
 from tasks.FloatParade.config import FloatParade
@@ -74,7 +73,7 @@ from tasks.HeroTest.config import HeroTest
 from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc
-from tasks.MultiAccountSignIn.config import MultiAccountSignIn
+from tasks.MultiTasks.config import MultiTasks
 from tasks.ReturnGift.config import ReturnGift
 from tasks.Plotline.config import Plotline
 from tasks.SearchId.config import SearchId
@@ -116,7 +115,7 @@ class ConfigModel(ConfigBase):
     tako: Tako = Field(default_factory=Tako)
     auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
     daily_alt_acc: DailyAltAcc = Field(default_factory=DailyAltAcc)
-    multi_acc_exp: MultiAccExp = Field(default_factory=MultiAccExp)
+    activity_sign_in: ActivitySignIn = Field(default_factory=ActivitySignIn)
     master_disciple: MasterDisciple = Field(default_factory=MasterDisciple)
 
     # 这些是刷御魂的
@@ -129,7 +128,6 @@ class ConfigModel(ConfigBase):
 
     # 这些是活动的
     activity_shikigami: ActivityShikigami = Field(default_factory=ActivityShikigami)
-    multi_activity_shikigami: MultiActivityShikigami = Field(default_factory=MultiActivityShikigami)
     meta_demon: MetaDemon = Field(default_factory=MetaDemon)
     frog_boss: FrogBoss = Field(default_factory=FrogBoss)
     float_parade: FloatParade = Field(default_factory=FloatParade)
@@ -146,7 +144,7 @@ class ConfigModel(ConfigBase):
     find_jade: FindJade = Field(default_factory=FindJade)
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
     multi_daily_alt_acc: MultiDailyAltAcc = Field(default_factory=MultiDailyAltAcc)
-    multi_account_sign_in: MultiAccountSignIn = Field(default_factory=MultiAccountSignIn)
+    multi_tasks: MultiTasks = Field(default_factory=MultiTasks)
     plotline: Plotline = Field(default_factory=Plotline)
     search_id: SearchId = Field(default_factory=SearchId)
     return_gift: ReturnGift = Field(default_factory=ReturnGift)

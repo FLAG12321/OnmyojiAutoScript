@@ -8,8 +8,9 @@ import win32con
 from module.device.connection import Connection
 from module.device.connection_attr import ConnectionAttr
 from module.device.device import Device, EmulatorState
-from module.device.handle import Handle
-from module.exception import EmulatorNotRunningError, RequestHumanTakeover
+from module.device.handle import Handle, DESKTOP_RESIZE_ATTEMPTS
+from module.device.screenshot import Screenshot
+from module.exception import EmulatorNotRunningError, GameNotRunningError, RequestHumanTakeover
 from module.device.method.windows_impl import Window
 
 
@@ -477,6 +478,7 @@ def test_init_desktop_forces_methods_and_healthy():
     transitions = []
     dev._transition_to = lambda target: transitions.append(target)
     dev.screenshot_interval_set = lambda: None
+    dev._desktop_ensure_launched = lambda: True
     dev.desktop_window_set_size = lambda: False
     Device._init_desktop(dev)
     assert transitions == [EmulatorState.HEALTHY]
@@ -491,6 +493,7 @@ def test_init_desktop_replaces_printwindow():
     dev.config.save = lambda: None
     dev._transition_to = lambda target: None
     dev.screenshot_interval_set = lambda: None
+    dev._desktop_ensure_launched = lambda: True
     dev.desktop_window_set_size = lambda: False
     Device._init_desktop(dev)
     assert dev.config.script.device.screenshot_method == 'window_background'
@@ -594,9 +597,14 @@ def test_desktop_window_set_size_noop_when_match(monkeypatch):
     handle = object.__new__(Handle)
     handle.is_desktop_window = True
     handle.root_handle_num = 0x200
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
     monkeypatch.setattr('module.device.handle.GetClientRect', lambda h: (0, 0, 1280, 720))
     called = []
     monkeypatch.setattr('module.device.handle.SetWindowPos', lambda *a: called.append(a))
+    # 尺寸本来就匹配属于「已得出结论」，不得被当成句柄失效而进入重绑重试
+    def must_not_rebind():
+        raise AssertionError('尺寸已匹配时不应重绑窗口')
+    handle._desktop_rebind_window = must_not_rebind
     assert handle.desktop_window_set_size() is False
     assert called == []
 
@@ -611,6 +619,7 @@ def test_desktop_window_set_size_resizes(monkeypatch):
         w, hgt = state['size']
         return (0, 0, w, hgt)
     monkeypatch.setattr('module.device.handle.GetClientRect', fake_client_rect)
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
     monkeypatch.setattr('module.device.handle.GetWindowLong', lambda h, flag: 0)
     monkeypatch.setattr('module.device.handle._window_total_size', lambda w, h, s, e: (1298, 767))
     calls = []
@@ -633,6 +642,7 @@ def test_desktop_window_set_size_calibrates_to_exact(monkeypatch):
         w, hgt = state['size']
         return (0, 0, w, hgt)
     monkeypatch.setattr('module.device.handle.GetClientRect', fake_client_rect)
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
     monkeypatch.setattr('module.device.handle.GetWindowLong', lambda h, flag: 0)
     monkeypatch.setattr('module.device.handle._window_total_size', lambda w, h, s, e: (1298, 767))
     calls = []
@@ -655,6 +665,7 @@ def test_desktop_window_set_size_handles_setwindowpos_error(monkeypatch):
     handle.is_desktop_window = True
     handle.root_handle_num = 0x200
     monkeypatch.setattr('module.device.handle.GetClientRect', lambda h: (0, 0, 800, 600))
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
     monkeypatch.setattr('module.device.handle.GetWindowLong', lambda h, flag: 0)
     monkeypatch.setattr('module.device.handle._window_total_size', lambda w, h, s, e: (1298, 767))
 
@@ -662,6 +673,258 @@ def test_desktop_window_set_size_handles_setwindowpos_error(monkeypatch):
         raise Exception("(5, 'SetWindowPos', '拒绝访问。')")
     monkeypatch.setattr('module.device.handle.SetWindowPos', boom)
     assert handle.desktop_window_set_size() is False
+
+
+def test_desktop_window_set_size_invalid_handle_gives_up_after_retries(monkeypatch):
+    """句柄始终失效 → 重绑重试耗尽后返回 False，全程不调 GetClientRect、不抛异常。
+
+    回归：客户端被 Close emulator during wait 关掉后 hwnd 立即失效，若直接
+    GetClientRect 会抛 (1400, '无效的窗口句柄') 把整个 oas 进程搞崩。
+    """
+    handle = object.__new__(Handle)
+    handle.is_desktop_window = True
+    handle.root_handle_num = 0x200
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: False)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+
+    def must_not_call(*a):
+        raise AssertionError('句柄失效时不应调用 GetClientRect')
+    monkeypatch.setattr('module.device.handle.GetClientRect', must_not_call)
+    rebinds = []
+    handle._desktop_rebind_window = lambda: rebinds.append(1) or False
+
+    assert handle.desktop_window_set_size() is False
+    # 最后一轮不再重绑（已无重试机会），因此重绑次数比尝试轮数少 1
+    assert len(rebinds) == DESKTOP_RESIZE_ATTEMPTS - 1
+    # hwnd 为 0（已被 desktop_stop_client 清零）同样安全返回
+    handle.root_handle_num = 0
+    assert handle.desktop_window_set_size() is False
+
+
+def test_desktop_window_set_size_rebinds_rebuilt_window(monkeypatch):
+    """窗口重建：首轮句柄失效，重绑到新 hwnd 后调整成功。
+
+    回归 (1400, 'GetClientRect')：客户端确认登录弹窗后销毁登录界面、重建游戏主窗口，
+    resize 中途旧 hwnd 失效。进程还活着，正确处理是按 PID 重绑而非重拉客户端。
+    """
+    handle = object.__new__(Handle)
+    handle.is_desktop_window = True
+    handle.root_handle_num = 0x200
+    handle.root_handle = '4242'
+    state = {'size': (800, 600)}
+    # 只有新 hwnd 有效，旧 hwnd 已随窗口销毁失效
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: h == 0x300)
+    monkeypatch.setattr('module.device.handle.GetClientRect',
+                        lambda h: (0, 0, state['size'][0], state['size'][1]))
+    monkeypatch.setattr('module.device.handle.GetWindowLong', lambda h, flag: 0)
+    monkeypatch.setattr('module.device.handle._window_total_size', lambda w, h, s, e: (1298, 767))
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    monkeypatch.setattr('module.device.handle.SetWindowPos',
+                        lambda *a: state.update(size=(1280, 720)))
+    # 重建后的新窗口
+    monkeypatch.setattr(Handle, 'find_desktop_window_by_pid', lambda self, pid: 0x300)
+    cleared = []
+    handle._desktop_clear_handle_cache = lambda: cleared.append(1)
+
+    assert handle.desktop_window_set_size() is True
+    assert handle.root_handle_num == 0x300
+    # 换 hwnd 必须同步失效截图句柄缓存
+    assert cleared == [1]
+
+
+def test_desktop_bind_pid_clears_screenshot_handle_cache(monkeypatch):
+    """绑定新 PID/HWND 必须失效截图句柄缓存。
+
+    回归：screenshot_handle_num 是 cached_property，桌面模式下返回 root_handle_num。
+    重拉客户端后 root_handle_num 已是新 hwnd，缓存仍指向上一个客户端的废句柄，
+    截图时 GetClientRect 拿废句柄抛 (1400)。
+    """
+    handle = object.__new__(Handle)
+    handle.config = _handle_config()
+    handle.root_handle_num = 0x200
+    handle.is_desktop_window = True
+    handle._desktop_login_done = True
+    # 预热缓存，模拟上一个客户端期间已取过截图句柄
+    handle.__dict__['screenshot_handle_num'] = 0x200
+    handle.__dict__['screenshot_size'] = (1280, 720)
+
+    handle.desktop_bind_pid(4242, hwnd=0x300)
+
+    assert handle.root_handle_num == 0x300
+    assert 'screenshot_handle_num' not in handle.__dict__
+    assert 'screenshot_size' not in handle.__dict__
+    # 新客户端未登录，必须走 restart 登录流程
+    assert handle._desktop_login_done is False
+
+
+def test_desktop_stop_client_clears_stale_hwnd(monkeypatch):
+    """关闭客户端后必须清零 root_handle_num，否则留下失效句柄。
+
+    回归：同一 device 对象生命周期内被唤醒的任务会跳过 Handle.__init__，
+    直接拿这个废句柄做 Win32 调用而崩溃。
+    """
+    w = object.__new__(Window)
+    w.config = _handle_config()
+    w.root_handle_num = 0x200
+    w._desktop_login_done = True
+    monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    w.desktop_force_kill = lambda: None
+    w._desktop_close_wait_seconds = lambda: 1
+    w._desktop_wait_closed = lambda wait: True
+    w.desktop_stop_client()
+    assert w.root_handle_num == 0
+    assert w._desktop_login_done is False
+
+
+def test_init_desktop_does_not_relaunch_client():
+    """_init_desktop 不负责拉客户端：窗口存在性已由 __init__ 保证。
+
+    启动客户端是 Restart 任务的职责，重拉逻辑只应存在一处。这里若重复确保，
+    启动逻辑就又散回了 device 初始化路径。
+    """
+    dev = _desktop_device()
+    dev.config.save = lambda: None
+    dev._transition_to = lambda target: None
+    dev.screenshot_interval_set = lambda: None
+    dev._desktop_ensure_launched = lambda: (_ for _ in ()).throw(
+        AssertionError('_init_desktop 不应拉起客户端'))
+    resized = []
+    dev.desktop_window_set_size = lambda: resized.append(1) or False
+    Device._init_desktop(dev)
+    assert resized == [1]
+
+
+def test_screenshot_raises_game_not_running_when_window_missing():
+    """截图前窗口缺失 → 抛 GameNotRunningError，交由 Restart 拉客户端。
+
+    回归：script.py 每个任务启动前都调 device.screenshot()。空闲期客户端被
+    「Close emulator during wait」关掉后句柄失效，旧代码直接崩在 GetClientRect
+    (1400, '无效的窗口句柄')。现在只报告事实，script.py 接住后 task_call('Restart')，
+    由 Restart 走 app_start 完成启动客户端 + 等登录弹窗 + 进游戏整套流程。
+    """
+    dev = _desktop_device()
+    dev.stuck_record_check = lambda: None
+    dev.desktop_window_exists = lambda: False
+    # 截图方法自己绝不拉客户端，也不 resize
+    dev._desktop_ensure_launched = lambda: (_ for _ in ()).throw(
+        AssertionError('screenshot 不应拉起客户端'))
+    dev.desktop_window_set_size = lambda: (_ for _ in ()).throw(
+        AssertionError('screenshot 不应调整窗口'))
+    with pytest.raises(GameNotRunningError):
+        Device.screenshot(dev)
+
+
+def test_screenshot_skips_relaunch_when_window_valid(monkeypatch):
+    """窗口有效时不做任何多余动作，保持原有截图路径。"""
+    dev = _desktop_device()
+    dev.stuck_record_check = lambda: None
+    dev.desktop_window_exists = lambda: True
+    dev._desktop_ensure_launched = lambda: (_ for _ in ()).throw(
+        AssertionError('窗口有效时不应重拉'))
+    dev.handle_night_commission = lambda: False
+    dev.image = 'IMG'
+    shots = []
+    monkeypatch.setattr(Screenshot, 'screenshot', lambda self: shots.append(1))
+    assert Device.screenshot(dev) == 'IMG'
+    assert shots == [1]
+
+
+def test_skip_app_check_tasks_skip_startup_screenshot(monkeypatch):
+    """SKIP_APP_CHECK_TASKS 的任务必须跳过启动前截图，否则 Restart 起不来。
+
+    回归 bootstrap 死锁：桌面模式客户端未启动时 screenshot 抛 GameNotRunningError，
+    而 Restart 正是负责启动客户端的任务。若它也被挡在启动前截图这一步，就永远进不到
+    app_start，形成「要启动客户端必须先有客户端」的死锁。
+    """
+    from script import Script
+
+    script = object.__new__(Script)
+    calls = []
+    # 客户端未启动：截图必抛，app_is_running 也是 False
+    script.device = types.SimpleNamespace(
+        screenshot=lambda: calls.append('shot') or (_ for _ in ()).throw(
+            GameNotRunningError('Desktop client window not found')),
+        app_is_running=lambda: calls.append('check') or False,
+    )
+    # 在 load_module 处让流程正常收尾（返回 TaskEnd），避免真加载任务模块
+    monkeypatch.setattr('script.load_module', lambda name, path: _EndImmediately())
+    script.config = types.SimpleNamespace(
+        notifier=types.SimpleNamespace(push=lambda **kw: None))
+    script._resolve_task_end_name = lambda command, error: command
+    script._should_notify_task_end = lambda task_name: False
+
+    assert 'Restart' in Script.SKIP_APP_CHECK_TASKS
+    assert Script.run(script, 'Restart') is True
+    # 关键断言：既没截图也没做运行检查，直接进到任务
+    assert calls == []
+
+
+class _EndImmediately:
+    """测试用任务模块替身：进入即以 TaskEnd 正常收尾。"""
+
+    def ScriptTask(self, *args, **kwargs):
+        from module.exception import TaskEnd
+
+        class _T:
+            def run(self):
+                raise TaskEnd('Restart')
+        return _T()
+
+
+def _restart_task(start_results):
+    """构造一个只填了桌面重建路径所需属性的 Restart ScriptTask。
+
+    start_results: 每轮 app_start+登录的结果，'fail' 表示抛 GameNotRunningError。
+    """
+    from tasks.Restart.script_task import ScriptTask
+
+    task = object.__new__(ScriptTask)
+    trace = []
+    results = list(start_results)
+
+    def app_start():
+        trace.append('start')
+
+    def handle_login():
+        outcome = results.pop(0) if results else 'ok'
+        if outcome == 'fail':
+            raise GameNotRunningError('Desktop client window not found')
+        trace.append('login')
+
+    task.device = types.SimpleNamespace(
+        is_desktop=True,
+        app_start=app_start,
+        desktop_stop_client=lambda: trace.append('stop'),
+    )
+    task.app_handle_login = handle_login
+    return task, trace
+
+
+def test_restart_intercepts_start_failure_and_rebuilds():
+    """Restart 内部拦下客户端启动失败并重建，不把异常抛给调度器。
+
+    回归无限重启循环：若 GameNotRunningError 抛出去，script.py 接住后
+    task_call('Restart') 又打回这里，每轮日志都「正常」却永不收敛。
+    """
+    task, trace = _restart_task(['fail', 'ok'])
+    from tasks.Restart.script_task import ScriptTask
+
+    ScriptTask._desktop_start_and_login(task)
+    # 首轮登录失败 → 清残留 → 重建成功，全程不抛
+    assert trace == ['start', 'stop', 'start', 'login']
+
+
+def test_restart_takes_over_after_all_attempts_fail():
+    """连续失败耗尽重建轮数 → RequestHumanTakeover，不再打回调度器。"""
+    from tasks.Restart.script_task import ScriptTask, DESKTOP_RESTART_ATTEMPTS
+
+    task, trace = _restart_task(['fail'] * DESKTOP_RESTART_ATTEMPTS)
+    with pytest.raises(RequestHumanTakeover):
+        ScriptTask._desktop_start_and_login(task)
+    # 每轮都尝试启动，最后一轮不再清理（已无重试机会）
+    assert trace.count('start') == DESKTOP_RESTART_ATTEMPTS
+    assert trace.count('stop') == DESKTOP_RESTART_ATTEMPTS - 1
 
 
 def test_desktop_client_size_returns_physical(monkeypatch):
@@ -944,7 +1207,7 @@ def test_desktop_discover_install_root_programfiles(tmp_path, monkeypatch):
 
 
 def test_launch_desktop_client_binds_new_window(monkeypatch):
-    # 启动：只认新出现的桌面窗口，连续两次采样确认后绑定 PID/HWND
+    # 启动：只认新出现的桌面窗口，连续两次采样确认后绑定 PID/HWND 即成功
     w = object.__new__(Window)
     w.config = _handle_config(handle='4242')
     monkeypatch.setattr(Window, 'desktop_resolve_install_root', lambda self: 'C:/Games/Onmyoji')
@@ -961,16 +1224,109 @@ def test_launch_desktop_client_binds_new_window(monkeypatch):
         return [{'pid': 4242, 'title': '阴阳师-网易游戏', 'x': 0, 'y': 0},
                 {'pid': 9999, 'title': '阴阳师-网易游戏', 'x': 100, 'y': 0, 'hwnd': 0x300}]
     monkeypatch.setattr('module.device.handle.list_desktop_windows', fake_list)
-    sleeps = []
-    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: sleeps.append(s))
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
     bound = []
     w.desktop_bind_pid = lambda pid, hwnd=0: bound.append((pid, hwnd))
     w.desktop_window_exists = lambda: True
+    # 启动侧不碰登录弹窗：那是 Restart 登录流程的职责，两处都做是串行叠加的重复工作
+    w.find_desktop_login_popup = lambda: (_ for _ in ()).throw(
+        AssertionError('启动侧不应探测登录弹窗'))
+    w.desktop_confirm_login_popup = lambda *a, **kw: (_ for _ in ()).throw(
+        AssertionError('启动侧不应确认登录弹窗'))
     assert w.launch_desktop_client(timeout=5) is True
     assert launched == ['C:/Games/Onmyoji/bin/onmyoji.exe']
     assert bound == [(9999, 0x300)]
-    # 绑定后等待 20 秒让客户端进入登录页
-    assert 20 in sleeps
+
+
+def test_launch_desktop_client_no_window_retries_once(monkeypatch):
+    # 第 1 轮 timeout 内没等到新窗口 → 清理本轮进程后整轮重跑；第 2 轮出现窗口 → 成功
+    w = object.__new__(Window)
+    w.config = _handle_config(handle='4242')
+    monkeypatch.setattr(Window, 'desktop_resolve_install_root', lambda self: 'C:/Games/Onmyoji')
+    monkeypatch.setattr(Window, 'desktop_game_exe', lambda self, root: 'C:/Games/Onmyoji/bin/onmyoji.exe')
+    attempt = {'n': 0}
+    def fake_popen(*a, **k):
+        attempt['n'] += 1
+        return types.SimpleNamespace(pid=9000 + attempt['n'])
+    monkeypatch.setattr('module.device.handle.subprocess.Popen', fake_popen)
+    # 第 1 轮始终没有新窗口（只有基线窗口），第 2 轮出现
+    monkeypatch.setattr(
+        'module.device.handle.list_desktop_windows',
+        lambda: ([{'pid': 4242, 'title': '阴阳师-网易游戏', 'hwnd': 0x100}]
+                 if attempt['n'] < 2
+                 else [{'pid': 4242, 'title': '阴阳师-网易游戏', 'hwnd': 0x100},
+                       {'pid': 9002, 'title': '阴阳师-网易游戏', 'hwnd': 0x302}]))
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    # timeout 用完就返回：让 time.time 单调前进以跳出等待循环
+    clock = {'t': 0.0}
+    monkeypatch.setattr('module.device.handle.time.time',
+                        lambda: clock.__setitem__('t', clock['t'] + 1.0) or clock['t'])
+    bound = []
+    w.desktop_bind_pid = lambda pid, hwnd=0: bound.append(pid)
+    w.desktop_window_exists = lambda: True
+    killed = []
+    w._desktop_kill_pids = lambda pids: killed.append(set(pids))
+    assert w.launch_desktop_client(timeout=5) is True
+    # 恰好启动两轮，且第 1 轮失败后清理了本轮启动的进程
+    assert attempt['n'] == 2
+    assert len(killed) == 1
+    assert 9001 in killed[0]
+
+
+def test_launch_desktop_client_two_rounds_fail_returns_false(monkeypatch):
+    # 两轮都等不到新窗口 → 返回 False（上层据此走 RequestHumanTakeover），且不再第三轮
+    w = object.__new__(Window)
+    w.config = _handle_config(handle='4242')
+    monkeypatch.setattr(Window, 'desktop_resolve_install_root', lambda self: 'C:/Games/Onmyoji')
+    monkeypatch.setattr(Window, 'desktop_game_exe', lambda self, root: 'C:/Games/Onmyoji/bin/onmyoji.exe')
+    attempt = {'n': 0}
+    def fake_popen(*a, **k):
+        attempt['n'] += 1
+        return types.SimpleNamespace(pid=9000 + attempt['n'])
+    monkeypatch.setattr('module.device.handle.subprocess.Popen', fake_popen)
+    # 始终只有基线窗口，没有新窗口出现
+    monkeypatch.setattr('module.device.handle.list_desktop_windows',
+                        lambda: [{'pid': 4242, 'title': '阴阳师-网易游戏', 'hwnd': 0x100}])
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    clock = {'t': 0.0}
+    monkeypatch.setattr('module.device.handle.time.time',
+                        lambda: clock.__setitem__('t', clock['t'] + 1.0) or clock['t'])
+    w.desktop_bind_pid = lambda pid, hwnd=0: None
+    w.desktop_window_exists = lambda: True
+    w._desktop_kill_pids = lambda pids: None
+    assert w.launch_desktop_client(timeout=3) is False
+    # 重试恰好一次，不做第三轮
+    assert attempt['n'] == 2
+
+
+def test_app_start_resizes_window_before_login():
+    """app_start 必须在返回前把窗口校准到 1280x720。
+
+    登录流程（app_handle_login）的 OCR 与点击都基于 1280x720 坐标，窗口未校准时
+    坐标全错。运行期重拉客户端时 Device 对象是复用的、_init_desktop 不会再跑，
+    所以校准不能只挂在初始化路径上，必须挂在拉起客户端的这个唯一入口。
+    """
+    dev = _desktop_device()
+    order = []
+    dev._desktop_ensure_launched = lambda: order.append('launch') or True
+    dev.desktop_window_set_size = lambda: order.append('resize') or True
+    Device.app_start(dev)
+    # 先确保客户端在跑，再校准尺寸；登录流程由调用方在此之后进行
+    assert order == ['launch', 'resize']
+
+
+def test_app_start_raises_when_launch_fails():
+    """客户端拉不起来 → 抛 GameNotRunningError，不吞掉失败继续登录。
+
+    原先只记 error 就返回，登录流程会对着不存在的窗口空转。现在交由 Restart 的
+    重建轮次处理（_desktop_start_and_login）。
+    """
+    dev = _desktop_device()
+    dev._desktop_ensure_launched = lambda: False
+    dev.desktop_window_set_size = lambda: (_ for _ in ()).throw(
+        AssertionError('客户端拉不起来时不应校准窗口'))
+    with pytest.raises(GameNotRunningError):
+        Device.app_start(dev)
 
 
 def test_desktop_bind_pid_init_uses_startup_normalize():

@@ -101,12 +101,108 @@ def _migrate_orochi_team_fields(raw: dict) -> None:
             team.setdefault(key, section.pop(key))
 
 
+def _migrate_multi_tasks(raw: dict) -> None:
+    """三个旧多账号任务合并进 multi_tasks。
+
+    MultiAccExp / MultiAccountSignIn / MultiActivityShikigami 的参数分属三组、
+    互不冲突，全部搬入 multi_tasks；scheduler 一律不继承（enable 保持模型默认
+    False），避免升级后自动跑一个用户从未选过的 (子任务, 来源) 组合。
+    ExtendedAccountInfo 的账号级开关与 total_* 全局开关随旧节点一起丢弃：
+    经验妖怪的加成开关改为直接沿用 experience_youkai 自身的配置。
+
+    本函数在 LEGACY_ALIAS_MIGRATIONS 中按三个旧任务根节点注册 3 条，
+    normalize_legacy_config 会调用它 3 次，因此幂等是硬要求。
+
+    缺 multi_tasks 节点时必须建出完整节点：严格校验会在
+    _validate_canonical_dynamic_payloads 报 "changed members during canonicalization"
+    —— 因为 _validate_dynamic_payloads 对缺失父节点算出 expected={}，而
+    model_validate 填默认值后 serializer 会吐出 sup_account_list_1，两者不一致。
+    """
+    legacy_keys = ("multi_acc_exp", "multi_account_sign_in", "multi_activity_shikigami")
+    if "multi_tasks" in raw and not any(key in raw for key in legacy_keys):
+        # 已迁移过（或本来就是新形状的 template）：直接返回，保证幂等。
+        # 幂等的判据必须是「multi_tasks 已存在且旧节点已清空」，不能只看旧节点：
+        # 只看旧节点会让第 2、3 次调用把已搬入的账号表重置成一条默认空条目。
+        return
+
+    from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
+
+    target = raw.setdefault("multi_tasks", {})
+    section = target.setdefault("multi_tasks_config", {})
+
+    # ---- MultiAccExp：账号表 ----
+    # 只搬 character 非空的条目：validator_all 会丢弃空条目再把默认值补到末尾，
+    # 老配置里的「有效、空、有效」夹心会让 canonical 后索引 2 的 payload 变化，
+    # 撞上 _validate_canonical_dynamic_payloads 的一致性检查
+    entries = []
+    exp = raw.pop("multi_acc_exp", None)
+    if isinstance(exp, dict):
+        allowed = set(AccountInfo.model_fields)
+        prefix = "sup_account_list_"
+        member_keys = sorted(
+            (key for key in exp
+             if key.startswith(prefix) and key[len(prefix):].isdigit()),
+            key=lambda key: int(key[len(prefix):]),
+        )
+        for key in member_keys:
+            payload = exp[key]
+            if not isinstance(payload, dict) or not payload.get("character"):
+                continue
+            entries.append({k: v for k, v in payload.items() if k in allowed})
+
+    # ---- MultiAccountSignIn：勾选实例 ----
+    sign_in = raw.pop("multi_account_sign_in", None)
+    if isinstance(sign_in, dict):
+        selection = sign_in.get("account_config_selection")
+        if isinstance(selection, dict):
+            target.setdefault("account_config_selection", dict(selection))
+
+    # ---- MultiActivityShikigami：角色名串 ----
+    shikigami = raw.pop("multi_activity_shikigami", None)
+    if isinstance(shikigami, dict):
+        old_section = shikigami.get("multi_activity_shikigami_config")
+        if isinstance(old_section, dict) and "account_characters" in old_section:
+            section.setdefault("account_characters", old_section["account_characters"])
+
+    # 只要创建了 multi_tasks 就必须满足 counted 不变量：索引 1..N 连续、
+    # sup_account_count == N、且 N >= 1（模型 ge=1 不允许 0）。
+    # 这里用直接赋值而非 setdefault，保证不变量精确成立。
+    if not entries:
+        entries.append(AccountInfo().model_dump(mode="json"))
+    for index, payload in enumerate(entries, start=1):
+        target[f"sup_account_list_{index}"] = payload
+    section["sup_account_count"] = len(entries)
+
+
+def _migrate_drop_desktop_login_wait(raw: dict) -> None:
+    """丢弃已废弃的 script.device.desktop_login_wait。
+
+    它原本是「启动客户端后等 MPay 登录弹窗的轮询上限」。等弹窗与进游戏已移交
+    Restart 的 app_handle_login（它进循环前确认一次、循环内每 2s 复查），启动侧
+    不再等待，配置项因此失去作用。字段从模型删除后磁盘残留会被 _reject_unknown_keys
+    判为非法整份配置隔离，所以必须在严格校验前 pop 掉。
+    """
+    script = raw.get("script")
+    if not isinstance(script, dict):
+        return
+    device = script.get("device")
+    if isinstance(device, dict):
+        device.pop("desktop_login_wait", None)
+
+
 LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = (
     (("master_disciple", "master_disciple_config", "master_battle_mode"), _migrate_master_battle_mode),
     (("orochi", "orochi_config", "leader_instance"), _migrate_orochi_team_fields),
     (("orochi", "orochi_config", "epoch"), _migrate_orochi_team_fields),
     (("orochi", "orochi_config", "total_limit_time"), _migrate_orochi_team_fields),
     (("orochi", "orochi_config", "total_limit_count"), _migrate_orochi_team_fields),
+    # 三个旧多账号任务合并进 multi_tasks：账号表的源键是动态的 sup_account_list_N，
+    # 写不出静态字段路径，因此用旧任务根节点作为源路径。
+    (("multi_acc_exp",), _migrate_multi_tasks),
+    (("multi_account_sign_in",), _migrate_multi_tasks),
+    (("multi_activity_shikigami",), _migrate_multi_tasks),
+    # 纯删除：等登录弹窗已移交 Restart 登录流程，该配置项不再有读取方
+    (("script", "device", "desktop_login_wait"), _migrate_drop_desktop_login_wait),
 )
 
 
@@ -122,8 +218,8 @@ DYNAMIC_PATH_SET_REGISTRY: Sequence[DynamicPathSet] = (
                    ("find_jade", "find_jade_config", "sup_account_count")),
     DynamicPathSet("multi_daily_alt_acc.sup_account_list", ("multi_daily_alt_acc", "sup_account_list"),
                    ("multi_daily_alt_acc", "multi_daily_alt_acc_config", "sup_account_count")),
-    DynamicPathSet("multi_acc_exp.sup_account_list", ("multi_acc_exp", "sup_account_list"),
-                   ("multi_acc_exp", "multi_acc_exp_config", "sup_account_count")),
+    DynamicPathSet("multi_tasks.sup_account_list", ("multi_tasks", "sup_account_list"),
+                   ("multi_tasks", "multi_tasks_config", "sup_account_count")),
     DynamicPathSet("meta_demon.md_strategies", ("meta_demon", "md_strategies"),
                    ("meta_demon", "meta_demon_config", "md_strategy_count")),
     DynamicPathSet("master_disciple.disciple_account_list", ("master_disciple", "disciple_account_list"),
@@ -137,7 +233,7 @@ DYNAMIC_PATH_SET_REGISTRY: Sequence[DynamicPathSet] = (
 
 DYNAMIC_FIELD_SET_REGISTRY: Sequence[DynamicFieldSet] = (
     DynamicFieldSet(
-        ("multi_account_sign_in", "account_config_selection"),
+        ("multi_tasks", "account_config_selection"),
         r"config_[0-9a-f]{16}",
         bool,
     ),

@@ -85,11 +85,16 @@ class MockDevice(Device):
 
 
 def _protected_config_digest(root: Path) -> dict[str, str]:
-    """真实 config 树摘要：覆盖 config/*.json 与 .generations 全部文件（不含 .lock）。"""
+    """真实 config 树摘要：覆盖 config/*.json、.generations 与 tasks_config 全部文件（不含 .lock）。
+
+    tasks_config 是任务运行期产出（进度 / 统计 / 队列），测试同样不该改动它：
+    漏打桩进度文件路径的测试会往仓库里写真实进度，之前正是这样漏过去的。
+    """
     protected = list(root.glob("*.json"))
-    generations = root / ".generations"
-    if generations.exists():
-        protected.extend(path for path in generations.rglob("*") if path.is_file())
+    for sub in (".generations", "tasks_config"):
+        directory = root / sub
+        if directory.exists():
+            protected.extend(path for path in directory.rglob("*") if path.is_file())
     return {
         str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(protected)
@@ -99,7 +104,7 @@ def _protected_config_digest(root: Path) -> dict[str, str]:
 
 @pytest.fixture(scope="session", autouse=True)
 def assert_real_config_tree_unchanged():
-    """整个测试会话前后断言工作区真实 config/*.json 与 .generations 逐字节不变。"""
+    """整个测试会话前后断言工作区真实 config/*.json、.generations 与 tasks_config 逐字节不变。"""
     root = Path.cwd() / "config"
     before = _protected_config_digest(root)
     yield

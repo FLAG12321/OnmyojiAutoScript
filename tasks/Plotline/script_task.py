@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 from module.exception import TaskEnd, RequestHumanTakeover,GameNotRunningError, GameStuckError
 from module.logger import logger
+from tasks.Component.SchedulingShield import shield_scheduling
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Plotline.assets import PlotlineAssets
 from tasks.Exploration.assets import ExplorationAssets
@@ -292,7 +293,12 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                         return True
                 # 调用经验妖怪任务
                 from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiScriptTask
-                experience_youkai_task = ExperienceYoukaiScriptTask(self.config, self.device)
+                # 屏蔽 ExperienceYoukai 的调度副作用：其 experience_exit() 会写死
+                # set_next_run('ExperienceYoukai')，剧情任务内部借跑一次不应改动
+                # 该单账号任务自身的下次运行时间。
+                experience_youkai_task = shield_scheduling(
+                    ExperienceYoukaiScriptTask, ('ExperienceYoukai',), 'Plotline'
+                )(self.config, self.device)
                 try:
                     self.screenshot()
                     if self.ui_get_current_page()!=page_main:

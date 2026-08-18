@@ -167,6 +167,8 @@ class KekkaiUtilizeAssets:
 	O_NAME_LIST = RuleOcr(roi=(309,212,159,393), area=(309,212,159,393), mode="Full", method="Default", keyword="", name="name_list")
 	# 检测姓名输入 
 	O_NAME_CHECK = RuleOcr(roi=(223,170,267,36), area=(223,170,267,36), mode="Full", method="Default", keyword="", name="name_check")
+	# 检查好友结界是否可用 
+	O_CHECK_OPEN = RuleOcr(roi=(957,264,67,90), area=(1140,117,100,30), mode="Single", method="Default", keyword="", name="check_open")
 
 
 	# Swipe Rule Assets

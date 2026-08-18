@@ -23,7 +23,7 @@ class ConfigMenu:
         # 日常的任务
         self.menu["Daily Task"] = ['DailyTrifles', 'AreaBoss', 'GoldYoukai', 'ExperienceYoukai', 'Nian',
                                    'TalismanPass', 'DemonEncounter', 'Pets', 'SoulsTidy', 'Delegation', 'WantedQuests',
-                                   'Tako', 'AutoCheckinBigGod', 'DailyAltAcc', 'MultiAccountSignIn', 'MultiAccExp',
+                                   'Tako', 'AutoCheckinBigGod', 'DailyAltAcc', 'ActivitySignIn',
                                    'MasterDisciple']
         # 很肝的任务
         self.menu["Liver Emperor Exclusive"] = [
@@ -36,6 +36,7 @@ class ConfigMenu:
             "FindJade",
             "MemoryScrolls",
             "MultiDailyAltAcc",
+            "MultiTasks",
             "ReturnGift",
             "Plotline",
             "SearchId"
@@ -46,7 +47,7 @@ class ConfigMenu:
         # 每周任务
         self.menu["Weekly Task"] = ['TrueOrochi', 'RichMan', 'Secret', 'WeeklyTrifles', 'MysteryShop', 'Duel']
         # 活动的任务
-        self.menu["Activity Task"] = ['ActivityShikigami', 'MultiActivityShikigami', 'MetaDemon', 'FrogBoss', 'FloatParade', 'Quiz', 'KittyShop', 'DyeTrials']
+        self.menu["Activity Task"] = ['ActivityShikigami', 'MetaDemon', 'FrogBoss', 'FloatParade', 'Quiz', 'KittyShop', 'DyeTrials']
         # 开发工具
         self.menu["Tools"] = ['Image Rule', 'Ocr Rule', 'Click Rule', 'Long Click Rule', 'Swipe Rule', 'List Rule']
 

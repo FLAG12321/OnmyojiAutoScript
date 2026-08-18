@@ -17,7 +17,7 @@
       "name": "oas1",
       "enabled": true,
       "auto_restart": true,
-      "max_restart_attempts": 5,
+      "max_restart_attempts": 3,
       "restart_cooldown": 60
     }
   ],

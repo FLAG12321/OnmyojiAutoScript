@@ -142,7 +142,9 @@ class Device(Platform, Screenshot, Control, AppControl):
         if updates:
             self.config.startup_normalize(updates)
         self.screenshot_interval_set()
-        # 检测并调整桌面客户端窗口客户区到 1280x720，保证识别 1:1
+        # 检测并调整桌面客户端窗口客户区到 1280x720，保证识别 1:1。
+        # 窗口存在性已由 __init__ 的 _desktop_ensure_launched 保证（device 对象要可用
+        # 必须先绑定到窗口句柄），这里不再重复确保；运行期客户端掉了由 Restart 负责重拉
         self.desktop_window_set_size()
 
     def _transition_to(self, target: EmulatorState) -> None:
@@ -279,6 +281,14 @@ class Device(Platform, Screenshot, Control, AppControl):
             np.ndarray:
         """
         self.stuck_record_check()
+
+        # 桌面模式：窗口缺失说明客户端没在运行（空闲期被「Close emulator during wait」
+        # 关掉，或客户端自己崩了）。这里只报告事实，不自己拉客户端——启动客户端、等登录
+        # 弹窗、进游戏是 Restart 任务的职责。script.py 接住这个异常后 task_call('Restart')，
+        # 由 Restart 走 app_start 完成整套启动流程，重拉逻辑因此只存在一处。
+        # 直接截图会抛 (1400, '无效的窗口句柄') 搞崩整个进程，所以必须在截图前拦下。
+        if self.is_desktop and not self.desktop_window_exists():
+            raise GameNotRunningError('Desktop client window not found')
 
         try:
             super().screenshot()
@@ -423,6 +433,12 @@ class Device(Platform, Screenshot, Control, AppControl):
             if not self._desktop_ensure_launched():
                 logger.error('Desktop client not running and auto-launch failed, '
                              'please start the game manually or check desktop_game_path')
+                raise GameNotRunningError('Desktop client auto-launch failed')
+            # 登录流程之前必须把客户区校准到 1280x720，否则 app_handle_login 的 OCR 与
+            # 点击都落在未校准的窗口上、坐标全错。这里是拉起客户端的唯一入口，且必然
+            # 早于 app_handle_login；运行期重拉时 Device 对象是复用的，_init_desktop
+            # 不会再跑，所以校准不能只挂在初始化路径上
+            self.desktop_window_set_size()
             return
         if not self.config.script.error.handle_error:
             logger.critical('No app stop/start, because HandleError disabled')

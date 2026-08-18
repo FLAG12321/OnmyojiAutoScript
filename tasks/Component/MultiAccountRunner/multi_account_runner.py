@@ -3,7 +3,7 @@
 多账号轮转执行器 (MultiAccountRunner)
 
 统一封装多账号任务的通用流程：账号排序、过滤、切换、重试、进度追踪。
-所有需要多账号轮转的任务（MultiDailyAltAcc、MultiAccExp、FindJade 等）均可复用此类。
+所有需要多账号轮转的任务（MultiDailyAltAcc、MultiTasks、FindJade 等）均可复用此类。
 
 使用方式：
     1. 在 script_task.py 中创建 MultiAccountRunner 实例
@@ -59,7 +59,7 @@ class MultiAccountRunner:
     - 错误处理：异常时恢复 need_login_time 为初始值
 
     参数说明：
-        task_name:           任务名称，用于日志和进度文件命名（如 "MultiDailyAltAcc"、"MultiAccExp"）
+        task_name:           任务名称，用于日志和进度文件命名（如 "MultiDailyAltAcc"、"MultiTasks"）
         config:              Config 实例
         device:              Device 实例
         account_list:        账号列表 (list[AccountInfo])

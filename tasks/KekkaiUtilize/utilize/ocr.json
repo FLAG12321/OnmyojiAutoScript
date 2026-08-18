@@ -43,5 +43,14 @@
     "method": "Default",
     "keyword": "",
     "description": "检测姓名输入"
+  },
+  {
+    "itemName": "check_open",
+    "roiFront": "957,264,67,90",
+    "roiBack": "1140,117,100,30",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "检查好友结界是否可用"
   }
 ]

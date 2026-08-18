@@ -261,12 +261,12 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             self._inject_orochi_leader_options(result)
             self._hide_orochi_team_config(result)
             return result
-        if task_name != "multi_account_sign_in":
+        if task_name != "multi_tasks":
             return result
 
-        from tasks.MultiAccountSignIn.config import active_account_configs
+        from tasks.MultiTasks.config import active_account_configs
 
-        selection = self.model.multi_account_sign_in.account_config_selection
+        selection = self.model.multi_tasks.account_config_selection
         result["account_config_selection"] = [
             {
                 "name": field_name,

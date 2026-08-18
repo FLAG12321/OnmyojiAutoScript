@@ -44,12 +44,19 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     _progress: ProgressStore = None
     # run_guard 每次启动任务第一次战斗必须勾选"默认邀请"并确认勾选成功，防止首次未勾选导致后续战斗不自动邀请
     _guard_default_invite_checked: bool = False
+    # 本次运行是否动过账号（徒弟模式自动切号）。
+    # 切号后设备停在徒弟号上且没有切回逻辑，此时把探索/经验妖怪等标记成已完成，
+    # 改的是本配置实例大号的调度——徒弟干的活算到大号头上，大号会白白跳过一轮。
+    _account_switched: bool = False
     def run(self) -> bool:
         """
         师徒任务主入口
         """
         # 御魂切换：MasterDisciple不再暴露switch_soul配置，但保留师父模式的御魂预设切换
         # 预设切换在run_as_master中处理
+
+        # 每次运行重置切号标记，避免同一实例复用时残留上一轮的状态
+        self._account_switched = False
 
         limit_count = self.config.master_disciple.master_disciple_config.limit_count
         limit_time = self.config.master_disciple.master_disciple_config.limit_time
@@ -83,16 +90,21 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # 下一次运行时间
             if success:
                 self.set_next_run('MasterDisciple', finish=True, success=True)
-                if config.master_disciple_config.run_exploration:
-                    self.set_next_run('Exploration', success=True)
-                if config.master_disciple_config.run_exp_monster:
-                    self.set_next_run('ExperienceYoukai', success=True)
-                if config.master_disciple_config.run_stone_ju:
-                    self.set_next_run('Tako', success=True)
-                if config.master_disciple_config.run_coin_monster:
-                    self.set_next_run('GoldYoukai', success=True)
-                if config.master_disciple_config.run_guard:
-                    pass
+                # 代做标记：师徒流程已在「当前账号」做过这些活动，故推迟其单账号任务。
+                # 徒弟模式自动切号时活动是在徒弟号上做的，标记会污染大号调度，必须跳过。
+                if self._account_switched:
+                    logger.info('[MasterDisciple] 本次运行切换过账号，屏蔽单账号任务的代做标记')
+                else:
+                    if config.master_disciple_config.run_exploration:
+                        self.set_next_run('Exploration', success=True)
+                    if config.master_disciple_config.run_exp_monster:
+                        self.set_next_run('ExperienceYoukai', success=True)
+                    if config.master_disciple_config.run_stone_ju:
+                        self.set_next_run('Tako', success=True)
+                    if config.master_disciple_config.run_coin_monster:
+                        self.set_next_run('GoldYoukai', success=True)
+                    if config.master_disciple_config.run_guard:
+                        pass
                 # 徒弟轮询全部成功收尾后清进度：先调度后清，顺序不可颠倒
                 if self._progress is not None:
                     self._progress.clear()
@@ -361,6 +373,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         # 重置检测记录，避免影响后续操作
         self.device.stuck_record_clear()
+
+        # 只要发起过切号就置标记（不论成败）：设备已无法保证仍停在原账号上，
+        # 收尾时不得再把探索/经验妖怪等标记成大号已完成。
+        self._account_switched = True
 
         success = SwitchAccount(self.config, self.device, account_info).switchAccount()
         if not success:

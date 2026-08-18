@@ -6,7 +6,7 @@
 
 ## 解决的问题
 
-在 MultiDailyAltAcc、MultiAccExp、FindJade 等多账号任务中，以下逻辑被反复实现：
+在 MultiDailyAltAcc、MultiTasks、FindJade 等多账号任务中，以下逻辑被反复实现：
 - 账号过滤（根据 `need_login` 和 `login_time` 判断是否需要处理）
 - 账号排序（按邮箱分组、按完成时间排序）
 - 账号切换（调用 `SwitchAccount`）
@@ -151,6 +151,13 @@ class FindJadeRunner(MultiAccountRunner):
             return True
         return False
 ```
+
+### 自定义排序逻辑
+
+`MultiTasks` 覆写 `get_sorted_accounts` 改为「按邮箱分组使同邮箱角色连续，组间与
+组内保持首次出现顺序」，不按 `last_complete_time` 排序：该任务不写这个字段
+（账号完成状态由 `progress` 驱动），字段由各来源配置实例自行维护，拿它排序会让
+执行顺序随其他实例的运行状态漂移。需要「最久未跑优先」语义的任务仍用默认实现。
 
 ## API 参考
 

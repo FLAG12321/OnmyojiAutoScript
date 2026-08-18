@@ -520,8 +520,8 @@ def test_union_validators_run_only_once_during_strict_validation():
 
 def test_default_dynamic_field_set_rejects_non_bool_for_discovered_field():
     raw = canonical_template()
-    key = next(iter(raw["multi_account_sign_in"]["account_config_selection"]))
-    raw["multi_account_sign_in"]["account_config_selection"][key] = 1
+    key = next(iter(raw["multi_tasks"]["account_config_selection"]))
+    raw["multi_tasks"]["account_config_selection"][key] = 1
 
     with pytest.raises(ConfigValidationError, match="invalid dynamic field"):
         validate_persisted_config(raw, "oas-test")

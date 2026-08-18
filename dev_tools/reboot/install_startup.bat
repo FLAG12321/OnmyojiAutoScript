@@ -13,9 +13,26 @@ echo Installing OAS Daemon to Windows Startup (with highest privileges)...
 
 set SCRIPT_DIR=%~dp0
 set DAEMON_PY=%SCRIPT_DIR%reboot_daemon.py
+set PYTHONW=
 
-REM Resolve full path to pythonw.exe
-for /f "delims=" %%i in ('where pythonw') do set PYTHONW=%%i
+REM 优先使用项目自带 Python，避免系统 PATH 中没有 pythonw
+if exist "%SCRIPT_DIR%..\..\toolkit\pythonw.exe" (
+    set PYTHONW=%SCRIPT_DIR%..\..\toolkit\pythonw.exe
+) else (
+    for /f "delims=" %%i in ('where pythonw 2^>nul') do set PYTHONW=%%i
+)
+
+if not defined PYTHONW (
+    echo [ERROR] pythonw.exe not found.
+    echo Please check the toolkit directory or install Python.
+    pause
+    exit /b 1
+)
+if not exist "%PYTHONW%" (
+    echo [ERROR] pythonw.exe not found: %PYTHONW%
+    pause
+    exit /b 1
+)
 
 echo Daemon: %DAEMON_PY%
 echo Pythonw: %PYTHONW%

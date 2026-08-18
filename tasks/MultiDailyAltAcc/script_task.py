@@ -573,7 +573,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         spec.loader.exec_module(module)
 
         WQEX = type("WQEX", (module.ScriptTask,), {
-            "get_config": DailyAltAccEx.get_config
+            "get_config": DailyAltAccEx.get_config,
+            # 屏蔽 DailyAltAcc 自身的调度：本任务就是它的多账号版本，
+            # 每个小号跑完都改一次大号的下次运行时间属于污染。
+            "set_next_run": DailyAltAccEx.shield_self(module.ScriptTask).set_next_run,
+            # 屏蔽 DailyAltAcc 内部嵌套的挂卡/寄养实例的调度（它们是独立对象，
+            # 上面这个 set_next_run 覆写拦不到，必须在创建这一步换成屏蔽子类）。
+            "_create_nested_task": DailyAltAccEx.create_nested_task,
         })
         wq = WQEX(**kwargs)
         return wq

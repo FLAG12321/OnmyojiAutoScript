@@ -199,6 +199,15 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         )
         return result
 
+    def _create_nested_task(self, task_cls):
+        """创建本任务内部嵌套运行的单账号任务实例（挂卡、寄养）。
+
+        单独抽成方法只为提供扩展点：MultiDailyAltAcc 会覆写它，把嵌套实例换成
+        屏蔽调度副作用的子类，避免小号批量执行时改掉大号这些任务的下次运行时间。
+        单账号直跑时行为与原来的 task_cls(self.config, self.device) 完全一致。
+        """
+        return task_cls(self.config, self.device)
+
     def run(self):
         
  
@@ -288,7 +297,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
 
         if con.daily_alt_acc_config.kekkaiActivation_enable and not self._should_skip("kekkaiActivation"):
             try:
-                activation_task = KekkaiActivation(self.config, self.device)
+                activation_task = self._create_nested_task(KekkaiActivation)
                 activation_conf=activation_task.config.kekkai_activation.activation_config
                 activation_conf.card_type=CardType.DAILY
                 activation_conf.min_taiko_num=1
@@ -302,7 +311,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         if con.daily_alt_acc_config.KekkaiUtilize_enable and not self._should_skip("KekkaiUtilize"):
             # 执行蹭卡
             try:
-                utilize_task = KekkaiUtilize(self.config, self.device)
+                utilize_task = self._create_nested_task(KekkaiUtilize)
                 # 确保在运行前修改配置
                 utilize_task.config.kekkai_utilize.utilize_config.utilize_rule = UtilizeRule.DAILY
                 # 同时也设置其他参数
