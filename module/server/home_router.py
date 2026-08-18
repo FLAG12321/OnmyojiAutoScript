@@ -75,7 +75,7 @@ def update_info():
 
 @home_app.get('/execute_update')
 async def execute_update():
-    # 后台线程执行更新（切分支 + pull），立即返回，进度经 /update_progress 轮询
+    # 后台线程执行分支切换与快进更新，立即返回，进度经 /update_progress 轮询。
     try:
         updater = Updater()
         threading.Thread(target=updater.execute_pull, daemon=True).start()

@@ -1,8 +1,10 @@
 # 更新器：切分支 + 静默执行 + 进度 + git 自动升级 单元测试
-# 全部 mock git 输出，不触碰真实 config/deploy.yaml 与工作区。
+# 除真实临时仓库回归外均 mock Git；所有用例都不触碰真实 deploy.yaml 与工作区。
 import asyncio
 import io
 import os
+import shutil
+import subprocess
 import tarfile
 
 import pytest
@@ -28,7 +30,7 @@ def reset_progress():
     _update_progress.reset('')
 
 
-# 1. 当前分支 == 配置分支：只 pull，不 checkout
+# 1. 当前分支 == 配置分支：只快进，不 checkout
 @pytest.mark.unit
 def test_execute_pull_same_branch(updater):
     reset_progress()
@@ -37,11 +39,133 @@ def test_execute_pull_same_branch(updater):
     updater.execute_output = lambda cmd: 'master\n'  # symbolic-ref 返回当前分支
     updater.execute_stream = lambda cmd, on_line=None: calls.append(cmd) or True
     assert updater.execute_pull() is True
-    assert any('pull' in c for c in calls)
+    assert any('merge --ff-only origin/master' in c for c in calls)
+    assert not any(' pull ' in c for c in calls)
     assert not any('checkout' in c for c in calls)
 
 
-# 2. 需切换，本地已有该分支：checkout + pull
+# 1b. 当前分支有本地修改：快进失败后清理并强制对齐远端
+@pytest.mark.unit
+def test_execute_pull_force_sync_dirty_same_branch(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.execute_output = lambda cmd: 'master\n'
+    calls = []
+
+    def fake_stream(cmd, on_line=None):
+        calls.append(cmd)
+        # 模拟本地修改导致 merge --ff-only 输出 Git 覆盖保护错误并失败。
+        return 'merge --ff-only' not in cmd
+
+    updater.execute_stream = fake_stream
+    assert updater.execute_pull() is True
+    assert _update_progress.status == 'done'
+    assert any('clean -fd' in c for c in calls)
+    assert any('reset --hard origin/master' in c for c in calls)
+    assert not any(' pull ' in c for c in calls)
+
+
+# 1c. 真实 Git 仓库回归：冲突源码被远端覆盖，忽略数据继续保留
+@pytest.mark.unit
+def test_execute_pull_real_git_force_sync(tmp_path, monkeypatch):
+    git_exe = shutil.which('git')
+    if not git_exe:
+        pytest.skip('系统未安装 git，跳过真实仓库回归测试')
+
+    remote = tmp_path / 'remote.git'
+    seed = tmp_path / 'seed'
+    client = tmp_path / 'client'
+
+    def run_git(repo, *args):
+        """在指定临时仓库执行 Git，并返回标准输出。"""
+        result = subprocess.run(
+            [git_exe, '-C', str(repo), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+        )
+        return result.stdout.strip()
+
+    subprocess.run(
+        [git_exe, 'init', '--bare', '--initial-branch=master', str(remote)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [git_exe, 'init', '--initial-branch=master', str(seed)],
+        check=True,
+        capture_output=True,
+    )
+    run_git(seed, 'config', 'user.name', 'Updater Test')
+    run_git(seed, 'config', 'user.email', 'updater@example.invalid')
+    (seed / 'assets' / 'i18n').mkdir(parents=True)
+    (seed / 'assets' / 'i18n' / 'zh-CN.json').write_text('{"version": 1}\n', encoding='utf-8')
+    (seed / 'Sidihon').write_text('version 1\n', encoding='utf-8')
+    (seed / '.gitignore').write_text('runtime/\n', encoding='utf-8')
+    run_git(seed, 'add', '.')
+    run_git(seed, 'commit', '-m', 'initial')
+    run_git(seed, 'remote', 'add', 'origin', str(remote))
+    run_git(seed, 'push', '-u', 'origin', 'master')
+    subprocess.run(
+        [git_exe, 'clone', '--branch', 'master', str(remote), str(client)],
+        check=True,
+        capture_output=True,
+    )
+
+    # 远端推进两个会在安装机器上被本地修改阻塞的文件。
+    (seed / 'assets' / 'i18n' / 'zh-CN.json').write_text('{"version": 2}\n', encoding='utf-8')
+    (seed / 'Sidihon').write_text('version 2\n', encoding='utf-8')
+    run_git(seed, 'commit', '-am', 'remote update')
+    run_git(seed, 'push', 'origin', 'master')
+
+    # 客户端制造同文件冲突、普通未跟踪文件以及应受 .gitignore 保护的数据。
+    (client / 'assets' / 'i18n' / 'zh-CN.json').write_text('{"local": true}\n', encoding='utf-8')
+    (client / 'Sidihon').write_text('local change\n', encoding='utf-8')
+    (client / 'untracked.txt').write_text('remove me\n', encoding='utf-8')
+    (client / 'runtime').mkdir()
+    (client / 'runtime' / 'keep.json').write_text('{}\n', encoding='utf-8')
+
+    real_updater = Updater(file=str(tmp_path / 'deploy.yaml'))
+    real_updater.Branch = 'master'
+    real_updater.GitExecutable = str(git_exe).replace('\\', '/')
+    real_updater.KeepLocalChanges = False
+    real_updater.OcrAutoAlignDeps = False
+    real_updater.check_git_usable = lambda: (True, '')
+    real_updater.ensure_origin = lambda: True
+    monkeypatch.chdir(client)
+
+    assert real_updater.execute_pull() is True
+    assert (client / 'assets' / 'i18n' / 'zh-CN.json').read_text(encoding='utf-8').strip() == '{"version": 2}'
+    assert (client / 'Sidihon').read_text(encoding='utf-8').strip() == 'version 2'
+    assert not (client / 'untracked.txt').exists()
+    assert (client / 'runtime' / 'keep.json').exists()
+    assert run_git(client, 'rev-parse', 'HEAD') == run_git(client, 'rev-parse', 'origin/master')
+    assert run_git(client, 'status', '--porcelain') == ''
+
+
+# 1d. KeepLocalChanges=true 时快进失败不得清理本地文件
+@pytest.mark.unit
+def test_execute_pull_preserves_dirty_when_configured(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.KeepLocalChanges = True
+    updater.execute_output = lambda cmd: 'master\n'
+    calls = []
+
+    def fake_stream(cmd, on_line=None):
+        calls.append(cmd)
+        return 'merge --ff-only' not in cmd
+
+    updater.execute_stream = fake_stream
+    assert updater.execute_pull() is False
+    assert _update_progress.status == 'failed'
+    assert not any('clean -fd' in c for c in calls)
+    assert not any('reset --hard origin/master' in c for c in calls)
+
+
+# 2. 需切换，本地已有该分支：checkout + 快进
 @pytest.mark.unit
 def test_execute_pull_switch_local(updater):
     reset_progress()
@@ -63,7 +187,7 @@ def test_execute_pull_switch_local(updater):
     updater.execute_stream = fake_stream
     assert updater.execute_pull() is True
     assert any('checkout target' in c and 'origin' not in c for c in calls)
-    assert any('pull' in c for c in calls)
+    assert any('merge --ff-only origin/target' in c for c in calls)
 
 
 # 3. 需切换，本地无该分支、远程有：checkout -b 创建跟踪分支
@@ -132,12 +256,35 @@ def test_execute_pull_reset_fail(updater):
     assert updater.execute_pull() is False
 
 
-# 5. 本地存在未推送提交：拒绝切换（rejected）
+# 4c. 切换分支时 KeepLocalChanges=true：检测到脏文件后拒绝，不执行清理
+@pytest.mark.unit
+def test_execute_pull_switch_preserves_dirty_when_configured(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.Branch = 'target'
+    updater.KeepLocalChanges = True
+    updater.execute_output = lambda cmd: 'old\n' if 'symbolic-ref' in cmd else ''
+    calls = []
+
+    def fake_stream(cmd, on_line=None):
+        calls.append(cmd)
+        return 'diff --quiet' not in cmd
+
+    updater.execute_stream = fake_stream
+    assert updater.execute_pull() is False
+    assert _update_progress.status == 'rejected'
+    assert not any('reset --hard' in c for c in calls)
+    assert not any('clean -fd' in c for c in calls)
+    assert not any('checkout' in c for c in calls)
+
+
+# 5. 配置保留本地改动时，未推送提交仍拒绝切换
 @pytest.mark.unit
 def test_execute_pull_reject_unpushed(updater):
     reset_progress()
     updater.check_git_usable = lambda: (True, '')
     updater.Branch = 'target'
+    updater.KeepLocalChanges = True
 
     def fake_output(cmd):
         if 'symbolic-ref' in cmd:
@@ -189,6 +336,7 @@ def test_execute_pull_checkout_fail(updater):
 def test_execute_pull_fetch_fail(updater):
     reset_progress()
     updater.check_git_usable = lambda: (True, '')
+    updater.ensure_origin = lambda: True  # 本用例只验证 fetch 失败，不混入 origin 同步结果。
     updater.execute_stream = lambda cmd, on_line=None: False
     assert updater.execute_pull() is False
     assert _update_progress.status == 'failed'
@@ -457,7 +605,7 @@ def test_upgrade_git_reports_progress(updater, monkeypatch, tmp_path):
     assert any('MB' in l and '%' in l for l in progress_lines)
 
 
-# 18. execute_pull：git 不可用 → 自动升级 → 再 fetch/pull 成功
+# 18. execute_pull：git 不可用 → 自动升级 → 再 fetch/快进成功
 @pytest.mark.unit
 def test_execute_pull_upgrade_then_fetch(updater, monkeypatch, tmp_path):
     reset_progress()
@@ -483,7 +631,7 @@ def test_execute_pull_upgrade_then_fetch(updater, monkeypatch, tmp_path):
 
     def fake_stream(cmd, on_line=None):
         calls.append(cmd)
-        return True  # fetch/checkout/pull 全成功
+        return True  # fetch/checkout/快进全成功
 
     updater.execute_stream = fake_stream
 
@@ -595,7 +743,7 @@ def test_execute_pull_reuse_local_git(updater, monkeypatch, tmp_path):
     assert updater.execute_pull() is True
     assert state['switched'] is True
     assert upgraded['called'] is False  # 零下载，未走升级
-    assert any('pull' in c for c in calls)
+    assert any('merge --ff-only origin/master' in c for c in calls)
 
 
 # 23. use_git：切换后必须失效 git 缓存（GitManager.git 是 cached_property）
@@ -690,6 +838,22 @@ def test_check_update_stops_when_ensure_origin_fails(updater, monkeypatch):
     updater.execute = unexpected_fetch
     assert updater.check_update() is False
     assert updater.fetch_ok is False
+
+
+# 28b. 未推送提交仅在保留模式阻止更新；安装模式仍应显示远端更新
+@pytest.mark.unit
+def test_check_update_unpushed_respects_keep_local_changes(updater, monkeypatch):
+    monkeypatch.setattr(updater, 'ensure_origin', lambda: True)
+    updater.execute = lambda cmd, allow_failure=False, output=True, timeout=None: True
+    updater.execute_output = lambda cmd: 'abc123 local commit\n'
+    updater.get_commit = lambda revision='', n=1, short_sha1=False: (
+        'def456', 'Updater', '2026-08-18 00:00:00 +0800', 'remote update'
+    )
+
+    updater.KeepLocalChanges = False
+    assert updater.check_update() is True
+    updater.KeepLocalChanges = True
+    assert updater.check_update() is False
 
 
 # 29. execute_pull：origin 同步失败时拒绝更新，不执行 fetch/pull
