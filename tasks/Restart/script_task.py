@@ -10,7 +10,7 @@ from tasks.base_task import BaseTask, Time
 from datetime import datetime, time
 
 from module.logger import logger
-from module.exception import TaskEnd, RequestHumanTakeover, GameNotRunningError
+from module.exception import TaskEnd, RequestHumanTakeover, GameNotRunningError, GameStuckError
 
 # 桌面模式客户端启动失败后的重建轮数。Restart 必须自己扛住启动失败，
 # 抛给调度器会被 task_call('Restart') 打回这里形成无限循环
@@ -71,6 +71,8 @@ class ScriptTask(LoginHandler):
         Restart 是负责启动客户端的那个任务，所以它必须自己扛住客户端起不来的情况：
         若把 GameNotRunningError 抛出去，script.py 接住后又会 task_call('Restart')
         重新进到这里，形成无限重启循环——每轮日志都「正常」，比直接崩更难排查。
+        GameStuckError 同理，script.py 对它也是 task_call('Restart')，所以登录卡死
+        也必须在这里就地消化，不能放跑。
         因此这里就地重试：杀掉残留进程后重新走一遍启动+登录，连续失败才交人工。
         """
         for attempt in range(1, DESKTOP_RESTART_ATTEMPTS + 1):
@@ -78,13 +80,18 @@ class ScriptTask(LoginHandler):
                 self.device.app_start()
                 self.app_handle_login()
                 return
-            except GameNotRunningError as e:
+            except (GameNotRunningError, GameStuckError) as e:
                 logger.warning(f'桌面客户端启动后仍未就绪（第 {attempt}/{DESKTOP_RESTART_ATTEMPTS} 轮）: {e}')
-                if attempt >= DESKTOP_RESTART_ATTEMPTS:
-                    break
-                # 本轮可能留下半死的客户端进程，先清掉再重建，避免新窗口识别撞上残留窗口
-                logger.info('清理残留客户端后重建')
-                self.device.desktop_stop_client()
+                # 每轮失败都必须清掉本轮客户端，最后一轮也不例外：原来最后一轮直接 break
+                # 跳过清理，紧接着 RequestHumanTakeover 让进程退出，那个客户端就成了无主
+                # 残留（实测泄漏过一个 PID）；守护进程重启实例后又会新起一个，越积越多。
+                # 中途轮次清理还有另一层作用：避免残留窗口干扰下一轮的新窗口识别
+                logger.info('清理本轮残留客户端')
+                if not self.device.desktop_stop_client():
+                    # 关不掉就别重建：残留窗口会让下一轮的新窗口识别绑错句柄，
+                    # 越试越乱，不如立刻停下交人工处理
+                    logger.critical('桌面客户端无法关闭，残留进程会干扰重建，请手动结束该进程')
+                    raise RequestHumanTakeover
         logger.critical(f'桌面客户端连续 {DESKTOP_RESTART_ATTEMPTS} 轮启动失败，请检查客户端与机器状态')
         raise RequestHumanTakeover
 

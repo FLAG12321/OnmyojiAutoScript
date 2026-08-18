@@ -181,3 +181,144 @@ def test_waiting_only_instance_cannot_loop_forever():
 
 async def _async_return(value):
     return value
+
+
+# ──────────────────────── OAS Server 存活判定 ────────────────────────
+
+class _FakeProc:
+    """伪 Popen：poll() 返回 None 表示进程句柄还在。"""
+
+    def __init__(self, pid=11548, alive=True):
+        self.pid = pid
+        self._alive = alive
+        self.terminated = False
+        self.killed = False
+
+    def poll(self):
+        return None if self._alive else 0
+
+    def terminate(self):
+        self.terminated = True
+        self._alive = False
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        self.killed = True
+        self._alive = False
+
+
+def _server_daemon(online_sequence, proc=None):
+    """构造只填了 server 管理所需属性的 daemon。
+
+    online_sequence: _is_server_online 的依次返回值，用尽后沿用最后一个。
+    """
+    d = object.__new__(RebootDaemon)
+    d.logger = logging.getLogger('test_reboot_daemon')
+    d.oas_process = proc
+    d.api_host = '127.0.0.1'
+    d.api_port = 22288
+    d.api_url = 'http://127.0.0.1:22288'
+    d.server_restart_on_crash = True
+    d.server_startup_timeout = 1
+    seq = list(online_sequence)
+    d._online_calls = []
+
+    def is_online():
+        value = seq.pop(0) if len(seq) > 1 else seq[0]
+        d._online_calls.append(value)
+        return value
+
+    d._is_server_online = is_online
+    return d
+
+
+def test_start_server_reuses_running_service_without_spawning(monkeypatch):
+    """服务在线就直接复用，不再启动第二个 server。
+
+    这既避免抢占端口，也覆盖「外部手动起了一个 server 占着端口」的情形——
+    实测目标机上就出现过守护的 server 与手动起的 server 并存。
+    """
+    d = _server_daemon([True])
+    monkeypatch.setattr(daemon_mod.subprocess, 'Popen',
+                        lambda *a, **kw: pytest.fail('服务在线时不应启动新 server'))
+    assert d._start_oas_server() is True
+
+
+def test_start_server_recycles_dead_shell_before_spawning(monkeypatch):
+    """句柄存在但服务不可用（空壳）→ 必须先回收残留进程，再启动新的。
+
+    回归 server_restart_on_crash 永久失效：Web UI 点「关闭服务器」或 uvicorn 自行
+    退出后，Windows 下 pythonw 外壳会残留——端口已释放、poll() 仍返回 None。旧代码
+    只看 poll() 就返回 True，于是守护「检测到离线、决定重启」却什么都没做，此后
+    再不记录一行 server 日志（实测沉默 14 小时，期间自动重启能力完全丧失）。
+    """
+    shell = _FakeProc(pid=11548, alive=True)
+    # 第一次判定离线（触发回收），启动后判定在线
+    d = _server_daemon([False, True], proc=shell)
+    spawned = []
+
+    class _NewProc(_FakeProc):
+        pass
+
+    def fake_popen(cmd, **kw):
+        spawned.append(cmd)
+        return _NewProc(pid=22222)
+
+    monkeypatch.setattr(daemon_mod.subprocess, 'Popen', fake_popen)
+    monkeypatch.setattr(daemon_mod.time, 'sleep', lambda s: None)
+    d._get_server_port = lambda: 22288
+
+    assert d._start_oas_server() is True
+    # 空壳被回收，而不是被当成「已在运行」放过
+    assert shell.terminated is True
+    # 确实启动了新 server
+    assert len(spawned) == 1
+
+
+def test_terminate_server_process_clears_handle():
+    """回收后必须把句柄置 None，否则已退出的 Popen 会继续骗过后续判断。"""
+    proc = _FakeProc(pid=11548, alive=True)
+    d = _server_daemon([False], proc=proc)
+    d._terminate_server_process()
+    assert proc.terminated is True
+    assert d.oas_process is None
+
+
+def test_ensure_server_running_reverifies_after_start(monkeypatch):
+    """启动流程报成功也要复验在线，否则守护会以为 server 好着而彻底沉默。"""
+    d = _server_daemon([False])
+    # 启动路径谎报成功，但服务始终不在线
+    d._start_oas_server = lambda: True
+    assert d._ensure_server_running() is False
+
+
+def test_ensure_server_running_true_when_start_succeeds():
+    """启动后确认在线才返回 True。"""
+    d = _server_daemon([False, True])
+    d._start_oas_server = lambda: True
+    assert d._ensure_server_running() is True
+
+
+def test_stop_server_recycles_own_process_even_if_api_targets_another(monkeypatch):
+    """API 关闭与子进程回收是两个对象，必须都做。
+
+    回归：api_url 指向的 server 与 self.oas_process 可能不是同一个进程（目标机上
+    api_url→手动起的 server、oas_process→自己的空壳）。旧代码用一次 poll() 决定
+    是否 terminate，结果杀掉别人的 server、留下自己的空壳。
+    """
+    shell = _FakeProc(pid=11548, alive=True)
+    d = _server_daemon([True], proc=shell)
+    killed_api = []
+
+    def fake_get(url, timeout=None):
+        killed_api.append(url)
+        return types.SimpleNamespace(status_code=200, text='"success"')
+
+    monkeypatch.setattr(daemon_mod.requests, 'get', fake_get)
+    d._stop_oas_server()
+    # 两步都执行：API 关闭 + 自己的子进程回收
+    assert any('kill_server' in u for u in killed_api)
+    assert shell.terminated is True
+    assert d.oas_process is None

@@ -559,7 +559,12 @@ def test_app_stop_desktop_calls_stop_client():
     dev = _desktop_device()
     dev.config.script.error = types.SimpleNamespace(handle_error=True)
     stopped = []
-    dev.desktop_stop_client = lambda: stopped.append(True)
+
+    def stop():
+        stopped.append(True)
+        return True
+
+    dev.desktop_stop_client = stop
     Device.app_stop(dev)
     assert stopped == [True]
 
@@ -771,8 +776,11 @@ def test_desktop_stop_client_clears_stale_hwnd(monkeypatch):
     monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
     w.desktop_force_kill = lambda: None
     w._desktop_close_wait_seconds = lambda: 1
-    w._desktop_wait_closed = lambda wait: True
-    w.desktop_stop_client()
+    w._desktop_clear_handle_cache = lambda: None
+    # 窗口消失 + 进程退出 = 确认释放
+    w.desktop_window_exists = lambda: False
+    w._desktop_pid_alive = lambda pid: False
+    assert w.desktop_stop_client() is True
     assert w.root_handle_num == 0
     assert w._desktop_login_done is False
 
@@ -872,16 +880,19 @@ class _EndImmediately:
         return _T()
 
 
-def _restart_task(start_results):
+def _restart_task(start_results, exc=None, stop_ok=True):
     """构造一个只填了桌面重建路径所需属性的 Restart ScriptTask。
 
-    start_results: 每轮 app_start+登录的结果，'fail' 表示抛 GameNotRunningError。
+    start_results: 每轮 app_start+登录的结果，'fail' 表示抛异常。
+    exc: 失败时抛的异常类，默认 GameNotRunningError（另一类是登录卡死 GameStuckError）。
+    stop_ok: desktop_stop_client 的返回值，False 模拟客户端关不掉。
     """
     from tasks.Restart.script_task import ScriptTask
 
     task = object.__new__(ScriptTask)
     trace = []
     results = list(start_results)
+    error = exc or GameNotRunningError
 
     def app_start():
         trace.append('start')
@@ -889,13 +900,17 @@ def _restart_task(start_results):
     def handle_login():
         outcome = results.pop(0) if results else 'ok'
         if outcome == 'fail':
-            raise GameNotRunningError('Desktop client window not found')
+            raise error('Desktop client window not found')
         trace.append('login')
+
+    def stop_client():
+        trace.append('stop')
+        return stop_ok
 
     task.device = types.SimpleNamespace(
         is_desktop=True,
         app_start=app_start,
-        desktop_stop_client=lambda: trace.append('stop'),
+        desktop_stop_client=stop_client,
     )
     task.app_handle_login = handle_login
     return task, trace
@@ -915,16 +930,88 @@ def test_restart_intercepts_start_failure_and_rebuilds():
     assert trace == ['start', 'stop', 'start', 'login']
 
 
-def test_restart_takes_over_after_all_attempts_fail():
-    """连续失败耗尽重建轮数 → RequestHumanTakeover，不再打回调度器。"""
+def test_restart_intercepts_login_stuck():
+    """登录卡死抛的 GameStuckError 也必须就地消化，不能放跑给调度器。
+
+    回归：script.py 对 GameStuckError 同样是 task_call('Restart')，打回这里
+    形成无限重启循环。登录界面卡住是桌面端的常见失败形态，必须和「客户端没起来」
+    走同一条重建路径。
+    """
+    from tasks.Restart.script_task import ScriptTask
+    from module.exception import GameStuckError
+
+    task, trace = _restart_task(['fail', 'ok'], exc=GameStuckError)
+    ScriptTask._desktop_start_and_login(task)
+    assert trace == ['start', 'stop', 'start', 'login']
+
+
+def test_restart_releases_client_on_final_attempt():
+    """连续失败耗尽重建轮数 → RequestHumanTakeover，且最后一轮也必须释放客户端。
+
+    回归客户端泄漏：旧代码在最后一轮 `break` 跳过 desktop_stop_client，紧接着
+    RequestHumanTakeover 让进程退出，那个客户端就再没有任何代码知道它的存在
+    （实测泄漏过一个 PID）。守护进程重启实例后又会新起一个，客户端越积越多。
+    """
     from tasks.Restart.script_task import ScriptTask, DESKTOP_RESTART_ATTEMPTS
 
     task, trace = _restart_task(['fail'] * DESKTOP_RESTART_ATTEMPTS)
     with pytest.raises(RequestHumanTakeover):
         ScriptTask._desktop_start_and_login(task)
-    # 每轮都尝试启动，最后一轮不再清理（已无重试机会）
+    # 每轮都尝试启动，且每轮失败都清理——包括放弃前的最后一轮
     assert trace.count('start') == DESKTOP_RESTART_ATTEMPTS
-    assert trace.count('stop') == DESKTOP_RESTART_ATTEMPTS - 1
+    assert trace.count('stop') == DESKTOP_RESTART_ATTEMPTS
+    # 放弃前的最后一个动作必须是释放客户端
+    assert trace[-1] == 'stop'
+
+
+def test_restart_stops_rebuilding_when_client_cannot_be_closed():
+    """客户端关不掉时立刻交人工，不再重建。
+
+    残留窗口会让下一轮的新窗口识别绑到错误句柄，越试越乱；而且每轮重建都新起一个
+    客户端，关不掉的那个会一直累积。所以 desktop_stop_client 返回 False 就必须停手。
+    """
+    from tasks.Restart.script_task import ScriptTask
+
+    task, trace = _restart_task(['fail', 'ok'], stop_ok=False)
+    with pytest.raises(RequestHumanTakeover):
+        ScriptTask._desktop_start_and_login(task)
+    # 首轮失败 → 清理失败 → 立刻放弃，不进第二轮 app_start
+    assert trace == ['start', 'stop']
+
+
+def _stuck_device(window_alive, login_done):
+    """构造一个卡死计时器已到期的桌面 Device，用于判活分支测试。"""
+    dev = _desktop_device()
+    dev.stuck_timer = types.SimpleNamespace(reached=lambda: True, reset=lambda: None)
+    dev.stuck_timer_long = types.SimpleNamespace(reached=lambda: True, reset=lambda: None)
+    dev.detect_record = {'LOGIN_CHECK'}
+    dev.desktop_window_exists = lambda: window_alive
+    dev._desktop_login_done = login_done
+    return dev
+
+
+def test_stuck_during_login_reports_stuck_not_died():
+    """登录界面卡死时窗口还活着 → 必须报 GameStuckError，不能报「客户端死了」。
+
+    回归误判：app_is_running() 在桌面模式下是「窗口存在 且 已登录」，而登录流程中
+    _desktop_login_done 恒为 False，于是判活恒假。实测登录卡满 5 分钟被报成
+    Game died，Restart 白杀一个其实还活着的客户端再重开，连续两轮后交人工接管。
+    卡死判定只该关心客户端窗口是否还在。
+    """
+    from module.exception import GameStuckError
+
+    dev = _stuck_device(window_alive=True, login_done=False)
+    # 前提确认：此时 app_is_running() 确实是 False，直接用它就会误判
+    assert Device.app_is_running(dev) is False
+    with pytest.raises(GameStuckError):
+        Device.stuck_record_check(dev)
+
+
+def test_stuck_with_window_gone_reports_game_died():
+    """窗口真的没了 → 仍报 GameNotRunningError，保留原有重拉语义。"""
+    dev = _stuck_device(window_alive=False, login_done=False)
+    with pytest.raises(GameNotRunningError):
+        Device.stuck_record_check(dev)
 
 
 def test_desktop_client_size_returns_physical(monkeypatch):
@@ -1416,51 +1503,131 @@ def test_desktop_restore_returns_false_when_still_minimized(monkeypatch):
 
 
 def test_desktop_stop_client_force_kills_directly(monkeypatch):
-    # 关闭客户端：不发任何窗口消息（退出确认框回车无效），直接强杀，窗口消失即返回
+    # 关闭客户端：不发任何窗口消息（退出确认框回车无效），直接强杀，确认释放即返回
     w = object.__new__(Window)
     w.is_desktop_window = True
     w.root_handle_num = 0x200
+    w.config = _handle_config()
     w._desktop_close_wait_seconds = lambda: 10
+    w._desktop_clear_handle_cache = lambda: None
     monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
     monkeypatch.setattr('module.device.handle.PostMessage',
                         lambda *a: (_ for _ in ()).throw(AssertionError('关闭客户端不应发窗口消息')))
     monkeypatch.setattr('module.device.handle.SendMessage',
                         lambda *a: (_ for _ in ()).throw(AssertionError('关闭客户端不应发回车')))
     w.desktop_window_exists = lambda: False
+    w._desktop_pid_alive = lambda pid: False
     killed = []
     w.desktop_force_kill = lambda: killed.append(True)
-    w.desktop_stop_client()
+    assert w.desktop_stop_client() is True
+    # 一轮就确认释放，不该重复强杀
     assert killed == [True]
     # 关闭客户端后登录态重置，下次启动需重新走登录流程
     assert w._desktop_login_done is False
 
 
 def test_desktop_stop_client_skips_when_window_gone(monkeypatch):
-    # 窗口已不存在 → 直接跳过，不强杀
+    # 窗口已不存在 且 进程已退出 → 直接跳过，不强杀
     w = object.__new__(Window)
     w.is_desktop_window = True
     w.root_handle_num = 0
+    w.config = _handle_config()
+    w._desktop_clear_handle_cache = lambda: None
+    w._desktop_pid_alive = lambda pid: False
     killed = []
     w.desktop_force_kill = lambda: killed.append(True)
-    w.desktop_stop_client()
+    assert w.desktop_stop_client() is True
     assert killed == []
 
 
-def test_desktop_stop_client_warns_when_window_remains(monkeypatch):
-    # 强杀后窗口仍在（罕见：权限不足/句柄残留）→ 记警告，不抛异常阻塞调度
-    import time as _time
-    _real_sleep = _time.sleep
+def test_desktop_stop_client_kills_when_window_gone_but_process_alive(monkeypatch):
+    """窗口没了但进程还活着 → 必须照样强杀，不能当成已关闭。
+
+    回归假关闭：旧代码只看 `IsWindow(root_handle_num)` 就决定跳过，而强杀被拒
+    （实测本机出现过 (5, '拒绝访问。')）时窗口可能已销毁、进程仍在跑，于是
+    「skip stop」直接放过一个残留进程。
+    """
+    w = object.__new__(Window)
+    w.is_desktop_window = True
+    w.root_handle_num = 0
+    w.config = _handle_config()
+    w._desktop_close_wait_seconds = lambda: 1
+    w._desktop_clear_handle_cache = lambda: None
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    w.desktop_window_exists = lambda: False
+    alive = [True]
+    killed = []
+
+    def force_kill():
+        killed.append(True)
+        alive[0] = False
+
+    w.desktop_force_kill = force_kill
+    w._desktop_pid_alive = lambda pid: alive[0]
+    assert w.desktop_stop_client() is True
+    assert killed == [True]
+
+
+def test_desktop_stop_client_retries_then_reports_failure(monkeypatch):
+    """强杀后仍未释放 → 用尽轮数并返回 False，把失败如实报给调用方。
+
+    回归「发完 kill 就当成功」：旧代码只 logger.warning 后返回 None，调用方无从得知
+    客户端其实还在，接着去重建就会撞上残留窗口、绑错句柄。
+    """
+    from module.device.handle import DESKTOP_KILL_ATTEMPTS
+
     w = object.__new__(Window)
     w.is_desktop_window = True
     w.root_handle_num = 0x200
+    w.config = _handle_config()
     w._desktop_close_wait_seconds = lambda: 1
+    w._desktop_clear_handle_cache = lambda: None
     monkeypatch.setattr('module.device.handle.IsWindow', lambda h: True)
-    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: _real_sleep(0.01))
+    monkeypatch.setattr('module.device.handle.time.sleep', lambda s: None)
+    # 杀不掉：窗口和进程都一直在
     w.desktop_window_exists = lambda: True
+    w._desktop_pid_alive = lambda pid: True
     killed = []
     w.desktop_force_kill = lambda: killed.append(True)
-    w.desktop_stop_client()
-    assert killed == [True]
+    assert w.desktop_stop_client() is False
+    # 每轮都真的重试过强杀，不是只试一次
+    assert len(killed) == DESKTOP_KILL_ATTEMPTS
+    # 句柄仍被清零：它已不可信，留着会让后续 Win32 调用崩在废句柄上
+    assert w.root_handle_num == 0
+
+
+def test_desktop_pid_alive_uses_exit_code(monkeypatch):
+    """进程存活判定必须查退出码，不能只看 OpenProcess 是否成功。
+
+    已退出的进程只要还有内核对象引用，OpenProcess 照样返回句柄；只看它会把
+    已退出的进程误判为存活，导致关闭流程白等满 close_game_wait_duration。
+    """
+    w = object.__new__(Window)
+    calls = []
+
+    class _K:
+        @staticmethod
+        def OpenProcess(access, inherit, pid):
+            calls.append(('open', access, pid))
+            return 0x99
+
+        @staticmethod
+        def GetExitCodeProcess(handle, out_ref):
+            out_ref._obj.value = exit_code[0]
+            return 1
+
+        @staticmethod
+        def CloseHandle(handle):
+            calls.append(('close', handle))
+            return 1
+
+    monkeypatch.setattr('ctypes.windll.kernel32', _K, raising=False)
+    exit_code = [259]  # STILL_ACTIVE
+    assert w._desktop_pid_alive(1234) is True
+    exit_code = [0]  # 已正常退出
+    assert w._desktop_pid_alive(1234) is False
+    # 句柄必须归还，否则每次判活泄漏一个内核句柄
+    assert [c for c in calls if c[0] == 'close'] == [('close', 0x99), ('close', 0x99)]
 
 
 def _popup_handle(monkeypatch, windows, pid=4242):
@@ -1756,15 +1923,25 @@ def test_emulator_stop_desktop_closes_client():
     # 空闲关闭（close_emulator_or_*）桌面分支：走 desktop_stop_client 关客户端，不碰模拟器
     dev = _desktop_device()
     stopped = []
-    dev.desktop_stop_client = lambda: stopped.append(True)
-    dev.desktop_window_exists = lambda: False
+
+    def stop():
+        stopped.append(True)
+        return True
+
+    dev.desktop_stop_client = stop
+    # 不再独立查窗口：desktop_stop_client 内部已验证「窗口消失 且 进程退出」
+    dev.desktop_window_exists = lambda: (_ for _ in ()).throw(
+        AssertionError('emulator_stop 应直接采用 desktop_stop_client 的结论'))
     assert dev.emulator_stop() is True
     assert stopped == [True]
 
 
-def test_emulator_stop_desktop_returns_false_when_window_remains():
-    # 客户端未关闭成功（窗口仍在）→ 返回 False
+def test_emulator_stop_desktop_returns_false_when_not_released():
+    """客户端未确认释放 → 返回 False，供上层判断空闲关闭是否成功。
+
+    回归：旧代码杀完再独立查一次窗口，而窗口消失并不等于进程退出，
+    强杀被拒时会把「进程还在」报成关闭成功。
+    """
     dev = _desktop_device()
-    dev.desktop_stop_client = lambda: None
-    dev.desktop_window_exists = lambda: True
+    dev.desktop_stop_client = lambda: False
     assert dev.emulator_stop() is False

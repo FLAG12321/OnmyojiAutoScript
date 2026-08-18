@@ -549,9 +549,20 @@ class RebootDaemon:
 
     def _start_oas_server(self) -> bool:
         """启动OAS Server子进程"""
-        if self.oas_process and self.oas_process.poll() is None:
+        # 「是否在运行」必须以服务健康为准，不能只看子进程句柄。
+        # 空壳陷阱：Web UI 点「关闭服务器」(/home/kill_server) 或 uvicorn 自行退出后，
+        # Windows 下 pythonw 外壳可能残留——uvicorn 已打完 "Finished server process"
+        # 并释放端口，poll() 却仍返回 None。旧代码据此直接返回 True，于是
+        # server_restart_on_crash 永久失效：检测到离线、决定重启，执行时被句柄骗过，
+        # 什么都没做，此后守护再不记录一行 server 日志（实测沉默了 14 小时）。
+        if self._is_server_online():
             self.logger.info("OAS Server已在运行")
             return True
+        if self.oas_process and self.oas_process.poll() is None:
+            # 句柄还在但服务不可用，就是空壳。必须先回收，否则它会一直骗过后续判断
+            self.logger.warning(
+                f"OAS Server 进程 PID={self.oas_process.pid} 存在但服务不可用（空壳），先回收")
+            self._terminate_server_process()
 
         try:
             server_port = self._get_server_port()
@@ -605,31 +616,60 @@ class RebootDaemon:
             self.logger.error(f"启动OAS Server失败: {e}")
             return False
 
+    def _terminate_server_process(self):
+        """终止自己启动的 server 子进程并清掉句柄引用。
+
+        句柄必须置 None：留着一个已退出的 Popen 会让后续判断继续围着它转，
+        而真正提供服务的可能是另一个进程。
+        """
+        proc = self.oas_process
+        if not proc:
+            return
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.logger.error(f"OAS Server 进程 PID={proc.pid} 无法终止")
+            self.logger.info(f"OAS Server进程已终止 (PID={proc.pid})")
+        self.oas_process = None
+
     def _stop_oas_server(self):
-        """通过REST API或终止进程来停止OAS Server"""
+        """停止OAS Server：先请 API 自行关闭，再回收自己启动的子进程。
+
+        注意 API 关闭作用于 self.api_url 指向的 server，而子进程回收作用于
+        self.oas_process——两者可能不是同一个进程（例如手动另起了一个 server 抢占了
+        端口）。所以两步都要做，且各自记录，不能用一步的结果推断另一步。
+        """
         try:
             requests.get(f"{self.api_url}/home/kill_server", timeout=5)
             self.logger.info("已通过API关闭OAS Server")
         except Exception:
             pass
 
-        if self.oas_process and self.oas_process.poll() is None:
-            try:
-                self.oas_process.terminate()
-                self.oas_process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.oas_process.kill()
-            self.logger.info("OAS Server进程已终止")
+        # API 关闭后 uvicorn 会自行退出，但外壳未必立刻消失，这里统一回收
+        self._terminate_server_process()
 
     def _ensure_server_running(self) -> bool:
-        """确保OAS Server在运行"""
+        """确保OAS Server在运行，返回是否确认在线。"""
         if self._is_server_online():
             return True
         if not self.server_restart_on_crash:
             self.logger.warning("OAS Server离线，且未配置自动重启")
             return False
         self.logger.warning("OAS Server离线，尝试重启...")
-        return self._start_oas_server()
+        if not self._start_oas_server():
+            return False
+        # 启动流程返回 True 也要复验：否则一旦启动路径判断出错（如被残留句柄骗过），
+        # 守护会以为 server 好着而彻底沉默，不再有任何 server 相关日志
+        if self._is_server_online():
+            return True
+        self.logger.error("OAS Server 启动流程报成功但服务仍不可用")
+        return False
 
     # ──────────────── REST API 调用 ────────────────
 

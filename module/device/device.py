@@ -343,7 +343,11 @@ class Device(Platform, Screenshot, Control, AppControl):
         logger.warning(f'Waiting for {self.detect_record}')
         self.stuck_record_clear()
 
-        if self.app_is_running():
+        # 桌面模式的 app_is_running() 还带「已登录」判定，登录流程里它恒为 False，
+        # 直接拿来判活会把「登录界面卡住」误报成「客户端死了」：实测登录卡满 5 分钟被
+        # 报成 Game died，Restart 于是白杀一个其实还活着的客户端再重开。判活只看窗口
+        alive = self.desktop_window_exists() if self.is_desktop else self.app_is_running()
+        if alive:
             raise GameStuckError(f'Wait too long')
         else:
             raise GameNotRunningError('Game died')
@@ -449,9 +453,11 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.click_record_clear()
 
     def app_stop(self):
-        # 桌面模式：关闭客户端并等待其退出（用关闭游戏等待时长判断 kill 是否完成）
+        # 桌面模式：关闭客户端并验证真的释放（窗口消失 且 进程退出），
+        # 关不掉时 desktop_stop_client 已记 ERROR，这里把结论透出给调用方
         if self.is_desktop:
-            self.desktop_stop_client()
+            if not self.desktop_stop_client():
+                logger.warning('Desktop client not released, residual process may remain')
             return
         if not self.config.script.error.handle_error:
             logger.critical('No app stop/start, because HandleError disabled')

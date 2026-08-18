@@ -46,6 +46,11 @@ DESKTOP_LOGIN_POPUP_CLASS = 'MPAY_LOGIN'
 # 登录界面、重建游戏主窗口，实测这段空窗期在几百毫秒到数秒之间，6 轮 × 1s 足够覆盖
 DESKTOP_RESIZE_ATTEMPTS = 6
 DESKTOP_RESIZE_RETRY_INTERVAL = 1.0
+# 关闭桌面客户端的强杀轮数。TerminateProcess 可能因权限被拒（实测本机出现过
+# (5, '拒绝访问。')），也可能进程正在退出但还没消失，因此杀完必须验证进程真的没了，
+# 没死就再杀一轮，而不是发完指令就当成功
+DESKTOP_KILL_ATTEMPTS = 3
+DESKTOP_KILL_POLL_INTERVAL = 0.5
 
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2，SetThreadDpiAwarenessContext 的入参
 _PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
@@ -790,25 +795,44 @@ class Handle:
         return 0, spawned
 
     def _desktop_kill_pids(self, pids) -> None:
-        """强杀指定 PID 集合（本轮启动失败的清理），逐个容错。"""
+        """强杀指定 PID 集合（本轮启动失败的清理），逐个容错并验证真的退出。"""
         kernel32 = ctypes.windll.kernel32
+        wait = self._desktop_close_wait_seconds()
         for pid in pids:
             try:
                 pid_int = int(pid)
             except (TypeError, ValueError):
                 continue
-            # PROCESS_TERMINATE(0x0001)
-            handle = kernel32.OpenProcess(0x0001, False, pid_int)
-            if not handle:
-                # 进程已自行退出
-                continue
-            try:
-                kernel32.TerminateProcess(handle, 0)
-                logger.info(f'清理桌面客户端 PID={pid_int}')
-            finally:
-                kernel32.CloseHandle(handle)
+            for attempt in range(1, DESKTOP_KILL_ATTEMPTS + 1):
+                # PROCESS_TERMINATE(0x0001)
+                handle = kernel32.OpenProcess(0x0001, False, pid_int)
+                if not handle:
+                    # 进程已自行退出
+                    break
+                try:
+                    kernel32.TerminateProcess(handle, 0)
+                    logger.info(f'清理桌面客户端 PID={pid_int}')
+                finally:
+                    kernel32.CloseHandle(handle)
+                # 杀完必须确认进程真的没了，被拒或正在退出都会让下一轮启动撞上残留
+                if self._desktop_wait_pid_gone(pid_int, wait):
+                    break
+                logger.warning(f'桌面客户端 PID={pid_int} 强杀后仍存活，重试 '
+                               f'({attempt}/{DESKTOP_KILL_ATTEMPTS})')
+            else:
+                logger.error(f'桌面客户端 PID={pid_int} 无法清理，可能需要手动结束进程')
         # 等窗口真的消失，避免残留窗口干扰下一轮的新窗口识别
-        self._desktop_wait_closed(self._desktop_close_wait_seconds())
+        self._desktop_wait_closed(wait)
+
+    def _desktop_wait_pid_gone(self, pid, wait: float) -> bool:
+        """在 wait 秒内等待指定进程退出，返回是否已退出。"""
+        deadline = time.time() + wait
+        while True:
+            if not self._desktop_pid_alive(pid):
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(DESKTOP_KILL_POLL_INTERVAL)
 
     def desktop_bind_pid(self, pid, hwnd=0) -> None:
         """把新 PID/HWND 绑定到实例，并尽量持久化到配置。"""
@@ -845,6 +869,31 @@ class Handle:
         except Exception as e:
             logger.info(f'Send Enter to window {hwnd} failed (window may be closed): {e}')
 
+    def _desktop_pid_alive(self, pid) -> bool:
+        """进程是否还活着。无法判定时按「还活着」返回，宁可多等一轮也不误报已关闭。
+
+        不能只看 OpenProcess 是否成功：进程已退出但仍有内核对象引用时 OpenProcess
+        照样返回句柄，必须再用 GetExitCodeProcess 看退出码是否还是 STILL_ACTIVE(259)。
+        窗口枚举不能替代这里——强杀被拒时窗口可能已销毁而进程还在，只验窗口会误判。
+        """
+        try:
+            pid_int = int(str(pid))
+        except (TypeError, ValueError):
+            return False
+        kernel32 = ctypes.windll.kernel32
+        # PROCESS_QUERY_LIMITED_INFORMATION(0x1000)，比 QUERY_INFORMATION 权限要求更低
+        handle = kernel32.OpenProcess(0x1000, False, pid_int)
+        if not handle:
+            # 打不开通常就是进程已退出；权限不足时也走这里，交给窗口检查兜底
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+
     def _desktop_wait_closed(self, wait: float) -> bool:
         """在 wait 秒内轮询等待桌面客户端窗口消失，返回是否已关闭。"""
         deadline = time.time() + wait
@@ -855,36 +904,72 @@ class Handle:
                 return False
             time.sleep(0.5)
 
-    def desktop_stop_client(self) -> None:
-        """关闭桌面客户端：直接强杀进程，用关闭游戏等待时长确认窗口真的消失。
+    def _desktop_wait_released(self, pid, wait: float) -> bool:
+        """在 wait 秒内等待客户端真正释放：窗口消失 **且** 进程退出。
+
+        两个条件都要，缺一个都可能是假关闭：
+        - 只验窗口：强杀被拒时窗口已销毁但进程还在，会漏掉残留进程
+        - 只验进程：进程刚退出时窗口可能还在被系统回收，下一轮新窗口识别会撞上
+        """
+        deadline = time.time() + wait
+        while True:
+            if not self.desktop_window_exists() and not self._desktop_pid_alive(pid):
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(DESKTOP_KILL_POLL_INTERVAL)
+
+    def desktop_stop_client(self) -> bool:
+        """关闭桌面客户端：强杀进程并验证真的释放，返回是否确认关闭。
 
         客户端的退出确认框画在游戏窗口内部（不是独立顶层窗口），实测回车确认经常无效
         （进程不退出、主窗口只是被移到屏幕外），走 WM_CLOSE + 确认反而要多等几秒还未必
         关得掉，因此这里不发任何窗口消息，直接强杀进程。
+
+        强杀不等于已关闭：TerminateProcess 可能因权限被拒（本机出现过 (5, '拒绝访问。')），
+        进程也可能正在退出还没消失。所以每轮杀完都验证「窗口消失 且 进程退出」，没释放
+        就再杀一轮，全部轮次用尽仍在则返回 False——调用方据此决定是重建还是交人工，
+        绝不能发完 kill 指令就当成功返回。
 
         关闭后保留原 PID 在配置里；下次检测到该 PID 无效（客户端未运行）时，
         由启动/重拉链路重启客户端并把配置更新为重启后的新 PID。
         """
         # 客户端关闭后必然未登录，下次启动需重新走登录流程
         self._desktop_login_done = False
+        # PID 要在清理句柄前取，后面的验证全靠它
+        pid = getattr(self, 'root_handle', None) or self.config.script.device.handle
         hwnd = self.root_handle_num
-        if not hwnd or not IsWindow(hwnd):
+        if (not hwnd or not IsWindow(hwnd)) and not self._desktop_pid_alive(pid):
             logger.info('Desktop client not running, skip stop')
-            return
-        logger.info('Stopping desktop client: force kill')
-        self.desktop_force_kill()
+            self._reset_desktop_handle_state()
+            return True
+
         wait = self._desktop_close_wait_seconds()
-        closed = self._desktop_wait_closed(wait)
-        # 进程已杀，hwnd 随窗口销毁立即失效。必须清零，否则后续在同一个 device 对象
-        # 生命周期内被唤醒的任务（如配置变更触发的即时调度）会跳过 Handle.__init__，
-        # 直接拿这个废句柄去 GetClientRect，抛 (1400, '无效的窗口句柄') 搞崩整个进程
+        for attempt in range(1, DESKTOP_KILL_ATTEMPTS + 1):
+            logger.info(f'Stopping desktop client: force kill '
+                        f'({attempt}/{DESKTOP_KILL_ATTEMPTS}, PID={pid})')
+            self.desktop_force_kill()
+            if self._desktop_wait_released(pid, wait):
+                logger.info(f'Desktop client released (PID={pid})')
+                self._reset_desktop_handle_state()
+                return True
+            logger.warning(f'Desktop client PID={pid} still present after {wait}s, retry kill')
+        # 到这里客户端确实没关掉：句柄状态照常清零（它已不可信），但把失败如实报出去
+        logger.error(f'Desktop client PID={pid} not released after '
+                     f'{DESKTOP_KILL_ATTEMPTS} force kill attempts, manual cleanup needed')
+        self._reset_desktop_handle_state()
+        return False
+
+    def _reset_desktop_handle_state(self) -> None:
+        """清零桌面窗口句柄与截图句柄缓存。
+
+        进程已杀，hwnd 随窗口销毁立即失效。必须清零，否则后续在同一个 device 对象
+        生命周期内被唤醒的任务（如配置变更触发的即时调度）会跳过 Handle.__init__，
+        直接拿这个废句柄去 GetClientRect，抛 (1400, '无效的窗口句柄') 搞崩整个进程。
+        """
         self.root_handle_num = 0
         # 截图句柄缓存指向的也是刚被销毁的窗口，一并失效
         self._desktop_clear_handle_cache()
-        if closed:
-            logger.info('Desktop client closed')
-            return
-        logger.warning(f'Desktop client force kill but window still present after {wait}s')
 
     def _desktop_close_wait_seconds(self) -> int:
         """关闭游戏等待时长（秒），读 config.script.optimization.close_game_wait_duration。"""
