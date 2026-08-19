@@ -9,6 +9,15 @@ from tasks.RichMan.config import Consignment, MedalRoom
 from tasks.MysteryShop.assets import MysteryShopAssets
 from tasks.DailyAltAcc.config import GoodsType, CoinType, MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent
+from tasks.DailyAltAcc.mshop_grid import (
+    COIN_NAMES,
+    GOODS_NAMES,
+    GOODS_TEMPLATES,
+    SlotItem,
+    coin_of,
+    goods_rule,
+    locate_slot,
+)
 
 
 class Mshop(Mall, DailyAltAccBase):
@@ -107,6 +116,77 @@ class Mshop(Mall, DailyAltAccBase):
                 continue
             if not self.appear(self.I_BACK_Y):
                 break
+
+    def _enabled_goods(self) -> list[GoodsType]:
+        """按配置决定要扫哪几类货：黑碎只在二花账号扫。
+
+        保留原 MsFind 里 isflower 门控黑碎的行为，把开关收敛到清单构造处，
+        而不是散落进扫描或判定逻辑里。
+        """
+        goods = [GoodsType.shepi, GoodsType.fmpi]
+        if self.get_config().daily_alt_acc_config.isflower:
+            goods.append(GoodsType.heisui)
+        return goods
+
+    def _ocr_price(self, slot: int) -> int:
+        """读取指定格位的价格数字，返回 0 表示识别失败。
+
+        必须显式兜底 detect_and_ocr：Digit 模式下 after_process 把空串转成 int 0
+        （module/ocr/sub_ocr.py:121），而 ocr_single 的判空是 `!= ""`
+        （module/ocr/sub_ocr.py:86），`0 != ""` 恒真，导致 RuleOcr.ocr 内部那段
+        竖排 / detect_and_ocr 兜底对 Digit 模式是死代码。
+        """
+        rule = getattr(self, f'O_MS_PRICENUM_{slot}')
+        price = rule.ocr(self.device.image)
+        if price:
+            return int(price)
+        results = rule.detect_and_ocr(self.device.image)
+        if results:
+            return int(results[0].ocr_text)
+        return 0
+
+    def _scan_slots(self, goods_types: list[GoodsType]) -> list[SlotItem]:
+        """扫描当前货架，返回识别到的商品。要求已在神秘商店页面且已截图。
+
+        每类货物在总区域做一次多点匹配（NMS 去重叠）→ 命中框中心映射到格位
+        → 同格冲突取匹配得分高者 → 只对有命中的格位 OCR 价格。
+        价格 OCR 失败的格位直接丢弃：价格未知无法判定，宁漏不错。
+
+        :param goods_types: 要扫描的货物类型，由调用方按配置挑选
+        :return: 按格位号升序的商品列表
+        """
+        image = self.device.image
+        # 格位号 -> (货物类型, 匹配得分)，同格只保留得分最高的一条
+        best: dict[int, tuple[GoodsType, float]] = {}
+        for goods in goods_types:
+            matches = goods_rule(GOODS_TEMPLATES[goods]).match_all_any(image)
+            for score, x, y, w, h in matches:
+                cx, cy = x + w // 2, y + h // 2
+                slot = locate_slot(cx, cy)
+                if slot is None:
+                    logger.warning(f'命中中心 ({cx},{cy}) 落在格位网格外，跳过')
+                    continue
+                exist = best.get(slot)
+                if exist is None:
+                    best[slot] = (goods, score)
+                    continue
+                # 同格命中两种货物，必有一个是误匹配，留日志便于回溯
+                keep = goods if score > exist[1] else exist[0]
+                logger.warning(f'格位 {slot} 同时命中 {exist[0].name} 与 {goods.name}，'
+                               f'保留得分高的 {keep.name}')
+                if keep is goods:
+                    best[slot] = (goods, score)
+
+        items: list[SlotItem] = []
+        for slot in sorted(best):
+            goods, score = best[slot]
+            price = self._ocr_price(slot)
+            if price <= 0:
+                logger.warning(f'格位 {slot}（{goods.name}）价格 OCR 失败，跳过该格')
+                continue
+            items.append(SlotItem(slot=slot, goods=goods, price=price,
+                                  coin=coin_of(price), score=score))
+        return items
 
     def MsFind(self):
         """ while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
