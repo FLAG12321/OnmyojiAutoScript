@@ -188,112 +188,53 @@ class Mshop(Mall, DailyAltAccBase):
                                   coin=coin_of(price), score=score))
         return items
 
-    def MsFind(self):
-        """ while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
-                                money_ocr=self.O_MALL_RESOURCE_5, buy_money=80):
-            pass
-        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_4, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_4,
-                                money_ocr=self.O_MALL_RESOURCE_5, buy_money=80):
-            pass
-        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_OFF_3, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_3,
-                                    money_ocr=self.O_MALL_RESOURCE_5, buy_money=45):
-            pass
-        while self.buy_mall_one(buy_button=MysteryShopAssets.I_MS_TAIKO_3, buy_check=MysteryShopAssets.I_MS_CHECK_TAIKO_3,
-                                    money_ocr=self.O_MALL_RESOURCE_5, buy_money=45):
-            pass """
-        
-        all_info_list = []
-        cointype_and_coinNum_list=self.FindCoinTypeAndCoinNum()
+    def MsFind(self) -> bool:
+        """扫描当前神秘商店货架，播报规则判定要买的商品。
+
+        :return: True 表示有要买的商品；run_mysteryshop 据此决定是否刷新商店。
+            占位 _should_buy 恒返回 False，所以规则填好前每次都会触发刷新。
+        """
         self.screenshot()
-        if self.appear(self.I_MS_ALL_SHEPI):
-            logger.info(f"appear: self.I_MS_ALL_SHEPI{all_info_list}")
-            info_list=self.FindGoodsType(GoodsType.shepi,cointype_and_coinNum_list)
-            if len(info_list) > 0:
-                all_info_list.extend(info_list)
-        if self.appear(self.I_MS_ALL_FMPI):
-            logger.info(f"appear: self.I_MS_ALL_SHEPI{all_info_list}")
-            info_list=self.FindGoodsType(GoodsType.fmpi,cointype_and_coinNum_list)
-            if len(info_list) > 0:
-                all_info_list.extend(info_list)
-        if self.get_config().daily_alt_acc_config.isflower and self.appear(self.I_MS_ALL_HEISUI):
-            logger.info(f"appear I_MS_ALL_HEISUI: {all_info_list}")
-            info_list=self.FindGoodsType(GoodsType.heisui,cointype_and_coinNum_list)
-            if len(info_list) > 0:
-                all_info_list.extend(info_list)
-        logger.info(f"FindGoodsType 返回的商品信息: {all_info_list}")
-        if len(all_info_list) > 0 and self.InfoFilter(all_info_list):  
-            return True
-        else:
+        items = self._scan_slots(self._enabled_goods())
+        logger.info(f'神秘商店扫描到 {len(items)} 件商品: '
+                    f'{[(i.slot, i.goods.name, i.coin.name, i.price) for i in items]}')
+        found = False
+        for item in items:
+            if not self._should_buy(item.goods, item.coin, item.price, item.slot):
+                continue
+            found = True
+            self._notify_item(item)
+            # TODO 购买：点 O_MS_PRICENUM_<slot> 的 ROI（价格条就是购买按钮），
+            #      确认弹窗用 I_MS_ENSURE（货物无关的「确定」按钮），
+            #      每格一件走 Buy.buy_one 而非 buy_more
+        if not found:
             logger.info('没有找到物品')
-            return False
+        return found
 
-    def FindGoodsType(self, goodstype: GoodsType,cointype_and_coinNum_list:list):
-        all_info_list=[]
-        for index in range(8):
-            if goodstype == GoodsType.shepi:
-                appear_goodstype = getattr(self, f'I_MS_GOODS_SHEPI_{index+1}')
-                #logger.info(f"使用蛇皮商品图像文件: {appear_goodstype} {index+1}")
-            elif goodstype == GoodsType.fmpi:
-                appear_goodstype = getattr(self, f'I_MS_GOODS_FMPI_{index+1}')  # 注意：这里可能需要修正为GOLD
-                #logger.info(f"使用逢魔商品图像文件: {appear_goodstype} {index+1}")
-            elif goodstype == GoodsType.heisui:
-                appear_goodstype = getattr(self, f'I_MS_GOODS_HEISUI_{index+1}')
-                #logger.info(f"使用黑碎商品图像文件: {appear_goodstype} {index+1}")
-            if self.appear(appear_goodstype):
-                #logger.info(f"appear_goodstype: {cointype_and_coinNum_list}")
-                all_info_list.append([goodstype,cointype_and_coinNum_list[index][0],cointype_and_coinNum_list[index][1]])
-            logger.info(f'FindGoodsType :{all_info_list}')
-        return all_info_list    
+    def _should_buy(self, goods: GoodsType, coin: CoinType, price: int, slot: int) -> bool:
+        """判定是否购买该格位商品。规则待填。
 
-    def FindCoinTypeAndCoinNum(self):
-        info_list=[ ]
-        for index in range(8):
-            logger.debug(f"检查第 {index + 1} 个商品位置")
-            appear_coin_jade = getattr(self, f'I_MS_PRICE_{index+1}')
-            appear_coin_gold = getattr(self, f'I_MS_PRICES_{index+1}')
-            appear_coin_num = self.__getattribute__("O_MS_PRICENUM_" + str(index + 1))
-            ocr_results = appear_coin_num.detect_and_ocr(self.device.image)
-            if ocr_results:
-                coin_num = int(ocr_results[0].ocr_text)
-            else:
-                logger.warning(f"无法识别第 {index + 1} 个位置的数量，使用默认值 0")
-                coin_num = 0  # 或者其他合适的默认值
-            logger.info(f"数量: {coin_num}")
-            if self.appear(appear_coin_jade):
-                info_list.append([CoinType.jade,coin_num])
-            elif self.appear(appear_coin_gold):
-                info_list.append([CoinType.gold,coin_num])
-            else:
-                info_list.append([CoinType.unknow,coin_num])
-        logger.info(f"FindCoinTypeAndCoinNum :{info_list} ")
-        return  info_list
+        :param goods: 货物类型
+        :param coin: 币种，由价格数值判定（>10000 金币，否则勾玉）
+        :param price: 价格数值，调用方保证 > 0
+        :param slot: 格位号 1..8
+        :return: True 表示要买
+        """
+        return False
 
-    def InfoFilter(self,info_list:list):
-        flag :bool= False
-        for info in info_list:
-            if info[1]==CoinType.gold:
-                if info[0]==GoodsType.shepi or info[0]==GoodsType.fmpi:
-                    flag=True
-                    logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
-                    self.msg.append([MSGType.mshop,f"发现{info[2]}金币 {info[0]}"])
-                    # 统计只关注金币蛇皮和逢魔，黑碎仍保留原通知但不进入 mshop 明细。
-                    emit_stat = getattr(self, "emit_stat", None)
-                    if emit_stat:
-                        emit_stat(
-                            StatEvent.MSHOP,
-                            goods=info[0].name,
-                            price=info[2],
-                        )
-                    #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}金币 {info[0]}", title="神秘商店提醒")
-            if info[1]==CoinType.jade: 
-                 if info[0]==GoodsType.heisui: 
-                    if 0<info[2]<45 or 70<info[2]<96 or info[2]>=120:
-                        flag=True
-                        logger.info(f"GoodsType:{info[0]} CoinType:{info[1]} CoinNum:{info[2]}")
-                        #self.config.notifier.push(content=f"   {self.account_info} 发现{info[2]}勾黑碎", title="神秘商店提醒")
-                        self.msg.append([MSGType.mshop,f"发现{info[2]}勾黑碎"])
-                        self.push_notify(content=f" 发现{info[2]}勾黑碎", title="协作任务提醒")
-        return flag
+    def _notify_item(self, item: SlotItem) -> None:
+        """播报一件命中商品，msg / push_notify / emit_stat 三个通道全发。
+
+        原实现按货物类型分通道，分支依据已移入 _should_buy，通道层不再区分类型。
+        emit_stat 用 getattr 守卫：Mshop 不一定混入了 StatLogMixin。
+        """
+        content = f'发现{item.price}{COIN_NAMES[item.coin]}{GOODS_NAMES[item.goods]}'
+        logger.info(f'格位 {item.slot} {content}')
+        self.msg.append([MSGType.mshop, content])
+        self.push_notify(content=f' {content}', title='神秘商店提醒')
+        emit_stat = getattr(self, 'emit_stat', None)
+        if emit_stat:
+            emit_stat(StatEvent.MSHOP, goods=item.goods.name, price=item.price)
 
 
 if __name__ == "__main__":

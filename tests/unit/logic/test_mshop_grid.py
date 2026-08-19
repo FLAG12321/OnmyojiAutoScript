@@ -118,3 +118,30 @@ def test_goods_rule_cache_key_includes_threshold():
     stricter = goods_rule(GOODS_TEMPLATES[GoodsType.heisui], threshold=0.9)
     assert default is not stricter
     assert stricter.threshold == 0.9
+
+
+@pytest.mark.unit
+def test_msfind_uses_grid_scan_not_per_slot_assets():
+    """MsFind 必须走格位扫描，且彻底不再引用 24 个逐格位商品资产与 16 个币种资产。
+
+    这些资产留在 assets.py 里（删除需动 res/*.json），所以只能用源码断言
+    确认新代码没有回退到旧路径。
+    """
+    source = (REPO_ROOT / 'tasks/DailyAltAcc/mshop.py').read_text(encoding='utf-8')
+    assert '_scan_slots' in source
+    assert '_should_buy' in source
+    assert 'I_MS_GOODS_' not in source
+    assert 'I_MS_PRICE_' not in source
+    assert 'I_MS_PRICES_' not in source
+    assert 'I_MS_ALL_' not in source
+    assert 'FindGoodsType' not in source
+    assert 'FindCoinTypeAndCoinNum' not in source
+    assert 'InfoFilter' not in source
+
+
+@pytest.mark.unit
+def test_msfind_notify_title_is_mystery_shop():
+    """通知标题必须是神秘商店提醒，不能沿用协作任务的遗留标题。"""
+    source = (REPO_ROOT / 'tasks/DailyAltAcc/mshop.py').read_text(encoding='utf-8')
+    assert "title='神秘商店提醒'" in source
+    assert '协作任务提醒' not in source
