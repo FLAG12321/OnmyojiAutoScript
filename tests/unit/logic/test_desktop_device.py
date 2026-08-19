@@ -2035,10 +2035,53 @@ class _AlwaysReachedTimer:
     def start(self):
         return self
 
+    def started(self):
+        # 恒为「已启动」，配合 reached 恒真让庭院二次确认在一轮内通过
+        return True
+
     def reached(self):
         return True
 
     def reset(self):
+        return self
+
+    def clear(self):
+        return self
+
+
+class _TickTimer:
+    """按调用次数驱动的 Timer 桩，语义与真实 Timer 一致但不依赖真实时间。
+
+    start 之后 reached() 被调用满 TICKS 次才算到点，用来在测试里精确控制
+    「庭院二次确认」隔了几轮才通过，避免 sleep 让测试变慢变脆。
+    """
+    TICKS = 2
+
+    def __init__(self, limit, count=0):
+        self.limit = limit
+        self._started = False
+        self._calls = 0
+
+    def start(self):
+        if not self._started:
+            self._started = True
+            self._calls = 0
+        return self
+
+    def started(self):
+        return self._started
+
+    def reached(self):
+        self._calls += 1
+        return self._started and self._calls > self.TICKS
+
+    def reset(self):
+        self._calls = 0
+        return self
+
+    def clear(self):
+        self._started = False
+        self._calls = 0
         return self
 
 
@@ -2125,6 +2168,282 @@ def test_app_handle_login_emulator_never_touches_popup(monkeypatch):
         AssertionError('模拟器流程不应确认桌面弹窗'))
     t = _login_handler_for_popup(monkeypatch, dev)
     t._app_handle_login()
+
+
+def test_login_popup_handles_and_returns_immediately():
+    """识别到弹窗就点掉并立即返回，不继续往下探测其它弹窗。
+
+    一轮只处理一个弹窗，调用方随即重新截图再判——弹窗是逐个弹出的，拿同一张旧截图接着点
+    下一个，只会点到已经变了的画面上。
+    """
+    from tasks.Restart.login import LoginHandler
+    t = object.__new__(LoginHandler)
+    t.skip_onmyoji_genie = True
+    clicked = []
+    # 第一个分支（抵扣券）就命中
+    t.appear_then_click = lambda rule, **kw: clicked.append(rule.name) or True
+    assert t._login_popup_blocking() is True
+    assert clicked == [LoginHandler.I_OFF_TICKET.name], f'命中后应立即返回: {clicked}'
+
+
+def test_login_popup_returns_false_when_nothing_present():
+    # 一个弹窗都没有才返回 False，让调用方去判庭院
+    from tasks.Restart.login import LoginHandler
+    t = object.__new__(LoginHandler)
+    t.skip_onmyoji_genie = True
+    t.appear_then_click = lambda *a, **kw: False
+    assert t._login_popup_blocking() is False
+
+
+def test_login_popup_respects_skip_genie():
+    # 阴阳师精灵提示在 skip 时不该被点掉，那是用户主动要求保留的提示
+    from tasks.Restart.login import LoginHandler
+    t = object.__new__(LoginHandler)
+    seen = []
+    t.appear_then_click = lambda rule, **kw: seen.append(rule.name) or False
+    t.skip_onmyoji_genie = True
+    t._login_popup_blocking()
+    assert LoginHandler.I_LOGIN_LOGIN_ONMYOJI_GENIE.name not in seen
+    seen.clear()
+    t.skip_onmyoji_genie = False
+    t._login_popup_blocking()
+    assert LoginHandler.I_LOGIN_LOGIN_ONMYOJI_GENIE.name in seen
+
+
+def test_courtyard_confirm_delay_exceeds_popup_intervals():
+    """庭院确认延迟必须长于所有弹窗分支的 interval。
+
+    弹窗分支的 interval 是点击节流，静默期内 appear 在模板匹配之前就返回 False，那些帧会
+    放行庭院判定。只要确认延迟比最大 interval 长，弹窗真还在的话计时必然在走满之前被下一
+    次点击清掉；反之（延迟 <= 最大 interval）就可能出现「整个确认窗口都落在同一个静默期
+    内」，弹窗压着庭院也能走完确认，退回误判登录完成的老问题。
+    """
+    from tasks.Restart.login import LoginHandler, LOGIN_COURTYARD_CONFIRM_DELAY
+    t = object.__new__(LoginHandler)
+    t.skip_onmyoji_genie = False
+    intervals = []
+
+    def appear_then_click(rule, **kw):
+        # 不传 interval 的分支每帧都真判，没有静默期，不参与这个约束
+        if kw.get('interval') is not None:
+            intervals.append((rule.name, kw['interval']))
+        return False
+
+    t.appear_then_click = appear_then_click
+    t._login_popup_blocking()
+    assert intervals, '应当探测到带 interval 的弹窗分支'
+    worst = max(intervals, key=lambda kv: kv[1])
+    assert LOGIN_COURTYARD_CONFIRM_DELAY > worst[1], (
+        f'确认延迟 {LOGIN_COURTYARD_CONFIRM_DELAY}s 必须大于最长弹窗节流 '
+        f'{worst[0]}={worst[1]}s，否则弹窗压着庭院也能走完二次确认')
+
+
+def _login_handler_for_courtyard(monkeypatch, appear, turn, popup=None):
+    """构造只走庭院二次确认的 LoginHandler 桩。
+
+    :param appear: 庭院标识判定桩，按轮次返回画面内容
+    :param turn: 单元素列表，_app_handle_login 每轮自增一次，供桩判断当前轮次
+    :param popup: 可选，弹窗判定桩 (rule) -> bool；返回真表示这一轮该弹窗被识别并点掉
+    """
+    from tasks.Restart.login import LoginHandler
+    monkeypatch.setattr('tasks.Restart.login.Timer', _TickTimer)
+    dev = object.__new__(Device)
+    dev.config = types.SimpleNamespace(
+        script=types.SimpleNamespace(device=types.SimpleNamespace(serial='127.0.0.1:16384')))
+    t = object.__new__(LoginHandler)
+    t.device = dev
+    t.device.stuck_record_add = lambda name: None
+    t.device.get_orientation = lambda: None
+    t.screenshot = lambda: None
+    t.skip_onmyoji_genie = True
+    t.click = lambda *a, **kw: False
+    t.ocr_appear = lambda *a, **kw: False
+    t.ocr_appear_click = lambda *a, **kw: False
+    t.appear = appear
+
+    # I_CANCEL_BATTLE 在每轮循环里恰好被 appear_then_click 探测一次，用它数轮次
+    def appear_then_click(rule, *a, **kw):
+        if rule is LoginHandler.I_CANCEL_BATTLE:
+            turn[0] += 1
+            # 桩里的 screenshot 是 no-op，不会触发 stuck_record_check，所以判定逻辑一旦
+            # 不收敛（例如漏算某个庭院标识，计时被反复清掉）测试就会挂死。这里主动封顶，
+            # 让它以明确的断言失败结束而不是拖到超时。
+            if turn[0] > 50:
+                raise AssertionError(
+                    '登录循环未收敛：庭院二次确认的计时始终走不完，检查庭院标识是否漏算')
+            # 它自己命中会 continue 跳过判定，这里只用于计数，恒不命中
+            return False
+        # 弹窗现在由 _login_popup_blocking 用 appear_then_click 识别并点掉，
+        # 由 popup 回调决定本轮哪个弹窗命中
+        return bool(popup and popup(rule))
+
+    t.appear_then_click = appear_then_click
+    return t
+
+
+def test_app_handle_login_courtyard_needs_second_confirm(monkeypatch):
+    """首次看到庭院不能立刻认定登录完成。
+
+    点掉一个弹窗到下一个弹窗冒出来之间会露出一段真实的干净庭院画面，单帧截图无法把它和
+    「真的进庭院了」区分开。所以首次看到只启动计时，隔一段时间后再判一次才认。
+    """
+    from tasks.Restart.login import LoginHandler
+
+    turn = [0]
+    # 庭院全程干净可见，且从不出现任何弹窗
+    t = _login_handler_for_courtyard(
+        monkeypatch,
+        lambda rule, **kw: rule is LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS,
+        turn)
+
+    t._app_handle_login()
+    # 第 1 轮只启动计时，之后每轮 reached() 各消耗一次，满 TICKS 才跳出
+    assert turn[0] == _TickTimer.TICKS + 2
+
+
+def test_app_handle_login_popup_midway_restarts_courtyard_timer(monkeypatch):
+    """计时中途识别到弹窗要停止计时，等下一次庭院出现再从头开始计。
+
+    这是随机弹窗的关键：若中途只是「暂停」或干脆无视，弹窗关掉后残余的计时会立刻到点，
+    等于又回到看一瞬间就认定的老问题。
+    """
+    from tasks.Restart.login import LoginHandler
+
+    turn = [0]
+    interrupt_at = 2  # 第 2 轮冒出弹窗打断计时
+
+    t = _login_handler_for_courtyard(
+        monkeypatch,
+        # 庭院标识全程可匹配（弹窗盖在庭院上时背景照样能匹配到）
+        lambda rule, **kw: rule is LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS,
+        turn,
+        popup=lambda rule: rule is LoginHandler.I_LOGIN_RED_CLOSE and turn[0] == interrupt_at)
+
+    t._app_handle_login()
+    # 第 1 轮启动计时；第 2 轮识别到弹窗、点掉并清零；第 3 轮重新启动，再满 TICKS 次才跳出。
+    # 没有「识别到弹窗即清零」的话会在 TICKS+2 轮就跳出，这里必须多花被打断的那两轮。
+    assert turn[0] == _TickTimer.TICKS + 4
+
+
+def test_app_handle_login_popup_over_courtyard_is_not_courtyard(monkeypatch):
+    """弹窗还在处理时不算庭院，二次确认那一刻也不能放行。
+
+    弹窗背后就是庭院，卷轴与式神录按钮照样能匹配到。少了「先处理弹窗、有弹窗就重来」这层
+    收口，确认到点时只要恰好压着弹窗就会误放行。
+    """
+    from tasks.Restart.login import LoginHandler
+
+    turn = [0]
+
+    t = _login_handler_for_courtyard(
+        monkeypatch,
+        lambda rule, **kw: rule is LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS,
+        turn,
+        # 弹窗一直在，直到确认本该到点之后才消失
+        popup=lambda rule: (rule is LoginHandler.I_LOGIN_RED_CLOSE
+                            and turn[0] <= _TickTimer.TICKS + 2))
+
+    t._app_handle_login()
+    # 弹窗期间一轮都不许放行：计时只能在弹窗消失后才开始，跳出必然晚于弹窗消失那一轮
+    assert turn[0] > _TickTimer.TICKS + 2
+
+
+def test_app_handle_login_popup_skips_courtyard_probe_entirely(monkeypatch):
+    """本轮处理了弹窗就直接重来，压根不做庭院识别。
+
+    弹窗识别到就点掉并 continue，庭院标识只在一个弹窗都没有时才去看。这样弹窗那几帧既省掉
+    庭院侧的模板匹配与 OCR，也不可能出现「弹窗还在、庭院标识却匹配到了」的中间结论。
+    """
+    from tasks.Restart.login import LoginHandler
+
+    turn = [0]
+    probed = []
+
+    def appear(rule, **kw):
+        if rule in (LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS, LoginHandler.I_LOGIN_SCROOLL_OPEN,
+                    LoginHandler.I_LOGIN_SCROOLL_CLOSE, LoginHandler.I_LOGIN_COURTYARD,
+                    LoginHandler.I_LOGIN_COURTYARD2):
+            probed.append(turn[0])
+            return rule is LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS
+        return False
+
+    t = _login_handler_for_courtyard(
+        monkeypatch, appear, turn,
+        # 前两轮识别到弹窗并点掉，之后干净
+        popup=lambda rule: rule is LoginHandler.I_LOGIN_RED_CLOSE and turn[0] <= 2)
+    ocr_calls = []
+    t.ocr_appear = lambda rule, **kw: ocr_calls.append(turn[0]) or False
+
+    t._app_handle_login()
+    # 处理弹窗的那两轮完全没碰庭院标识，也没跑 OCR
+    assert 1 not in probed and 2 not in probed, f'弹窗期间仍在识别庭院: {probed}'
+    assert not ocr_calls, f'弹窗期间仍在跑 OCR: {ocr_calls}'
+    # 弹窗结束后才开始计时，跳出必然晚于弹窗消失那一轮
+    assert turn[0] > _TickTimer.TICKS + 2
+
+
+def test_login_popup_covers_every_closed_popup():
+    """登录期间会主动关闭的弹窗都要收在 _login_popup_blocking 里。
+
+    漏掉一个，它出现的那些帧就会被当成「没有弹窗」而放行庭院判定——弹窗压着庭院却认成登录
+    完成，正是这么来的。I_CANCEL_BATTLE 与切号相关按钮在主循环里单独处理，不属于这里。
+    """
+    from tasks.Restart.login import LoginHandler
+    from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
+
+    expected = {
+        LoginHandler.I_OFF_TICKET, LoginHandler.I_LOGIN_GET_COUPON,
+        LoginHandler.I_LOGIN_LOAD_DOWN, LoginHandler.I_WATCH_VIDEO_CANCEL,
+        LoginHandler.I_LOGIN_RED_CLOSE, LoginHandler.I_LOGIN_YELLOW_CLOSE,
+        LoginHandler.I_LOGIN_LOGIN_GOTO_BIND_PHONE, gia.I_I_REJECT,
+        LoginHandler.I_LOGIN_LOGIN_ONMYOJI_GENIE,
+    }
+    t = object.__new__(LoginHandler)
+    t.skip_onmyoji_genie = False
+    seen = []
+    t.appear_then_click = lambda rule, **kw: seen.append(rule.name) or False
+    t._login_popup_blocking()
+    missing = {r.name for r in expected} - set(seen)
+    assert not missing, f'弹窗清单漏收: {missing}'
+
+
+@pytest.mark.parametrize('mark', ['I_LOGIN_SCROOLL_CLOSE', 'I_LOGIN_COURTYARD',
+                                  'I_LOGIN_COURTYARD2', 'I_LOGIN_SCROOLL_OPEN'])
+def test_app_handle_login_courtyard_marks_all_count(monkeypatch, mark):
+    """卷轴没展开时式神录按钮是看不到的，此时闲庭图标／卷轴收起图标必须照样算庭院。
+
+    这些标识本身就出现在庭院里，点卷轴区域也是庭院内的动作。少算哪个，庭院里的正常画面
+    就会被判成「不是庭院」，计时被自己的卷轴动作反复清掉，二次确认永远走不完。
+    """
+    from tasks.Restart.login import LoginHandler
+
+    turn = [0]
+    target = getattr(LoginHandler, mark)
+    # 只有这一个标识可见，式神录按钮全程不可见（模拟卷轴没展开）
+    t = _login_handler_for_courtyard(monkeypatch, lambda rule, **kw: rule is target, turn)
+    # 点击一律不生效，避免点击分支的 continue 干扰轮次计数
+    t.click = lambda *a, **kw: False
+
+    t._app_handle_login()
+    # 与式神录按钮可见时的节奏一致：第 1 轮启动计时，满 TICKS 次后跳出
+    assert turn[0] == _TickTimer.TICKS + 2
+
+
+def test_app_handle_login_courtyard_ocr_fallback_counts(monkeypatch):
+    # 所有图像标识都不匹配时，OCR 兜底认出的庭院同样要算庭院并启动二次确认
+    from tasks.Restart.login import LoginHandler
+
+    turn = [0]
+    t = _login_handler_for_courtyard(monkeypatch, lambda rule, **kw: False, turn)
+    ocr_calls = []
+    t.ocr_appear = lambda rule, **kw: ocr_calls.append(kw) or True
+    t.click = lambda *a, **kw: False
+
+    t._app_handle_login()
+    assert turn[0] == _TickTimer.TICKS + 2
+    # 判定链里的 OCR 不带 interval（节流会漏判），且每轮只跑一次——OCR 比模板匹配贵得多
+    assert ocr_calls[0] == {}
+    assert len(ocr_calls) == turn[0]
 
 
 def test_emulator_stop_desktop_closes_client():

@@ -17,6 +17,21 @@ import time
 # 循环永久挂住。超过上限就交给 Restart 重建客户端，而不是继续等一个不会消失的弹窗。
 DESKTOP_MPAY_CLOSE_LIMIT = 5
 
+# 庭院稳定确认的延迟。登录弹窗是随机弹出的，点掉一个到下一个冒出来之间会露出一段真实的
+# 干净庭院画面，只看一瞬间的截图无法区分「真的进庭院了」和「两个弹窗之间的中间态」。
+# 因此首次看到庭院只启动计时、不作数，等这段时间过完再判一次，两次都是干净庭院才认定
+# 登录完成；期间弹窗照常处理，中途识别到弹窗就停止计时，等下次看到庭院重新开始。
+#
+# 这个值必须大于 _login_popup_blocking 里所有弹窗分支的 interval（当前最大 1.6s，红/黄
+# 关闭）。弹窗分支的 interval 是点击节流，静默期内 appear 直接返回 False，那些帧会放行
+# 庭院判定；只要确认延迟比最大 interval 长，弹窗真还在的话计时必然在走满之前被下一次点击
+# 清掉，所以不会误判。调小这个值或调大某个弹窗的 interval 都会破坏该保证，
+# test_courtyard_confirm_delay_exceeds_popup_intervals 会拦住。
+#
+# LOGIN_CHECK 在 Device.stuck_long_wait_list 里，登录的卡死预算是 stuck_timer_long 的
+# 300s，这点延迟占不到 1%，不会把正常登录推成误报卡死。
+LOGIN_COURTYARD_CONFIRM_DELAY = 2.5
+
 
 class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     character: str
@@ -28,6 +43,67 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         self.O_LOGIN_SPECIFIC_SERVE.keyword = self.character
         # self.specific_usr = kwargs['config'].
 
+    def _login_popup_blocking(self) -> bool:
+        """处理登录期间的弹窗：识别到一个就点掉并立即返回，让调用方重新截图再判。
+
+        登录循环的判定顺序是「先处理弹窗，一个都没有才判庭院」。弹窗背后就是庭院，庭院标识
+        照样能匹配到，所以只要还有弹窗在处理，这一轮就不能碰庭院判定。
+
+        注意各分支的 interval 是点击节流：静默期内 appear 会在模板匹配之前直接返回 False，
+        于是「弹窗还在、但本轮不点」的帧会让本函数返回 False、放行庭院判定。这不会造成误判，
+        因为庭院二次确认的延迟比所有弹窗 interval 都长（见 LOGIN_COURTYARD_CONFIRM_DELAY），
+        弹窗真在的话计时必然在走满之前被下一次点击清掉。
+        :return: 处理了弹窗返回 True
+        """
+        # 网络异常
+        # if self.ocr_appear(self.O_LOGIN_NETWORK):
+        #     logger.error('Network error')
+        #     raise RequestHumanTakeover('Network error')
+
+        # 跳过观看视频
+        # if self.ocr_appear_click(self.O_LOGIN_SKIP_1, interval=1):
+        #     return False
+        # 领取抵扣券
+        if self.appear_then_click(self.I_OFF_TICKET, interval=1):
+            return True
+        #领取抵扣券
+        if self.appear_then_click(self.I_LOGIN_GET_COUPON, interval=1):
+            return True
+        # 下载插画
+        if self.appear_then_click(self.I_LOGIN_LOAD_DOWN, interval=1):
+            logger.info('Download inbetweening')
+            return True
+        # 不观看视频
+        if self.appear_then_click(self.I_WATCH_VIDEO_CANCEL, interval=0.6):
+            logger.info('Close video')
+            return True
+        # 右上角的红色的关闭
+        if self.appear_then_click(self.I_LOGIN_RED_CLOSE, interval=1.6):
+            logger.info('Close red close')
+            return True
+        # 左上角的黄色关闭
+        if self.appear_then_click(self.I_LOGIN_YELLOW_CLOSE, interval=1.6):
+            logger.info('Close yellow close')
+            return True
+        # 绑定手机号弹窗
+        if self.appear_then_click(self.I_LOGIN_LOGIN_GOTO_BIND_PHONE):
+            while 1:
+                self.screenshot()
+                if self.appear_then_click(self.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
+                    logger.info("Close bind phone")
+                    break
+            return True
+        # 关闭各种邀请弹窗(主要时结界卡寄养邀请)
+        from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
+        if self.appear_then_click(gia.I_I_REJECT, interval=0.8):
+            logger.info("reject invites")
+            return True
+        # 关闭阴阳师精灵提示
+        if not self.skip_onmyoji_genie and self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
+            logger.info("click onmyoji genie")
+            return True
+        return False
+
     def _app_handle_login(self) -> bool:
         """
         最终是在庭院界面
@@ -36,7 +112,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         logger.hr('App login')
         self.device.stuck_record_add('LOGIN_CHECK')
 
-        confirm_timer = Timer(1.5, count=2).start()
+        # 庭院二次确认计时器。首次看到干净庭院时才 start，到点后再判一次才认定登录完成；
+        # 中途画面不是干净庭院就 clear，等下次重新看到庭院从头计时。
+        courtyard_timer = Timer(LOGIN_COURTYARD_CONFIRM_DELAY)
         orientation_timer = Timer(10)
         login_success = False
         # 本次登录已处理过的 MPay 弹窗次数，用于给「关掉又重弹」封顶
@@ -79,81 +157,56 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')
                 continue
-                        # 确认进入庭院
+            # ── 先处理弹窗，识别到一个就点掉并重来，本轮不碰庭院判定 ──
+            # 弹窗背后就是庭院，庭院标识照样能匹配到，所以还有弹窗要处理时判庭院不可信。
+            if self._login_popup_blocking():
+                # 本轮处理了弹窗，已经开始的二次确认作废，等下次看到庭院重新计时
+                courtyard_timer.clear()
+                continue
+            # ── 所有弹窗都不在，才判断是不是庭院 ──
+            # 这些标识出现都意味着已经在庭院里：式神录按钮和展开的卷轴要卷轴展开后才有，
+            # 卷轴收起图标与闲庭图标则是卷轴没展开时唯一的证据，少算哪个都会让庭院里的
+            # 正常画面被判成「不是庭院」，计时被自己的卷轴动作反复清掉，确认永远走不完。
+            # 一律不传 interval：判定的是画面状态而非点击节流，带上会让静默期内的每一帧
+            # 都误判成非庭院；桌面端截图间隔可低到 0.05s，这种漏判会让确认永远走不完。
+            courtyard_mark = (self.appear(self.I_MAIN_GOTO_SHIKIGAMI_RECORDS)
+                              or self.appear(self.I_LOGIN_SCROOLL_OPEN)
+                              or self.appear(self.I_LOGIN_SCROOLL_CLOSE, threshold=0.9)
+                              or self.appear(self.I_LOGIN_COURTYARD)
+                              or self.appear(self.I_LOGIN_COURTYARD2))
+            # OCR 比模板匹配贵得多，只在所有图像标识都没命中时才兜底跑一次，结果下面复用
+            courtyard_ocr = False if courtyard_mark else self.ocr_appear(self.O_LOGIN_COURTYARD)
+            courtyard = courtyard_mark or courtyard_ocr
+            # 已看到庭院即可停掉屏幕旋转检测，不必等二次确认通过
+            if courtyard:
+                login_success = True
+            if not courtyard:
+                # 还没进庭院，之前的观察作废重新等
+                courtyard_timer.clear()
+            elif not courtyard_timer.started():
+                # 首次看到庭院不能立刻认定：可能只是点掉一个弹窗、下一个还没弹出来的中间态
+                courtyard_timer.start()
+                logger.info(f'Courtyard appears, confirm again after {LOGIN_COURTYARD_CONFIRM_DELAY}s')
+            elif courtyard_timer.reached():
+                # 隔了一段时间后再次看到干净庭院，才认定这是稳定的庭院画面
+                logger.info('Login to main confirm (courtyard stable)')
+                break
+
+            # ── 庭院里该点的东西。触发条件不能换成 courtyard：式神录按钮已经露出来时
+            # 再点卷轴区域会把卷轴收回去。这些都是庭院内的动作，不影响已开始的计时。──
+            # 确认进入庭院
             if self.appear_then_click(self.I_LOGIN_SCROOLL_CLOSE, interval=2, threshold=0.9):
                 logger.info('Open scroll')
                 continue
             # 确认进入庭院(优化：当出现闲庭图片时，点击卷轴关闭区域，然后判断式神录按钮出现就代表登录成功)
-            if self.appear(self.I_LOGIN_COURTYARD, interval=0.2) or self.appear(self.I_LOGIN_COURTYARD2, interval=0.2) or self.ocr_appear(self.O_LOGIN_COURTYARD, interval=0.2):
+            if (self.appear(self.I_LOGIN_COURTYARD, interval=0.2)
+                    or self.appear(self.I_LOGIN_COURTYARD2, interval=0.2)
+                    or courtyard_ocr):
                 if self.click(self.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                     logger.info('Click scroll close area because courtyard appears')
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
                     continue
-            if self.appear(self.I_MAIN_GOTO_SHIKIGAMI_RECORDS, interval=0.2):
-                if confirm_timer.reached():
-                    logger.info('Login to main confirm (shikigami records button appears)')
-                    break
-            elif self.appear(self.I_LOGIN_SCROOLL_OPEN, interval=0.2):
-                if confirm_timer.reached():
-                    logger.info('Login to main confirm (scroll open)')
-                    break
-            else:
-                confirm_timer.reset()
-            # 登录成功
-            if self.appear(self.I_MAIN_GOTO_SHIKIGAMI_RECORDS, interval=0.5):
-                logger.info('Login success: shikigami records button appears')
-                login_success = True
-            elif self.appear(self.I_LOGIN_SCROOLL_OPEN, interval=0.5):
-                logger.info('Login success: scroll open')
-                login_success = True
 
-            # 网络异常
-            # if self.ocr_appear(self.O_LOGIN_NETWORK):
-            #     logger.error('Network error')
-            #     raise RequestHumanTakeover('Network error')
-
-            # 跳过观看视频
-            # if self.ocr_appear_click(self.O_LOGIN_SKIP_1, interval=1):
-            #     continue
-            # 领取抵扣券
-            if self.appear_then_click(self.I_OFF_TICKET, interval=1):
-                continue
-            #领取抵扣券
-            if self.appear_then_click(self.I_LOGIN_GET_COUPON, interval=1):
-                continue
-            # 下载插画
-            if self.appear_then_click(self.I_LOGIN_LOAD_DOWN, interval=1):
-                logger.info('Download inbetweening')
-                continue
-            # 不观看视频
-            if self.appear_then_click(self.I_WATCH_VIDEO_CANCEL, interval=0.6):
-                logger.info('Close video')
-                continue
-            # 右上角的红色的关闭
-            if self.appear_then_click(self.I_LOGIN_RED_CLOSE, interval=1.6):
-                logger.info('Close red close')
-                continue
-            # 左上角的黄色关闭
-            if self.appear_then_click(self.I_LOGIN_YELLOW_CLOSE, interval=1.6):
-                logger.info('Close yellow close')
-                continue
-            # 绑定手机号弹窗
-            if self.appear_then_click(self.I_LOGIN_LOGIN_GOTO_BIND_PHONE):
-                while 1:
-                    self.screenshot()
-                    if self.appear_then_click(self.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
-                        logger.info("Close bind phone")
-                        break
-                continue
-            # 关闭各种邀请弹窗(主要时结界卡寄养邀请)
-            from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
-            if self.appear_then_click(gia.I_I_REJECT, interval=0.8):
-                logger.info("reject invites")
-                continue
-            # 关闭阴阳师精灵提示
-            if not self.skip_onmyoji_genie and self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
-                logger.info("click onmyoji genie")
-                continue
             # 当账号未登录时点击登录
             from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
             if self.appear_then_click(SwitchAccountAssets.I_SA_ACCOUNT_LOGIN_BTN, interval=0.8):
