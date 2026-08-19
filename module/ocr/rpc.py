@@ -2,11 +2,13 @@
 # @author runhey
 # github https://github.com/runhey
 import atexit
+import gc
 import os
 import pickle
 import socket
 import subprocess
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -22,6 +24,9 @@ from module.ocr.result import BoxedResult
 # 那样 onnxruntime 的 DLL 初始化必然失败。必须用独立入口 module.ocr.server_boot
 # 保证 onnxruntime 先于 gevent 加载，详见 server_boot.py 的说明。
 _OCR_SERVER_PROCESS: Optional[subprocess.Popen] = None
+_OCR_CONTROL_CLIENT = None
+_OCR_CONTROL_ADDRESS: Optional[str] = None
+_OCR_CONTROL_LOCK = threading.Lock()
 
 
 def _normalize_address(address: str) -> str:
@@ -38,10 +43,10 @@ def _split_host_port(address: str) -> tuple[str, int]:
     return host, int(port)
 
 
-def _is_port_in_use(host: str, port: int) -> bool:
+def _is_port_in_use(host: str, port: int, timeout: float = 0.5) -> bool:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.settimeout(0.5)
+        s.settimeout(timeout)
         s.connect((host, port))
         s.shutdown(2)
         return True
@@ -144,6 +149,77 @@ def shutdown_ocr_server(timeout: float = 2.0) -> bool:
         _OCR_SERVER_PROCESS = None
 
 
+def notify_ocr_instance_state(instance_id: str, active: bool) -> bool:
+    """通知 OCR RPC 某个实例是否正在执行任务。"""
+    try:
+        from module.server.setting import State
+        deploy_config = State.deploy_config
+    except Exception as e:
+        logger.debug(f'OCR instance state configuration unavailable: {e}')
+        return False
+    try:
+        use_server = bool(deploy_config.UseOcrServer)
+        start_server = bool(deploy_config.StartOcrServer)
+    except Exception as e:
+        logger.debug(f'OCR instance state options unavailable: {e}')
+        return False
+    if not use_server or not start_server:
+        return False
+
+    address = deploy_config.OcrClientAddress or '127.0.0.1:22268'
+    client = _get_ocr_control_client(address)
+    if client is None:
+        return False
+
+    try:
+        return bool(client.set_instance_active(str(instance_id), bool(active)))
+    except Exception as e:
+        _reset_ocr_control_client(client)
+        logger.debug(f'OCR instance state notification failed: {e}')
+        # RPC 服务可能刚完成重启，当前通知重连一次，避免丢失本次任务边界。
+        client = _get_ocr_control_client(address)
+        if client is None:
+            return False
+        try:
+            return bool(client.set_instance_active(str(instance_id), bool(active)))
+        except Exception as retry_error:
+            _reset_ocr_control_client(client)
+            logger.debug(f'OCR instance state retry failed: {retry_error}')
+            return False
+
+
+def _get_ocr_control_client(address: str):
+    """复用每个实例进程的轻量控制连接，避免每个任务重复握手。"""
+    global _OCR_CONTROL_CLIENT, _OCR_CONTROL_ADDRESS
+    normalized = _normalize_address(address)
+    with _OCR_CONTROL_LOCK:
+        if _OCR_CONTROL_CLIENT is not None and _OCR_CONTROL_ADDRESS == normalized:
+            return _OCR_CONTROL_CLIENT
+        try:
+            host, port = _split_host_port(address)
+            # 服务未监听时快速返回，避免每个无 OCR 任务边界等待 RPC 超时。
+            if not _is_port_in_use(host, port, timeout=0.1):
+                return None
+            client = zerorpc.Client(timeout=0.5)
+            client.connect(normalized)
+            client.ping()
+        except Exception as e:
+            logger.debug(f'OCR RPC control connection failed: {e}')
+            return None
+        _OCR_CONTROL_CLIENT = client
+        _OCR_CONTROL_ADDRESS = normalized
+        return client
+
+
+def _reset_ocr_control_client(client) -> None:
+    """连接失效后清空缓存，下一次状态通知会重新连接。"""
+    global _OCR_CONTROL_CLIENT, _OCR_CONTROL_ADDRESS
+    with _OCR_CONTROL_LOCK:
+        if _OCR_CONTROL_CLIENT is client:
+            _OCR_CONTROL_CLIENT = None
+            _OCR_CONTROL_ADDRESS = None
+
+
 def serve_forever(host: str, port: int) -> None:
     """在当前进程里启动 zerorpc 服务并阻塞。
 
@@ -166,10 +242,100 @@ def _get_server_model():
 
 
 class OcrServer:
-    def __init__(self) -> None:
-        self.model = _get_server_model()
+    """常驻 RPC 服务端，按需加载并回收 OCR 模型。"""
+
+    # 模型连续 10 分钟未被调用时释放，RPC 监听进程本身继续保留。
+    MODEL_IDLE_TIMEOUT = 10 * 60
+    MODEL_IDLE_CHECK_INTERVAL = 30
+
+    def __init__(
+        self,
+        idle_timeout: float = MODEL_IDLE_TIMEOUT,
+        idle_check_interval: float = MODEL_IDLE_CHECK_INTERVAL,
+    ) -> None:
+        # 服务启动时不构造模型，避免空闲实例也占用 GPU。
+        self.model = None
+        self._model_lock = threading.Lock()
+        self._active_requests = 0
+        self._active_instances: set[str] = set()
+        self._instance_tracking_enabled = False
+        self._last_used = time.monotonic()
+        self._idle_timeout = max(0.0, float(idle_timeout))
+        self._idle_check_interval = max(0.01, float(idle_check_interval))
+        self._idle_monitor = threading.Thread(
+            target=self._release_idle_model,
+            name='ocr-model-idle-monitor',
+            daemon=True,
+        )
+        self._idle_monitor.start()
 
     def ping(self) -> bool:
+        return True
+
+    def set_instance_active(self, instance_id: str, active: bool) -> bool:
+        """记录实例任务状态，全部实例空闲后立即释放 OCR 模型。"""
+        instance_id = str(instance_id or '').strip()
+        if not instance_id:
+            return False
+        with self._model_lock:
+            if active:
+                self._instance_tracking_enabled = True
+                self._active_instances.add(instance_id)
+                return True
+            if not self._instance_tracking_enabled:
+                return True
+            self._active_instances.discard(instance_id)
+            if not self._active_instances and not self._active_requests:
+                self._release_model_locked('all instances are idle')
+            return True
+
+    def _acquire_model(self):
+        """获取模型并记录进行中的请求，模型只在首次 OCR 时加载。"""
+        with self._model_lock:
+            if self.model is None:
+                self.model = _get_server_model()
+                logger.info('OCR model loaded on first request')
+            self._active_requests += 1
+            self._last_used = time.monotonic()
+            return self.model
+
+    def _release_request(self) -> None:
+        with self._model_lock:
+            self._active_requests = max(0, self._active_requests - 1)
+            self._last_used = time.monotonic()
+            if (self._instance_tracking_enabled and not self._active_instances
+                    and not self._active_requests):
+                self._release_model_locked('all instances are idle')
+
+    def _run_with_model(self, callback):
+        model = self._acquire_model()
+        try:
+            return callback(model)
+        finally:
+            self._release_request()
+
+    def _release_idle_model(self) -> None:
+        """回收空闲模型，避免后台线程在识别进行时清理模型。"""
+        while True:
+            time.sleep(self._idle_check_interval)
+            with self._model_lock:
+                if self.model is None:
+                    continue
+                idle_seconds = time.monotonic() - self._last_used
+                if self._active_requests or idle_seconds < self._idle_timeout:
+                    continue
+                self._release_model_locked('10 minutes without requests')
+
+    def _release_model_locked(self, reason: str) -> bool:
+        """在持有模型锁时清理模型及工厂缓存。"""
+        if self.model is None:
+            return False
+        self.model = None
+        # 清理统一工厂缓存，随后由 gc 尽快释放推理引擎及其 GPU 资源。
+        from module.ocr.models import clear_ocr_model_cache
+        clear_ocr_model_cache()
+        gc.collect()
+        logger.info(f'OCR model released: {reason}')
         return True
 
     def detect_and_ocr(
@@ -180,22 +346,28 @@ class OcrServer:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
     ) -> List[Dict[str, Any]]:
-        # 竖排旋转已下沉到 RapidOcrModel 内部，服务端只做参数转发与序列化
-        image = pickle.loads(image_bytes)
-        results = self.model.detect_and_ocr(image,
+        def recognize(model):
+            # 竖排旋转已下沉到 RapidOcrModel 内部，服务端只做参数转发与序列化
+            image = pickle.loads(image_bytes)
+            results = model.detect_and_ocr(image,
                                            drop_score=drop_score,
                                            unclip_ratio=unclip_ratio,
                                            box_thresh=box_thresh,
                                            vertical=vertical)
-        return [
-            {"box": _box_to_list(r.box), "ocr_text": r.ocr_text, "score": float(r.score)}
-            for r in results
-        ]
+            return [
+                {"box": _box_to_list(r.box), "ocr_text": r.ocr_text, "score": float(r.score)}
+                for r in results
+            ]
+
+        return self._run_with_model(recognize)
 
     def ocr_single_line(self, image_bytes: bytes):
-        image = pickle.loads(image_bytes)
-        result, score = self.model.ocr_single_line(image)
-        return result, float(score)
+        def recognize(model):
+            image = pickle.loads(image_bytes)
+            result, score = model.ocr_single_line(image)
+            return result, float(score)
+
+        return self._run_with_model(recognize)
 
 
 def _box_to_list(box) -> list:

@@ -8,6 +8,7 @@ from module.ocr.preload import preload_ocr_backend
 
 preload_ocr_backend()
 
+import atexit
 import zerorpc
 import zmq
 import msgpack
@@ -35,7 +36,7 @@ from module.base.utils import load_module
 from module.logger import logger
 from module.exception import *
 from module.server.i18n import I18n
-from module.ocr.rpc import ensure_ocr_server_started
+from module.ocr.rpc import ensure_ocr_server_started, notify_ocr_instance_state
 from module.server.setting import State
 
 
@@ -89,6 +90,9 @@ class Script:
         self._needs_recovery = False
         # 运行loop的线程
         self.loop_thread: Thread = None
+        # OCR 实例状态通知采用任务嵌套计数，避免任务内部调用 run() 时提前注销。
+        self._ocr_task_depth = 0
+        self._ocr_unregister_registered = False
 
     @cached_property
     def config(self) -> "Config":
@@ -520,7 +524,37 @@ class Script:
         except Exception:
             return True
 
+    def _ocr_task_start(self) -> None:
+        """通知 OCR RPC 当前实例开始执行任务。"""
+        self._ocr_task_depth = getattr(self, '_ocr_task_depth', 0) + 1
+        if self._ocr_task_depth != 1:
+            return
+        if not getattr(self, '_ocr_unregister_registered', False):
+            atexit.register(self._ocr_task_cleanup)
+            self._ocr_unregister_registered = True
+        notify_ocr_instance_state(getattr(self, 'config_name', 'oas'), True)
+
+    def _ocr_task_end(self) -> None:
+        """通知 OCR RPC 当前实例结束执行任务。"""
+        self._ocr_task_depth = max(0, getattr(self, '_ocr_task_depth', 0) - 1)
+        if self._ocr_task_depth == 0:
+            notify_ocr_instance_state(getattr(self, 'config_name', 'oas'), False)
+
+    def _ocr_task_cleanup(self) -> None:
+        """进程正常退出时注销实例，避免 RPC 保留过期任务状态。"""
+        if getattr(self, '_ocr_task_depth', 0):
+            self._ocr_task_depth = 0
+            notify_ocr_instance_state(getattr(self, 'config_name', 'oas'), False)
+
     def run(self, command: str) -> bool:
+        """在任务执行期间向 OCR RPC 保持实例活跃状态。"""
+        self._ocr_task_start()
+        try:
+            return self._run_task(command)
+        finally:
+            self._ocr_task_end()
+
+    def _run_task(self, command: str) -> bool:
         """
 
         :param command:  大写驼峰命名的任务名字

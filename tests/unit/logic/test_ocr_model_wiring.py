@@ -6,8 +6,10 @@ BaseCor 的参数转发接口，以及 SixRealms 竖排改用稳定参数接口�
 全程注入假引擎与假配置，不加载真实模型、不起 RPC 服务。
 """
 import ast
+import pickle
 import pathlib
 import sys
+import time
 import types
 
 import numpy as np
@@ -299,13 +301,59 @@ def test_vertical_text_no_longer_touches_engine_internals():
 # ---------------- RPC 服务端模型来源 ----------------
 
 def test_rpc_server_uses_v6_factory(monkeypatch):
-    """OcrServer 必须从统一工厂取 v6 模型，而不是自己 new 旧 TextSystem。"""
+    """OcrServer 应延迟到首次 OCR 请求时从统一工厂取 v6 模型。"""
     from module.ocr import rpc
 
     sentinel = object()
     monkeypatch.setattr(rpc, '_get_server_model', lambda: sentinel)
     server = rpc.OcrServer()
+    assert server.model is None
+    assert server.ping() is True
+    assert server._acquire_model() is sentinel
+    server._release_request()
+
+
+def test_rpc_server_loads_on_request_and_releases_when_idle(monkeypatch):
+    """RPC 监听常驻，但 OCR 模型按请求加载并可在空闲后释放。"""
+    from module.ocr import models, rpc
+
+    class FakeModel:
+        def ocr_single_line(self, image):
+            return 'ok', 0.99
+
+    model = FakeModel()
+    monkeypatch.setattr(rpc, '_get_server_model', lambda: model)
+    monkeypatch.setattr(models, 'clear_ocr_model_cache', lambda: None)
+
+    server = rpc.OcrServer(idle_timeout=0.01, idle_check_interval=0.01)
+    assert server.model is None
+    assert server.ping() is True
+    assert server.ocr_single_line(pickle.dumps(np.zeros((2, 2), dtype=np.uint8))) == ('ok', 0.99)
+    assert server.model is model
+
+    deadline = time.monotonic() + 1
+    while server.model is not None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server.model is None
+    assert server.ping() is True
+
+
+def test_rpc_server_releases_model_when_all_instances_become_idle(monkeypatch):
+    """所有实例注销任务后应立即释放模型，不必等待十分钟兜底计时器。"""
+    from module.ocr import models, rpc
+
+    sentinel = object()
+    monkeypatch.setattr(rpc, '_get_server_model', lambda: sentinel)
+    monkeypatch.setattr(models, 'clear_ocr_model_cache', lambda: None)
+
+    server = rpc.OcrServer(idle_timeout=60, idle_check_interval=60)
+    assert server.set_instance_active('oas1', True) is True
+    assert server._acquire_model() is sentinel
+    server._release_request()
     assert server.model is sentinel
+
+    assert server.set_instance_active('oas1', False) is True
+    assert server.model is None
     assert server.ping() is True
 
 

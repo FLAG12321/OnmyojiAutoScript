@@ -415,9 +415,19 @@ class ScriptProcess(ScriptWSManager):
         if cancel_error is not None:
             raise cancel_error
 
+    def _notify_ocr_instance_stopped(self) -> None:
+        """实例被强制停止前注销 OCR 活跃状态，避免等待超时回收模型。"""
+        try:
+            from module.ocr.rpc import notify_ocr_instance_state
+            notify_ocr_instance_state(self.config_name, False)
+        except Exception as error:
+            logger.debug(f'[{self.config_name}] OCR stop notification failed: {error}')
+
     async def _stop_locked(self, broadcast: bool = False):
         """先回收进程并收敛真实状态，再广播；查询异常仍继续 terminate/kill。"""
         process = self._process_snapshot()
+        if process is not None:
+            self._notify_ocr_instance_stopped()
         process_error = None
         status = False
         if process is not None:
@@ -657,5 +667,4 @@ if __name__ == '__main__':
     from time import sleep
     sleep(10)
     logger.info(p._process.exitcode)
-
 

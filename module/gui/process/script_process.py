@@ -56,6 +56,12 @@ class ScriptProcess(Process):
         是强制的，不会等待子进程结束
         :return:
         """
+        # 强制终止不会触发子进程清理，先注销 OCR 活跃状态。
+        try:
+            from module.ocr.rpc import notify_ocr_instance_state
+            notify_ocr_instance_state(self.config, False)
+        except Exception as error:
+            logger.debug(f'[{self.config}] OCR stop notification failed: {error}')
         self.terminate()
         self.join()
         logger.info(f'stop script {self.config}')
@@ -90,4 +96,3 @@ class ScriptProcess(Process):
         msg = {self.config: data}
         self.update_queue.put(msg)
         logger.info(f'Update tasks {self.config}')
-

@@ -140,6 +140,7 @@ class ProcessManager(QObject):
         else:
             logger.info(f'Script {config} is not running')
 
+
     @Slot(str)
     def restart(self, config: str) -> None:
         """
@@ -152,6 +153,12 @@ class ProcessManager(QObject):
                 logger.info(f'{config} process is dead, restart it')
 
 
+            # restart 直接终止子进程不会触发清理，先注销 OCR 活跃状态。
+            try:
+                from module.ocr.rpc import notify_ocr_instance_state
+                notify_ocr_instance_state(config, False)
+            except Exception as error:
+                logger.debug(f'[{config}] OCR restart notification failed: {error}')
             self.processes[config].terminate()  # 强制结束进程
             if self.ports[config] is None:
                 logger.error(f'{config} port {config} is None')
@@ -476,4 +483,3 @@ class ProcessManager(QObject):
             self.processes[config].stop()
         else:
             logger.info(f'Script {config} is not running')
-
