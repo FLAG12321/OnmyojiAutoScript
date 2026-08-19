@@ -138,6 +138,8 @@ class RestartAssets:
 	I_LOGIN_COURTYARD2 = RuleImage(roi_front=(1127,629,29,78), roi_back=(1066,585,128,131), threshold=0.7, method="Template matching", file="./tasks/Restart/login/login_courtyard2.png")
 	# 领取抵扣券 
 	I_LOGIN_GET_COUPON = RuleImage(roi_front=(716,438,134,41), roi_back=(471,306,560,269), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_get_coupon.png")
+	# 领取抵扣券 
+	I_OFF_TICKET = RuleImage(roi_front=(335,611,113,45), roi_back=(257,580,275,111), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_off_ticket.png")
 
 
 	# Ocr Rule Assets
@@ -149,5 +151,7 @@ class RestartAssets:
 	O_LOGIN_SKIP_1 = RuleOcr(roi=(1046,35,130,37), area=(1046,35,130,37), mode="Single", method="Default", keyword="点击屏幕跳过", name="login_skip_1")
 	# 登录指定角色，默认第一个 
 	O_LOGIN_SPECIFIC_SERVE = RuleOcr(roi=(110,120,350,600), area=(0,0,100,100), mode="Full", method="Default", keyword="", name="login_specific_serve")
+	# 试用卷轴识别 
+	O_LOGIN_COURTYARD = RuleOcr(roi=(1076,611,139,104), area=(1201,649,30,38), mode="Full", method="Default", keyword="用中", name="login_courtyard")
 
 

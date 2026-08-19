@@ -187,5 +187,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "领取抵扣券"
+  },
+  {
+    "itemName": "off_ticket",
+    "imageName": "login_off_ticket.png",
+    "roiFront": "335,611,113,45",
+    "roiBack": "257,580,275,111",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "领取抵扣券"
   }
 ]

@@ -84,7 +84,7 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 logger.info('Open scroll')
                 continue
             # 确认进入庭院(优化：当出现闲庭图片时，点击卷轴关闭区域，然后判断式神录按钮出现就代表登录成功)
-            if self.appear(self.I_LOGIN_COURTYARD, interval=0.2) or self.appear(self.I_LOGIN_COURTYARD2, interval=0.2):
+            if self.appear(self.I_LOGIN_COURTYARD, interval=0.2) or self.appear(self.I_LOGIN_COURTYARD2, interval=0.2) or self.ocr_appear(self.O_LOGIN_COURTYARD, interval=0.2):
                 if self.click(self.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                     logger.info('Click scroll close area because courtyard appears')
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
@@ -115,6 +115,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             # 跳过观看视频
             # if self.ocr_appear_click(self.O_LOGIN_SKIP_1, interval=1):
             #     continue
+            # 领取抵扣券
+            if self.appear_then_click(self.I_OFF_TICKET, interval=1):
+                continue
             #领取抵扣券
             if self.appear_then_click(self.I_LOGIN_GET_COUPON, interval=1):
                 continue
