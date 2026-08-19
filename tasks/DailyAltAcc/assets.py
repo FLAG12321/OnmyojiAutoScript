@@ -212,119 +212,36 @@ class DailyAltAccAssets:
 	# description 
 	I_MS_JADE = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
 	# description 
-	I_MS_SHEPI = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_HEISUI = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_ALL_SHEPI = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_ALL_FMPI = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_ALL_HEISUI = RuleImage(roi_front=(1,65,100,100), roi_back=(139,107,887,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_SHEPI_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_SHEPI_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_shepi.png")
-	# description 
-	I_MS_GOODS_FMPI_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_FMPI_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png")
-	# description 
-	I_MS_GOODS_HEISUI_1 = RuleImage(roi_front=(1,1,100,100), roi_back=(156,66,198,187), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_2 = RuleImage(roi_front=(1,52,100,100), roi_back=(362,71,218,183), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_3 = RuleImage(roi_front=(7,82,100,100), roi_back=(587,83,224,171), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_4 = RuleImage(roi_front=(5,104,100,100), roi_back=(806,81,214,173), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_5 = RuleImage(roi_front=(0,62,100,100), roi_back=(152,364,202,149), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_6 = RuleImage(roi_front=(0,52,100,100), roi_back=(360,366,218,150), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_7 = RuleImage(roi_front=(1,43,100,100), roi_back=(583,370,220,144), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
-	I_MS_GOODS_HEISUI_8 = RuleImage(roi_front=(12,36,100,100), roi_back=(815,364,208,152), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_heisui.png")
-	# description 
 	I_MS_FMPI = RuleImage(roi_front=(432,127,54,79), roi_back=(387,95,161,154), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/ms_fmpi.png")
-
-
-	# Image Rule Assets
-	# description 
-	I_MS_PRICE_1 = RuleImage(roi_front=(72,1,172,45), roi_back=(159,252,173,48), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_2 = RuleImage(roi_front=(3,29,100,100), roi_back=(383,250,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_3 = RuleImage(roi_front=(1,42,100,100), roi_back=(610,251,172,47), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_4 = RuleImage(roi_front=(0,31,100,100), roi_back=(836,253,171,46), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_5 = RuleImage(roi_front=(19,82,100,100), roi_back=(158,513,174,45), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_6 = RuleImage(roi_front=(0,37,100,100), roi_back=(386,512,172,48), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_7 = RuleImage(roi_front=(0,37,100,100), roi_back=(608,511,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICE_8 = RuleImage(roi_front=(0,58,100,100), roi_back=(833,512,174,46), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_PRICES_1 = RuleImage(roi_front=(72,1,172,45), roi_back=(159,252,173,48), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_2 = RuleImage(roi_front=(3,29,100,100), roi_back=(383,250,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_3 = RuleImage(roi_front=(1,42,100,100), roi_back=(610,251,172,47), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_4 = RuleImage(roi_front=(0,31,100,100), roi_back=(836,253,171,46), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_5 = RuleImage(roi_front=(19,82,100,100), roi_back=(158,513,174,45), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_6 = RuleImage(roi_front=(0,37,100,100), roi_back=(386,512,172,48), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_7 = RuleImage(roi_front=(0,37,100,100), roi_back=(608,511,175,49), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_PRICES_8 = RuleImage(roi_front=(0,58,100,100), roi_back=(833,512,174,46), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
+	# 大蛇的逆鳞。搜索区为货架总区域，只允许 match_all_any 多点匹配 
+	I_MS_OROCHI_SCALE = RuleImage(roi_front=(884,143,50,59), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_orochi_scale.png")
+	# 逢魔之魂。搜索区为货架总区域，只允许 match_all_any 多点匹配 
+	I_MS_DEMON_SOUL = RuleImage(roi_front=(211,404,45,66), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_demon_soul.png")
+	# 御行达摩碎片。搜索区为货架总区域，只允许 match_all_any 多点匹配 
+	I_MS_SKILL_SHARD = RuleImage(roi_front=(874,404,61,83), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_skill_shard.png")
+	# 神秘符咒（蓝票）。搜索区为货架总区域，只允许 match_all_any 多点匹配 
+	I_MS_MYSTERY_AMULET = RuleImage(roi_front=(661,397,59,66), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_mystery_amulet.png")
+	# 御行达摩（黑蛋）。搜索区为货架总区域，只允许 match_all_any 多点匹配 
+	I_MS_BLACK_DARUMA = RuleImage(roi_front=(898,410,44,64), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_black_daruma.png")
 
 
 	# Ocr Rule Assets
-	# Ocr-description 
-	O_MS_PRICENUM_1 = RuleOcr(roi=(173,253,151,44), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_1")
-	# Ocr-description 
-	O_MS_PRICENUM_2 = RuleOcr(roi=(398,256,152,37), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_2")
-	# Ocr-description 
-	O_MS_PRICENUM_3 = RuleOcr(roi=(619,258,155,37), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_3")
-	# Ocr-description 
-	O_MS_PRICENUM_4 = RuleOcr(roi=(846,255,156,38), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_4")
-	# Ocr-description 
-	O_MS_PRICENUM_5 = RuleOcr(roi=(169,515,157,43), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_5")
-	# Ocr-description 
-	O_MS_PRICENUM_6 = RuleOcr(roi=(400,516,147,42), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_6")
-	# Ocr-description 
-	O_MS_PRICENUM_7 = RuleOcr(roi=(620,516,155,41), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_7")
-	# Ocr-description 
-	O_MS_PRICENUM_8 = RuleOcr(roi=(843,516,159,41), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_8")
+	# 格位1价格。8格ROI为规律点阵 x=168+col*225 y=253+row*262 w=159 h=45 
+	O_MS_PRICENUM_1 = RuleOcr(roi=(168,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_1")
+	# 格位2价格 
+	O_MS_PRICENUM_2 = RuleOcr(roi=(393,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_2")
+	# 格位3价格 
+	O_MS_PRICENUM_3 = RuleOcr(roi=(618,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_3")
+	# 格位4价格 
+	O_MS_PRICENUM_4 = RuleOcr(roi=(843,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_4")
+	# 格位5价格 
+	O_MS_PRICENUM_5 = RuleOcr(roi=(168,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_5")
+	# 格位6价格 
+	O_MS_PRICENUM_6 = RuleOcr(roi=(393,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_6")
+	# 格位7价格 
+	O_MS_PRICENUM_7 = RuleOcr(roi=(618,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_7")
+	# 格位8价格 
+	O_MS_PRICENUM_8 = RuleOcr(roi=(843,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_8")
 
 
 	# Image Rule Assets

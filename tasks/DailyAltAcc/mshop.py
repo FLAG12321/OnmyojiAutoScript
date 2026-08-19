@@ -11,12 +11,14 @@ from tasks.DailyAltAcc.config import GoodsType, CoinType, MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent
 from tasks.DailyAltAcc.mshop_grid import (
     COIN_NAMES,
+    GOODS_ASSETS,
     GOODS_NAMES,
-    GOODS_TEMPLATES,
     SlotItem,
     coin_of,
-    goods_rule,
+    enabled_goods,
+    is_unlocked,
     locate_slot,
+    refine_goods,
 )
 
 
@@ -117,17 +119,6 @@ class Mshop(Mall, DailyAltAccBase):
             if not self.appear(self.I_BACK_Y):
                 break
 
-    def _enabled_goods(self) -> list[GoodsType]:
-        """按配置决定要扫哪几类货：黑碎只在二花账号扫。
-
-        保留原 MsFind 里 isflower 门控黑碎的行为，把开关收敛到清单构造处，
-        而不是散落进扫描或判定逻辑里。
-        """
-        goods = [GoodsType.shepi, GoodsType.fmpi]
-        if self.get_config().daily_alt_acc_config.isflower:
-            goods.append(GoodsType.heisui)
-        return goods
-
     def _ocr_price(self, slot: int) -> int:
         """读取指定格位的价格数字，返回 0 表示识别失败。
 
@@ -145,21 +136,24 @@ class Mshop(Mall, DailyAltAccBase):
             return int(results[0].ocr_text)
         return 0
 
-    def _scan_slots(self, goods_types: list[GoodsType]) -> list[SlotItem]:
+    def _scan_slots(self, flower: int) -> list[SlotItem]:
         """扫描当前货架，返回识别到的商品。要求已在神秘商店页面且已截图。
 
         每类货物在总区域做一次多点匹配（NMS 去重叠）→ 命中框中心映射到格位
-        → 同格冲突取匹配得分高者 → 只对有命中的格位 OCR 价格。
+        → 同格冲突取匹配得分高者 → 只对有命中的格位 OCR 价格
+        → 用价格校正御行达摩碎片/黑蛋的交叉误判 → 丢掉当前花数未解锁的货。
         价格 OCR 失败的格位直接丢弃：价格未知无法判定，宁漏不错。
 
-        :param goods_types: 要扫描的货物类型，由调用方按配置挑选
+        :param flower: 账号花数（isflower），决定扫哪几类货
         :return: 按格位号升序的商品列表
         """
         image = self.device.image
         # 格位号 -> (货物类型, 匹配得分)，同格只保留得分最高的一条
         best: dict[int, tuple[GoodsType, float]] = {}
-        for goods in goods_types:
-            matches = goods_rule(GOODS_TEMPLATES[goods]).match_all_any(image)
+        for goods in enabled_goods(flower):
+            # 只调 match_all_any：assets 实例是共享类属性，match() 会写脏 roi_front
+            rule = getattr(self, GOODS_ASSETS[goods])
+            matches = rule.match_all_any(image)
             for score, x, y, w, h in matches:
                 cx, cy = x + w // 2, y + h // 2
                 slot = locate_slot(cx, cy)
@@ -184,19 +178,28 @@ class Mshop(Mall, DailyAltAccBase):
             if price <= 0:
                 logger.warning(f'格位 {slot}（{goods.name}）价格 OCR 失败，跳过该格')
                 continue
-            items.append(SlotItem(slot=slot, goods=goods, price=price,
+            # 御行达摩碎片与黑蛋图标相近，以价格为准做二次校正
+            refined = refine_goods(goods, price)
+            if refined is not goods:
+                logger.info(f'格位 {slot} 按价格 {price} 从 {GOODS_NAMES[goods]} '
+                            f'校正为 {GOODS_NAMES[refined]}')
+            if not is_unlocked(refined, flower):
+                logger.info(f'格位 {slot} 是{GOODS_NAMES[refined]}，'
+                            f'当前 {flower} 花未解锁，跳过')
+                continue
+            items.append(SlotItem(slot=slot, goods=refined, price=price,
                                   coin=coin_of(price), score=score))
         return items
 
     def MsFind(self) -> bool:
         """扫描当前神秘商店货架，播报规则判定要买的商品。
 
-        :return: True 表示有要买的商品；run_mysteryshop 据此决定是否刷新商店。
-            占位 _should_buy 恒返回 False，所以规则填好前每次都会触发刷新。
+        :return: True 表示有要推送的商品；run_mysteryshop 据此决定是否刷新商店。
         """
+        flower = self.get_config().daily_alt_acc_config.isflower
         self.screenshot()
-        items = self._scan_slots(self._enabled_goods())
-        logger.info(f'神秘商店扫描到 {len(items)} 件商品: '
+        items = self._scan_slots(flower)
+        logger.info(f'神秘商店（{flower}花）扫描到 {len(items)} 件商品: '
                     f'{[(i.slot, i.goods.name, i.coin.name, i.price) for i in items]}')
         found = False
         for item in items:
@@ -212,29 +215,50 @@ class Mshop(Mall, DailyAltAccBase):
         return found
 
     def _should_buy(self, goods: GoodsType, coin: CoinType, price: int, slot: int) -> bool:
-        """判定是否购买该格位商品。规则待填。
+        """判定该格位商品是否需要推送。
 
-        :param goods: 货物类型
+        规则沿用原 InfoFilter，另外补上两类新货：
+
+        - 金币价的大蛇的逆鳞 / 逢魔之魂：一律要
+        - 勾玉价的御行达摩碎片：只要 0<价<45、70<价<96、价>=120 三段
+        - 神秘符咒（蓝票）：价格 50~60（含端点）
+        - 御行达摩（黑蛋）：只要判定为黑蛋就要，不看价格
+
+        :param goods: 货物类型（已按价格校正过碎片/黑蛋）
         :param coin: 币种，由价格数值判定（>10000 金币，否则勾玉）
         :param price: 价格数值，调用方保证 > 0
         :param slot: 格位号 1..8
-        :return: True 表示要买
+        :return: True 表示要推送
         """
+        # 金币价的大蛇的逆鳞与逢魔之魂，一律要
+        if coin == CoinType.gold and goods in (GoodsType.orochi_scale, GoodsType.demon_soul):
+            return True
+        # 勾玉价的御行达摩碎片，只要特定的三段价格区间
+        if coin == CoinType.jade and goods == GoodsType.skill_shard:
+            return 0 < price < 45 or 70 < price < 96 or price >= 120
+        # 神秘符咒（蓝票），50~60 才推
+        if goods == GoodsType.mystery_amulet:
+            return 50 <= price <= 60
+        # 御行达摩（黑蛋）本身稀有，判定出来就推，不设价格条件
+        if goods == GoodsType.black_daruma:
+            return True
         return False
 
     def _notify_item(self, item: SlotItem) -> None:
         """播报一件命中商品，msg / push_notify / emit_stat 三个通道全发。
 
         原实现按货物类型分通道，分支依据已移入 _should_buy，通道层不再区分类型。
+        emit_stat 的 goods 字段传中文名而非枚举英文名，面板上不用再翻译一层。
         emit_stat 用 getattr 守卫：Mshop 不一定混入了 StatLogMixin。
         """
-        content = f'发现{item.price}{COIN_NAMES[item.coin]}{GOODS_NAMES[item.goods]}'
+        goods_name = GOODS_NAMES[item.goods]
+        content = f'发现{item.price}{COIN_NAMES[item.coin]}{goods_name}'
         logger.info(f'格位 {item.slot} {content}')
         self.msg.append([MSGType.mshop, content])
         self.push_notify(content=f' {content}', title='神秘商店提醒')
         emit_stat = getattr(self, 'emit_stat', None)
         if emit_stat:
-            emit_stat(StatEvent.MSHOP, goods=item.goods.name, price=item.price)
+            emit_stat(StatEvent.MSHOP, goods=goods_name, price=item.price)
 
 
 if __name__ == "__main__":

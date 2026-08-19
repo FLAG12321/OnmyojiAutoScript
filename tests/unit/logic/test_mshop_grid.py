@@ -7,16 +7,24 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from tasks.DailyAltAcc.config import CoinType, GoodsType
+from tasks.DailyAltAcc.config import CoinType, DailyAltAccConfig, GoodsType
 from tasks.DailyAltAcc.mshop_grid import (
-    GOODS_TEMPLATES,
+    BLACK_DARUMA_MIN_PRICE,
+    FLOWER_UNLOCK,
+    GOODS_ASSETS,
+    GOODS_NAMES,
     GRID_X_EDGES,
     GRID_Y_EDGES,
+    SHARD_MAX_PRICE,
     SHELF_ROI,
     coin_of,
-    goods_rule,
+    enabled_goods,
+    is_unlocked,
     locate_slot,
+    price_roi,
+    refine_goods,
 )
 
 # 仓库根目录：本文件在 tests/unit/logic/ 下，往上三层
@@ -95,37 +103,84 @@ def test_coin_of_uses_10000_as_threshold():
 
 
 @pytest.mark.unit
-def test_goods_template_files_exist():
-    """模板路径写错只会在真机上崩在 RuleImage.load_image 里，这里提前抓。"""
-    for goods, file in GOODS_TEMPLATES.items():
-        assert (REPO_ROOT / file).is_file(), f'{goods.name} 模板缺失: {file}'
+def test_goods_assets_exist_on_mshop_and_search_whole_shelf():
+    """5 个货物资产必须已由 image1.json 生成并挂到 Mshop 上，搜索区覆盖整个货架。
+
+    资产变量名写错、或 image1.json 漏注册，都会让运行期 getattr 抛
+    AttributeError；这里提前抓，不用等真机。
+
+    搜索区不断言精确等于 SHELF_ROI —— 资源编辑器重新框选时会有几像素出入。
+    真正要守的是「搜索区四角都能归到格位」，即命中不可能落在网格外。
+    """
+    from tasks.DailyAltAcc.mshop import Mshop
+    for goods, name in GOODS_ASSETS.items():
+        rule = getattr(Mshop, name, None)
+        assert rule is not None, f'{goods.name} 的资产 {name} 不存在'
+        assert Path(rule.file).is_file(), f'{name} 模板文件缺失: {rule.file}'
+        x, y, w, h = rule.roi_back
+        for cx, cy in ((x, y), (x + w - 1, y), (x, y + h - 1), (x + w - 1, y + h - 1)):
+            assert locate_slot(cx, cy) is not None, \
+                f'{name} 搜索区角点 ({cx},{cy}) 落在格位网格外'
 
 
 @pytest.mark.unit
-def test_goods_rule_is_cached_and_searches_whole_shelf():
-    """同一模板复用实例（省重复读盘），搜索区是整个货架，不同模板不共享实例。"""
-    first = goods_rule(GOODS_TEMPLATES[GoodsType.shepi])
-    second = goods_rule(GOODS_TEMPLATES[GoodsType.shepi])
-    assert first is second
-    assert first.roi_back == SHELF_ROI
-    assert goods_rule(GOODS_TEMPLATES[GoodsType.fmpi]) is not first
+def test_every_goods_type_has_asset_and_name():
+    """每个 GoodsType 都必须配齐资产名与中文名，加货物漏配一处就在这里炸。
+
+    中文名同时是 [STAT] 日志 goods 字段的值，缺失会让统计面板出现空货名。
+    """
+    for goods in GoodsType:
+        assert goods in GOODS_ASSETS, f'{goods.name} 缺资产变量名'
+        assert goods in GOODS_NAMES, f'{goods.name} 缺中文名'
+        assert GOODS_NAMES[goods], f'{goods.name} 中文名为空'
 
 
 @pytest.mark.unit
-def test_goods_rule_cache_key_includes_threshold():
-    """阈值是缓存键的一部分，否则换阈值会静默拿到旧实例。"""
-    default = goods_rule(GOODS_TEMPLATES[GoodsType.heisui])
-    stricter = goods_rule(GOODS_TEMPLATES[GoodsType.heisui], threshold=0.9)
-    assert default is not stricter
-    assert stricter.threshold == 0.9
+def test_price_assets_match_regular_lattice():
+    """8 个价格 OCR 资产的 ROI 必须严格落在点阵上。
+
+    ocr.json 是手工维护的，谁改歪一格这里就炸 —— 这是点阵规律性的唯一守护。
+    """
+    from tasks.DailyAltAcc.mshop import Mshop
+    for slot in range(1, 9):
+        rule = getattr(Mshop, f'O_MS_PRICENUM_{slot}')
+        assert tuple(rule.roi) == price_roi(slot), \
+            f'格位 {slot} ROI {tuple(rule.roi)} 偏离点阵 {price_roi(slot)}'
+
+
+@pytest.mark.unit
+def test_price_lattice_covers_authored_rois():
+    """点阵化后的每个 ROI 必须完整覆盖原手绘框，只放大不裁切。
+
+    原手绘框（改造前 ocr.json 的取值）已在 3 张真实截图上验证过 OCR 读数正确，
+    所以「新框完整包含旧框」是读数不退化的充分条件。
+    """
+    authored = {
+        1: (173, 253, 151, 44), 2: (398, 256, 152, 37),
+        3: (619, 258, 155, 37), 4: (846, 255, 156, 38),
+        5: (169, 515, 157, 43), 6: (400, 516, 147, 42),
+        7: (620, 516, 155, 41), 8: (843, 516, 159, 41),
+    }
+    for slot, (ax, ay, aw, ah) in authored.items():
+        lx, ly, lw, lh = price_roi(slot)
+        assert lx <= ax and ly <= ay, f'格位 {slot} 点阵左上角切进了原框'
+        assert lx + lw >= ax + aw, f'格位 {slot} 点阵右边界切掉了原框'
+        assert ly + lh >= ay + ah, f'格位 {slot} 点阵下边界切掉了原框'
+
+
+@pytest.mark.unit
+def test_price_roi_centers_map_back_to_own_slot():
+    """每个价格 ROI 的中心必须落回自己的格位，点阵与网格不能错位。"""
+    for slot in range(1, 9):
+        x, y, w, h = price_roi(slot)
+        assert locate_slot(x + w // 2, y + h // 2) == slot
 
 
 @pytest.mark.unit
 def test_msfind_uses_grid_scan_not_per_slot_assets():
     """MsFind 必须走格位扫描，且彻底不再引用 24 个逐格位商品资产与 16 个币种资产。
 
-    这些资产留在 assets.py 里（删除需动 res/*.json），所以只能用源码断言
-    确认新代码没有回退到旧路径。
+    这些资产条目已从 res/*.json 删除，源码断言防止有人回退到旧路径。
     """
     source = (REPO_ROOT / 'tasks/DailyAltAcc/mshop.py').read_text(encoding='utf-8')
     assert '_scan_slots' in source
@@ -134,9 +189,23 @@ def test_msfind_uses_grid_scan_not_per_slot_assets():
     assert 'I_MS_PRICE_' not in source
     assert 'I_MS_PRICES_' not in source
     assert 'I_MS_ALL_' not in source
-    assert 'FindGoodsType' not in source
-    assert 'FindCoinTypeAndCoinNum' not in source
-    assert 'InfoFilter' not in source
+    # 只禁方法定义，不禁注释里提到旧名 —— 文档里说明「沿用原 InfoFilter 规则」是合理的
+    assert 'def FindGoodsType' not in source
+    assert 'def FindCoinTypeAndCoinNum' not in source
+    assert 'def InfoFilter' not in source
+
+
+@pytest.mark.unit
+def test_goods_assets_are_matched_all_any_only():
+    """货物资产是共享类属性，只能调 match_all_any；调 match 会写脏 roi_front。
+
+    match() 把命中坐标写回 roi_front（module/atom/image.py:166），在跨任务、
+    跨多开实例共享的类属性上就是污染。这条锁住调用方式。
+    """
+    source = (REPO_ROOT / 'tasks/DailyAltAcc/mshop.py').read_text(encoding='utf-8')
+    assert 'match_all_any' in source
+    # 资产经 getattr(self, GOODS_ASSETS[goods]) 取出后只允许 match_all_any
+    assert 'rule.match(' not in source
 
 
 @pytest.mark.unit
@@ -145,3 +214,75 @@ def test_msfind_notify_title_is_mystery_shop():
     source = (REPO_ROOT / 'tasks/DailyAltAcc/mshop.py').read_text(encoding='utf-8')
     assert "title='神秘商店提醒'" in source
     assert '协作任务提醒' not in source
+
+
+@pytest.mark.unit
+def test_enabled_goods_by_flower_level():
+    """花数逐级解锁：一花放神秘符咒，二花放御行达摩碎片，三花放御行达摩。
+
+    零花只扫不限花数的两类，漏配会让低花账号白扫或高花账号漏货。
+    """
+    assert enabled_goods(0) == [GoodsType.orochi_scale, GoodsType.demon_soul]
+    assert enabled_goods(1) == [GoodsType.orochi_scale, GoodsType.demon_soul,
+                                GoodsType.mystery_amulet]
+    assert enabled_goods(2) == [GoodsType.orochi_scale, GoodsType.demon_soul,
+                                GoodsType.mystery_amulet, GoodsType.skill_shard]
+    assert enabled_goods(3) == [GoodsType.orochi_scale, GoodsType.demon_soul,
+                                GoodsType.mystery_amulet, GoodsType.skill_shard,
+                                GoodsType.black_daruma]
+
+
+@pytest.mark.unit
+def test_refine_goods_splits_shard_and_black_daruma_by_price():
+    """碎片(<=300)与黑蛋(>=960)图标相近，价格是唯一可靠判据，双向都要能纠正。"""
+    # 模板认成碎片但价格是黑蛋区间 -> 纠成黑蛋
+    assert refine_goods(GoodsType.skill_shard, 960) == GoodsType.black_daruma
+    assert refine_goods(GoodsType.skill_shard, 1200) == GoodsType.black_daruma
+    # 模板认成黑蛋但价格是碎片区间 -> 纠成碎片
+    assert refine_goods(GoodsType.black_daruma, 300) == GoodsType.skill_shard
+    assert refine_goods(GoodsType.black_daruma, 72) == GoodsType.skill_shard
+    # 落在 300~960 的空隙里，两边都不像，保持模板原判不硬猜
+    assert refine_goods(GoodsType.skill_shard, 500) == GoodsType.skill_shard
+    assert refine_goods(GoodsType.black_daruma, 500) == GoodsType.black_daruma
+    # 非御行达摩系一律原样返回
+    assert refine_goods(GoodsType.orochi_scale, 82500) == GoodsType.orochi_scale
+    assert refine_goods(GoodsType.mystery_amulet, 55) == GoodsType.mystery_amulet
+
+
+@pytest.mark.unit
+def test_is_unlocked_matches_flower_table():
+    """解锁判定要和 FLOWER_UNLOCK 一致，否则会推送账号买不到的货。"""
+    assert is_unlocked(GoodsType.orochi_scale, 0)
+    assert not is_unlocked(GoodsType.mystery_amulet, 0)
+    assert is_unlocked(GoodsType.mystery_amulet, 1)
+    assert not is_unlocked(GoodsType.skill_shard, 1)
+    assert is_unlocked(GoodsType.skill_shard, 2)
+    assert not is_unlocked(GoodsType.black_daruma, 2)
+    assert is_unlocked(GoodsType.black_daruma, 3)
+
+
+@pytest.mark.unit
+def test_flower_unlock_covers_every_goods_type():
+    """每个 GoodsType 都要有解锁门槛，漏配会让 is_unlocked 抛 KeyError。"""
+    for goods in GoodsType:
+        assert goods in FLOWER_UNLOCK, f'{goods.name} 缺花数门槛'
+
+
+@pytest.mark.unit
+def test_shard_and_black_daruma_price_ranges_do_not_overlap():
+    """碎片上限必须严格小于黑蛋下限，否则价格判据失效。"""
+    assert SHARD_MAX_PRICE < BLACK_DARUMA_MIN_PRICE
+
+
+@pytest.mark.unit
+def test_isflower_is_int_range_0_to_3():
+    """isflower 是 0~3 的花数而非 bool；存量配置里的 false 会被 pydantic 收成 0。"""
+    assert DailyAltAccConfig().isflower == 0
+    for value in (0, 1, 2, 3):
+        assert DailyAltAccConfig(isflower=value).isflower == value
+    # 存量配置是 bool，必须能平滑迁移
+    assert DailyAltAccConfig(isflower=False).isflower == 0
+    with pytest.raises(ValidationError):
+        DailyAltAccConfig(isflower=4)
+    with pytest.raises(ValidationError):
+        DailyAltAccConfig(isflower=-1)

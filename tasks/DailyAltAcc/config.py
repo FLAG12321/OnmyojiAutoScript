@@ -26,7 +26,7 @@ class DailyAltAccConfig(BaseModel):
   returngift_enable: bool = Field(default=False, description='是否开启回礼')
   weekaward_enable: bool = Field(default=False, description='领取周奖励')
   mysteryshop_enable: bool = Field(default=False, description='是否开启神秘商店')
-  isflower: bool = Field(default=False, description='是否二花')
+  isflower: int = Field(default=0, ge=0, le=3, description='几花账号：0零花 1一花 2二花 3三花，决定神秘商店解锁哪些货')
   kekkaiActivation_enable: bool = Field(default=False, description='是否挂卡')
   KekkaiUtilize_enable: bool = Field(default=False, description='是否蹭卡')
   tree_planting_enable: int  = Field(default=2, description='0不运行 1买花 2买花捐树')
@@ -38,9 +38,11 @@ class DailyAltAcc(ConfigBase):
     daily_alt_acc_config: DailyAltAccConfig  = Field(default_factory=DailyAltAccConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
 class GoodsType(Enum):
-    shepi = 0
-    fmpi = 1
-    heisui = 2
+    orochi_scale = 0
+    demon_soul = 1
+    skill_shard = 2
+    mystery_amulet = 3
+    black_daruma = 4
 
 class CoinType(Enum):
     jade = 0

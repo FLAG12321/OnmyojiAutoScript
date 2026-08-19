@@ -251,7 +251,7 @@
   "handoff2": "handoff2",
   "invite_timeout": "邀请等待超时(秒)",
   "invite_timeout_help": "等待师父接受邀请/进入房间的超时时间（秒）",
-  "isflower": "是否二花",
+  "isflower": "几花账号(0零花/1一花/2二花/3三花)",
   "kaiko": "太鼓优先",
   "kekkaiActivation_enable": "挂卡",
   "layer_limit": "layer_limit",

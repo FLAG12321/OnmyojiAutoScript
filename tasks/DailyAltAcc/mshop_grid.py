@@ -6,7 +6,6 @@
 """
 from dataclasses import dataclass
 
-from module.atom.image import RuleImage
 from tasks.DailyAltAcc.config import CoinType, GoodsType
 
 # 货架总区域，沿用 assets.py 里 I_MS_ALL_* 的 roi_back（已验证坐标）
@@ -26,19 +25,61 @@ GRID_COLS = 4
 COIN_THRESHOLD = 10000
 
 # 货物清单：加货物只加一行，扫描逻辑不用改。
-# 要扫哪几类由调用方按配置挑选后传入 _scan_slots，本模块不读配置。
-GOODS_TEMPLATES = {
-    GoodsType.shepi: './tasks/DailyAltAcc/mshop/mshop_ms_shepi.png',
-    GoodsType.fmpi: './tasks/DailyAltAcc/mshop/mshop_ms_fmpi.png',
-    GoodsType.heisui: './tasks/DailyAltAcc/mshop/mshop_ms_heisui.png',
+# 值是 tasks/DailyAltAcc/assets.py 里的资产变量名，由 mshop/image1.json 生成，
+# 搜索区统一是货架总区域 SHELF_ROI。调用方用 getattr(self, 名字) 取实例。
+#
+# 硬约束：取到的实例只允许调 match_all_any()，禁止调 match()。
+# assets.py 里的 RuleImage 是类属性，全进程共享同一个实例；match() 会把命中坐标
+# 写回 roi_front（module/atom/image.py:166），那就是跨任务、跨多开实例的污染
+# —— 与 tasks/RichMan/mall/special.py:156 就地改 O_SP_RES_NUMBER.roi 同一类问题。
+# match_all_any() 不传 roi 参数时对实例零副作用（module/atom/image.py:278
+# 仅在传了 roi 时才改 roi_back）。
+GOODS_ASSETS = {
+    GoodsType.orochi_scale: 'I_MS_OROCHI_SCALE',
+    GoodsType.demon_soul: 'I_MS_DEMON_SOUL',
+    GoodsType.skill_shard: 'I_MS_SKILL_SHARD',
+    GoodsType.mystery_amulet: 'I_MS_MYSTERY_AMULET',
+    GoodsType.black_daruma: 'I_MS_BLACK_DARUMA',
 }
 
-# 播报用中文名，避免日志/通知里出现 GoodsType.shepi 这种字面量
+# 8 个价格 OCR 资产（O_MS_PRICENUM_1..8，由 mshop/ocr.json 生成）的 ROI 点阵参数。
+# 原资产是手绘的，x 有 ±4px、y 有 ±5px 抖动；已规整为严格均匀点阵：
+#   x = 168 + col * 225   ->  168 / 393 / 618 / 843
+#   y = 253 + row * 262   ->  253 / 515
+#   w = 159, h = 45
+# 取值保证每个新框完整覆盖对应的原手绘框（只放大不裁切），单测守护这一不变量。
+PRICE_X0 = 168
+PRICE_PITCH_X = 225
+PRICE_Y0 = 253
+PRICE_PITCH_Y = 262
+PRICE_W = 159
+PRICE_H = 45
+
+# 货物中文名。既用于播报文案，也作为 [STAT] 日志 goods 字段的值
+# （不透传枚举英文名，直接给中文，面板上不用再做一层翻译）。
 GOODS_NAMES = {
-    GoodsType.shepi: '蛇皮',
-    GoodsType.fmpi: '逢魔皮',
-    GoodsType.heisui: '黑碎',
+    GoodsType.orochi_scale: '大蛇的逆鳞',
+    GoodsType.demon_soul: '逢魔之魂',
+    GoodsType.skill_shard: '御行达摩碎片',
+    GoodsType.mystery_amulet: '神秘符咒',
+    GoodsType.black_daruma: '御行达摩',
 }
+
+# 各货物需要的最低花数（账号 isflower 字段：0零花 1一花 2二花 3三花）。
+# 大蛇的逆鳞与逢魔之魂不限花数；一花解放神秘符咒，二花解放御行达摩碎片，
+# 三花解锁御行达摩（黑蛋）。
+FLOWER_UNLOCK = {
+    GoodsType.orochi_scale: 0,
+    GoodsType.demon_soul: 0,
+    GoodsType.mystery_amulet: 1,
+    GoodsType.skill_shard: 2,
+    GoodsType.black_daruma: 3,
+}
+
+# 御行达摩碎片与御行达摩（黑蛋）图标相近，模板可能互相命中；两者价格区间不重叠，
+# 碎片最高 300、黑蛋最低 960，中间有安全间隔，所以用价格做二次校正。
+SHARD_MAX_PRICE = 300
+BLACK_DARUMA_MIN_PRICE = 960
 
 COIN_NAMES = {
     CoinType.jade: '勾玉',
@@ -89,29 +130,49 @@ def coin_of(price: int) -> CoinType:
     return CoinType.jade
 
 
-# 按 (模板路径, 阈值) 缓存，避免同一模板重复读盘；
-# 阈值进键是必须的，否则换阈值会静默拿到旧实例。
-_RULE_CACHE: dict[tuple[str, float], RuleImage] = {}
+def enabled_goods(flower: int) -> list[GoodsType]:
+    """按账号花数返回要扫描的货物类型。
 
-
-def goods_rule(file: str, threshold: float = 0.8) -> RuleImage:
-    """通用商品资产工厂：按模板路径造一个搜索整个货架的 RuleImage。
-
-    用工厂而不是「改共享类属性的 .file」，原因有两条：
-    1. RuleImage.name 是 cached_property（module/base/decorator.py:86），取值后会
-       替换成写进 __dict__ 的普通属性；换 .file 必须同时清 _image 和
-       __dict__['name']，否则日志名与模板图停在首次的值。
-    2. 改共享类属性会在多开实例间互相串 —— 与 tasks/RichMan/mall/special.py:156
-       就地修改 O_SP_RES_NUMBER.roi 是同一类问题。
-
-    返回的实例只允许调 match_all_any()，禁止调 match()：match() 会把命中坐标写回
-    roi_front（module/atom/image.py:166），在共享实例上就是跨调用污染；
-    match_all_any() 不传 roi 参数时对实例零副作用（module/atom/image.py:278
-    仅在传了 roi 时改 roi_back）。
+    :param flower: 账号 isflower，0零花 1一花 2二花 3三花
+    :return: 花数已解锁的货物类型，顺序与 FLOWER_UNLOCK 声明一致
     """
-    key = (file, threshold)
-    if key not in _RULE_CACHE:
-        _RULE_CACHE[key] = RuleImage(roi_front=SHELF_ROI, roi_back=SHELF_ROI,
-                                     threshold=threshold, method='Template matching',
-                                     file=file)
-    return _RULE_CACHE[key]
+    return [goods for goods, need in FLOWER_UNLOCK.items() if flower >= need]
+
+
+def refine_goods(goods: GoodsType, price: int) -> GoodsType:
+    """用价格校正御行达摩系的碎片 / 黑蛋误判。
+
+    两者图标相近，模板可能交叉命中；价格区间不重叠（碎片 <=300，黑蛋 >=960），
+    所以以价格为准。非御行达摩系的货物原样返回。
+
+    :param goods: 模板命中得到的货物类型
+    :param price: 该格位 OCR 出的价格
+    :return: 校正后的货物类型
+    """
+    if goods not in (GoodsType.skill_shard, GoodsType.black_daruma):
+        return goods
+    if price >= BLACK_DARUMA_MIN_PRICE:
+        return GoodsType.black_daruma
+    if price <= SHARD_MAX_PRICE:
+        return GoodsType.skill_shard
+    return goods
+
+
+def is_unlocked(goods: GoodsType, flower: int) -> bool:
+    """该货物在当前花数下是否已解锁。"""
+    return flower >= FLOWER_UNLOCK[goods]
+
+
+def price_roi(slot: int) -> tuple[int, int, int, int]:
+    """按点阵算出某格位价格 ROI，用于校验 assets.py 里 O_MS_PRICENUM_<slot> 的取值。
+
+    运行期不用它取 ROI（直接用 assets 实例），它的作用是让单测能断言
+    assets.py 的 8 个 ROI 真的落在点阵上 —— 谁手改了 ocr.json 就会被测出来。
+
+    :param slot: 格位号 1..8
+    :return: (x, y, w, h)
+    """
+    col = (slot - 1) % GRID_COLS
+    row = (slot - 1) // GRID_COLS
+    return (PRICE_X0 + col * PRICE_PITCH_X, PRICE_Y0 + row * PRICE_PITCH_Y,
+            PRICE_W, PRICE_H)

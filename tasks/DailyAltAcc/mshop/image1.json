@@ -45,273 +45,57 @@
     "description": "description"
   },
   {
-    "itemName": "ms_shepi",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "0,0,100,100",
-    "roiBack": "0,0,100,100",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_heisui",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "0,0,100,100",
-    "roiBack": "0,0,100,100",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_all_shepi",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,65,100,100",
-    "roiBack": "139,107,887,454",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_all_fmpi",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "1,65,100,100",
-    "roiBack": "139,107,887,454",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_all_heisui",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "1,65,100,100",
-    "roiBack": "139,107,887,454",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_1",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,1,100,100",
-    "roiBack": "156,66,198,187",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_2",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,52,100,100",
-    "roiBack": "362,71,218,183",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_3",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "7,82,100,100",
-    "roiBack": "587,83,224,171",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_4",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "5,104,100,100",
-    "roiBack": "806,81,214,173",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_5",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "0,62,100,100",
-    "roiBack": "152,364,202,149",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_6",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "0,52,100,100",
-    "roiBack": "360,366,218,150",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_7",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "1,43,100,100",
-    "roiBack": "583,370,220,144",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_shepi_8",
-    "imageName": "mshop_ms_shepi.png",
-    "roiFront": "12,36,100,100",
-    "roiBack": "815,364,208,152",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_1",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "1,1,100,100",
-    "roiBack": "156,66,198,187",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_2",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "1,52,100,100",
-    "roiBack": "362,71,218,183",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_3",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "7,82,100,100",
-    "roiBack": "587,83,224,171",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_4",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "5,104,100,100",
-    "roiBack": "806,81,214,173",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_5",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "0,62,100,100",
-    "roiBack": "152,364,202,149",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_6",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "0,52,100,100",
-    "roiBack": "360,366,218,150",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_7",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "1,43,100,100",
-    "roiBack": "583,370,220,144",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_fmpi_8",
-    "imageName": "mshop_ms_fmpi.png",
-    "roiFront": "12,36,100,100",
-    "roiBack": "815,364,208,152",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_1",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "1,1,100,100",
-    "roiBack": "156,66,198,187",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_2",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "1,52,100,100",
-    "roiBack": "362,71,218,183",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_3",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "7,82,100,100",
-    "roiBack": "587,83,224,171",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_4",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "5,104,100,100",
-    "roiBack": "806,81,214,173",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_5",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "0,62,100,100",
-    "roiBack": "152,364,202,149",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_6",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "0,52,100,100",
-    "roiBack": "360,366,218,150",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_7",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "1,43,100,100",
-    "roiBack": "583,370,220,144",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_goods_heisui_8",
-    "imageName": "mshop_ms_heisui.png",
-    "roiFront": "12,36,100,100",
-    "roiBack": "815,364,208,152",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
     "itemName": "ms_fmpi",
+    "imageName": "ms_fmpi.png",
     "roiFront": "432,127,54,79",
     "roiBack": "387,95,161,154",
-    "description": "description",
-    "imageName": "ms_fmpi.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "ms_orochi_scale",
+    "imageName": "mshop_ms_orochi_scale.png",
+    "roiFront": "884,143,50,59",
+    "roiBack": "139,107,886,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "大蛇的逆鳞。搜索区为货架总区域，只允许 match_all_any 多点匹配"
+  },
+  {
+    "itemName": "ms_demon_soul",
+    "imageName": "mshop_ms_demon_soul.png",
+    "roiFront": "211,404,45,66",
+    "roiBack": "139,107,886,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "逢魔之魂。搜索区为货架总区域，只允许 match_all_any 多点匹配"
+  },
+  {
+    "itemName": "ms_skill_shard",
+    "imageName": "mshop_ms_skill_shard.png",
+    "roiFront": "874,404,61,83",
+    "roiBack": "139,107,886,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "御行达摩碎片。搜索区为货架总区域，只允许 match_all_any 多点匹配"
+  },
+  {
+    "itemName": "ms_mystery_amulet",
+    "imageName": "mshop_ms_mystery_amulet.png",
+    "roiFront": "661,397,59,66",
+    "roiBack": "139,107,886,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "神秘符咒（蓝票）。搜索区为货架总区域，只允许 match_all_any 多点匹配"
+  },
+  {
+    "itemName": "ms_black_daruma",
+    "imageName": "mshop_ms_black_daruma.png",
+    "roiFront": "898,410,44,64",
+    "roiBack": "139,107,886,454",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "御行达摩（黑蛋）。搜索区为货架总区域，只允许 match_all_any 多点匹配"
   }
 ]

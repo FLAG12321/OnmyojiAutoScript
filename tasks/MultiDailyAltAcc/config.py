@@ -26,7 +26,7 @@ class ExtendedAccountInfo(AccountInfo):
     returngift_enable: bool = Field(default=True, description='是否开启回礼')
     weekaward_enable: bool = Field(default=True, description='是否领取每周奖励')
     mysteryshop_enable: bool = Field(default=True, description='是否开启神秘商店')
-    isflower: bool = Field(default=False, description='是否二花')
+    isflower: int = Field(default=0, ge=0, le=3, description='几花账号：0零花 1一花 2二花 3三花，决定神秘商店解锁哪些货')
     kekkaiActivation_enable: bool = Field(default=True, description='是否挂卡')
     KekkaiUtilize_enable: bool = Field(default=True, description='是否蹭卡')
     tree_planting_enable: int = Field(default=2, description='种树:0不运行 1买花 2买花捐树')
