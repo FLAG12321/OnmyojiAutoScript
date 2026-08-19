@@ -65,6 +65,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 self.screenshot()   
                 if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
                     self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or\
+                    self.ocr_appear(RestartAssets.O_LOGIN_COURTYARD, interval=0.2) or\
                     self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
                     if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                         logger.info('Click scroll close area because courtyard appears')
