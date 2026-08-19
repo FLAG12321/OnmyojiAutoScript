@@ -2,10 +2,10 @@
   {
     "itemName": "wq_seal",
     "imageName": "wq_wq_seal.png",
-    "roiFront": "174,184,20,29",
-    "roiBack": "56,93,664,455",
+    "roiFront": "175,182,32,32",
+    "roiBack": "58,93,663,453",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "封印"
   },
   {

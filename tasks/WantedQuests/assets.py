@@ -100,7 +100,7 @@ class WantedQuestsAssets:
 
 	# Image Rule Assets
 	# 封印 
-	I_WQ_SEAL = RuleImage(roi_front=(174,184,20,29), roi_back=(56,93,664,455), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_seal.png")
+	I_WQ_SEAL = RuleImage(roi_front=(175,182,32,32), roi_back=(58,93,663,453), threshold=0.7, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_seal.png")
 	# 勾号 
 	I_WQ_DONE = RuleImage(roi_front=(248,183,37,39), roi_back=(63,134,624,401), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_done.png")
 	# 一键追踪 
