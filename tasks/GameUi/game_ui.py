@@ -117,10 +117,25 @@ class GameUi(BaseTask, GameUiAssets):
         def rotation_check():
             self.device.get_orientation()
 
+        def desktop_login_popup_check():
+            """MPay 存活时游戏画面上的 Page 标志全部无效，交给 Restart 处理。"""
+            if not self.device.is_desktop:
+                return
+            if self.device.find_desktop_login_popup():
+                logger.warning('Desktop MPay login popup present, client is not logged in')
+                # 客户端已掉回未登录态，复位登录标记，让 app_is_running 的任务前置检查
+                # 也能直接拦下，不必等下一个任务跑起来再发现
+                self.device.desktop_mark_logged_out()
+                raise GameNotRunningError('Desktop MPay login popup present')
+
+        # MPay 是独立顶层窗口，不能通过游戏截图中的 Page 素材可靠识别。
+        desktop_login_popup_check()
         timeout = Timer(10, count=20).start()
         while 1:
             self.maybe_screenshot(skip_first_screenshot)
             skip_first_screenshot = False
+            # 弹窗可能在页面轮询期间出现，每轮截图后重新检查 HWND 是否存活。
+            desktop_login_popup_check()
             # 如果10S还没有到底，那么就抛出异常
             if timeout.reached():
                 break

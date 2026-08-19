@@ -10,7 +10,8 @@ from module.device.connection_attr import ConnectionAttr
 from module.device.device import Device, EmulatorState
 from module.device.handle import Handle, DESKTOP_RESIZE_ATTEMPTS
 from module.device.screenshot import Screenshot
-from module.exception import EmulatorNotRunningError, GameNotRunningError, RequestHumanTakeover
+from module.exception import (EmulatorNotRunningError, GameNotRunningError,
+                              GameStuckError, RequestHumanTakeover)
 from module.device.method.windows_impl import Window
 
 
@@ -516,6 +517,21 @@ def test_app_is_running_desktop_defaults_logged_in():
     assert dev.app_is_running() is True
 
 
+def test_desktop_mark_logged_out_makes_app_not_running():
+    """发现 MPay 后复位登录标记，让任务前置检查直接判定「游戏未运行」。
+
+    运行期客户端掉回 MPay 登录界面时窗口仍在，标记不复位的话 app_is_running() 会一直
+    说游戏在跑，任务要白启动一次才在 ui_get_current_page 里发现问题。
+    """
+    dev = _desktop_device()
+    dev.desktop_window_exists = lambda: True
+    # 上一次登录成功留下的 True
+    dev.desktop_mark_logged_in()
+    assert dev.app_is_running() is True
+    dev.desktop_mark_logged_out()
+    assert dev.app_is_running() is False
+
+
 def test_full_recovery_desktop_window_alive():
     # 桌面 full_recovery：窗口在 → HEALTHY 并返回 True
     dev = _desktop_device()
@@ -962,6 +978,38 @@ def test_restart_releases_client_on_final_attempt():
     assert trace.count('stop') == DESKTOP_RESTART_ATTEMPTS
     # 放弃前的最后一个动作必须是释放客户端
     assert trace[-1] == 'stop'
+
+
+def test_restart_executes_login_on_final_attempt():
+    """第三轮必须完整调用登录，不能启动后直接判定失败。"""
+    from tasks.Restart.script_task import ScriptTask, DESKTOP_RESTART_ATTEMPTS
+
+    task = object.__new__(ScriptTask)
+    trace = []
+
+    def app_start():
+        trace.append('start')
+
+    def handle_login():
+        trace.append('login')
+        raise GameStuckError('login timeout')
+
+    def stop_client():
+        trace.append('stop')
+        return True
+
+    task.device = types.SimpleNamespace(
+        is_desktop=True,
+        app_start=app_start,
+        desktop_stop_client=stop_client,
+    )
+    task.app_handle_login = handle_login
+
+    with pytest.raises(RequestHumanTakeover):
+        ScriptTask._desktop_start_and_login(task)
+
+    # 每一轮都必须按「启动 → 登录 → 清理」完整执行，包含最后一轮。
+    assert trace == ['start', 'login', 'stop'] * DESKTOP_RESTART_ATTEMPTS
 
 
 def test_restart_stops_rebuilding_when_client_cannot_be_closed():
@@ -1780,11 +1828,11 @@ def test_find_desktop_login_popup_matches_class_and_pid(monkeypatch):
     assert w.find_desktop_login_popup() == 0x400
 
 
-def test_find_desktop_login_popup_skips_invisible(monkeypatch):
-    # 不可见的弹窗（已关闭但未销毁）不算命中
+def test_find_desktop_login_popup_keeps_invisible_window(monkeypatch):
+    # owner 弹窗可能在桌面合成重绘期间短暂不可见，只要 HWND 存活就仍算未登录
     windows = [(0x400, 'MPAY_LOGIN', False, 4242)]
     w = _popup_handle(monkeypatch, windows)
-    assert w.find_desktop_login_popup() == 0
+    assert w.find_desktop_login_popup() == 0x400
 
 
 def test_find_desktop_login_popup_none_when_absent(monkeypatch):
@@ -1819,15 +1867,15 @@ def test_desktop_confirm_login_popup_no_popup_returns_false(monkeypatch):
     assert w.desktop_confirm_login_popup() is False
 
 
-def test_desktop_confirm_login_popup_timeout_still_true(monkeypatch):
-    # 回车后弹窗始终不消失 → 超时返回 True，让调用方重新截图再判断（不抛异常）
+def test_desktop_confirm_login_popup_timeout_returns_false(monkeypatch):
+    # 回车后弹窗始终不消失 → 超时返回 False，不能把仍存活的 HWND 谎报为已关闭
     import time as _time
     _real_sleep = _time.sleep
     w = object.__new__(Window)
     monkeypatch.setattr('module.device.handle.SendMessage', lambda *a: None)
     monkeypatch.setattr('module.device.handle.time.sleep', lambda s: _real_sleep(0.01))
     w.find_desktop_login_popup = lambda: 0x400
-    assert w.desktop_confirm_login_popup(wait=0.1) is True
+    assert w.desktop_confirm_login_popup(wait=0.1) is False
 
 
 def test_desktop_send_enter_ignores_dead_window(monkeypatch):
@@ -2007,26 +2055,65 @@ def _login_handler_for_popup(monkeypatch, device):
     # 除"式神录按钮出现"外的图像判定统一为假，让循环只走弹窗分支与跳出判定
     t.appear_then_click = lambda *a, **kw: False
     t.click = lambda *a, **kw: False
+    t.ocr_appear = lambda *a, **kw: False
     t.ocr_appear_click = lambda *a, **kw: False
     t.appear = lambda rule, **kw: rule is LoginHandler.I_MAIN_GOTO_SHIKIGAMI_RECORDS
     return t
 
 
 def test_app_handle_login_desktop_confirms_popup_before_loop(monkeypatch):
-    # 桌面分支：进循环前先确认 MPay 弹窗，循环内发现弹窗则确认后重新截图（continue）
+    # 桌面分支：登录循环每轮都检查 MPay，关闭后重新开始本轮识别
     dev = _desktop_device()
-    results = [True, True, False]  # 进循环前、循环内第一轮都有弹窗，第二轮已消失
+    popup_states = [0x400, 0x400, 0, 0]
     calls = []
 
     def confirm(*a, **kw):
         calls.append(True)
-        return results.pop(0) if results else False
+        return True
 
+    dev.find_desktop_login_popup = lambda: popup_states.pop(0) if popup_states else 0
     dev.desktop_confirm_login_popup = confirm
     t = _login_handler_for_popup(monkeypatch, dev)
     t._app_handle_login()
-    # 进循环前 1 次 + 循环内 2 次（第一次返回 True 触发 continue，第二次无弹窗后继续判定）
-    assert len(calls) == 3
+    # 前两轮均检测到弹窗并发送回车，第三轮才进入正常页面识别
+    assert len(calls) == 2
+
+
+def test_app_handle_login_popup_close_failure_stops_login(monkeypatch):
+    # MPay 回车后仍存活时必须中止登录，交给 Restart 清理客户端后重建
+    dev = _desktop_device()
+    dev.find_desktop_login_popup = lambda: 0x400
+    dev.desktop_confirm_login_popup = lambda *a, **kw: False
+    t = _login_handler_for_popup(monkeypatch, dev)
+
+    with pytest.raises(GameStuckError, match='MPay login popup cannot be closed'):
+        t._app_handle_login()
+
+
+def test_app_handle_login_popup_reappear_is_bounded(monkeypatch):
+    """MPay 每次都关得掉却反复重弹时必须封顶，否则登录循环会永久挂住。
+
+    弹窗分支 continue 回循环顶部，绕过了 self.screenshot() 里的 stuck_record_check，
+    所以这条路径没有超时兜底，只能靠自带的次数上限抛异常交给 Restart 重建客户端。
+    """
+    from tasks.Restart.login import DESKTOP_MPAY_CLOSE_LIMIT
+
+    dev = _desktop_device()
+    calls = []
+    # 弹窗每次都在，且每次都"成功关闭"——模拟关掉又立刻重弹
+    dev.find_desktop_login_popup = lambda: 0x400
+
+    def confirm(*a, **kw):
+        calls.append(True)
+        return True
+
+    dev.desktop_confirm_login_popup = confirm
+    t = _login_handler_for_popup(monkeypatch, dev)
+
+    with pytest.raises(GameStuckError, match='reappeared more than'):
+        t._app_handle_login()
+    # 上限内的每一次都真的尝试过回车，超出后才抛异常（不再多发一次）
+    assert len(calls) == DESKTOP_MPAY_CLOSE_LIMIT
 
 
 def test_app_handle_login_emulator_never_touches_popup(monkeypatch):

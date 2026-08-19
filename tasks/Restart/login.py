@@ -11,6 +11,13 @@ from tasks.base_task import BaseTask
 from module.atom.click import RuleClick
 import time
 
+# 单次登录流程里容许处理的 MPay 弹窗次数上限。弹窗关得掉却反复重弹，说明客户端登录态
+# 没有真正推进；而弹窗分支是 continue 回循环顶部、绕过了 self.screenshot()，卡死检测
+# （stuck_record_check）只在截图里跑，因此这条路径没有任何超时兜底，原地重试会把登录
+# 循环永久挂住。超过上限就交给 Restart 重建客户端，而不是继续等一个不会消失的弹窗。
+DESKTOP_MPAY_CLOSE_LIMIT = 5
+
+
 class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     character: str
     skip_onmyoji_genie: bool = False
@@ -32,14 +39,32 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         confirm_timer = Timer(1.5, count=2).start()
         orientation_timer = Timer(10)
         login_success = False
-        # 桌面分支：MPay 账号登录弹窗是独立顶层窗口，不在游戏截图里，只能按窗口类名探测。
-        # 客户端刚启动时必然有它，加载慢或重登时也可能中途弹出，因此进循环前先确认一次，
-        # 循环内再按 popup_timer 周期性复查（模拟器无此弹窗，两处都隔离在桌面分支）
-        popup_timer = Timer(2, count=1).start()
-        if self.device.is_desktop:
-            self.device.desktop_confirm_login_popup()
+        # 本次登录已处理过的 MPay 弹窗次数，用于给「关掉又重弹」封顶
+        popup_handled = 0
+
+        def handle_desktop_login_popup() -> bool:
+            """登录期间持续处理 MPay 弹窗，返回是否刚刚关闭了弹窗。"""
+            nonlocal popup_handled
+            if not self.device.is_desktop or not self.device.find_desktop_login_popup():
+                return False
+            popup_handled += 1
+            if popup_handled > DESKTOP_MPAY_CLOSE_LIMIT:
+                # 前几次都成功关掉了却又弹出来，说明登录靠回车已经走不出去，
+                # 交给 Restart 清掉客户端重建，而不是在这里无限关弹窗
+                raise GameStuckError(
+                    f'Desktop MPay login popup reappeared more than {DESKTOP_MPAY_CLOSE_LIMIT} times')
+            if not self.device.desktop_confirm_login_popup():
+                # 弹窗可能恰好在确认函数最后一次枚举后自行关闭，重新确认避免误判为卡死。
+                if not self.device.find_desktop_login_popup():
+                    return True
+                # 弹窗仍存活时不能继续识别游戏页面，否则会把 MPay 误报成未知页面。
+                raise GameStuckError('Desktop MPay login popup cannot be closed')
+            return True
 
         while 1:
+            # MPay 可能在启动后、重登时或登录流程中途反复出现，每一轮都必须处理。
+            if handle_desktop_login_popup():
+                continue
             # Watch device rotation
             if not login_success and orientation_timer.reached():
                 # Screen may rotate after starting an app
@@ -47,11 +72,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 orientation_timer.reset()
 
             self.screenshot()
-            # 桌面分支：登录弹窗挡在前面时游戏不会推进，发现就回车确认并重新截图
-            if self.device.is_desktop and popup_timer.reached():
-                popup_timer.reset()
-                if self.device.desktop_confirm_login_popup():
-                    continue
+            # 截图与窗口枚举存在竞态，截图后再检查一次，避免刚出现的 MPay 进入图像识别。
+            if handle_desktop_login_popup():
+                continue
             # 取消继续战斗
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')
@@ -199,7 +222,10 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         return login_success
 
     def app_handle_login(self) -> bool:
-        for _ in range(2):
+        # 桌面客户端的启动、清理和三轮重建统一由 _desktop_start_and_login 管理。
+        # 这里若再 stop/start，会在内部重试耗尽后留下一个从未验证的新进程。
+        attempts = 1 if self.device.is_desktop else 2
+        for _ in range(attempts):
             self.device.stuck_record_clear()
             self.device.click_record_clear()
             try:
@@ -212,11 +238,13 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 return True
             except (GameTooManyClickError, GameStuckError) as e:
                 logger.warning(e)
+                if self.device.is_desktop:
+                    raise
                 self.device.app_stop()
                 self.device.app_start()
                 continue
 
-        logger.critical('Login failed more than 3')
+        logger.critical(f'Login failed after {attempts} attempts')
         logger.critical('Onmyoji server may be under maintenance, or you may lost network connection')
         raise RequestHumanTakeover
 

@@ -423,8 +423,15 @@ class Handle:
         """按 PID + 类名查找 MPay 账号登录弹窗，返回句柄；没有则返回 0。
 
         弹窗与游戏主窗口同 PID 但是独立顶层窗口（owner 为主窗口，非子窗口），
-        既不在主窗口的截图里，也没有子控件可枚举，只能按窗口类名定位。
+        没有子控件可枚举，只能按窗口类名定位。
         按 PID 过滤保证多开时各实例只处理自己客户端的弹窗。
+
+        主窗口 BitBlt 是否包含这个 owner 窗口受桌面合成状态影响，同一个弹窗可能在
+        不同错误截图中出现或消失，所以登录状态不能依赖截图判断。
+        改按「HWND 是否仍存活」判断而不再过滤 IsWindowVisible：真机验证过已登录的
+        客户端（PID 29512）全系统枚举不到任何 MPAY_LOGIN 顶层窗口，说明客户端确认
+        弹窗后是销毁它、而非隐藏（与下方 DESKTOP_RESIZE_ATTEMPTS 注释记录的
+        「销毁登录界面、重建游戏主窗口」一致）。因此 HWND 存活即代表尚未登录。
         """
         pid_int = self.desktop_pid()
         if pid_int is None:
@@ -440,8 +447,6 @@ class Handle:
             try:
                 if GetClassName(hwnd) != DESKTOP_LOGIN_POPUP_CLASS:
                     continue
-                if not IsWindowVisible(hwnd):
-                    continue
                 if GetWindowThreadProcessId(hwnd)[1] == pid_int:
                     return hwnd
             except Exception:
@@ -450,15 +455,14 @@ class Handle:
         return 0
 
     def desktop_confirm_login_popup(self, wait: float = 15.0) -> bool:
-        """确认 MPay 账号登录弹窗（点“进入游戏”），返回是否发现过弹窗。
+        """向 MPay 登录弹窗发送回车，并确认对应 HWND 已真实消失。
 
         弹窗是 DirectUI 独立顶层窗口，"进入游戏"只是绘制出来的像素、没有真实控件，
         实测后台鼠标消息（WM_MOUSEMOVE/LBUTTONDOWN/LBUTTONUP，Post 与 Send 都试过）
-        完全无响应；回车走键盘消息可触发默认按钮，弹窗随即消失、游戏推进到登录页。
-        因此这里只发回车，并在 wait 秒内轮询确认弹窗真的消失。
+        完全无响应；同步与异步回车在无前台焦点时均可触发默认按钮。因此这里只发回车，
+        并在 wait 秒内轮询确认弹窗 HWND 真的消失。
 
-        返回 True 表示本次发现了弹窗（无论是否在超时内关闭，调用方都应重新截图再判断），
-        False 表示当前没有弹窗，不需要处理。
+        返回 True 表示弹窗确实已关闭；False 表示没有弹窗，或超时后弹窗仍然存活。
         """
         if not self.find_desktop_login_popup():
             return False
@@ -467,12 +471,12 @@ class Handle:
         while time.time() < deadline:
             hwnd = self.find_desktop_login_popup()
             if not hwnd:
-                logger.info('Desktop MPay login popup confirmed')
+                logger.info('Desktop MPay login popup confirmed closed')
                 return True
             self._desktop_send_enter(hwnd)
             time.sleep(1)
-        logger.warning(f'Desktop MPay login popup still present after {wait}s')
-        return True
+        logger.warning(f'Desktop MPay login popup still present after {wait}s, Enter had no effect')
+        return False
 
     def desktop_window_exists(self) -> bool:
         """桌面模式：目标 PID 对应窗口仍存在即视为客户端运行中。
@@ -791,7 +795,7 @@ class Handle:
                     logger.info(f'桌面客户端已自动启动并绑定 PID={candidate["pid"]}')
                     # 到这里启动就完成了：进程在跑、窗口句柄已绑定。
                     # MPay 登录弹窗与进游戏属于登录流程，由 Restart 的 app_handle_login
-                    # 负责（它进循环前确认一次、循环内每 2s 复查，弹窗中途冒出来也能接住）。
+                    # 负责（登录循环每轮都复查弹窗，中途冒出来也能接住）。
                     # 这里不再等弹窗：启动侧等一遍、登录侧再确认一遍是串行叠加的重复工作，
                     # 实测白等约 20 秒，而登录循环本可以边截图边处理掉它
                     return candidate['pid'], spawned

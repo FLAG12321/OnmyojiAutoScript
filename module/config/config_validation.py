@@ -178,7 +178,7 @@ def _migrate_drop_desktop_login_wait(raw: dict) -> None:
     """丢弃已废弃的 script.device.desktop_login_wait。
 
     它原本是「启动客户端后等 MPay 登录弹窗的轮询上限」。等弹窗与进游戏已移交
-    Restart 的 app_handle_login（它进循环前确认一次、循环内每 2s 复查），启动侧
+    Restart 的 app_handle_login（登录循环每轮都复查弹窗），启动侧
     不再等待，配置项因此失去作用。字段从模型删除后磁盘残留会被 _reject_unknown_keys
     判为非法整份配置隔离，所以必须在严格校验前 pop 掉。
     """

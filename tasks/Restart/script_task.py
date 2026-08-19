@@ -10,11 +10,12 @@ from tasks.base_task import BaseTask, Time
 from datetime import datetime, time
 
 from module.logger import logger
-from module.exception import TaskEnd, RequestHumanTakeover, GameNotRunningError, GameStuckError
+from module.exception import (TaskEnd, RequestHumanTakeover, GameNotRunningError,
+                              GameStuckError, GameTooManyClickError)
 
 # 桌面模式客户端启动失败后的重建轮数。Restart 必须自己扛住启动失败，
 # 抛给调度器会被 task_call('Restart') 打回这里形成无限循环
-DESKTOP_RESTART_ATTEMPTS = 2
+DESKTOP_RESTART_ATTEMPTS = 3
 
 
 class ScriptTask(LoginHandler):
@@ -80,7 +81,7 @@ class ScriptTask(LoginHandler):
                 self.device.app_start()
                 self.app_handle_login()
                 return
-            except (GameNotRunningError, GameStuckError) as e:
+            except (GameNotRunningError, GameStuckError, GameTooManyClickError) as e:
                 logger.warning(f'桌面客户端启动后仍未就绪（第 {attempt}/{DESKTOP_RESTART_ATTEMPTS} 轮）: {e}')
                 # 每轮失败都必须清掉本轮客户端，最后一轮也不例外：原来最后一轮直接 break
                 # 跳过清理，紧接着 RequestHumanTakeover 让进程退出，那个客户端就成了无主
@@ -123,7 +124,6 @@ if __name__ == '__main__':
     task.app_restart()
     # task.config.update_scheduler()
     # task.delay_pending_tasks()
-
 
 
 

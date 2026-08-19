@@ -47,7 +47,8 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
     retry_times :int = 0
     # 桌面客户端登录态：OAS 自动启动/重启客户端后为 False（需先走 restart 登录流程），
-    # 登录成功由 desktop_mark_logged_in() 置 True；默认 True 表示假设已在游戏中（不强制登录）
+    # 登录成功由 desktop_mark_logged_in() 置 True，运行期发现 MPay 弹窗由
+    # desktop_mark_logged_out() 置回 False；默认 True 表示假设已在游戏中（不强制登录）
     _desktop_login_done = True
     def __init__(self, *args, cancel_event=None, **kwargs):
         # cancel_event: 可选取消信号（threading.Event）。Web 标注采集线程断开时置位，
@@ -122,6 +123,16 @@ class Device(Platform, Screenshot, Control, AppControl):
     def desktop_mark_logged_in(self) -> None:
         """标记桌面客户端已完成登录（仅桌面模式由 Restart 登录流程成功后调用）。"""
         self._desktop_login_done = True
+
+    def desktop_mark_logged_out(self) -> None:
+        """标记桌面客户端已掉回未登录态（发现 MPay 弹窗时调用）。
+
+        运行期客户端可能自己掉回 MPay 登录界面（掉线、账号被顶、客户端重登），此时
+        窗口仍在、登录标记却还是上次登录成功留下的 True，app_is_running() 因此会说
+        「游戏在运行」，任务被白白启动一次才在 ui_get_current_page 里发现问题。
+        复位标记后 script.py 的任务前置检查就能直接拦下并转交 Restart。
+        """
+        self._desktop_login_done = False
 
     def _init_desktop(self) -> None:
         """桌面客户端模式初始化：跳过模拟器健康检查/full_recovery。"""
