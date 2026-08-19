@@ -35,28 +35,6 @@ class SwitchAccountAssets:
 	C_SA_SELECT_SVR_CHARACTER_LIST = RuleClick(roi_front=(205,570,815,40), roi_back=(205,570,815,40), name="sa_select_svr_character_list")
 
 
-	# Ocr Rule Assets
-	# 登录页面服务器名称 
-	O_SA_LOGIN_FORM_SVR_NAME = RuleOcr(roi=(545,510,140,40), area=(545,510,140,40), mode="SINGLE", method="Default", keyword="", name="sa_login_form_svr_name")
-	# 选择服务器界面 底部角色所属服务器名 列表 
-	O_SA_SELECT_SVR_SVR_LIST = RuleOcr(roi=(205,540,815,25), area=(205,540,815,25), mode="FULL", method="Default", keyword="", name="sa_select_svr_svr_list")
-	# 选择服务器界面 底部角色名 列表 
-	O_SA_SELECT_SVR_CHARACTER_LIST = RuleOcr(roi=(407,130,668,487), area=(0,0,100,100), mode="FULL", method="Default", keyword="", name="sa_select_svr_character_list")
-	# 选择账号界面 账号列表 
-	O_SA_ACCOUNT_ACCOUNT_LIST = RuleOcr(roi=(460,280,440,330), area=(460,280,440,330), mode="FULL", method="Default", keyword="", name="sa_account_account_list")
-	# 选择账号界面 已选择的账号 
-	O_SA_ACCOUNT_ACCOUNT_SELECTED = RuleOcr(roi=(460,280,370,50), area=(460,280,370,50), mode="SINGLE", method="Default", keyword="", name="sa_account_account_selected")
-	# 登录界面 用户中心(区别于游戏内用户中心) 账户名 
-	O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT = RuleOcr(roi=(290,185,290,50), area=(290,185,290,50), mode="SINGLE", method="Default", keyword="", name="sa_login_form_user_center_account")
-
-
-	# Swipe Rule Assets
-	# 登录界面 服务器列表的手指向左滑动 
-	S_SA_SVR_SWIPE_LEFT = RuleSwipe(roi_front=(595,576,57,23), roi_back=(587,369,54,26), mode="default", name="sa_svr_swipe_left")
-	# 登录界面 账号列表的手指向上滑动 
-	S_SA_ACCOUNT_LIST_UP = RuleSwipe(roi_front=(520,500,28,6), roi_back=(700,388,33,8), mode="default", name="sa_account_list_up")
-
-
 	# Image Rule Assets
 	# 用于判断是否在登录界面的 
 	I_CHECK_LOGIN_FORM = RuleImage(roi_front=(178,572,53,60), roi_back=(1,547,241,105), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/check_login_form.png")
@@ -92,5 +70,27 @@ class SwitchAccountAssets:
 	I_PAGE_DESKTOP = RuleImage(roi_front=(942,177,46,25), roi_back=(651,6,614,708), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_page_desktop.png")
 	# 取消集结 
 	I_CANCEL_TOINVITE = RuleImage(roi_front=(504,430,63,41), roi_back=(474,424,118,52), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_cancel_toinvite.png")
+
+
+	# Ocr Rule Assets
+	# 登录页面服务器名称 
+	O_SA_LOGIN_FORM_SVR_NAME = RuleOcr(roi=(545,510,140,40), area=(545,510,140,40), mode="SINGLE", method="Default", keyword="", name="sa_login_form_svr_name")
+	# 选择服务器界面 底部角色所属服务器名 列表 
+	O_SA_SELECT_SVR_SVR_LIST = RuleOcr(roi=(205,540,815,25), area=(205,540,815,25), mode="FULL", method="Default", keyword="", name="sa_select_svr_svr_list")
+	# 选择服务器界面 底部角色名 列表 
+	O_SA_SELECT_SVR_CHARACTER_LIST = RuleOcr(roi=(407,130,668,487), area=(0,0,100,100), mode="FULL", method="Default", keyword="", name="sa_select_svr_character_list")
+	# 选择账号界面 账号列表 
+	O_SA_ACCOUNT_ACCOUNT_LIST = RuleOcr(roi=(460,280,440,330), area=(460,280,440,330), mode="FULL", method="Default", keyword="", name="sa_account_account_list")
+	# 选择账号界面 已选择的账号 
+	O_SA_ACCOUNT_ACCOUNT_SELECTED = RuleOcr(roi=(460,280,370,50), area=(460,280,370,50), mode="SINGLE", method="Default", keyword="", name="sa_account_account_selected")
+	# 登录界面 用户中心(区别于游戏内用户中心) 账户名 
+	O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT = RuleOcr(roi=(290,185,290,50), area=(290,185,290,50), mode="SINGLE", method="Default", keyword="", name="sa_login_form_user_center_account")
+
+
+	# Swipe Rule Assets
+	# 登录界面 服务器列表的手指向左滑动 
+	S_SA_SVR_SWIPE_LEFT = RuleSwipe(roi_front=(595,576,57,23), roi_back=(587,369,54,26), mode="default", name="sa_svr_swipe_left")
+	# 登录界面 账号列表的手指向上滑动 
+	S_SA_ACCOUNT_LIST_UP = RuleSwipe(roi_front=(520,500,28,6), roi_back=(700,388,33,8), mode="default", name="sa_account_list_up")
 
 

@@ -11,9 +11,9 @@ class SixRealmsAssets:
 
 
 	# Image Rule Assets
-	# 宁息
+	# 宁息 
 	I_NINGXI = RuleImage(roi_front=(1011,375,19,29), roi_back=(153,87,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/a_ningxi.png")
-	# 宁息之屿 万相铃不足确认框 右侧「进入」按钮（SixRealms 专用，避免被通用 I_UI_CANCEL 误取消）
+	# 宁息之屿 万相铃不足确认框 右侧「进入」按钮（SixRealms 专用，避免被通用 I_UI_CANCEL 误取消） 
 	I_NINGXI_INSUFFICIENT_ENTER = RuleImage(roi_front=(658,391,199,78), roi_back=(658,391,199,78), threshold=0.8, method="Template matching", file="./tasks/SixRealms/a/a_ningxi_insufficient_enter.png")
 	# 混沌re 
 	I_HUNDUN = RuleImage(roi_front=(896,447,23,33), roi_back=(162,122,908,513), threshold=0.65, method="Template matching", file="./tasks/SixRealms/a/a_hundun.png")
