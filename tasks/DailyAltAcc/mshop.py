@@ -18,6 +18,7 @@ from tasks.DailyAltAcc.mshop_grid import (
     enabled_goods,
     is_unlocked,
     locate_slot,
+    price_rule,
     refine_goods,
 )
 
@@ -122,12 +123,14 @@ class Mshop(Mall, DailyAltAccBase):
     def _ocr_price(self, slot: int) -> int:
         """读取指定格位的价格数字，返回 0 表示识别失败。
 
+        ROI 由 price_rule 按点阵现造，不再走 assets.py 的 O_MS_PRICENUM_*。
+
         必须显式兜底 detect_and_ocr：Digit 模式下 after_process 把空串转成 int 0
         （module/ocr/sub_ocr.py:121），而 ocr_single 的判空是 `!= ""`
         （module/ocr/sub_ocr.py:86），`0 != ""` 恒真，导致 RuleOcr.ocr 内部那段
         竖排 / detect_and_ocr 兜底对 Digit 模式是死代码。
         """
-        rule = getattr(self, f'O_MS_PRICENUM_{slot}')
+        rule = price_rule(slot)
         price = rule.ocr(self.device.image)
         if price:
             return int(price)
@@ -207,7 +210,7 @@ class Mshop(Mall, DailyAltAccBase):
                 continue
             found = True
             self._notify_item(item)
-            # TODO 购买：点 O_MS_PRICENUM_<slot> 的 ROI（价格条就是购买按钮），
+            # TODO 购买：点 price_roi(slot) 这块 ROI（价格条就是购买按钮），
             #      确认弹窗用 I_MS_ENSURE（货物无关的「确定」按钮），
             #      每格一件走 Buy.buy_one 而非 buy_more
         if not found:

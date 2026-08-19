@@ -6,6 +6,7 @@
 """
 from dataclasses import dataclass
 
+from module.atom.ocr import RuleOcr
 from tasks.DailyAltAcc.config import CoinType, GoodsType
 
 # 货架总区域，沿用 assets.py 里 I_MS_ALL_* 的 roi_back（已验证坐标）
@@ -42,12 +43,13 @@ GOODS_ASSETS = {
     GoodsType.black_daruma: 'I_MS_BLACK_DARUMA',
 }
 
-# 8 个价格 OCR 资产（O_MS_PRICENUM_1..8，由 mshop/ocr.json 生成）的 ROI 点阵参数。
-# 原资产是手绘的，x 有 ±4px、y 有 ±5px 抖动；已规整为严格均匀点阵：
+# 价格 OCR 的 ROI 点阵。原来是 assets.py 里 8 个手绘的 O_MS_PRICENUM_*，
+# x 有 ±4px、y 有 ±5px 抖动；现规整为严格均匀点阵，由 price_rule() 现造 RuleOcr，
+# 不再占 8 个资产条目（加减格位只改这里的常量）：
 #   x = 168 + col * 225   ->  168 / 393 / 618 / 843
 #   y = 253 + row * 262   ->  253 / 515
 #   w = 159, h = 45
-# 取值保证每个新框完整覆盖对应的原手绘框（只放大不裁切），单测守护这一不变量。
+# 取值保证每个框完整覆盖对应的原手绘框（只放大不裁切），单测守护这一不变量。
 PRICE_X0 = 168
 PRICE_PITCH_X = 225
 PRICE_Y0 = 253
@@ -164,10 +166,7 @@ def is_unlocked(goods: GoodsType, flower: int) -> bool:
 
 
 def price_roi(slot: int) -> tuple[int, int, int, int]:
-    """按点阵算出某格位价格 ROI，用于校验 assets.py 里 O_MS_PRICENUM_<slot> 的取值。
-
-    运行期不用它取 ROI（直接用 assets 实例），它的作用是让单测能断言
-    assets.py 的 8 个 ROI 真的落在点阵上 —— 谁手改了 ocr.json 就会被测出来。
+    """按点阵算出某格位的价格 ROI。
 
     :param slot: 格位号 1..8
     :return: (x, y, w, h)
@@ -176,3 +175,25 @@ def price_roi(slot: int) -> tuple[int, int, int, int]:
     row = (slot - 1) // GRID_COLS
     return (PRICE_X0 + col * PRICE_PITCH_X, PRICE_Y0 + row * PRICE_PITCH_Y,
             PRICE_W, PRICE_H)
+
+
+# 按格位号缓存价格 RuleOcr，避免每次扫描重复构造。
+# RuleOcr 只读不写（ocr()/detect_and_ocr() 都不改自身 roi），所以缓存共享是安全的
+# —— 与 RuleImage.match() 会写回 roi_front 的情况不同。
+_PRICE_RULE_CACHE: dict[int, RuleOcr] = {}
+
+
+def price_rule(slot: int) -> RuleOcr:
+    """按点阵现造某格位的价格 RuleOcr，取代原 assets.py 里的 O_MS_PRICENUM_1..8。
+
+    不进 assets.py 的理由：8 个 ROI 是同一点阵的机械展开，写进 ocr.json 等于
+    把「加减一列格位」变成手改 8 条 json + 重生成资产；现在只改点阵常量。
+    name 带格位号，日志里仍能分辨是哪一格（形如 [MS_PRICE_3 0.01s] [72]）。
+
+    :param slot: 格位号 1..8
+    """
+    if slot not in _PRICE_RULE_CACHE:
+        _PRICE_RULE_CACHE[slot] = RuleOcr(
+            roi=price_roi(slot), area=(0, 0, 100, 100), mode='Digit',
+            method='Default', keyword='', name=f'ms_price_{slot}')
+    return _PRICE_RULE_CACHE[slot]

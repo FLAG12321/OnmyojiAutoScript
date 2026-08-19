@@ -9,46 +9,10 @@
     "description": "description"
   },
   {
-    "itemName": "ms_flag",
-    "imageName": "mshop_ms_flag.png",
-    "roiFront": "1209,384,60,84",
-    "roiBack": "1179,354,100,152",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
     "itemName": "ms_ensure",
     "imageName": "mshop_ms_ensure.png",
     "roiFront": "718,408,81,43",
     "roiBack": "684,404,155,56",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_gold",
-    "imageName": "mshop_ms_gold.png",
-    "roiFront": "194,254,44,41",
-    "roiBack": "0,0,100,100",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_jade",
-    "imageName": "mshop_ms_jade.png",
-    "roiFront": "0,0,100,100",
-    "roiBack": "0,0,100,100",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
-    "itemName": "ms_fmpi",
-    "imageName": "ms_fmpi.png",
-    "roiFront": "432,127,54,79",
-    "roiBack": "387,95,161,154",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

@@ -204,15 +204,7 @@ class DailyAltAccAssets:
 	# description 
 	I_MS_REFRESH = RuleImage(roi_front=(1172,589,103,31), roi_back=(1135,501,144,135), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_refresh.png")
 	# description 
-	I_MS_FLAG = RuleImage(roi_front=(1209,384,60,84), roi_back=(1179,354,100,152), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_flag.png")
-	# description 
 	I_MS_ENSURE = RuleImage(roi_front=(718,408,81,43), roi_back=(684,404,155,56), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_ensure.png")
-	# description 
-	I_MS_GOLD = RuleImage(roi_front=(194,254,44,41), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_gold.png")
-	# description 
-	I_MS_JADE = RuleImage(roi_front=(0,0,100,100), roi_back=(0,0,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_jade.png")
-	# description 
-	I_MS_FMPI = RuleImage(roi_front=(432,127,54,79), roi_back=(387,95,161,154), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/ms_fmpi.png")
 	# 大蛇的逆鳞。搜索区为货架总区域，只允许 match_all_any 多点匹配 
 	I_MS_OROCHI_SCALE = RuleImage(roi_front=(884,143,50,59), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_orochi_scale.png")
 	# 逢魔之魂。搜索区为货架总区域，只允许 match_all_any 多点匹配 
@@ -223,25 +215,6 @@ class DailyAltAccAssets:
 	I_MS_MYSTERY_AMULET = RuleImage(roi_front=(661,397,59,66), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_mystery_amulet.png")
 	# 御行达摩（黑蛋）。搜索区为货架总区域，只允许 match_all_any 多点匹配 
 	I_MS_BLACK_DARUMA = RuleImage(roi_front=(898,410,44,64), roi_back=(139,107,886,454), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mshop/mshop_ms_black_daruma.png")
-
-
-	# Ocr Rule Assets
-	# 格位1价格。8格ROI为规律点阵 x=168+col*225 y=253+row*262 w=159 h=45 
-	O_MS_PRICENUM_1 = RuleOcr(roi=(168,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_1")
-	# 格位2价格 
-	O_MS_PRICENUM_2 = RuleOcr(roi=(393,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_2")
-	# 格位3价格 
-	O_MS_PRICENUM_3 = RuleOcr(roi=(618,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_3")
-	# 格位4价格 
-	O_MS_PRICENUM_4 = RuleOcr(roi=(843,253,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_4")
-	# 格位5价格 
-	O_MS_PRICENUM_5 = RuleOcr(roi=(168,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_5")
-	# 格位6价格 
-	O_MS_PRICENUM_6 = RuleOcr(roi=(393,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_6")
-	# 格位7价格 
-	O_MS_PRICENUM_7 = RuleOcr(roi=(618,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_7")
-	# 格位8价格 
-	O_MS_PRICENUM_8 = RuleOcr(roi=(843,515,159,45), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="ms_pricenum_8")
 
 
 	# Image Rule Assets

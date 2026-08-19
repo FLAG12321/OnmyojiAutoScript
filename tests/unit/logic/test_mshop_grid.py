@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from module.ocr.base_ocr import OcrMode
 from tasks.DailyAltAcc.config import CoinType, DailyAltAccConfig, GoodsType
 from tasks.DailyAltAcc.mshop_grid import (
     BLACK_DARUMA_MIN_PRICE,
@@ -24,6 +25,7 @@ from tasks.DailyAltAcc.mshop_grid import (
     is_unlocked,
     locate_slot,
     price_roi,
+    price_rule,
     refine_goods,
 )
 
@@ -136,16 +138,40 @@ def test_every_goods_type_has_asset_and_name():
 
 
 @pytest.mark.unit
-def test_price_assets_match_regular_lattice():
-    """8 个价格 OCR 资产的 ROI 必须严格落在点阵上。
+def test_price_rule_is_cached_and_matches_lattice():
+    """价格 RuleOcr 按格位缓存复用，roi 严格落在点阵上，name 带格位号可辨。
 
-    ocr.json 是手工维护的，谁改歪一格这里就炸 —— 这是点阵规律性的唯一守护。
+    RuleOcr 只读不写自身 roi，所以共享缓存安全（与 RuleImage.match 会写回
+    roi_front 不同）。
+    """
+    for slot in range(1, 9):
+        rule = price_rule(slot)
+        assert price_rule(slot) is rule, f'格位 {slot} 没走缓存'
+        assert tuple(rule.roi) == price_roi(slot)
+        assert str(slot) in rule.name, f'{rule.name} 分不出格位号'
+    assert price_rule(1) is not price_rule(2)
+
+
+@pytest.mark.unit
+def test_price_rule_is_digit_mode():
+    """必须是 Digit 模式，否则 _ocr_price 的 int() 会拿到非数字串炸掉。"""
+    assert price_rule(1).mode == OcrMode.DIGIT
+
+
+@pytest.mark.unit
+def test_price_assets_removed_from_generated_assets():
+    """8 个 O_MS_PRICENUM_* 已从 ocr.json 与 assets.py 删除，ROI 改由点阵现造。
+
+    留着会有两处事实源：assets 里一套手绘 ROI、代码里一套点阵，改一处漏一处。
     """
     from tasks.DailyAltAcc.mshop import Mshop
     for slot in range(1, 9):
-        rule = getattr(Mshop, f'O_MS_PRICENUM_{slot}')
-        assert tuple(rule.roi) == price_roi(slot), \
-            f'格位 {slot} ROI {tuple(rule.roi)} 偏离点阵 {price_roi(slot)}'
+        assert not hasattr(Mshop, f'O_MS_PRICENUM_{slot}'), \
+            f'O_MS_PRICENUM_{slot} 仍在 assets.py 中，与点阵重复'
+    # 只禁真实取用，不禁注释里提到旧名（说明「不再走 O_MS_PRICENUM_*」是合理的）
+    source = (REPO_ROOT / 'tasks/DailyAltAcc/mshop.py').read_text(encoding='utf-8')
+    assert "f'O_MS_PRICENUM_{slot}'" not in source
+    assert 'self.O_MS_PRICENUM' not in source
 
 
 @pytest.mark.unit
@@ -272,6 +298,37 @@ def test_flower_unlock_covers_every_goods_type():
 def test_shard_and_black_daruma_price_ranges_do_not_overlap():
     """碎片上限必须严格小于黑蛋下限，否则价格判据失效。"""
     assert SHARD_MAX_PRICE < BLACK_DARUMA_MIN_PRICE
+
+
+@pytest.mark.unit
+def test_orphan_assets_stay_removed():
+    """已删除的孤儿资产不得复活，其模板文件也不该回到 mshop/ 目录。
+
+    I_MS_GOLD / I_MS_JADE：币种改由价格阈值判定（coin_of），图标匹配已无用；
+    I_MS_FLAG：改造前即 0 引用；
+    I_MS_FMPI：指向的 ms_fmpi.png 磁盘与 git 全历史都不存在，条目本身是坏的。
+    """
+    from tasks.DailyAltAcc.mshop import Mshop
+    for name in ('I_MS_GOLD', 'I_MS_JADE', 'I_MS_FLAG', 'I_MS_FMPI'):
+        assert not hasattr(Mshop, name), f'{name} 已删除却又出现在 assets.py'
+    mshop_dir = REPO_ROOT / 'tasks/DailyAltAcc/mshop'
+    for png in ('mshop_ms_gold.png', 'mshop_ms_jade.png', 'mshop_ms_flag.png'):
+        assert not (mshop_dir / png).exists(), f'{png} 已删除却又回到目录'
+
+
+@pytest.mark.unit
+def test_no_unused_png_in_mshop_dir():
+    """mshop/ 下每个 PNG 都必须被 image1.json 引用，不留孤儿。
+
+    这条是持续护栏：以后再删条目忘删图、或加图忘注册，都会在这里暴露。
+    """
+    import json
+    mshop_dir = REPO_ROOT / 'tasks/DailyAltAcc/mshop'
+    referenced = {e['imageName']
+                  for e in json.loads((mshop_dir / 'image1.json').read_text(encoding='utf-8'))}
+    on_disk = {p.name for p in mshop_dir.glob('*.png')}
+    assert on_disk - referenced == set(), f'有 PNG 未被任何条目引用: {on_disk - referenced}'
+    assert referenced - on_disk == set(), f'有条目指向不存在的 PNG: {referenced - on_disk}'
 
 
 @pytest.mark.unit
