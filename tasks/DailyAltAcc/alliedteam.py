@@ -79,8 +79,9 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             emit_stat = getattr(self, "emit_stat", None)
             if emit_stat:
                 emit_stat(StatEvent.BATTLE, count=0)
-        # 选关失败/邀请超时时一场未打：透传 False 走 False 计数通道（保持
-        # pending 可重跑、两次后 skipped），不能靠默认返回 None 被标成 done
+        # 未打满就结束（选关/邀请失败一场未打，或中途无法回到挑战界面）：透传
+        # False 走 False 计数通道（保持 pending 可重跑、两次后 skipped），
+        # 不能靠默认返回 None 被标成 done——那会让剩余场次被当作已完成丢弃
         if battle_result is False:
             return False
 
@@ -182,18 +183,39 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 start_time = time.time()
                 continue
                    
-        while 1:
+        # 首次建队：推到可点「挑战」为止。原来是无超时死循环，界面异常时只能靠
+        # 60s stuck 抛异常收场；改为超时返回 False 走「未打满」通道，可下轮接续
+        if not self._ensure_battle_ready():
+            return False
+        return self.run_alone()
+
+    def _ensure_battle_ready(self, timeout: float = 60) -> bool:
+        """把界面推回可点「挑战」的状态（I_BATTLE 可见）。
+
+        建队链路与「打完一轮被弹回组队页」的恢复动作完全相同，因此抽出共用：
+        队伍打满一轮或队友退出后，游戏会回到组队页（"请在左侧选择目标副本"），
+        此时 I_BATTLE 不出现。原来 run_alone 只能空转到 60s stuck 超时把整个
+        子任务判失败，剩余场次全丢。
+
+        循环内的点击会经 handle_control_check 重置 stuck 计时，所以只要还在
+        尝试恢复就不会误触发 GameStuckError；真正无法恢复时按超时返回 False，
+        交给调用方按「未打满」收尾，而不是抛异常。
+
+        :return: True 表示已就绪可点挑战
+        """
+        timeout_timer = Timer(timeout).start()
+        while not timeout_timer.reached():
             self.screenshot()
-            if self.appear(self.I_BATTLE, interval=1):  
-                break
+            if self.appear(self.I_BATTLE, interval=1):
+                return True
             if self.appear_then_click(self.I_CREATE_AGAIN, interval=1):
                 continue
             if self.appear_then_click(self.I_CREATE_TEAM, interval=1):
                 continue
             if self.appear_then_click(self.I_SELECT_LEVEL, interval=1):
-                    continue
-        self.run_alone()
-        return True
+                continue
+        logger.warning('无法回到同心挑战界面（组队页恢复超时）')
+        return False
 
     def return_to_main(self):   
         while 1:
@@ -269,7 +291,12 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 if self.appear_then_click(self.I_LOCK, interval=1):
                     continue
 
-    def run_alone(self):
+    def run_alone(self) -> bool:
+        """连续打到次数上限。
+
+        :return: True 表示已打满上限；False 表示中途无法回到挑战界面（已打场次
+                 均已落盘，调用方按「未打满」收尾，剩余场次留给下轮接续）
+        """
         def is_in_evozone(screenshot=False) -> bool:
             if screenshot:
                 self.screenshot()
@@ -289,8 +316,16 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             self.screenshot()
             if self.current_count >= alliedteam_limit_count:
                 logger.info('Orochi count limit out')
-                break
+                return True
             if not is_in_evozone():
+                # 打完一轮被弹回组队页：复用建队链路推回「挑战」，不再空转到卡死。
+                # 恢复不了就带着已落盘的场次正常退出，交给下轮接续剩余场次。
+                if not self._ensure_battle_ready():
+                    logger.warning(
+                        f'同心战斗中断：已打 {self.current_count}/{alliedteam_limit_count} 场，'
+                        f'剩余场次留待下轮接续'
+                    )
+                    return False
                 continue
             # 点击挑战
             while 1:
