@@ -55,6 +55,45 @@ DESKTOP_KILL_POLL_INTERVAL = 0.5
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2，SetThreadDpiAwarenessContext 的入参
 _PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 
+# 桌面客户端运行期间强制保持显示器常亮：桌面模式截图走 BitBlt，依赖 DWM 合成，
+# 屏幕一旦因电源超时关闭，DWM 停止合成，BitBlt 只能返回静止黑帧，登录循环会因此
+# 死等 300s 超时。在客户端启动时开启、关闭时清除，只锁客户端生命周期，不影响
+# OAS 空闲时用户正常让屏幕休眠。
+ES_CONTINUOUS = 0x80000000
+ES_DISPLAY_REQUIRED = 0x00000002
+
+
+def desktop_keep_screen_on(enable: bool) -> None:
+    """按桌面客户端生命周期开关「强制保持显示器常亮」。
+
+    SetThreadExecutionState 是线程级状态：ES_CONTINUOUS 保持该线程的请求，直到
+    再次调用清除。OAS worker 的任务在同一长驻线程内启停客户端，因此这里设置即可。
+
+    注意 ES_DISPLAY_REQUIRED 只「阻止未来关闭」，屏幕若已因电源超时熄灭，必须先用
+    SC_MONITORPOWER(-1) 广播把显示器物理点亮，否则 BitBlt 仍返回黑帧。
+    """
+    if enable:
+        # 物理点亮：SC_MONITORPOWER(-1) 单独发消息对部分显示器/驱动不触发硬件唤醒
+        # （实测只发它屏幕仍黑），必须再模拟一次无害键盘输入与鼠标移动，产生真实
+        # 输入事件才能真正点亮。VK_F15(0x7E) 无副作用，不会干扰游戏。
+        try:
+            ctypes.windll.user32.SendMessageW(0xFFFF, 0x0111, 0xF170, -1)
+        except Exception as e:
+            logger.warning(f'SC_MONITORPOWER wake failed: {e}')
+        try:
+            user32 = ctypes.windll.user32
+            user32.keybd_event(0x7E, 0, 0, 0)
+            user32.keybd_event(0x7E, 0, 2, 0)
+            user32.SetCursorPos(400, 300)
+        except Exception as e:
+            logger.warning(f'wake input failed: {e}')
+    state = ES_CONTINUOUS | (ES_DISPLAY_REQUIRED if enable else 0)
+    try:
+        ctypes.windll.kernel32.SetThreadExecutionState(state)
+        logger.info(f'Desktop screen keep-awake {"ON" if enable else "OFF"}')
+    except Exception as e:
+        logger.warning(f'SetThreadExecutionState({enable}) failed: {e}')
+
 
 @contextmanager
 def dpi_awareness():
@@ -466,7 +505,10 @@ class Handle:
         """
         if not self.find_desktop_login_popup():
             return False
-        logger.info('Desktop MPay login popup found, press Enter to enter game')
+        logger.info('Desktop MPay login popup found, wait 5s before closing to let it load')
+        # 实测弹窗出现太早（启动后约 6s）时，回车关掉弹窗后客户端仍停在黑屏；给弹窗
+        # 5 秒加载时间再回车，降低 Enter 后黑屏卡死的概率（成功案例弹窗出现都偏晚）。
+        time.sleep(5)
         deadline = time.time() + wait
         while time.time() < deadline:
             hwnd = self.find_desktop_login_popup()
@@ -751,6 +793,8 @@ class Handle:
                 # 89 线程 42s CPU 却无窗口）。OAS 靠枚举窗口只绑到窗口进程，关闭时若只杀
                 # 它，启动器就成了无主残留。这里留档，交给 desktop_stop_client 一并清理
                 self._desktop_spawned_pids = set(spawned_pid)
+                # 客户端已拉起，强制保持显示器常亮，防止电源超时关屏导致截图黑帧卡死
+                desktop_keep_screen_on(True)
                 return True
             if attempt == 1:
                 # 只杀本轮确切启动的进程：绑定阶段就失败时 root_handle 仍是上一次的陈旧
@@ -950,6 +994,8 @@ class Handle:
         hwnd = self.root_handle_num
         if (not hwnd or not IsWindow(hwnd)) and not self._desktop_pid_alive(pid):
             logger.info('Desktop client not running, skip stop')
+            # 客户端已不在，解除强制亮屏，允许系统恢复正常的显示器电源管理
+            desktop_keep_screen_on(False)
             self._reset_desktop_handle_state()
             # 窗口进程已没了也要收启动器：它无窗口，只看窗口永远发现不了
             self._desktop_kill_spawned_leftovers(pid)
@@ -963,6 +1009,8 @@ class Handle:
             self.desktop_force_kill()
             if self._desktop_wait_released(pid, wait):
                 logger.info(f'Desktop client released (PID={pid})')
+                # 客户端已确认关闭，解除强制亮屏，允许系统恢复正常的显示器电源管理
+                desktop_keep_screen_on(False)
                 released = True
                 break
             logger.warning(f'Desktop client PID={pid} still present after {wait}s, retry kill')
