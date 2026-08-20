@@ -246,6 +246,30 @@ def test_start_server_reuses_running_service_without_spawning(monkeypatch):
     assert d._start_oas_server() is True
 
 
+def test_start_server_reaps_stale_shell_owned_by_daemon(monkeypatch):
+    """服务在线但监听 PID 已变化时，守护必须回收自己遗留的旧空壳。"""
+    shell = _FakeProc(pid=11548, alive=True)
+    d = _server_daemon([True], proc=shell)
+    d._find_server_listener_pid = lambda: 22222
+    monkeypatch.setattr(daemon_mod.subprocess, 'Popen',
+                        lambda *a, **kw: pytest.fail('服务在线时不应启动新 server'))
+
+    assert d._start_oas_server() is True
+    assert shell.terminated is True
+    assert d.oas_process is None
+
+
+def test_reap_stale_server_keeps_process_that_owns_listener():
+    """监听 PID 仍是守护子进程时不得误杀正常 Server。"""
+    proc = _FakeProc(pid=11548, alive=True)
+    d = _server_daemon([True], proc=proc)
+    d._find_server_listener_pid = lambda: proc.pid
+
+    assert d._reap_stale_server_process() is False
+    assert proc.terminated is False
+    assert d.oas_process is proc
+
+
 def test_start_server_recycles_dead_shell_before_spawning(monkeypatch):
     """句柄存在但服务不可用（空壳）→ 必须先回收残留进程，再启动新的。
 
@@ -322,3 +346,46 @@ def test_stop_server_recycles_own_process_even_if_api_targets_another(monkeypatc
     assert any('kill_server' in u for u in killed_api)
     assert shell.terminated is True
     assert d.oas_process is None
+
+
+# ──────────────────────── 首次启动宽限与计划任务恢复 ────────────────────────
+
+def test_async_run_gives_initial_instance_full_cooldown(monkeypatch):
+    """首次 start 成功后先给完整冷却期，不能在两秒后立即 stop/start。"""
+    d = _make_daemon(state='INACTIVE')
+    d.api_url = 'http://127.0.0.1:22288'
+    d.monitor_interval = 30
+    d.server_auto_start = True
+    d.napcat_manager = None
+    d._ensure_async_objects = lambda: None
+    d._start_oas_server = lambda: True
+    d._ws_start_instance = lambda name: _async_return(True)
+    d._monitor_loop = lambda: _async_return(None)
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(daemon_mod.asyncio, 'sleep', no_sleep)
+    monkeypatch.setattr(daemon_mod.time, 'time', lambda: 1234.5)
+
+    asyncio.run(d._async_run())
+    assert d.instance_last_restart['oas1'] == 1234.5
+    assert d.instance_restart_counts['oas1'] == 0
+
+
+def test_configure_scheduled_task_recovery(monkeypatch):
+    """计划任务必须调用统一脚本配置心跳和失败恢复。"""
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(daemon_mod.sys, 'platform', 'win32')
+    monkeypatch.setattr(daemon_mod.subprocess, 'run', fake_run)
+
+    assert daemon_mod._configure_scheduled_task_recovery() is True
+    assert '-File' in calls[0]
+    assert 'ensure_daemon_task.ps1' in calls[0][calls[0].index('-File') + 1]
+    assert '-TaskName' in calls[0]
+    assert 'OASDaemon' in calls[0]

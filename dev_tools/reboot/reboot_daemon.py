@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 from collections import defaultdict
 
+import psutil
 import requests
 
 # 尝试导入websockets库
@@ -547,6 +548,41 @@ class RebootDaemon:
             self.logger.warning(f"读取deploy.yaml中的WebuiPort失败: {e}，使用配置端口 {self.api_port}")
         return self.api_port
 
+    def _find_server_listener_pid(self):
+        """返回当前 API 端口的监听进程 PID；无法可靠判断时返回 None。"""
+        try:
+            for conn in psutil.net_connections(kind='tcp'):
+                if conn.status != psutil.CONN_LISTEN or not conn.laddr:
+                    continue
+                port = conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1]
+                if port == self.api_port:
+                    return conn.pid
+        except (psutil.Error, OSError) as e:
+            # 端口归属只用于回收空壳，判断失败时必须保守地保留进程
+            self.logger.debug(f"读取 OAS Server 监听进程失败: {e}")
+        return None
+
+    def _reap_stale_server_process(self) -> bool:
+        """服务由其他 PID 提供时，回收守护自己遗留的 pythonw 空壳。"""
+        proc = self.oas_process
+        if not proc:
+            return False
+        if proc.poll() is not None:
+            self.oas_process = None
+            return False
+
+        listener_pid = self._find_server_listener_pid()
+        if not listener_pid or listener_pid == proc.pid:
+            return False
+
+        # GUI 更新会关闭原 Server 并启动新 Server，原 pythonw 外壳可能继续存活；
+        # 端口已明确属于另一个 PID 时才能安全回收，避免误杀真正提供服务的进程。
+        self.logger.warning(
+            f"OAS Server 进程 PID={proc.pid} 已不再监听端口 {self.api_port}，"
+            f"当前监听 PID={listener_pid}，回收残留空壳")
+        self._terminate_server_process()
+        return True
+
     def _start_oas_server(self) -> bool:
         """启动OAS Server子进程"""
         # 「是否在运行」必须以服务健康为准，不能只看子进程句柄。
@@ -556,6 +592,7 @@ class RebootDaemon:
         # server_restart_on_crash 永久失效：检测到离线、决定重启，执行时被句柄骗过，
         # 什么都没做，此后守护再不记录一行 server 日志（实测沉默了 14 小时）。
         if self._is_server_online():
+            self._reap_stale_server_process()
             self.logger.info("OAS Server已在运行")
             return True
         if self.oas_process and self.oas_process.poll() is None:
@@ -992,6 +1029,9 @@ class RebootDaemon:
                     await asyncio.sleep(self.monitor_interval)
                     continue
                 await asyncio.sleep(5)
+            else:
+                # GUI 更新可能已用新 PID 接管端口，在线时也要清理守护留下的旧空壳
+                self._reap_stale_server_process()
 
             # 2. 为所有启用的实例建立/维护WS连接
             for name, ic in self.instance_configs.items():
@@ -1123,6 +1163,12 @@ class RebootDaemon:
             success = await self._ws_start_instance(name)
             if not success:
                 self.logger.error(f"实例 {name} 启动失败")
+            else:
+                # 首次 start 后保留一个完整冷却周期给子进程握手；旧逻辑只等 2 秒便把
+                # INACTIVE 当故障重启，反而会中断仍在初始化的实例。
+                self.instance_last_restart[name] = time.time()
+                self.logger.info(
+                    f"实例 {name} 首次启动进入 {ic.restart_cooldown} 秒初始化宽限期")
             await asyncio.sleep(2)
 
         # 3. 启动NapCat（如果启用）
@@ -1209,8 +1255,29 @@ def _run_via_scheduled_task() -> bool:
         return False
 
 
+def _configure_scheduled_task_recovery() -> bool:
+    """校正计划任务：增加心跳触发器，并保留任务级失败重启。"""
+    if not sys.platform.startswith('win'):
+        return False
+
+    helper = PROJECT_ROOT / 'dev_tools' / 'reboot' / 'ensure_daemon_task.ps1'
+    if not helper.exists():
+        return False
+    try:
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+             '-File', str(helper), '-TaskName', 'OASDaemon'],
+            capture_output=True,
+            timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def _register_scheduled_task_and_run():
-    """注册计划任务（最高权限 + 登录时启动）并通过它启动，仅需一次UAC确认"""
+    """注册计划任务（最高权限 + 登录时启动 + 失败恢复）并启动。"""
     try:
         script = os.path.abspath(sys.argv[0])
         # 直接用pythonw启动，不经过cmd，避免弹出cmd窗口
@@ -1225,6 +1292,8 @@ def _register_scheduled_task_and_run():
             capture_output=True, timeout=10, creationflags=flags
         )
         if result.returncode == 0:
+            if not _configure_scheduled_task_recovery():
+                print("警告: OASDaemon 失败重启设置写入失败")
             # 通过计划任务启动（不弹UAC）
             time.sleep(1)
             if _run_via_scheduled_task():
@@ -1255,6 +1324,10 @@ def main():
             sys.exit(0)
         # 计划任务不存在，创建它并通过它启动（仅首次需要UAC）
         _register_scheduled_task_and_run()
+
+    # 守护每次以最高权限启动时都校正自身计划任务，旧安装也能自动获得恢复设置
+    if sys.platform.startswith('win') and _is_admin():
+        _configure_scheduled_task_recovery()
 
     # Windows控制台UTF-8支持
     if sys.platform.startswith('win'):

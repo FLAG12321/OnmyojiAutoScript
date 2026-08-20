@@ -42,11 +42,17 @@ reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "OASDaemon" /
 del "%TEMP%\oas_daemon_start.vbs" >nul 2>&1
 schtasks /delete /tn "OASDaemon" /f >nul 2>&1
 
-REM Create scheduled task with highest privileges - directly run pythonw (no cmd window)
+REM 创建最高权限计划任务，直接运行 pythonw 避免弹出命令行窗口
 schtasks /create /tn "OASDaemon" /tr "\"%PYTHONW%\" \"%DAEMON_PY%\"" /sc ONLOGON /rl HIGHEST /f
-if %errorLevel% equ 0 goto :success
+if %errorLevel% neq 0 goto :fallback
+
+REM 桌面客户端必须在登录后的交互会话运行；增加每分钟心跳，避免进程被杀后无法恢复
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%SCRIPT_DIR%ensure_daemon_task.ps1" -TaskName OASDaemon
+if %errorLevel% neq 0 echo [WARN] Failed to configure task-level recovery settings.
+goto :success
 
 REM Fallback: registry startup
+:fallback
 echo [FAIL] Scheduled task creation failed, trying registry fallback...
 echo Set WshShell = CreateObject("WScript.Shell") > "%TEMP%\oas_daemon_start.vbs"
 echo WshShell.Run """%PYTHONW%"" ""%DAEMON_PY%""", 0, False >> "%TEMP%\oas_daemon_start.vbs"
