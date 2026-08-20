@@ -9,6 +9,7 @@
 5. 其他通知保持（mshop 仍推/neterror 不推/cooperation 不即时推）
 6. 登录页局部修复（进程存在+登录页→重试；进程不存在→仍 GameNotRunning；SwitchAccount/GameUi 未改）
 """
+import json
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -623,12 +624,36 @@ def test_resume_round_does_not_push_half(tmp_path):
 # =====================================================================
 
 @pytest.mark.unit
-def test_mshop_still_pushes_immediately(tmp_path):
+def test_mshop_persists_instead_of_pushing(tmp_path):
+    """神秘商店改与协作同策：落盘到本轮进度，不再「发现一条立即推送」。
+
+    即时推送在多账号场景下会按账号数量刷屏；现在统一进整轮汇总一条。
+    """
+    task = _task_with_progress(tmp_path)
+    ret = task._process_message_type(MSGType.mshop, {
+        'goods': '大蛇的逆鳞', 'coin': '金币', 'price': 82500,
+        'slot': 2, 'label': '发现82500金币大蛇的逆鳞',
+    }, _account())
+    assert ret is False
+    assert task.config.notifier.pushes == []
+    saved = task._progress.load_mshops()
+    assert len(saved) == 1
+    assert saved[0]['goods'] == '大蛇的逆鳞'
+    assert saved[0]['price'] == 82500
+    assert saved[0]['coin'] == '金币'
+
+
+@pytest.mark.unit
+def test_mshop_accepts_legacy_string_event(tmp_path):
+    """旧格式纯字符串事件也要落盘（整串进 label），跨版本不丢记录。"""
     task = _task_with_progress(tmp_path)
     ret = task._process_message_type(MSGType.mshop, '发现1000金币 勾玉', _account())
     assert ret is False
-    assert len(task.config.notifier.pushes) == 1
-    assert task.config.notifier.pushes[0]['title'] == '发现1000金币 勾玉'
+    assert task.config.notifier.pushes == []
+    saved = task._progress.load_mshops()
+    assert len(saved) == 1
+    assert saved[0]['label'] == '发现1000金币 勾玉'
+    assert saved[0]['price'] is None
 
 
 @pytest.mark.unit
@@ -716,6 +741,105 @@ def _task_with_coop_cfg(tmp_path, coop_enable=True, notifier=None, config_name='
     task._progress = ProgressStore(config_name, base_dir=tmp_path)
     task._progress.ensure_phase(FLAGS_A, '20260817-0605')
     return task
+
+
+def _task_with_toggles(tmp_path, coop_enable=True, mshop_enable=True,
+                       notifier=None, config_name='oas1'):
+    """构造同时带协作与神秘商店总开关的任务（真实 ProgressStore）。"""
+    cfg = SimpleNamespace(total_cooperation_enable=coop_enable,
+                          total_mysteryshop_enable=mshop_enable)
+    task = _make_task()
+    task.config = _fake_config(notifier, config_name=config_name,
+                               multi_daily_alt_acc=SimpleNamespace(multi_daily_alt_acc_config=cfg))
+    task.daily_conf = task.config.multi_daily_alt_acc
+    task._progress = ProgressStore(config_name, base_dir=tmp_path)
+    task._progress.ensure_phase(FLAGS_A, '20260817-0605')
+    return task
+
+
+_MSHOP_A = {
+    'account': 'a@example.com', 'character': '角色A', 'svr': '一区',
+    'apple_or_android': True, 'goods': '大蛇的逆鳞', 'coin': '金币',
+    'price': 82500, 'label': '发现82500金币大蛇的逆鳞',
+}
+
+
+@pytest.mark.unit
+def test_summary_appends_mshop_section(tmp_path):
+    """协作与商店都有记录：一条汇总里同时出现协作类别与神秘商店段落。"""
+    task = _task_with_toggles(tmp_path)
+    task._progress.append_coop(_COOP_A)
+    task._progress.append_mshop(_MSHOP_A)
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    content = task.config.notifier.pushes[0]['content']
+    assert '神秘商店（1）' in content
+    assert '大蛇的逆鳞 82500金币' in content
+    assert '协作任务数量：1' in content
+    assert task._progress.is_coop_notified() is True
+
+
+@pytest.mark.unit
+def test_summary_sends_mshop_only_when_coop_toggle_off(tmp_path):
+    """协作关 + 商店有记录：仍发汇总，但不出协作类别段落。"""
+    task = _task_with_toggles(tmp_path, coop_enable=False)
+    task._progress.append_coop(_COOP_A)
+    task._progress.append_mshop(_MSHOP_A)
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    content = task.config.notifier.pushes[0]['content']
+    assert '神秘商店（1）' in content
+    # 协作关闭 -> 计数归零且不出类别段落
+    assert '协作任务数量：0' in content
+    assert '现世勾协' not in content
+
+
+@pytest.mark.unit
+def test_summary_skipped_when_coop_off_and_no_mshop(tmp_path):
+    """协作关 + 商店无记录：完全不发，避免推出「未发现协作任务」的空汇总。"""
+    task = _task_with_toggles(tmp_path, coop_enable=False)
+    task._progress.append_coop(_COOP_A)
+    task._notify_daily_completion()
+    assert task.config.notifier.pushes == []
+    assert task._progress.is_coop_notified() is False
+
+
+@pytest.mark.unit
+def test_summary_omits_mshop_when_toggle_off(tmp_path):
+    """商店总开关关闭：即便有落盘记录也不出商店段落。"""
+    task = _task_with_toggles(tmp_path, mshop_enable=False)
+    task._progress.append_mshop(_MSHOP_A)
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    content = task.config.notifier.pushes[0]['content']
+    assert '神秘商店' not in content
+    assert '本轮未发现协作任务。' in content
+
+
+@pytest.mark.unit
+def test_summary_unchanged_when_no_mshop(tmp_path):
+    """商店无记录时，汇总输出必须与改造前逐字一致（协作行为零回归）。"""
+    from tasks.MultiDailyAltAcc.script_task import ScriptTask
+    at = datetime(2026, 8, 20, 3, 12, 5)
+    coops = [_COOP_A, _COOP_B]
+    with_empty = ScriptTask._build_summary_content(coops, completed_at=at, mshops=[])
+    without_arg = ScriptTask._build_summary_content(coops, completed_at=at)
+    assert with_empty == without_arg
+    assert '神秘商店' not in with_empty
+
+
+@pytest.mark.unit
+def test_archive_covers_mshop_records(tmp_path):
+    """重建前归档要带上商店记录，否则换阶段时商店命中会静默丢失。"""
+    store = ProgressStore('oas1', base_dir=tmp_path)
+    store.ensure_phase(FLAGS_A, '20260817-0605')
+    store.append_mshop(_MSHOP_A)
+    n = store.archive_pending_coops()
+    assert n == 1
+    archive = tmp_path / 'multi_daily_coop_archive_oas1.json'
+    assert archive.exists()
+    data = json.loads(archive.read_text(encoding='utf-8'))
+    assert data[-1]['mshops'][0]['goods'] == '大蛇的逆鳞'
 
 
 @pytest.mark.unit

@@ -76,6 +76,26 @@ class ProgressStore(_BaseProgressStore):
         coops = self._data.get('coop', [])
         return list(coops) if isinstance(coops, list) else []
 
+    # -------------------------------------------------- 本轮神秘商店汇总
+
+    def append_mshop(self, record: dict) -> None:
+        """立即持久化一条神秘商店记录到进度文件顶层 ``mshop`` 列表。
+
+        与 append_coop 同构，但用独立键：协作汇总有固定 7 类格式化逻辑，
+        商店记录混进 coop 会被当协作解析。生命周期同样跟随 ensure_phase / clear。
+        """
+        items = self._data.setdefault('mshop', [])
+        if not isinstance(items, list):
+            items = []
+            self._data['mshop'] = items
+        items.append(dict(record))
+        self._save()
+
+    def load_mshops(self) -> list:
+        """读取本轮已保存的神秘商店记录。"""
+        items = self._data.get('mshop', [])
+        return list(items) if isinstance(items, list) else []
+
     # ------------------------------------------------ 本轮已通知标记
 
     def is_coop_notified(self) -> bool:
@@ -93,15 +113,19 @@ class ProgressStore(_BaseProgressStore):
         self._save()
 
     def archive_pending_coops(self) -> int:
-        """重建前兜底：把尚未正常完成通知的协作归档到独立 JSON，返回归档条数。
+        """重建前兜底：把尚未完成通知的协作与神秘商店记录归档到独立 JSON，返回归档条数。
 
-        触发场景：phase_flags 已变 / 进度过期导致 ensure_phase 准备重建覆盖，而旧 coop
-        尚未发送最终汇总。为避免协作数据永久丢失，先把它们复制到
+        触发场景：phase_flags 已变 / 进度过期导致 ensure_phase 准备重建覆盖，而旧
+        coop / mshop 尚未发送最终汇总。为避免数据永久丢失，先把它们复制到
         ``multi_daily_coop_archive_<config>.json``（按 config 隔离，保留最近
         COOP_ARCHIVE_LIMIT 份）。归档失败只记日志，绝不阻断主任务。
+
+        两类记录写同一份归档文件的同一条目：它们属于同一轮，放一起才好回溯。
+        返回值是两类合计条数（调用方只用它判断「有没有东西被归档」）。
         """
         coops = self.load_coops()
-        if not coops:
+        mshops = self.load_mshops()
+        if not coops and not mshops:
             return 0
         archive_path = self.path.parent / f'{self.task_name}_coop_archive_{self.config_name}.json'
         try:
@@ -117,17 +141,19 @@ class ProgressStore(_BaseProgressStore):
             existing.append({
                 'archived_at': datetime.now().isoformat(),
                 'coops': coops,
+                'mshops': mshops,
             })
             existing = existing[-COOP_ARCHIVE_LIMIT:]
             _write_json_atomic(archive_path, existing)
-            logger.info(f'已归档 {len(coops)} 条未通知协作 -> {archive_path}')
-            return len(coops)
+            logger.info(f'已归档 {len(coops)} 条未通知协作、'
+                        f'{len(mshops)} 条神秘商店记录 -> {archive_path}')
+            return len(coops) + len(mshops)
         except Exception as e:
             logger.warning(f'协作归档失败（不影响主任务）: {e}')
             return 0
 
     def ensure_phase(self, phase_flags: dict, phase_id: str) -> bool:
-        """在基类判定前做「重建前归档」兜底：仅当本轮即将被重建且还有未通知 coop 时归档。
+        """在基类判定前做「重建前归档」兜底：本轮即将被重建且还有未通知记录时归档。
 
         保持基类 ensure_phase 的接续/重建语义完全不变：归档只是旁路留痕，绝不改变
         现有账号进度的接续规则，也不影响新建/重建结果。
@@ -138,7 +164,9 @@ class ProgressStore(_BaseProgressStore):
             and data.get('phase_flags') == phase_flags
             and not self._is_stale(data)
         )
-        if not resumable and isinstance(data.get('coop'), list) and data['coop']:
+        pending = any(isinstance(data.get(key), list) and data[key]
+                      for key in ('coop', 'mshop'))
+        if not resumable and pending:
             self._data = dict(data)
             self.archive_pending_coops()
         return super().ensure_phase(phase_flags, phase_id)

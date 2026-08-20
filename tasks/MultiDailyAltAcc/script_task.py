@@ -649,10 +649,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 # ProgressStore，整轮真正完成时统一发送一条汇总（_notify_daily_completion）。
                 self._persist_coop_event(msg_content, account_info)
             case MSGType.mshop:
-                self.config.notifier.push(
-                    content=self._build_notify_content(account_info),
-                    title=self._build_notify_title(msg_content, "神秘商店提醒"),
-                )
+                # 与协作同策：不再「发现一条立即推送」，落盘到本轮 ProgressStore，
+                # 整轮真正完成时随协作汇总一起发送（_notify_daily_completion）。
+                self._persist_mshop_event(msg_content, account_info)
             case MSGType.Utilize:
                 logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
                 self.daily_conf.multi_daily_alt_acc_config.total_KekkaiUtilize_enable = False
@@ -689,6 +688,38 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         else:
             logger.info(f'协作事件（无进度存储，仅记录）: {record}')
 
+    def _persist_mshop_event(self, event, account_info):
+        """把结构化神秘商店事件 + 当前账号信息落盘到当前配置的 ProgressStore。
+
+        与 _persist_coop_event 同构。旧格式（纯字符串 content）也接：把整串塞进
+        label，汇总时直接显示，保证跨版本不丢记录 —— 商店命中比协作稀有得多，
+        宁可显示得糙一点也不能丢。
+        """
+        if isinstance(event, dict):
+            label = str(event.get('label', '') or '')
+            goods = str(event.get('goods', '') or '')
+            coin = str(event.get('coin', '') or '')
+            price = event.get('price')
+        else:
+            # 旧版纯字符串事件（形如「发现82500金币大蛇的逆鳞」）：整串当 label
+            label = str(event or '').strip()
+            goods = coin = ''
+            price = None
+        record = {
+            "account": str(getattr(account_info, "account", "") or ""),
+            "character": str(getattr(account_info, "character", "") or ""),
+            "svr": str(getattr(account_info, "svr", "") or ""),
+            "apple_or_android": bool(getattr(account_info, "apple_or_android", False)),
+            "goods": goods,
+            "coin": coin,
+            "price": price,
+            "label": label,
+        }
+        if self._progress is not None:
+            self._progress.append_mshop(record)
+        else:
+            logger.info(f'神秘商店事件（无进度存储，仅记录）: {record}')
+
     @staticmethod
     def _build_notify_title(msg_content, fallback_title):
         clean_content = str(msg_content).strip()
@@ -704,32 +735,45 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         ])
 
     def _notify_daily_completion(self):
-        """整轮真正完成：发送一条协作汇总 PushPlus（每个配置每轮一条，最多一次）。
+        """整轮真正完成：发送一条汇总 PushPlus（每个配置每轮一条，最多一次）。
 
         首次进入完成分支：coop_notified 为 false/不存在 → 发送 → 发送成功后才写
         coop_notified=true 并 _save()，从而消除「push 成功后、clear 前崩溃导致重启
         后重复推送」的窗口；已标记（如崩溃后重启接续再次进入完成分支）→ 跳过推送，
         继续正常 next_run / clear。PushPlus 失败不写标记，仍不阻塞整轮收尾（best-effort）。
 
-        协作汇总跟随「寻找协作」总开关（total_cooperation_enable）：开关明确关闭时
-        汇总体系退出，恢复原版 TaskEnd「任务提醒」语义（script.py 此时不再抑制）；
-        读不到开关配置（如测试环境）时保持原发送行为，避免误吞完成通知。
+        汇总含协作与神秘商店两部分，各自跟随自己的总开关：
+        total_cooperation_enable 关闭则不出协作段落，total_mysteryshop_enable
+        关闭则不出商店段落。
+
+        「空轮也发一条」只由协作开关驱动：协作开 + 0 记录仍发 0 角色/0 任务的
+        空轮汇总（既有行为）；协作关时，只有商店真有记录才发，否则完全不发
+        —— 否则会推出一条写着「本轮未发现协作任务」的空汇总，比原来多噪音。
+        两边都不该发时整个汇总体系退出，恢复原版 TaskEnd「任务提醒」语义
+        （script.py 此时不再抑制）；读不到开关配置（如测试环境）时保持原发送
+        行为，避免误吞完成通知。
         """
         if self._progress is None:
             return
-        # 寻找协作关闭 → 协作汇总不发送（恢复原版 TaskEnd 完成提醒）
+        coop_on, mshop_on = True, True
         try:
             cfg = getattr(self.daily_conf, 'multi_daily_alt_acc_config', None)
-            if cfg is not None and not bool(getattr(cfg, 'total_cooperation_enable', True)):
-                logger.info('寻找协作关闭，跳过协作汇总通知（恢复原版 TaskEnd 任务提醒）')
-                return
+            if cfg is not None:
+                coop_on = bool(getattr(cfg, 'total_cooperation_enable', True))
+                mshop_on = bool(getattr(cfg, 'total_mysteryshop_enable', True))
         except Exception:
             # 读取开关失败（如测试环境无 daily_conf）→ 保持原行为，不阻断完成通知
             pass
-        if self._progress.is_coop_notified():
-            logger.info('本轮协作已完成通知，跳过重复推送')
+        coops = self._progress.load_coops() if coop_on else []
+        mshops = self._progress.load_mshops() if mshop_on else []
+        # 协作关闭时不发空轮汇总，只在商店确有记录时才发（见 docstring）
+        if not coop_on and not mshops:
+            logger.info('寻找协作关闭且无神秘商店记录，跳过汇总通知'
+                        '（恢复原版 TaskEnd 任务提醒）')
             return
-        coops = self._progress.load_coops()
+        if self._progress.is_coop_notified():
+            logger.info('本轮已完成汇总通知，跳过重复推送')
+            return
         try:
             # title 自带完整前缀「config_name｜…」，并跳过 Notifier 的全局 config_name 拼接，
             # 保证显示为「小号1｜多账号日常完成」且不影响其他通知的「config_name 标题」格式。
@@ -738,30 +782,36 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             show_system = bool(getattr(cfg, 'coop_notify_show_system', True))
             ok = self.config.notifier.push(
                 content=self._build_summary_content(
-                    coops, show_account=show_account, show_system=show_system),
+                    coops, show_account=show_account, show_system=show_system,
+                    mshops=mshops),
                 title=f"{self.config.config_name}｜多账号日常完成",
                 skip_config_prefix=True,
             )
         except Exception as e:
-            logger.warning(f'协作汇总通知发送失败（不影响整轮结果）: {e}')
+            logger.warning(f'汇总通知发送失败（不影响整轮结果）: {e}')
             return
         if ok:
             self._progress.mark_coop_notified()
         else:
             # best-effort：失败不标记已通知、不重试、不阻塞收尾（可能漏通知，可接受）
-            logger.warning('协作汇总通知返回失败（不标记已通知，整轮仍视为成功）')
+            logger.warning('汇总通知返回失败（不标记已通知，整轮仍视为成功）')
 
     @classmethod
     def _build_summary_content(cls, coops, completed_at=None, show_account=False,
-                               show_system=True) -> str:
-        """按固定 7 类顺序格式化协作汇总文本；无协作时输出空轮完成通知。
+                               show_system=True, mshops=None) -> str:
+        """按固定 7 类顺序格式化协作汇总文本，并在末尾追加神秘商店段落。
 
         show_system=True 时显示平台（安卓/iOS，取自 apple_or_android 字段）；
         show_account=True 时在角色行尾追加账号/邮箱（account 原值）。
         svr/account/platform 任一为空都不产生空分隔符。
+
+        mshops 为空时完全不出商店段落（保持原有输出逐字不变）；协作为空但商店
+        非空时，头部计数仍显示协作 0，末尾出商店段落 —— 不能因为没协作就把
+        商店命中吞掉。
         """
         now_str = (completed_at or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
-        if not coops:
+        mshops = mshops or []
+        if not coops and not mshops:
             return "\n".join([
                 "多账号日常完成",
                 "",
@@ -816,7 +866,43 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 if count > 1:
                     role_line += f" ×{count}"
                 lines.append(role_line)
+        lines.extend(cls._build_mshop_lines(
+            mshops, show_account=show_account, show_system=show_system))
         return "\n".join(lines)
+
+    @staticmethod
+    def _build_mshop_lines(mshops, show_account=False, show_system=True) -> list:
+        """格式化神秘商店段落；mshops 为空返回空列表（不产生空段落）。
+
+        商店命中稀有，所以不像协作那样按角色聚合计数 —— 每一件单独一行列出
+        货名与价格，方便直接判断值不值得手动去买。
+        """
+        if not mshops:
+            return []
+        lines = ["", f"神秘商店（{len(mshops)}）"]
+        for rec in mshops:
+            char = (rec.get("character") or "").strip() or "未知角色"
+            line = f"• {char}"
+            meta = []
+            if rec.get("svr"):
+                meta.append(str(rec["svr"]))
+            platform = rec.get("apple_or_android")
+            if show_system and platform is not None:
+                meta.append("安卓" if platform else "iOS")
+            if show_account and rec.get("account"):
+                meta.append(str(rec["account"]))
+            if meta:
+                line += f"（{'｜'.join(meta)}）"
+            # 有结构化货名/价格就拼「货名 价格币种」，否则回退到旧格式的整串 label
+            goods = (rec.get("goods") or "").strip()
+            price = rec.get("price")
+            coin = (rec.get("coin") or "").strip()
+            if goods and price is not None:
+                line += f" {goods} {price}{coin}"
+            elif rec.get("label"):
+                line += f" {rec['label']}"
+            lines.append(line)
+        return lines
 
     @staticmethod
     def _coop_category_order():

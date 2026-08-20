@@ -218,7 +218,12 @@ class Mshop(Mall, DailyAltAccBase):
         return found
 
     def _should_buy(self, goods: GoodsType, coin: CoinType, price: int, slot: int) -> bool:
-        """判定该格位商品是否需要推送。
+        """判定该格位商品是否值得留下。
+
+        这个判定有两重作用，改规则时两边都会一起变：
+        1. 推送：命中的货走 _notify_item 播报 / 汇总；
+        2. 是否刷新商店：MsFind 全部未命中才返回 False，run_mysteryshop 据此
+           刷新货架（最多 3 次）；有任何一件命中就停止刷新，保住这件货。
 
         规则沿用原 InfoFilter，另外补上两类新货：
 
@@ -231,7 +236,7 @@ class Mshop(Mall, DailyAltAccBase):
         :param coin: 币种，由价格数值判定（>10000 金币，否则勾玉）
         :param price: 价格数值，调用方保证 > 0
         :param slot: 格位号 1..8
-        :return: True 表示要推送
+        :return: True 表示值得留下（推送且不再刷新）
         """
         # 金币价的大蛇的逆鳞与逢魔之魂，一律要
         if coin == CoinType.gold and goods in (GoodsType.orochi_scale, GoodsType.demon_soul):
@@ -253,11 +258,22 @@ class Mshop(Mall, DailyAltAccBase):
         原实现按货物类型分通道，分支依据已移入 _should_buy，通道层不再区分类型。
         emit_stat 的 goods 字段传中文名而非枚举英文名，面板上不用再翻译一层。
         emit_stat 用 getattr 守卫：Mshop 不一定混入了 StatLogMixin。
+
+        msg 载荷是结构化 dict（与 cooperation.py 同构）：多账号模式下
+        MultiDailyAltAcc 落盘到本轮进度，整轮完成时统一汇总一条推送；
+        单账号模式仍靠这里的 push_notify 即时提醒。
         """
         goods_name = GOODS_NAMES[item.goods]
-        content = f'发现{item.price}{COIN_NAMES[item.coin]}{goods_name}'
+        coin_name = COIN_NAMES[item.coin]
+        content = f'发现{item.price}{coin_name}{goods_name}'
         logger.info(f'格位 {item.slot} {content}')
-        self.msg.append([MSGType.mshop, content])
+        self.msg.append([MSGType.mshop, {
+            'goods': goods_name,
+            'coin': coin_name,
+            'price': item.price,
+            'slot': item.slot,
+            'label': content,
+        }])
         self.push_notify(content=f' {content}', title='神秘商店提醒')
         emit_stat = getattr(self, 'emit_stat', None)
         if emit_stat:
