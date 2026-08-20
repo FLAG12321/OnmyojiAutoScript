@@ -196,5 +196,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "领取抵扣券"
+  },
+  {
+    "itemName": "select_character",
+    "imageName": "login_select_character.png",
+    "roiFront": "327,270,63,41",
+    "roiBack": "7,8,463,693",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "选中角色"
   }
 ]

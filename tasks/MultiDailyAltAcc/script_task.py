@@ -105,7 +105,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                     except GameNotRunningError as e:
                         if "Game crashed to desktop while switching account" not in str(e):
                             # 这条 raise 路径走不到尾部 phase_failed 分流，必须先安排
-                            # 10 分钟退避；否则 Restart 后 next_run 仍在过去，立即紧密重试。
+                            # 3 分钟退避；否则 Restart 后 next_run 仍在过去，立即紧密重试。
                             self.next_run("MultiDailyAltAcc", success=False)
                             raise GameNotRunningError("Game Not Running")
                         logger.error(f"Error processing account {accountInfo.character}: {e}")
@@ -114,13 +114,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                             title="ERROR"
                         )
                         # 仅切换账号测活失败按账号任务失败处理，避免影响任务开始前的全局游戏未启动检测。
-                        # 进度文件保留，10 分钟后重调度时只补未完成的账号与子任务。
+                        # 进度文件保留，3 分钟后重调度时只补未完成的账号与子任务。
                         phase_failed = True
                         Script.save_error_log(self)
                         break
                     except self._DEVICE_LEVEL_ERRORS_IN_LOOP:
                         # 设备级异常必须继续穿透到 script.py 的 Restart / 人工接管逻辑。
-                        # 这条路径走不到尾部 phase_failed 分流，先安排 10 分钟退避，
+                        # 这条路径走不到尾部 phase_failed 分流，先安排 3 分钟退避，
                         # 保留进度文件后原样上抛。
                         self.next_run("MultiDailyAltAcc", success=False)
                         Script.save_error_log(self)
@@ -136,7 +136,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                         Script.save_error_log(self)
                         break
             if phase_failed:
-                # 有账号失败：保留进度文件，10 分钟后重调度接续未完成部分
+                # 有账号失败：保留进度文件，3 分钟后重调度接续未完成部分
                 self.next_run("MultiDailyAltAcc", success=False)
             else:
                 # 整轮真正完成：先发送最终协作汇总（此时 coop 尚未 clear）。
@@ -858,8 +858,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 # 异常情况：第二天6:05执行
                 self.set_next_run(task, target=start_time.replace(hour=6, minute=5) + timedelta(days=1))
         else:
-            # 失败情况：10分钟后重试
-            self.set_next_run(task, target=datetime.now() + timedelta(minutes=10))
+            # 失败情况：3分钟后重试
+            self.set_next_run(task, target=datetime.now() + timedelta(minutes=3))
 
     def _reset_one_shot_flags(self):
         """重置单次运行标志（只由用户手动开启，运行一次后自动关闭）"""

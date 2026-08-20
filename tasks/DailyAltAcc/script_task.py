@@ -112,6 +112,34 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             logger.exception('读取子任务进度失败，按未完成处理')
             return False
 
+    def _battle_count_now(self) -> int:
+        """读当前已落盘的同心战斗场次；无 store 或读失败一律按 0 处理。"""
+        if self._progress is None or not self._progress_key:
+            return 0
+        try:
+            return self._progress.get_battle_count(self._progress_key)
+        except Exception:
+            logger.exception('读取同心战斗场次失败，按 0 处理')
+            return 0
+
+    def _should_resume_instead_of_fail(self, task_key: str, battle_before: int) -> bool:
+        """同心战斗报错后是否保持 pending，留给下轮接续剩余场次。
+
+        只有同心享受这个豁免：它是计数型子任务，每打一场就落盘一次
+        （见 Alliedteam._persist_battle_count），中断后能从断点继续；其余子任务
+        没有可累积的进度，照旧标 failed 跳过。
+
+        判据是本轮有没有实质进展：打过至少一场说明是「打到一半被打断」，剩余
+        场次值得接续；一场未打就报错说明卡在选关/邀请/组队等入口环节，接续
+        只会每轮重复同一次失败，仍按原语义标 failed 跳过。这也保证了收敛性——
+        每轮必须有新场次才能继续接续，零进展的那一轮即终止。
+        """
+        if task_key != 'alliedteam':
+            return False
+        if self._progress is None or not self._progress_key:
+            return False
+        return self._battle_count_now() > battle_before
+
     def _notify_task_failed(self, task_key: str, error: Exception) -> None:
         """子任务首次失败时推送通知，说明本轮后续接续会跳过它。
 
@@ -148,8 +176,13 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         通知后吞掉异常返回 None，让 run() 继续执行该账号的下一个子任务。
         设备级异常仍原样上抛给 script.py 走恢复，但同样先标记 failed，
         使接续时跳过该子任务，避免同一失败每轮无限重复。
+
+        同心战斗是唯一例外：本轮打过至少一场就保持 pending 让下轮接着打剩余
+        场次，详见 _should_resume_instead_of_fail。
         """
         start_time = time.time()
+        # 同心战斗进入前的场次基线，异常时用来判断本轮有无实质进展
+        battle_before = self._battle_count_now() if task_key == 'alliedteam' else 0
         self.emit_stat(StatEvent.TASK_START, task=task_key)
         try:
             result = func(*args, **kwargs)
@@ -167,8 +200,9 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             # 设备级异常仍原样上抛给 script.py 走 Restart/恢复，但**先把当前子任务标记
             # failed**：否则重调度接续时会再跑同一个子任务，若卡死源自该子任务自身的
             # UI 分支（如结界经验弹窗与【一键完成】互点触发 GameTooManyClickError），
-            # 就会 10 分钟一轮无限重复同一次失败（实测同一账号连续三轮同点报错）。
+            # 就会每轮无限重复同一次失败（实测同一账号连续三轮同点报错）。
             # 代价：真正可恢复的环境故障也不再重试该子任务，改由通知告知人工介入。
+            # 同心战斗按本轮进展豁免（见下方 _should_resume_instead_of_fail）。
             emsg = str(e).splitlines()[0] if str(e) else ""
             self.emit_stat(
                 StatEvent.ERROR,
@@ -182,8 +216,16 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 ok=False,
                 dur=round(time.time() - start_time, 3),
             )
+            # 同心打到一半被打断时保持 pending，下轮接续剩余场次；不发「已跳过」
+            # 通知——那条内容会误报成放弃，且设备级异常本身已由 script.py 通知
+            if self._should_resume_instead_of_fail(task_key, battle_before):
+                logger.warning(
+                    f'子任务 {task_key} 本轮已打 '
+                    f'{self._battle_count_now() - battle_before} 场后中断，'
+                    f'保留进度待下轮接续剩余场次'
+                )
             # 首次「未失败 → failed」迁移才发通知，避免每轮重调度重复轰炸
-            if self._mark_progress(task_key, STATUS_FAILED, etype=e.__class__.__name__, emsg=emsg):
+            elif self._mark_progress(task_key, STATUS_FAILED, etype=e.__class__.__name__, emsg=emsg):
                 self._notify_task_failed(task_key, e)
             raise
         except Exception as e:
@@ -204,6 +246,14 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             # 此时无进度可标、无跳过机制，吞掉会让故障从「显式报错」变成静默成功
             if self._progress is None or not self._progress_key:
                 raise
+            # 同心打到一半被打断时同样保持 pending（与设备级分支同一判据）
+            if self._should_resume_instead_of_fail(task_key, battle_before):
+                logger.warning(
+                    f'子任务 {task_key} 本轮已打 '
+                    f'{self._battle_count_now() - battle_before} 场后异常中断，'
+                    f'保留进度待下轮接续剩余场次: {e}'
+                )
+                return None
             logger.error(f'子任务 {task_key} 执行异常，已标记跳过: {e}')
             # 首次「未失败 → failed」迁移才发通知，避免每轮重调度重复轰炸
             if self._mark_progress(task_key, STATUS_FAILED, etype=e.__class__.__name__, emsg=emsg):

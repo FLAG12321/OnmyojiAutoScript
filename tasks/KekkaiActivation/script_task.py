@@ -29,6 +29,12 @@ from tasks.Pets.script_task import ScriptTask as Pets
 
 """ 结界挂卡 """
 class ScriptTask(KU, KekkaiActivationAssets):
+    # 卡片效果标志异常时最多等待10秒，避免未知状态进入无限截图循环
+    CARD_EFFECT_TIMEOUT = 10
+    # 激活确认最长等待15秒，失败后退出卡页并短延迟重试
+    ACTIVATION_CONFIRM_TIMEOUT = 15
+    # 卡片剩余时间异常时延迟1分钟重试，避免 next_run=now 形成紧密循环
+    ACTIVATION_RETRY_DELAY = timedelta(minutes=1)
 
     def run(self):
         con = self.config.kekkai_activation.activation_config
@@ -121,22 +127,40 @@ class ScriptTask(KU, KekkaiActivationAssets):
         while 1:
             self.screenshot()
             card_status = self.check_card_status()
-            card_effect = self.check_card_effect()
 
-            # 不稳定太，等待动画结束
-            if not card_status and not card_effect:
-                # 黄色的 ”激活“
+            # 空槽位先筛选并选择目标卡，不能先调用 check_card_effect() 等待按钮标志。
+            # 当前中央槽位为空时，邀请/激活按钮本来就不存在，旧顺序会因此永久阻塞。
+            if not card_status:
+                # 这些标志表示卡片转场或已选卡尚未渲染完成，继续等待一轮。
                 if self.appear(self.I_A_ACTIVATE_YELLOW, threshold=0.95):
                     continue
+                if self.appear(self.I_A_ACTIVATE_GRAY):
+                    continue
                 if self.appear(self.I_A_DEMOUNT):
-                    # 现在在动画里面
                     logger.info('Now in the animation')
                     logger.info('Now there is no card')
                     continue
+                logger.info('Card is not selected also not using')
+                self.screening_card(_config.card_type)
+                continue
+
+            card_effect = self.check_card_effect()
+            if card_effect is None:
+                # 未识别到任何效果标志时返回外层重新截图，避免卡死在内部循环。
+                logger.warning('Card effect is unknown, retrying card page detection')
+                continue
+
             # 如果这张卡生效着，在使用中
             if card_status and card_effect:
                 logger.info('Card is using')
                 interval = self.ocr_time()
+                if interval is None:
+                    logger.warning('Card time is unavailable, retry activation after 1 minute')
+                    self.set_next_run(
+                        "KekkaiActivation",
+                        target=datetime.now() + self.ACTIVATION_RETRY_DELAY,
+                    )
+                    return False
                 if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY :
                     self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
                 self.set_next_run("KekkaiActivation", target=interval+datetime.now())
@@ -144,7 +168,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
             # 如果已经选中这张卡了， 那就激活这张卡
             if card_status and not card_effect:
                 logger.info('Card is selected but not using')
-                while 1:
+                confirm_timeout = Timer(self.ACTIVATION_CONFIRM_TIMEOUT).start()
+                while not confirm_timeout.reached():
                     self.screenshot()
                     if self.appear(self.I_A_INVITE, threshold=0.8):
                         logger.info('Card is activated')
@@ -153,16 +178,25 @@ class ScriptTask(KU, KekkaiActivationAssets):
                         continue
                     if self.appear_then_click(self.I_A_ACTIVATE_YELLOW, interval=1):
                         continue
+                else:
+                    logger.warning('Card activation confirmation timeout, retry after 1 minute')
+                    self.set_next_run(
+                        "KekkaiActivation",
+                        target=datetime.now() + self.ACTIVATION_RETRY_DELAY,
+                    )
+                    return False
                 interval = self.ocr_time(True)
+                if interval is None:
+                    logger.warning('Activated card time is unavailable, retry after 1 minute')
+                    self.set_next_run(
+                        "KekkaiActivation",
+                        target=datetime.now() + self.ACTIVATION_RETRY_DELAY,
+                    )
+                    return False
                 if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY :
                     self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
                 self.set_next_run("KekkaiActivation", target=interval + datetime.now())
                 return True
-            # 如果是什么都没有，那就是可以开始挂卡了
-            if not card_status and not card_effect:
-                logger.info('Card is not selected also not using')
-                self.screening_card(_config.card_type)
-
     def goto_cards(self):
         """
         寮结界,前往挂卡界面
@@ -190,7 +224,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
             self.screenshot()
         return not self.appear(self.I_A_EMPTY)
 
-    def check_card_effect(self, screenshot=False) -> bool:
+    def check_card_effect(self, screenshot=False) -> bool | None:
         """
         检查这张卡是否生效了, 如果是出现的“邀请”那就是生效了， 如果是“激活”那就是还没生效
         :param screenshot:
@@ -203,7 +237,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
         elif self.appear(self.I_A_ACTIVATE_YELLOW):
             return False
         logger.info('Unknown card effect')
-        while 1:
+        timeout = Timer(self.CARD_EFFECT_TIMEOUT).start()
+        while not timeout.reached():
             self.screenshot()
             if self.appear(self.I_A_INVITE, threshold=0.7):
                 return True
@@ -211,20 +246,23 @@ class ScriptTask(KU, KekkaiActivationAssets):
                 return False
             elif self.appear(self.I_A_ACTIVATE_GRAY):
                 return False
+        logger.warning(f'Card effect detection timeout ({self.CARD_EFFECT_TIMEOUT}s)')
+        return None
 
-    def ocr_time(self, screenshot=False) -> timedelta or None: # type: ignore
-        if screenshot:
-            self.screenshot()
-        delta = self.O_CARD_ALL_TIME.ocr_duration(self.device.image)
-        if not isinstance(delta, timedelta):
-            logger.warning('OCR error')
-            return None
-        if delta == timedelta(0):
-            logger.warning('The remaining time detected for this card is 0')
-            logger.warning('This may be due to the fact that the card has not yet been collected')
-            self.set_next_run("KekkaiActivation", target=datetime.now())
-            raise TaskEnd('KekkaiActivation')
-        return delta
+    def ocr_time(self, screenshot=False) -> timedelta | None:
+        """读取卡片剩余时间；连续三次无有效正数时返回 None。"""
+        for attempt in range(1, 4):
+            if screenshot or attempt > 1:
+                self.screenshot()
+            delta = self.O_CARD_ALL_TIME.ocr_duration(self.device.image)
+            if isinstance(delta, timedelta) and delta > timedelta(0):
+                return delta
+            if isinstance(delta, timedelta):
+                logger.warning(f'Card remaining time is 0 ({attempt}/3)')
+            else:
+                logger.warning(f'Card time OCR error ({attempt}/3)')
+            time.sleep(0.5)
+        return None
 
     def screening_card(self, rule: str):
         """
@@ -272,17 +310,20 @@ class ScriptTask(KU, KekkaiActivationAssets):
             if target is None:
                 # 未发现卡，处理逻辑
                 self._card_not_found()
-            if self.appear(self.I_A_EMPTY):
-                while 1:
-                    self.screenshot()
-                    if not self.appear(self.I_A_EMPTY):
-                        self.config.kekkai_activation.activation_config.card_not_found_count = 0
-                        self.config.save()
-                        message = f'✅ 确认挂卡: {rule}'
-                        self.save_image(content=message, push_flag=False, wait_time=0)
-                        return
-                    if self.click(target, interval=1):
-                        continue
+            # 筛选过程中卡槽可能已经被选中；交回外层统一判断激活状态。
+            if not self.appear(self.I_A_EMPTY):
+                logger.info('Card slot changed while screening, return to activation state check')
+                return
+            while 1:
+                self.screenshot()
+                if not self.appear(self.I_A_EMPTY):
+                    self.config.kekkai_activation.activation_config.card_not_found_count = 0
+                    self.config.save()
+                    message = f'✅ 确认挂卡: {rule}'
+                    self.save_image(content=message, push_flag=False, wait_time=0)
+                    return
+                if self.click(target, interval=1):
+                    continue
 
     def check_card_num(self):
         rule = self.config.kekkai_activation.activation_config.card_type
