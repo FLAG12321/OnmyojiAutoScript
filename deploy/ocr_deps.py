@@ -21,6 +21,7 @@
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -55,6 +56,14 @@ V5_DISTS = ('ppocr-onnx', 'onnxocr')
 USER_SITE_CONFLICTS = (
     'onnxocr',
 )
+
+# pip 在卸载被中断或 DLL 被锁时会留下 ~nnxruntime-* / -nnxruntime-* 这种
+# 缺首字母的非法 dist-info；它们会让 pip 跳过卸载，但 Python 仍可能 import
+# 到残缺的 onnxruntime 模块。换 ORT 发行版前必须清掉。
+_ORT_REMNANT_RE = re.compile(r'^(?:[~_-]?onnxruntime|[~_-]nnxruntime)',
+                             re.IGNORECASE)
+_INVALID_ORT_RE = re.compile(r'^(?:[~_-]onnxruntime|[~_-]nnxruntime)',
+                             re.IGNORECASE)
 
 # 模型目录里必须存在的文件名片段，用于判断模型是否已下载
 MODEL_MARKERS = ('det', 'rec')
@@ -168,6 +177,65 @@ class OcrDepsManager(DeployConfig):
             return False
         files = [f.lower() for f in os.listdir(directory) if f.lower().endswith('.onnx')]
         return all(any(marker in f for f in files) for marker in MODEL_MARKERS)
+
+    # ---------------- 环境清理 ----------------
+
+    def _site_packages_dirs(self) -> List[str]:
+        """返回当前解释器的全局 site-packages 目录。"""
+        import site
+
+        return list(dict.fromkeys(site.getsitepackages()))
+
+    def cleanup_ort_remnants(self) -> Tuple[bool, str]:
+        """删除 site-packages 里可能残留的 ORT 包目录与损坏 dist-info。
+
+        Returns:
+            tuple: (是否成功, 错误说明)
+        """
+        for site_dir in self._site_packages_dirs():
+            if not os.path.isdir(site_dir):
+                continue
+            for name in os.listdir(site_dir):
+                if not _ORT_REMNANT_RE.match(name):
+                    continue
+                path = os.path.join(site_dir, name)
+                try:
+                    if os.path.isdir(path) and not os.path.islink(path):
+                        shutil.rmtree(path)
+                    else:
+                        os.remove(path)
+                    logger.info(f'Removed onnxruntime remnant: {path}')
+                except OSError as e:
+                    return False, f'Failed to remove onnxruntime remnant {path}: {e}'
+        return True, ''
+
+    def has_ort_remnants(self) -> bool:
+        """site-packages 里是否还有需要清理的 ORT 残留。"""
+        for site_dir in self._site_packages_dirs():
+            if not os.path.isdir(site_dir):
+                continue
+            names = os.listdir(site_dir)
+            if any(_INVALID_ORT_RE.match(name) for name in names):
+                return True
+            package_dir = os.path.join(site_dir, 'onnxruntime')
+            has_ort_dist_info = any(
+                _ORT_REMNANT_RE.match(name) and name.lower().endswith('.dist-info')
+                for name in names
+            )
+            if os.path.isdir(package_dir) and (
+                    not has_ort_dist_info or not self._ort_package_complete(package_dir)):
+                return True
+        return False
+
+    @staticmethod
+    def _ort_package_complete(package_dir: str) -> bool:
+        """判断 onnxruntime 包目录是否具备可用的原生推理入口。"""
+        capi_dir = os.path.join(package_dir, 'capi')
+        if not os.path.isfile(os.path.join(package_dir, '__init__.py')):
+            return False
+        if not os.path.isdir(capi_dir):
+            return False
+        return any(name.endswith(('.pyd', '.so')) for name in os.listdir(capi_dir))
 
     @staticmethod
     def _normalize(name: str) -> str:
@@ -313,9 +381,22 @@ class OcrDepsManager(DeployConfig):
             return False, reason
 
         plan = self.plan()
+        has_remnants = self.has_ort_remnants()
         logger.info(f'OCR deps plan: {plan.describe()}')
-        if not plan.needs_action:
+        if not plan.needs_action and not has_remnants:
             return True, 'OCR dependencies already aligned'
+
+        # 旧版卸载被中断时会留下 ~nnxruntime-* 等非法 distribution：
+        # pip 会跳过卸载，但 Python 仍能 import 到残缺模块。换 ORT 前先
+        # 清残留并重新计算计划，确保 pip install 从干净状态开始。
+        swaps_ort = has_remnants or any(dist in ORT_DISTS for dist in plan.uninstall) or any(
+            spec.partition('==')[0] in ORT_DISTS for spec in plan.install)
+        if swaps_ort:
+            ok, err = self.cleanup_ort_remnants()
+            if not ok:
+                return False, err
+            plan = self.plan()
+            logger.info(f'OCR deps plan after cleanup: {plan.describe()}')
 
         common = self.pip_args()
 
@@ -343,8 +424,10 @@ class OcrDepsManager(DeployConfig):
     def check(self) -> bool:
         """只检查不改动，返回 True 表示已对齐。"""
         plan = self.plan()
-        logger.info(f'OCR deps status: {plan.describe()}')
-        return not plan.needs_action
+        has_remnants = self.has_ort_remnants()
+        extra = ', broken-onnxruntime-remnants' if has_remnants else ''
+        logger.info(f'OCR deps status: {plan.describe()}{extra}')
+        return not plan.needs_action and not has_remnants
 
 
 def main() -> int:

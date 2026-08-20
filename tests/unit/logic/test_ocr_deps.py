@@ -9,6 +9,7 @@
 2. 幂等：已对齐时不产生任何 pip 动作。
 3. Windows DLL 锁：当前进程已加载 onnxruntime 时拒绝换包。
 4. 用户级包安全边界：只精确卸载 OCR 冲突包，不碰 frida / av / paramiko。
+5. 损坏残留：换 ORT 发行版前清理 ~nnxruntime-* 等非法 distribution。
 """
 import sys
 
@@ -41,6 +42,8 @@ def manager(tmp_path, monkeypatch):
         monkeypatch.setattr(mgr, 'installed_versions', lambda: mgr._installed)
         monkeypatch.setattr(mgr, 'user_site_versions', lambda: mgr._user_installed)
         monkeypatch.setattr(mgr, 'models_ready', lambda: mgr._models_ready)
+        # 单元测试默认不碰真实 site-packages；需要验证文件清理的用例单独覆盖
+        monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [])
         # 记录所有 pip 命令而不真的执行
         mgr.commands = []
         monkeypatch.setattr(mgr, 'run_pip', lambda args, **kw: mgr.commands.append(args) or True)
@@ -165,6 +168,155 @@ def test_protected_packages_never_in_conflict_list():
 def test_user_site_cleanup_skips_absent_packages(manager):
     mgr = manager(user_installed={'frida': '17.6.2'})
     assert mgr.plan().user_uninstall == []
+
+
+# ---------------- 损坏的 ORT 残留 ----------------
+
+def test_cleanup_removes_broken_ort_remnants(manager, tmp_path, monkeypatch):
+    """清理残缺 onnxruntime 目录、非法 dist-info 与旧 directml metadata。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    (site_dir / 'onnxruntime').mkdir()
+    (site_dir / 'onnxruntime' / '__init__.py').write_text('', encoding='utf-8')
+    (site_dir / '~nnxruntime-1.16.3.dist-info').mkdir()
+    (site_dir / 'onnxruntime_directml-1.23.0.dist-info').mkdir()
+    (site_dir / 'rapidocr-3.9.2.dist-info').mkdir()
+
+    mgr = manager()
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+    ok, err = mgr.cleanup_ort_remnants()
+
+    assert ok is True
+    assert err == ''
+    assert [p.name for p in site_dir.iterdir()] == ['rapidocr-3.9.2.dist-info']
+
+
+def test_align_cleans_ort_remnants_before_pip(manager, monkeypatch):
+    """换 ORT 发行版时必须先执行残留清理。"""
+    mgr = manager(installed={'onnxruntime': '1.16.3'}, models_ready=True)
+    monkeypatch.delitem(sys.modules, 'onnxruntime', raising=False)
+    monkeypatch.setattr(mgr, 'prepare_models', lambda: (True, 'cpu'))
+    calls = []
+    monkeypatch.setattr(
+        mgr,
+        'cleanup_ort_remnants',
+        lambda: calls.append(1) or (True, ''),
+    )
+
+    ok, _ = mgr.align()
+
+    assert ok is True
+    assert calls == [1]
+
+
+def test_align_does_not_clean_healthy_ort(manager, monkeypatch):
+    """已对齐时不能误删正常安装，避免每次启动都强制重装。"""
+    mgr = manager(
+        installed={DIRECTML_DIST: ORT_VERSION, 'rapidocr': RAPIDOCR_VERSION},
+        models_ready=True,
+    )
+    monkeypatch.delitem(sys.modules, 'onnxruntime', raising=False)
+    calls = []
+    monkeypatch.setattr(
+        mgr,
+        'cleanup_ort_remnants',
+        lambda: calls.append(1) or (True, ''),
+    )
+
+    ok, _ = mgr.align()
+
+    assert ok is True
+    assert calls == []
+
+
+def test_align_aborts_when_remnant_cleanup_fails(manager, monkeypatch):
+    """残留清理失败时必须停止，不能继续走到残缺模块验证。"""
+    mgr = manager(installed={'onnxruntime': '1.16.3'}, models_ready=True)
+    monkeypatch.delitem(sys.modules, 'onnxruntime', raising=False)
+    monkeypatch.setattr(mgr, 'cleanup_ort_remnants', lambda: (False, 'file is locked'))
+
+    ok, reason = mgr.align()
+
+    assert ok is False
+    assert 'file is locked' in reason
+    assert mgr.commands == []
+
+
+def test_align_cleans_remnants_even_when_plan_aligned(manager, tmp_path, monkeypatch):
+    """metadata 看似已对齐时，残缺包目录也必须触发清理重装。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    (site_dir / 'onnxruntime').mkdir()
+
+    mgr = manager(
+        installed={DIRECTML_DIST: ORT_VERSION, 'rapidocr': RAPIDOCR_VERSION},
+        models_ready=True,
+    )
+    monkeypatch.delitem(sys.modules, 'onnxruntime', raising=False)
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+    calls = []
+    monkeypatch.setattr(
+        mgr,
+        'cleanup_ort_remnants',
+        lambda: calls.append(1) or (True, ''),
+    )
+
+    ok, _ = mgr.align()
+
+    assert ok is True
+    assert calls == [1]
+
+
+def test_check_reports_broken_ort_remnants(manager, tmp_path, monkeypatch):
+    """--check 发现残留时不能误报已对齐。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    (site_dir / '~nnxruntime-1.16.3.dist-info').mkdir()
+
+    mgr = manager(
+        installed={DIRECTML_DIST: ORT_VERSION, 'rapidocr': RAPIDOCR_VERSION},
+        models_ready=True,
+    )
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+
+    assert mgr.check() is False
+
+
+def test_check_ignores_healthy_ort_install(manager, tmp_path, monkeypatch):
+    """正常 directml 安装不应被当成残留，避免每次检查都要求重装。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    package_dir = site_dir / 'onnxruntime'
+    (package_dir / 'capi').mkdir(parents=True)
+    (package_dir / '__init__.py').write_text('', encoding='utf-8')
+    (package_dir / 'capi' / 'onnxruntime_pybind11_state.pyd').write_bytes(b'')
+    (site_dir / 'onnxruntime_directml-1.23.0.dist-info').mkdir()
+
+    mgr = manager(
+        installed={DIRECTML_DIST: ORT_VERSION, 'rapidocr': RAPIDOCR_VERSION},
+        models_ready=True,
+    )
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+
+    assert mgr.has_ort_remnants() is False
+    assert mgr.check() is True
+
+
+def test_check_detects_broken_package_with_valid_dist_info(manager, tmp_path, monkeypatch):
+    """dist-info 存在但包目录缺少原生文件时仍算残留。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    (site_dir / 'onnxruntime').mkdir()
+    (site_dir / 'onnxruntime_directml-1.23.0.dist-info').mkdir()
+
+    mgr = manager(
+        installed={DIRECTML_DIST: ORT_VERSION, 'rapidocr': RAPIDOCR_VERSION},
+        models_ready=True,
+    )
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+
+    assert mgr.has_ort_remnants() is True
+    assert mgr.check() is False
 
 
 # ---------------- Windows DLL 锁 ----------------
