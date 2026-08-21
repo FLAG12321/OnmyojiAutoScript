@@ -132,9 +132,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
             # 当前中央槽位为空时，邀请/激活按钮本来就不存在，旧顺序会因此永久阻塞。
             if not card_status:
                 # 这些标志表示卡片转场或已选卡尚未渲染完成，继续等待一轮。
-                if self.appear(self.I_A_ACTIVATE_YELLOW, threshold=0.95):
+                if self.appear_rgb(self.I_A_ACTIVATE_YELLOW):
                     continue
-                if self.appear(self.I_A_ACTIVATE_GRAY):
+                if self.appear_rgb(self.I_A_INVITE):
                     continue
                 if self.appear(self.I_A_DEMOUNT):
                     logger.info('Now in the animation')
@@ -176,7 +176,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
                         break
                     if self.appear_then_click(self.I_UI_CONFIRM, interval=0.6):
                         continue
-                    if self.appear_then_click(self.I_A_ACTIVATE_YELLOW, interval=1):
+                    if self.appear_rgb(self.I_A_ACTIVATE_YELLOW):
+                        self.click(self.I_A_ACTIVATE_YELLOW, interval=1)
                         continue
                 else:
                     logger.warning('Card activation confirmation timeout, retry after 1 minute')
@@ -234,7 +235,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
             self.screenshot()
         if self.appear(self.I_A_INVITE, threshold=0.8):
             return True
-        elif self.appear(self.I_A_ACTIVATE_YELLOW):
+        elif self.appear_rgb(self.I_A_ACTIVATE_YELLOW):
             return False
         logger.info('Unknown card effect')
         timeout = Timer(self.CARD_EFFECT_TIMEOUT).start()
@@ -242,9 +243,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
             self.screenshot()
             if self.appear(self.I_A_INVITE, threshold=0.7):
                 return True
-            elif self.appear(self.I_A_ACTIVATE_YELLOW):
+            elif self.appear_rgb(self.I_A_ACTIVATE_YELLOW):
                 return False
-            elif self.appear(self.I_A_ACTIVATE_GRAY):
+            elif self.appear_rgb(self.I_A_ACTIVATE_GRAY):
                 return False
         logger.warning(f'Card effect detection timeout ({self.CARD_EFFECT_TIMEOUT}s)')
         return None
