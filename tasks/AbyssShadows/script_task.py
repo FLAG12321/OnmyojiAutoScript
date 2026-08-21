@@ -26,6 +26,11 @@ from tasks.GameUi.page import page_main, page_guild
 # 单个首领/副将/精英 一次无法完成目标（一般是一次没打掉） 的情况下，最大战斗次数
 MAX_BATTLE_COUNT = 2
 
+# 小蛇单轮走位的最长时间（秒）：超时视为本轮走位失败，重来整套定位流程
+SNAKE_LOCATE_TIMEOUT = 40
+# 小蛇定位「整套流程」（开导航→点6号怪→点前往→走位）的最大轮次
+MAX_SNAKE_LOCATE_ROUND = 2
+
 
 class AbyssShadowsFinished(Exception):
     pass
@@ -104,9 +109,21 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
             if self.appear(self.I_CHECK_FINISH):
                 logger.info(f"{self.I_CHECK_FINISH} appear,abyss shadows finished")
                 raise AbyssShadowsFinished
+
+            # 集结期（还没到开战）先把小蛇的御魂换好并走位到小蛇跟前待命，
+            # 把这段本来干等的时间用掉；预备失败则返回 False，开战后走原完整流程兜底。
+            # 预备期间有换御魂、走位等长时间少点击的动作，先放宽卡死检测阈值（60s -> 300s），
+            # 否则 goto_snake 的 sleep(3) 空档累计超过 60 秒就会被误判为 GameStuckError
+            self.device.stuck_record_add('PREPARE_BEFORE_BATTLE')
+            try:
+                snake_prepared = self.prepare_snake_before_start()
+            finally:
+                self.device.stuck_record_clear()
+
             #
             self.device.stuck_record_add('BATTLE_STATUS_S')
-            # 等待战斗开始
+            # 等待战斗开始（顶部状态条从「集结中」变为「进攻中」，站在小蛇跟前也能识别到）
+            # 集结期约 180 秒；预备已消耗掉大部分，这里等的是剩余时间
             self.wait_until_appear(self.I_IS_ATTACK, wait_time=180)
             self.device.stuck_record_clear()
             #
@@ -114,7 +131,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
             # 单独捕获 AbyssShadowsFinished：小蛇阶段结束不应跳过后续普通怪流程；
             # 其它框架异常（如 GameStuckError/TaskEnd）继续向上抛，交由调度器处理
             try:
-                self.run_snake_battles()
+                self.run_snake_battles(prepared=snake_prepared)
             except AbyssShadowsFinished:
                 logger.info("Snake battle stage finished with AbyssShadowsFinished")
             #
@@ -330,6 +347,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
             # 目标区不可用（已封印/已打完）：直接返回 False，由调用方（execute）按游标跳过该怪；
             # 不再自动改去其它区，避免打乱 attack_order 顺序
             logger.info(f"Target area {area_name.name} unavailable, skip")
+            # 但不能停在切换区域界面：该界面既没有导航按钮（下一次 change_area 的首个循环
+            # 会无超时死等），顶部也不显示集结中/进攻中状态条。故先进入任一可用区回到区域
+            # 导航界面，让 change_area 无论成功失败都以「已在某个区域内」的状态返回。
+            self.select_boss(available_areas[0])
             return False
 
         self.select_boss(area_name)
@@ -803,7 +824,145 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
         logger.info(f"{enemy_type.name} DONE")
         return success
 
-    def run_snake_battles(self):
+    def prepare_snake_before_start(self) -> bool:
+        """ 集结期预备小蛇：切到小蛇区域 -> 切御魂 -> 走位定位到小蛇处待命
+
+        狭间集结期（等待 I_IS_ATTACK 出现的这段时间）原本只是干等，把御魂切换与小蛇走位
+        提前放到这段时间完成，正式开战后即可直接进入战斗循环，省掉开战后的准备耗时。
+        任何一步失败都只返回 False，由调用方在开战后走原来的完整前置流程兜底。
+
+        :return bool 是否已完成小蛇预备（True=开战后可直接进入战斗循环）
+        """
+        pm = self.config.model.abyss_shadows.process_manage
+        if not pm.enable_snake:
+            logger.info("Snake battle disabled, skip snake prepare")
+            return False
+
+        done_count = self.get_snake_done_from_cursor()
+        if done_count >= pm.snake_battle_count:
+            logger.info(f"Snake battle already done ({done_count}/{pm.snake_battle_count}), skip snake prepare")
+            return False
+
+        logger.info("Prepare snake during gathering phase")
+        # 小蛇固定在 C 区（白藏主暗域，AreaType.FOX）
+        snake_area = AreaType.FOX
+        if not self.change_area(snake_area):
+            # C 区被封印/未开启，小蛇整段跳过（change_area 已把画面放回某个可用区的导航界面）
+            logger.warning(f"Snake area {snake_area.name} unavailable, skip snake prepare")
+            return False
+
+        # 按小蛇御魂预设懒切换（此时在区域导航界面，式神录入口可用）
+        # 若退出式神录时退过头（已重进狭间），需重新定位到小蛇所在区域
+        if self.switch_soul_lazy(self.get_soul_preset('SNAKE')):
+            if not self.change_area(snake_area):
+                logger.warning(f"Snake area {snake_area.name} unavailable after re-enter, skip snake prepare")
+                return False
+
+        # 走位定位到小蛇处；集结期不限切区重置次数，直到定位成功或狭间开战为止，
+        # 把这 180 秒等待时间全部用于定位，保证开战后能直接开打
+        if not self.locate_snake_with_retry(snake_area, until_start=True):
+            logger.warning("Failed to locate snake during gathering phase, fallback to prepare after start")
+            return False
+
+        logger.info("Snake prepared, waiting for abyss shadows to start")
+        return True
+
+    def locate_snake_with_retry(self, snake_area: AreaType, max_retry: int = 1,
+                                until_start: bool = False) -> bool:
+        """ 定位小蛇，失败则切出区域再切回以重置人物位置后重试
+
+        goto_snake 内部已把「整套定位流程」重来了 MAX_SNAKE_LOCATE_ROUND 轮仍失败才返回 False，
+        说明人物卡在地图某处、引导图一直不出现。原地再重来整套无法脱困——站位没变，
+        同一死角会反复复现；切到别的区域再切回来会让人物重新进区回到出生点，走位路径随之复位。
+
+        :param snake_area: 小蛇所在区域（C 区/白藏主）
+        :param max_retry: 定位失败后的最大重试次数（每次重试前做一次切区重置）；
+                          until_start=True 时忽略该值
+        :param until_start: True=集结期模式，不限重试次数，直到定位成功或狭间开战
+                            （I_IS_ATTACK 出现）为止，最大化利用集结期的等待时间
+        :return bool 是否成功定位到小蛇
+        """
+        if self.goto_snake():
+            return True
+        attempt = 0
+        while 1:
+            attempt += 1
+            if until_start:
+                # 集结期模式：以「是否已开战」作为循环边界，而不是固定次数。
+                # 开战后必须立刻停止重试，把控制权交回主流程去打小蛇
+                self.screenshot()
+                if self.appear(self.I_IS_ATTACK):
+                    logger.info("Abyss shadows started while locating snake, stop retry")
+                    return False
+                logger.warning(f"Locate snake failed, reset position by area switch (attempt {attempt}, "
+                               f"unlimited until start)")
+            else:
+                if attempt > max_retry:
+                    logger.warning(f"Locate snake still failed after {max_retry} area-switch retries")
+                    return False
+                logger.warning(f"Locate snake failed, reset position by area switch ({attempt}/{max_retry})")
+            if not self.reset_position_by_area_switch(snake_area):
+                return False
+            if self.goto_snake():
+                return True
+
+    def back_to_area_navigation(self, timeout: int = 20) -> bool:
+        """ 带超时地退回区域导航界面（切区重置前先把当前画面收拾干净）
+
+        小蛇走位超时时画面可能停在敌人信息面板/战报/6号怪信息窗上，
+        而 change_area 首个循环等的是导航按钮且没有超时保护，直接调它有卡死风险；
+        这里先把这些浮层关掉，关不掉就超时返回 False 让调用方放弃重置。
+
+        :param timeout: 最长收尾时间（秒）
+        :return bool 是否已回到区域导航界面
+        """
+        timer = Timer(timeout)
+        timer.start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_FINISH):
+                raise AbyssShadowsFinished
+            # 导航按钮可见即已在区域导航界面，change_area 的首个循环随后可立即通过
+            if self.appear(self.I_ABYSS_NAVIGATION):
+                return True
+            if timer.reached():
+                logger.warning("Back to area navigation timeout")
+                return False
+            if self.appear_then_click(self.I_ABYSS_MAP_EXIT, interval=2):
+                continue
+            if self.appear_then_click(self.I_ABYSS_ENEMY_INFO_EXIT, interval=2):
+                continue
+            if self.appear_then_click(self.I_A_BACK_RED, interval=2):
+                continue
+
+    def reset_position_by_area_switch(self, snake_area: AreaType) -> bool:
+        """ 切到别的区域再切回小蛇区，用于重置人物在地图上的位置
+
+        优先切 D 区（黑豹暗域）；D 区已被封印/不可用时依次退回其它非小蛇区域，
+        避免 D 区不可用就完全没法重置。
+        :param snake_area: 小蛇所在区域，切走后要切回来
+        :return bool 是否成功切走并切回到小蛇所在区域
+        """
+        # 先退回区域导航界面，避免带着浮层进 change_area 卡死
+        if not self.back_to_area_navigation():
+            return False
+        # D 区优先，其余区域作为 D 区不可用时的备选
+        candidates = [AreaType.LEOPARD] + [a for a in AreaType if a is not AreaType.LEOPARD]
+        for area in candidates:
+            if area is snake_area:
+                continue
+            if not self.change_area(area):
+                logger.info(f"Area {area.name} unavailable for position reset, try next")
+                continue
+            logger.info(f"Switched to {area.name} for reset, switching back to {snake_area.name}")
+            if not self.change_area(snake_area):
+                logger.warning(f"Snake area {snake_area.name} unavailable after switching back")
+                return False
+            return True
+        logger.warning("No area available for snake position reset")
+        return False
+
+    def run_snake_battles(self, prepared: bool = False):
         """ 小蛇战斗主控制流程
 
         小蛇战斗特点：
@@ -811,6 +970,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
         - 同一位置（6号怪处的小蛇）可无限次战斗，靠计数控制次数；
         - 计数与区域无关（打满 snake_battle_count 次即停）；
         - 进度并入 progress_cursor（'SNAKE-<k>'），支持中断后续跑。
+
+        :param prepared: 是否已在集结期由 prepare_snake_before_start 完成
+                         「切区域 + 换御魂 + 走位定位」，True 则直接进入战斗循环
         """
         pm = self.config.model.abyss_shadows.process_manage
         if not pm.enable_snake:
@@ -825,24 +987,29 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
 
         # 小蛇固定在 C 区（白藏主暗域，AreaType.FOX）进行，与 attack_order 无关
         snake_area = AreaType.FOX
-        logger.info(f"Snake battle area: {snake_area.name}, progress {done_count}/{target_count}")
+        logger.info(f"Snake battle area: {snake_area.name}, progress {done_count}/{target_count}, "
+                    f"prepared={prepared}")
 
-        # 进入小蛇所在区域；C 区不可用（封印/未开启）则跳过小蛇
-        if not self.change_area(snake_area):
-            logger.warning(f"Snake area {snake_area.name} unavailable, skip snake battle")
-            return
+        if not prepared:
+            # 集结期未完成预备（未启用预备/预备失败/中途续跑已开打），走完整前置流程
 
-        # 定位小蛇前先按小蛇御魂预设懒切换（此时在区域导航界面，式神录入口可用）
-        # 若退出式神录时退过头（已重进狭间），需重新定位到小蛇所在区域
-        if self.switch_soul_lazy(self.get_soul_preset('SNAKE')):
+            # 进入小蛇所在区域；C 区不可用（封印/未开启）则跳过小蛇
             if not self.change_area(snake_area):
-                logger.warning(f"Snake area {snake_area.name} unavailable after re-enter, skip snake battle")
+                logger.warning(f"Snake area {snake_area.name} unavailable, skip snake battle")
                 return
 
-        # 定位小蛇：点击6号怪 -> 点固定坐标 -> 等待 I_ABYSS_ENEMY_FIRE 出现
-        if not self.goto_snake():
-            logger.warning("Failed to locate snake, skip snake battle")
-            return
+            # 定位小蛇前先按小蛇御魂预设懒切换（此时在区域导航界面，式神录入口可用）
+            # 若退出式神录时退过头（已重进狭间），需重新定位到小蛇所在区域
+            if self.switch_soul_lazy(self.get_soul_preset('SNAKE')):
+                if not self.change_area(snake_area):
+                    logger.warning(f"Snake area {snake_area.name} unavailable after re-enter, skip snake battle")
+                    return
+
+            # 定位小蛇：点击6号怪 -> 点固定坐标 -> 等待 I_ABYSS_ENEMY_FIRE 出现
+            # 已开战，只允许 1 次切区重置，避免定位耗时挤占战斗时间
+            if not self.locate_snake_with_retry(snake_area, max_retry=1):
+                logger.warning("Failed to locate snake, skip snake battle")
+                return
 
         # 循环战斗直到达到目标次数
         # relocate_fail 记录“挑战按钮缺失并重新定位”的连续次数，超过阈值则放弃，避免无进展空转
@@ -854,7 +1021,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
                 # 挑战按钮未出现，尝试重新定位
                 logger.info("I_ABYSS_ENEMY_FIRE not found, try to relocate snake")
                 relocate_fail += 1
-                if relocate_fail >= 3 or not self.goto_snake():
+                # 单次重定位只做 1 次切区重置（本循环累计最多重定位 3 次），
+                # 避免最坏情况下 3×3 次 60 秒走位把战斗时间全耗在定位上
+                if relocate_fail >= 3 or not self.locate_snake_with_retry(snake_area, max_retry=1):
                     logger.warning("Relocate snake failed, stop snake battle")
                     break
                 continue
@@ -896,14 +1065,22 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
 
     def goto_snake(self) -> bool:
         """ 定位小蛇：点击6号怪 -> 点击固定坐标 -> 等待挑战按钮出现
+
+        整套流程（开导航 -> 点6号怪 -> 点前往 -> 走位）最多重来 MAX_SNAKE_LOCATE_ROUND 轮：
+        单轮走位超时（SNAKE_LOCATE_TIMEOUT）不直接失败，而是重来整套；轮次用尽才返回 False，
+        由调用方 locate_snake_with_retry 切区重置人物位置后再整体重试。
         :return bool 是否成功出现 I_ABYSS_ENEMY_FIRE
         """
         logger.info("Goto snake")
         count_click_goto_enemy = 0
+        # 整套定位流程的轮次计数（走位超时会 +1 并重来整套）
+        locate_round = 0
         # 点击战报
         while 1:
             self.screenshot()
-            if self.appear(self.I_ABYSS_FIRE):
+            # 仅首轮允许「已在敌人面板」的快速路径：走位超时重来时画面往往仍有 I_ABYSS_FIRE，
+            # 此时若直接 break 会把未完成的定位误判为成功
+            if locate_round == 0 and self.appear(self.I_ABYSS_FIRE):
                 break
             # 尝试使用左下方摇杆移动
             if count_click_goto_enemy > 0 and self.appear(self.I_ABYSS_NAVIGATION):
@@ -946,8 +1123,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
                     continue
                 if not self.wait_until_appear(self.I_ABYSS_FIRE, wait_time=10):
                     break
-            # 整个小蛇定位流程最多等待60秒，避免引导图异常时卡住
-            snake_flow_timer = Timer(60)
+            # 单轮走位最多等待 SNAKE_LOCATE_TIMEOUT 秒，避免引导图异常时卡住
+            snake_flow_timer = Timer(SNAKE_LOCATE_TIMEOUT)
             snake_flow_timer.start()
             to_snake_flow_timer = Timer(5)
             to_snake_flow_timer.start()
@@ -956,8 +1133,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
             while 1:
                 self.screenshot()
                 if snake_flow_timer.reached():
-                    logger.warning('Locate snake flow timeout')
-                    return False
+                    # 本轮走位超时：不直接判失败，重来整套定位流程；轮次用尽才失败
+                    locate_round += 1
+                    if locate_round >= MAX_SNAKE_LOCATE_ROUND:
+                        logger.warning(f"Locate snake flow timeout, {locate_round} rounds used up")
+                        return False
+                    logger.warning(f"Locate snake flow timeout, retry whole flow "
+                                   f"({locate_round}/{MAX_SNAKE_LOCATE_ROUND})")
+                    break
                 if self.appear(self.I_MONSTER_6)and self.appear_then_click(self.I_A_BACK_RED, interval=1):
                     logger.info('close monster6 info window')
                     continue
