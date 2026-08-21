@@ -1,6 +1,10 @@
 # This Python file uses the following encoding: utf-8
+import re
 import time
+from pathlib import Path
+
 from module.base.timer import Timer
+from module.base.utils import save_image
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_mall
 from tasks.DailyAltAcc.utils import DailyAltAccBase
@@ -91,10 +95,14 @@ class Mshop(Mall, DailyAltAccBase):
         self.ui_goto(page_mall)
         self.ui_click(MysteryShopAssets.I_ME_ENTER, MysteryShopAssets.I_MS_SHARE)
         logger.info('Mysteryshop')
+        # 进入商店后保存初始货架截图（序号1）
+        self._save_mshop_page(1)
 
         if not self.MsFind():
             retry_count = 0
-            while 1:    
+            # 是否发生过刷新：只有刷新过才补序号2，否则只留序号1一张
+            refreshed = False
+            while 1:
                 self.screenshot()
                 if retry_count >= 3:
                     break
@@ -103,10 +111,14 @@ class Mshop(Mall, DailyAltAccBase):
                     if not self.appear(self.I_MS_ENSURE):
                         break
                 if self.appear_rgb(self.I_MS_REFRESH):
+                    refreshed = True
                     self.screenshot()
                     self.appear_then_click(self.I_MS_REFRESH,action=self.C_MS_REFRESH_ACTION,interval=1)
                     continue
                 if self.appear(MysteryShopAssets.I_MS_SHARE,interval=2):
+                    # 刷新后货架稳定（分享按钮可见）才截图，多次刷新时序号2覆盖为最新货架
+                    if refreshed:
+                        self._save_mshop_page(2)
                     retry_count += 1
             self.MsFind()
         retry_count = 0
@@ -119,6 +131,23 @@ class Mshop(Mall, DailyAltAccBase):
                 continue
             if not self.appear(self.I_BACK_Y):
                 break
+
+    def _save_mshop_page(self, index: int):
+        """保存神秘商店货架截图到 screenshots/mshop/，文件名 商店_角色名_{index}.png。
+
+        序号1 = 进入商店时的初始货架；序号2 = 刷新后的货架（多次刷新时覆盖为最新）。
+        角色名优先取多账号运行注入的统计上下文（_stat_ctx），单实例退化为配置实例名。
+        """
+        # 角色名优先取多账号运行注入的统计上下文，单实例运行时退化为配置实例名
+        char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
+        # 替换 Windows 文件名非法字符，避免保存失败
+        char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+        image = self.screenshot()
+        save_dir = Path('screenshots/mshop')
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f'商店_{char_name}_{index}.png'
+        save_image(image, str(save_path))
+        logger.info(f'神秘商店货架截图已保存: {save_path}')
 
     def _ocr_price(self, slot: int) -> int:
         """读取指定格位的价格数字，返回 0 表示识别失败。
