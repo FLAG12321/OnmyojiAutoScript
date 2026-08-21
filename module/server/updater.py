@@ -565,6 +565,9 @@ class Updater(DeployConfig, GitManager, PipManager):
         source = 'origin'
         prog = _update_progress
         prog.reset(branch=self.Branch)
+        # 每个阶段用 set_step 标记，失败点在 finish(False) 前用 append 写明「阶段 + 原因」，
+        # 让 /update_progress 的 logs 能直接看出更新中断在哪一步。
+        prog.set_step('开始更新')
 
         # 0. 检查 git 可用性；不可用时先找本机已装 git（零下载），再退到自动升级
         usable, reason = self.check_git_usable()
@@ -586,7 +589,13 @@ class Updater(DeployConfig, GitManager, PipManager):
                     prog.reject(f'git 升级后仍不可用：{reason}')
                     return False
 
+        # 0.4 清理强杀 git 后残留的 .git/*.lock，否则 fetch/merge 会直接报锁已存在。
+        #     依赖 /execute_update 的单实例防重入：只有当前更新线程在跑 git，删除才是安全的。
+        prog.set_step('清理残留的 git 锁')
+        self.cleanup_git_locks()
+
         # 0.5 确保 fetch 源与 deploy.yaml Repository 一致（用户直接改 yaml 时自动换源）
+        prog.set_step('同步远程源 origin')
         if not self.ensure_origin():
             prog.reject('同步 origin 失败，拒绝使用旧远程更新')
             return False
@@ -603,6 +612,7 @@ class Updater(DeployConfig, GitManager, PipManager):
                 fetched = True
                 break
         if not fetched:
+            prog.append('阶段「拉取远程代码」失败：连不上远程仓库或网络超时（已重试 3 次），上面是 git fetch 的报错输出')
             prog.finish(False)
             logger.warning('Git fetch failed')
             return False
@@ -626,6 +636,7 @@ class Updater(DeployConfig, GitManager, PipManager):
                     return False
                 prog.append('工作区有已跟踪文件的修改，直接丢弃后切换')
                 if not self.execute_stream(f'"{self.git}" reset --hard HEAD', on_line=prog.append):
+                    prog.append('阶段「切换分支」失败：丢弃本地改动失败（git reset --hard）')
                     prog.finish(False)
                     logger.warning('Git reset --hard failed')
                     return False
@@ -634,6 +645,7 @@ class Updater(DeployConfig, GitManager, PipManager):
             if not self.KeepLocalChanges:
                 prog.append('清理未跟踪文件，确保切换不被覆盖冲突拦截')
                 if not self.execute_stream(f'"{self.git}" clean -fd', on_line=prog.append):
+                    prog.append('阶段「切换分支」失败：清理未跟踪文件失败（git clean -fd）')
                     prog.finish(False)
                     logger.warning('Git clean failed')
                     return False
@@ -650,6 +662,7 @@ class Updater(DeployConfig, GitManager, PipManager):
                     on_line=prog.append,
                 )
             if not switched:
+                prog.append('阶段「切换分支」失败：git checkout 退出码非 0，上面是 git 的报错输出')
                 prog.finish(False)
                 logger.warning('Git checkout failed')
                 return False
@@ -662,6 +675,7 @@ class Updater(DeployConfig, GitManager, PipManager):
         )
         if not fast_forwarded:
             if self.KeepLocalChanges:
+                prog.append('阶段「快进合并」失败：本地改动与远端分叉，且配置了 KeepLocalChanges 保留本地改动，拒绝强制同步')
                 prog.finish(False)
                 logger.warning('Git fast-forward failed; local changes are preserved')
                 return False
@@ -671,6 +685,7 @@ class Updater(DeployConfig, GitManager, PipManager):
             prog.set_step(f'force sync {source}/{self.Branch}')
             prog.append('快进被本地改动或分叉阻塞，丢弃源码改动并强制同步远端')
             if not self.execute_stream(f'"{self.git}" clean -fd', on_line=prog.append):
+                prog.append('阶段「强制同步」失败：清理未跟踪文件失败（git clean -fd）')
                 prog.finish(False)
                 logger.warning('Git clean failed during force sync')
                 return False
@@ -678,15 +693,51 @@ class Updater(DeployConfig, GitManager, PipManager):
                     f'"{self.git}" reset --hard {source}/{self.Branch}',
                     on_line=prog.append,
             ):
+                prog.append('阶段「强制同步」失败：丢弃本地改动失败（git reset --hard）')
                 prog.finish(False)
                 logger.warning('Git reset --hard failed during force sync')
                 return False
 
+        # 4. 代码已是最新，紧接着对齐 OCR 依赖与模型，让「一键更新」真正一键到位。
+        #    finish(True) 必须放在 OCR 对齐之后：此前在 git 拉完就置 done，UI 显示
+        #    "更新完成"时 OCR 依赖可能尚未对齐，对齐失败也会被"更新完成"掩盖，
+        #    曾导致用户以为更新成功、实跑任务才发现 OCR 全挂。
+        if not self.align_ocr(prog):
+            # align_ocr 内部已把失败原因写入 logs（含"停止实例后重试"提示）
+            prog.finish(False)
+            return False
+
         prog.finish(True)
         logger.info('Update finished')
-        # 4. 代码已是最新，紧接着对齐 OCR 依赖与模型，让「一键更新」真正一键到位
-        self.align_ocr(prog)
         return True
+
+    def cleanup_git_locks(self) -> None:
+        """清理强杀 git 后残留在 .git 下的 *.lock，避免 fetch/merge 报锁已存在。
+
+        前提是没有并发 git 进程：调用方 execute_pull 由 /execute_update 的单实例
+        防重入保证同一时刻只有一个更新线程，因此这里删除 lock 是安全的。
+
+        用 rev-parse 定位真实 git 目录（兼容 .git 文件/子目录形式），再递归删除。
+        """
+        git_dir = self.execute_output(f'"{self.git}" rev-parse --git-dir').strip()
+        if not git_dir:
+            return
+        git_dir = os.path.abspath(git_dir)
+        if not os.path.isdir(git_dir):
+            return
+        removed = 0
+        for root, _, files in os.walk(git_dir):
+            for name in files:
+                if not name.endswith('.lock'):
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    os.remove(path)
+                    removed += 1
+                except OSError as e:
+                    logger.warning(f'Failed to remove stale git lock {path}: {e}')
+        if removed:
+            logger.info(f'Removed {removed} stale git lock(s) under {git_dir}')
 
     def align_ocr(self, prog=None) -> bool:
         """更新后对齐 PP-OCRv6 依赖与模型。
@@ -725,7 +776,8 @@ class Updater(DeployConfig, GitManager, PipManager):
                     on_line=emit,
                 )
                 if not ok:
-                    emit('OCR 依赖对齐失败。若有实例正在运行，请全部停止后重启 OAS 重试。')
+                    emit('OCR 依赖对齐失败，可能原因与处理建议：')
+                    emit(self._diagnose_ocr_blockers())
                     return False
 
             # 对齐开头为了释放 DLL 锁停掉了 OCR RPC 服务，这里按配置恢复它。
@@ -741,6 +793,43 @@ class Updater(DeployConfig, GitManager, PipManager):
             logger.exception(e)
             emit(f'OCR 依赖对齐异常：{e}')
             return False
+
+    def _diagnose_ocr_blockers(self) -> str:
+        """OCR 对齐失败时定位可能占用 onnxruntime.dll 的进程，给出可操作提示。
+
+        OCR 换包失败的常见根因是 Windows 锁定已加载的 onnxruntime.dll
+        （表现为 WinError 5 拒绝访问），而更新器只能释放当前进程持有的 OCR 服务。
+        这里枚举 OAS 安装目录下的 python/pythonw/oas 进程，把「谁还活着」指出来，
+        用户停止这些进程后重试更新即可恢复。
+        """
+        try:
+            from deploy.process import ProcessManager
+            pm = ProcessManager(file=self.file)
+        except Exception as e:
+            return (f'无法枚举占用进程（{e}）。最常见原因是还有 OAS 实例/GUI/OCR 服务'
+                    '在运行，请全部停止后重试更新。')
+        hints = []
+        enumerated = False
+        for name in ('python.exe', 'pythonw.exe', 'oas.exe'):
+            try:
+                rows = pm.iter_process_by_name(name)
+            except Exception:
+                continue
+            if not rows:
+                continue
+            enumerated = True
+            for path, process_name, pid in rows:
+                if pid != os.getpid():
+                    hints.append(f'  {process_name} (PID {pid})：{path}')
+        if hints:
+            return ('检测到 OAS 相关进程仍在运行，可能持有 onnxruntime.dll 导致换包失败：\n'
+                    + '\n'.join(hints)
+                    + '\n请先全部停止上述进程，再重新执行更新。')
+        if enumerated:
+            return ('未检测到 OAS 相关进程，但 OCR 依赖仍对齐失败。'
+                    '请检查是否有其它程序占用 toolkit\\lib\\site-packages\\onnxruntime，'
+                    '或在任务管理器中结束所有 python 进程后重试更新。')
+        return '无法枚举进程（可能缺少 pywin32），请先结束所有 OAS/GUI/OCR 进程后重试更新。'
 
 
 

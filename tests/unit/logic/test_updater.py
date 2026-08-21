@@ -342,6 +342,100 @@ def test_execute_pull_fetch_fail(updater):
     assert _update_progress.status == 'failed'
 
 
+# 7b. 失败点在 finish(False) 前必须写明「阶段 + 原因」，便于前端从 logs 定位中断点
+@pytest.mark.unit
+def test_execute_pull_fetch_fail_logs_stage(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.ensure_origin = lambda: True
+    updater.execute_stream = lambda cmd, on_line=None: False
+    updater.execute_pull()
+    logs = _update_progress.snapshot()['logs']
+    assert any('阶段「拉取远程代码」失败' in l for l in logs)
+
+
+# 7c. OCR 依赖对齐是更新的收尾阶段：对齐失败则更新整体失败，
+#     不能让「更新完成」在 OCR 尚未对齐/对齐失败时提前亮起
+@pytest.mark.unit
+def test_execute_pull_fails_when_ocr_align_fails(updater, monkeypatch):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.execute_output = lambda cmd: 'master\n'
+    updater.execute_stream = lambda cmd, on_line=None: True
+    monkeypatch.setattr(updater, 'align_ocr', lambda prog=None: False)
+    assert updater.execute_pull() is False
+    assert _update_progress.status == 'failed'
+
+
+# 7d. 清理强杀 git 后残留的 .lock（fetch/merge 恢复的前提）
+@pytest.mark.unit
+def test_cleanup_git_locks(updater, tmp_path):
+    git_dir = tmp_path / 'gitdir'
+    refs = git_dir / 'refs' / 'heads'
+    refs.mkdir(parents=True)
+    (git_dir / 'index.lock').write_text('')
+    (refs / 'master.lock').write_text('')
+    (git_dir / 'config').write_text('not a lock')  # 非 .lock 文件必须保留
+    updater.execute_output = lambda cmd: str(git_dir) if 'rev-parse' in cmd else ''
+    updater.cleanup_git_locks()
+    assert not (git_dir / 'index.lock').exists()
+    assert not (refs / 'master.lock').exists()
+    assert (git_dir / 'config').exists()
+
+
+# 7e. 无 git 目录时清理应无副作用（rev-parse 失败/空目录）
+@pytest.mark.unit
+def test_cleanup_git_locks_noop_when_missing(updater):
+    updater.execute_output = lambda cmd: ''
+    updater.cleanup_git_locks()  # 不应抛异常
+
+
+# 7f. OCR 对齐失败诊断：枚举到占用进程 → 提示里含进程与 PID
+@pytest.mark.unit
+def test_diagnose_ocr_blockers_finds_processes(updater, monkeypatch):
+    class FakePM:
+        def __init__(self, **kw):
+            pass
+
+        def iter_process_by_name(self, name):
+            if name == 'python.exe':
+                return iter([('D:/oas/toolkit/python.exe', 'python.exe', 1234)])
+            return iter([])
+
+    monkeypatch.setattr('deploy.process.ProcessManager', FakePM)
+    msg = updater._diagnose_ocr_blockers()
+    assert 'python.exe' in msg and '1234' in msg
+    assert '请先全部停止' in msg
+
+
+# 7g. 枚举正常但无占用进程 → 走「未检测到」分支
+@pytest.mark.unit
+def test_diagnose_ocr_blockers_none_found(updater, monkeypatch):
+    class FakePM:
+        def __init__(self, **kw):
+            pass
+
+        def iter_process_by_name(self, name):
+            return iter([])
+
+    monkeypatch.setattr('deploy.process.ProcessManager', FakePM)
+    assert '未检测到' in updater._diagnose_ocr_blockers()
+
+
+# 7h. pywin32 缺失（iter_process_by_name 返回 False）→ 「无法枚举」提示
+@pytest.mark.unit
+def test_diagnose_ocr_blockers_no_enumeration(updater, monkeypatch):
+    class FakePM:
+        def __init__(self, **kw):
+            pass
+
+        def iter_process_by_name(self, name):
+            return False
+
+    monkeypatch.setattr('deploy.process.ProcessManager', FakePM)
+    assert '无法枚举' in updater._diagnose_ocr_blockers()
+
+
 # 8. update_config 写 branch：deploy.yaml 实际落盘
 @pytest.mark.unit
 def test_update_config_branch(updater, monkeypatch, tmp_path):
@@ -386,6 +480,46 @@ def test_update_config_same_repo_still_set_url(updater, monkeypatch):
         repository='https://example.com/repo.git'))
     assert result['repository'] == 'https://example.com/repo.git'
     assert any('remote set-url origin' in c for c in set_url_calls)
+
+
+# 10c. /execute_update：running 时拒绝再次触发（防重入，避免并发 git 互相踩锁）
+@pytest.mark.unit
+def test_execute_update_rejects_when_running(updater, monkeypatch):
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    reset_progress()  # status -> running
+    started = []
+
+    class FakeThread:
+        def __init__(self, target=None, daemon=None):
+            started.append(target)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(home_router.threading, 'Thread', FakeThread)
+    result = asyncio.run(home_router.execute_update())
+    assert '运行' in result
+    assert not started, 'running 时不应再启动更新线程'
+
+
+# 10d. /execute_update：非 running（done/failed/idle）允许重试 —— 中断后一键恢复入口
+@pytest.mark.unit
+def test_execute_update_starts_thread_after_finished(updater, monkeypatch):
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    _update_progress.finish(False)  # status -> failed，模拟上次中断
+    started = []
+
+    class FakeThread:
+        def __init__(self, target=None, daemon=None):
+            started.append(target)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(home_router.threading, 'Thread', FakeThread)
+    result = asyncio.run(home_router.execute_update())
+    assert '后台开始' in result
+    assert started, '非 running 状态应允许再次触发更新'
 
 
 # 11. 进度 snapshot 字段齐全、状态流转正确

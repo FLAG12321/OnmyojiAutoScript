@@ -75,10 +75,24 @@ def update_info():
 
 @home_app.get('/execute_update')
 async def execute_update():
-    # 后台线程执行分支切换与快进更新，立即返回，进度经 /update_progress 轮询。
+    # 防重入：running 时拒绝再次触发，避免两个线程同时跑 git 互相踩锁。
+    # failed / rejected / done / idle 都允许重试 —— 这就是「更新中断后一键恢复」的入口，
+    # execute_pull 全程幂等，重跑会接上上次中断后的剩余阶段。
+    if _update_progress.snapshot()['status'] == 'running':
+        return '更新正在后台运行，请等待本次更新完成或失败后再重试'
     try:
         updater = Updater()
-        threading.Thread(target=updater.execute_pull, daemon=True).start()
+
+        def _run():
+            # 线程级兜底：任何未捕获异常都不让状态卡死在 running，
+            # 否则前端永远无法再次触发更新（恢复入口被堵死）。
+            try:
+                updater.execute_pull()
+            except Exception as e:
+                logger.error(e)
+                _update_progress.finish(False)
+
+        threading.Thread(target=_run, daemon=True).start()
     except Exception as e:
         logger.error(e)
     return '更新已在后台开始，可通过 /update_progress 查看进度'
