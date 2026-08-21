@@ -334,8 +334,15 @@ class ScriptProcess(ScriptWSManager):
             await self._stop_locked(broadcast=False)
             return False
 
-        # 先完成旧进程停止，再构造新进程；整个过程受同一 lifecycle lock 保护。
-        if self._process_snapshot() is not None:
+        # start 幂等：已有存活进程直接返回，不再先停后起——否则 daemon 重启或
+        # API/GUI 重复 start 会把正常运行的脚本进程杀掉重拉（原实现等于 restart）。
+        existing = self._process_snapshot()
+        if existing is not None:
+            alive, _alive_error = self._process_alive_status(existing, "start")
+            if alive is True:
+                logger.info(f'[{self.config_name}] already running, start is a no-op')
+                return True
+            # 句柄残留但进程已死或状态未知：走 stop 清理，再重新 spawn
             await self._stop_locked(broadcast=False)
         spawn_attempt_nonce = uuid.uuid4().hex
         with self._process_state_lock:
