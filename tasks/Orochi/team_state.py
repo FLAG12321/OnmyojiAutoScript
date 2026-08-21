@@ -34,6 +34,17 @@ TERMINAL_PHASES = {PHASE_WAIT_NEXT_ROUND, PHASE_FINISHED}
 # 配对阶段要求队长持续刷新状态，避免队员误连上次遗留的 WAIT_MEMBER。
 LEADER_FRESH_SECONDS = 15
 
+# 轮次之间有人要打结界突破时，另一方必须等对方打完突破才能配对成功。突破耗时
+# 远超邀请等待时间：30 张突破票可能要打 15 分钟以上，因此这种轮次用独立的长
+# 超时（留一倍余量），避免没突破的一方提前超时退避。
+REALM_RAID_PAIRING_WAIT_SECONDS = 1800
+
+# 突破进行中标记的兜底有效期。正常情况下打完突破的一方回到御魂时会自行清除标记，
+# 但如果它中途崩溃或被用户停掉，标记会一直挂着；超过这个时长就不再认它，
+# 避免另一方无限等待一个永远不会回来的队友。
+REALM_RAID_PENDING_EXPIRE_SECONDS = 2400
+
+
 
 class StaleSessionError(RuntimeError):
     """调用方携带的会话令牌已过期，禁止覆盖当前场次。"""
@@ -164,7 +175,13 @@ class TeamStateStore:
             'round_started_at': None,
             'round_finished_at': None,
             'round_success': None,
-            'next_realm_raid_at': None,
+            # 双方各自声明本地是否要打结界突破，决定是否需要分轮以及配对等待时长
+            'leader_realm_raid': False,
+            'member_realm_raid': False,
+            'pairing_needs_realm_raid': False,
+            # 突破进行中标记：非空表示该方此刻正在打突破，回到御魂时由它自己清除
+            'leader_realm_raid_pending_at': None,
+            'member_realm_raid_pending_at': None,
             'reset_by': str(requested_by),
             # RESET 发生在运行中时，旧会话双方都能复制同一个兜底重试时间。
             'next_orochi_at': _iso(now + timedelta(minutes=10)),
@@ -202,11 +219,14 @@ class TeamStateStore:
         round_limit_seconds: int,
         total_limit_count: int,
         total_limit_seconds: int,
-        soul_buff_enable: bool,
-        enable_realm_raid_chain: bool,
+        leader_realm_raid: bool,
         now: datetime | None = None,
     ) -> dict:
-        """由队长发布新一轮配置；WAIT_NEXT_ROUND 未到点时拒绝提前覆盖。"""
+        """由队长发布新一轮配置；WAIT_NEXT_ROUND 未到点时拒绝提前覆盖。
+
+        本轮单轮限制此时只按"总量剩余"发布，真正的分轮收缩推迟到 start_inviting：
+        是否需要分轮取决于双方突破声明的并集，而队员声明要等它 join 之后才可见。
+        """
         now = (now or _now()).replace(microsecond=0)
 
         def mutate(state: dict) -> dict:
@@ -219,6 +239,9 @@ class TeamStateStore:
                 next_run = _parse_datetime(state.get('next_orochi_at'))
                 if next_run is not None and now < next_run:
                     raise RoundNotDueError(next_run)
+
+            # 上一轮遗留的"需要等对方打突破"标记要跨轮保留，配对超时据此放宽
+            pairing_needs_realm_raid = bool(state.get('pairing_needs_realm_raid'))
 
             if not state or phase == PHASE_FINISHED:
                 state = self._new_progress(self.leader_instance)
@@ -245,8 +268,6 @@ class TeamStateStore:
                 'total_limit_seconds': total_limit_seconds_value,
                 'total_count': total_count,
                 'total_elapsed_seconds': total_elapsed,
-                'soul_buff_enable': bool(soul_buff_enable),
-                'enable_realm_raid_chain': bool(enable_realm_raid_chain),
                 'updated_at': _iso(now),
                 'leader_seen_at': _iso(now),
             })
@@ -272,14 +293,19 @@ class TeamStateStore:
                 'member_buff_ready': False,
                 'configured_limit_count': max(0, int(round_limit_count)),
                 'configured_limit_seconds': max(0, int(round_limit_seconds)),
-                'effective_limit_count': min(max(0, int(round_limit_count)), remaining_count),
-                'effective_limit_seconds': min(max(0, int(round_limit_seconds)), remaining_seconds),
+                # 先按总量剩余发布，start_inviting 再按双方突破声明决定是否收缩为单轮
+                'effective_limit_count': remaining_count,
+                'effective_limit_seconds': remaining_seconds,
+                'remaining_limit_count': remaining_count,
+                'remaining_limit_seconds': remaining_seconds,
+                'leader_realm_raid': bool(leader_realm_raid),
+                'member_realm_raid': False,
+                'pairing_needs_realm_raid': pairing_needs_realm_raid,
                 'round_count': 0,
                 'round_started_at': None,
                 'round_finished_at': None,
                 'round_success': None,
                 'next_orochi_at': None,
-                'next_realm_raid_at': None,
             })
             return state
 
@@ -300,8 +326,12 @@ class TeamStateStore:
             return False
         return 0 <= (now - leader_seen_at).total_seconds() <= LEADER_FRESH_SECONDS
 
-    def try_join_member(self, member_instance: str, now: datetime | None = None) -> dict | None:
-        """仅加入队长刚发布且仍开放的 WAIT_MEMBER，旧 JSON 不会被直接复用。"""
+    def try_join_member(self, member_instance: str, member_realm_raid: bool,
+                        now: datetime | None = None) -> dict | None:
+        """仅加入队长刚发布且仍开放的 WAIT_MEMBER，旧 JSON 不会被直接复用。
+
+        队员在这里同时声明本地突破开关，供队长在 start_inviting 决定是否分轮。
+        """
         now = (now or _now()).replace(microsecond=0)
         joined = None
 
@@ -318,6 +348,7 @@ class TeamStateStore:
                 'phase': PHASE_PREPARING,
                 'accept_member': False,
                 'member_instance': member_instance,
+                'member_realm_raid': bool(member_realm_raid),
                 'member_seen_at': _iso(now),
                 'updated_at': _iso(now),
             })
@@ -356,7 +387,11 @@ class TeamStateStore:
         return self._update(mutate)
 
     def start_inviting(self, session: TeamSession, now: datetime | None = None) -> dict:
-        """只有 JSON 中双方换魂、加成均就绪时，队长才可进入邀请阶段。"""
+        """只有 JSON 中双方换魂、加成均就绪时，队长才可进入邀请阶段。
+
+        同时在这里定稿本轮单轮限制：双方都不打突破就一次性打完总量剩余，不分轮；
+        只要有一方要打突破，就收缩到单轮配置，让突破得以插在轮次之间。
+        """
         now = (now or _now()).replace(microsecond=0)
 
         def mutate(state: dict) -> dict:
@@ -367,8 +402,24 @@ class TeamStateStore:
             ))
             if state.get('phase') != PHASE_PREPARING or not ready:
                 raise StaleSessionError('TEAM_NOT_READY')
+
+            needs_realm_raid = bool(state.get('leader_realm_raid') or state.get('member_realm_raid'))
+            remaining_count = max(0, int(state.get('remaining_limit_count', 0) or 0))
+            remaining_seconds = max(0, int(state.get('remaining_limit_seconds', 0) or 0))
+            if needs_realm_raid:
+                # 有人要打突破：按单轮配置切分，轮次之间留出打突破的时间
+                effective_count = min(max(0, int(state.get('configured_limit_count', 0) or 0)), remaining_count)
+                effective_seconds = min(max(0, int(state.get('configured_limit_seconds', 0) or 0)), remaining_seconds)
+            else:
+                # 双方都不打突破：没有插入突破的需要，一次性打完总量剩余
+                effective_count = remaining_count
+                effective_seconds = remaining_seconds
+
             state.update({
                 'phase': PHASE_INVITING,
+                'needs_realm_raid': needs_realm_raid,
+                'effective_limit_count': effective_count,
+                'effective_limit_seconds': effective_seconds,
                 'round_started_at': _iso(now),
                 'leader_seen_at': _iso(now),
                 'updated_at': _iso(now),
@@ -398,6 +449,52 @@ class TeamStateStore:
             return state
 
         return self._update(mutate)
+
+    # -------------------------------- 突破进行中互查 --------------------------------
+
+    def mark_realm_raid_pending(self, role: str, now: datetime | None = None) -> dict:
+        """本方即将去打结界突破，落一个带时间戳的标记供对方查询。
+
+        不校验 session：突破发生在轮次之间，此时本轮 session 已经收尾，而下一轮
+        session 尚未发布，用旧令牌校验只会把这个标记拒之门外。
+        """
+        if role not in {'leader', 'member'}:
+            raise ValueError('invalid role')
+        now = (now or _now()).replace(microsecond=0)
+
+        def mutate(state: dict) -> dict:
+            state[f'{role}_realm_raid_pending_at'] = _iso(now)
+            state['updated_at'] = _iso(now)
+            return state
+
+        return self._update(mutate)
+
+    def clear_realm_raid_pending(self, role: str, now: datetime | None = None) -> dict:
+        """本方已从突破回到御魂，清除标记，让对方立刻结束等待。"""
+        if role not in {'leader', 'member'}:
+            raise ValueError('invalid role')
+        now = (now or _now()).replace(microsecond=0)
+
+        def mutate(state: dict) -> dict:
+            if state.get(f'{role}_realm_raid_pending_at') is None:
+                return None
+            state[f'{role}_realm_raid_pending_at'] = None
+            state['updated_at'] = _iso(now)
+            return state
+
+        return self._update(mutate)
+
+    @staticmethod
+    def realm_raid_pending(state: dict, role: str, now: datetime | None = None) -> bool:
+        """对方是否正在打突破。带兜底过期，避免对方崩溃后标记永久挂住。"""
+        if not state:
+            return False
+        marked_at = _parse_datetime(state.get(f'{role}_realm_raid_pending_at'))
+        if marked_at is None:
+            return False
+        now = (now or _now()).replace(microsecond=0)
+        elapsed = (now - marked_at).total_seconds()
+        return 0 <= elapsed <= REALM_RAID_PENDING_EXPIRE_SECONDS
 
     # -------------------------------- 战斗进度与调度 --------------------------------
 
@@ -435,10 +532,13 @@ class TeamStateStore:
         session: TeamSession,
         success: bool,
         next_orochi_at: datetime,
-        next_realm_raid_at: datetime | None,
         now: datetime | None = None,
     ) -> dict:
-        """队长唯一生成下一轮时间；队员只能读取并复制，禁止独立计算。"""
+        """队长唯一生成下一轮时间；队员只能读取并复制，禁止独立计算。
+
+        结界突破改为各自本地拉起，因此这里不再下发突破时间，只把"下一轮需要等
+        对方打完突破"这一事实落进 pairing_needs_realm_raid，供下一轮放宽配对超时。
+        """
         now = (now or _now()).replace(microsecond=0)
 
         def mutate(state: dict) -> dict:
@@ -457,13 +557,15 @@ class TeamStateStore:
                 or int(state.get('total_elapsed_seconds', 0) or 0)
                 >= int(state.get('total_limit_seconds', 0) or 0)
             )
+            needs_realm_raid = bool(state.get('leader_realm_raid') or state.get('member_realm_raid'))
             state.update({
                 'phase': PHASE_FINISHED if finished else PHASE_WAIT_NEXT_ROUND,
                 'accept_member': False,
                 'round_finished_at': _iso(now),
                 'round_success': bool(success),
                 'next_orochi_at': None if finished else _iso(next_orochi_at),
-                'next_realm_raid_at': _iso(next_realm_raid_at),
+                # 总量已打完就不会再配对，标记无需保留；否则下一轮要等对方打完突破
+                'pairing_needs_realm_raid': False if finished else needs_realm_raid,
                 'leader_seen_at': _iso(now),
                 'updated_at': _iso(now),
             })

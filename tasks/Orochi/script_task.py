@@ -20,8 +20,8 @@ from tasks.Orochi.team_state import (
     PHASE_RESETTING,
     PHASE_RUNNING,
     PHASE_WAIT_NEXT_ROUND,
-    RESET_COMMAND,
-    RoundNotDueError,
+    REALM_RAID_PAIRING_WAIT_SECONDS,
+    RESET_COMMAND,    RoundNotDueError,
     StaleSessionError,
     TeamSession,
     TeamStateStore,
@@ -43,6 +43,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.team_store: TeamStateStore | None = None
         self.team_session: TeamSession | None = None
         self.team_role: str | None = None
+        # 御魂加成与结界突破链一律按本实例配置生效，组队时不再从队长同步
         self.team_soul_buff_enable = config.orochi_config.soul_buff_enable
         self.team_enable_realm_raid_chain = config.orochi_config.enable_realm_raid_chain
         self._team_last_heartbeat = 0.0
@@ -140,6 +141,48 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         wait_time = self.config.orochi.invite_config.wait_time
         return max(10, self._time_to_seconds(wait_time))
 
+    def _pairing_wait_seconds(self, state: dict | None = None) -> int:
+        """配对等待超时：对方正在打突破时放宽，避免没突破的一方提前超时。
+
+        优先看对方的"突破进行中"实时标记；标记缺失时退回上一轮的静态推断
+        （pairing_needs_realm_raid），覆盖对方还没来得及落标记就被查询的窗口。
+        突破耗时远超邀请等待，而换魂/加成屏障仍沿用各自的邀请等待时间。
+        """
+        base = self._team_wait_seconds()
+        if state is None and self.team_store is not None:
+            state = self.team_store.read()
+        if not state:
+            return base
+        if (self.team_store is not None
+                and self.team_store.realm_raid_pending(state, self._other_role())):
+            logger.info('对方正在打结界突破，本次配对使用长等待')
+            return max(base, REALM_RAID_PAIRING_WAIT_SECONDS)
+        if state.get('pairing_needs_realm_raid'):
+            return max(base, REALM_RAID_PAIRING_WAIT_SECONDS)
+        return base
+
+    def _other_role(self) -> str:
+        """对方角色名，用于查询对方的突破进行中标记。"""
+        return 'member' if self.team_role == 'leader' else 'leader'
+
+    def _clear_own_realm_raid_pending(self) -> None:
+        """回到御魂就立刻清掉自己的突破标记，好让对方结束等待。"""
+        if self.team_store is None or self.team_role is None:
+            return
+        try:
+            self.team_store.clear_realm_raid_pending(self.team_role)
+        except Exception as e:
+            # 标记只用于缩短对方等待，清不掉最多让对方多等到兜底过期，不能中断任务
+            logger.warning(f'清除结界突破进行中标记失败: {e}')
+
+    def _apply_team_round_config(self, state: dict) -> None:
+        """队员和队长都使用状态文件中的有效单轮限制，保证只有一个配置来源。
+
+        御魂加成与结界突破链不在此同步：两者已改为各自读本实例配置。
+        """
+        self.limit_count = int(state.get('effective_limit_count', 0) or 0)
+        self.limit_time = timedelta(seconds=int(state.get('effective_limit_seconds', 0) or 0))
+
     def _schedule_reset_retry(self) -> bool:
         """场次被 RESET 取代时复制状态内的统一时间，避免双方退回各自失败间隔。"""
         if self.team_store is None:
@@ -152,13 +195,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             return False
         self.set_next_run('Orochi', target=next_run, server=False)
         return True
-
-    def _apply_team_round_config(self, state: dict) -> None:
-        """队员和队长都使用状态文件中的有效单轮限制，保证只有一个配置来源。"""
-        self.limit_count = int(state.get('effective_limit_count', 0) or 0)
-        self.limit_time = timedelta(seconds=int(state.get('effective_limit_seconds', 0) or 0))
-        self.team_soul_buff_enable = bool(state.get('soul_buff_enable'))
-        self.team_enable_realm_raid_chain = bool(state.get('enable_realm_raid_chain'))
 
     def _connect_team(self) -> None:
         """队长发布新 Join Token；队员只加入新鲜且开放的目标队长场次。"""
@@ -175,6 +211,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         if orochi_config.user_status == UserStatus.LEADER:
             self.team_role = 'leader'
             self.team_store = TeamStateStore(config_name)
+            # 已经回到御魂，先撤掉自己的突破标记，队员才不会继续空等
+            self._clear_own_realm_raid_pending()
             if str(team_config.epoch).strip().upper() == RESET_COMMAND:
                 reset_state = self.team_store.reset(config_name)
                 self._sync_epoch(reset_state['progress_epoch'])
@@ -188,8 +226,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                         round_limit_seconds=self._time_to_seconds(orochi_config.limit_time),
                         total_limit_count=team_config.total_limit_count,
                         total_limit_seconds=self._time_to_seconds(team_config.total_limit_time),
-                        soul_buff_enable=self.team_soul_buff_enable,
-                        enable_realm_raid_chain=self.team_enable_realm_raid_chain,
+                        leader_realm_raid=self.team_enable_realm_raid_chain,
                     )
                 except RoundNotDueError as exc:
                     logger.info(f'组队御魂下一轮尚未到时: {exc.next_orochi_at}')
@@ -204,9 +241,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
                 self.team_session = TeamSession.from_state(state)
                 self._apply_team_round_config(state)
+                # 上一轮有人打突破时队员会晚回来，这里必须用放宽后的配对超时
                 joined_state = self._wait_team_state(
                     lambda value: bool(value.get('member_instance')),
-                    timeout=self._team_wait_seconds(),
+                    timeout=self._pairing_wait_seconds(state),
                 )
                 if joined_state is not None:
                     return
@@ -230,21 +268,28 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         self.team_role = 'member'
         self.team_store = TeamStateStore(leader_instance)
+        # 已经回到御魂，先撤掉自己的突破标记，队长才不会继续空等
+        self._clear_own_realm_raid_pending()
         if str(team_config.epoch).strip().upper() == RESET_COMMAND:
             reset_state = self.team_store.reset(config_name)
             self._sync_epoch(reset_state['progress_epoch'])
 
-        deadline = monotonic() + self._team_wait_seconds()
+        # 队长可能正在打结界突破，此时要等它打完回来才会发布新场次；配对超时据此放宽
+        pairing_state = self.team_store.read()
+        deadline = monotonic() + self._pairing_wait_seconds(pairing_state)
         state = None
         while monotonic() < deadline:
-            state = self.team_store.try_join_member(config_name)
+            state = self.team_store.try_join_member(
+                config_name,
+                member_realm_raid=self.team_enable_realm_raid_chain,
+            )
             if state is not None:
                 break
             sleep(1)
         if state is None:
             logger.warning(f'未发现队长 {leader_instance} 发布的新组队场次')
             if not self._schedule_reset_retry():
-                self.set_next_run('Orochi', finish=False, success=False)
+                self._schedule_pairing_retry(pairing_state)
             raise TaskEnd('Orochi')
 
         self._sync_epoch(state['progress_epoch'])
@@ -370,8 +415,57 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear_then_click(self.I_FIRE_SEA, interval=1, threshold=0.7):
                 continue
 
+    def _schedule_pairing_retry(self, state: dict | None = None) -> None:
+        """配对超时的退避：对方在打突破时用短间隔重试，而不是整段失败间隔。
+
+        failure_interval 默认是一天，如果只因为对方还在打突破就退避一天，等于整个
+        组队流程被一次超时废掉。这种轮次改为几分钟后重试，让它自然等到对方回来。
+        """
+        if state is None and self.team_store is not None:
+            state = self.team_store.read()
+        pending = bool(
+            state
+            and self.team_store is not None
+            and self.team_store.realm_raid_pending(state, self._other_role())
+        )
+        if pending or (state and state.get('pairing_needs_realm_raid')):
+            target = datetime.now().replace(microsecond=0) + timedelta(minutes=3)
+            logger.info(f'对方可能仍在打结界突破，稍后重试配对: {target}')
+            self.set_next_run('Orochi', target=target, server=False)
+            return
+        self.set_next_run('Orochi', finish=False, success=False)
+
+    def _chain_realm_raid(self) -> None:
+        """拉起结界突破：未启用先启用，并把时间设为当下立即执行。
+
+        时间必须是"现在"而不是往后推：只要留出等待窗口，窗口内任何到点的任务都
+        可能被调度器优先选走，突破就被插队挤到后面。RealmRaid 在 SCHEDULER_PRIORITY
+        中排在 Orochi 之前，同一时刻到点时突破先跑，回来正好接上下一轮御魂。
+
+        启用必须先落盘再改时间：set_next_run 内部会 reload 配置，未保存的启用会被丢弃。
+        """
+        # 先告知队友"我要去打突破了"，它据此切换到长等待而不是按邀请超时退避
+        if self.team_store is not None and self.team_role is not None:
+            try:
+                self.team_store.mark_realm_raid_pending(self.team_role)
+            except Exception as e:
+                # 标记只影响对方等多久，写不进去也必须继续把突破拉起来
+                logger.warning(f'写入结界突破进行中标记失败: {e}')
+
+        scheduler = self.config.model.realm_raid.scheduler
+        if not scheduler.enable:
+            logger.info('结界突破未启用，本次自动启用以便拉起')
+            scheduler.enable = True
+            self.config.save()
+        target = datetime.now().replace(microsecond=0)
+        logger.info(f'拉起结界突破，立即执行: {target}')
+        self.set_next_run('RealmRaid', target=target, server=False)
+
     def _finish_team_task(self, success: bool) -> None:
-        """队长唯一计算调度时间；队员等队长落盘后复制同一时间。"""
+        """队长唯一计算调度时间；队员等队长落盘后复制同一时间。
+
+        结界突破改为各自按本地配置拉起，不再由队长下发时间。
+        """
         if self.team_store is None or self.team_session is None:
             # 手动队员没有 JSON 会话，沿用单人调度与 RealmRaid 链
             self._finish_local_task(success)
@@ -379,16 +473,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         state = None
         if self.team_role == 'leader':
-            next_orochi_at = datetime.now().replace(microsecond=0) + timedelta(minutes=10)
-            next_realm_raid_at = None
-            if self.team_enable_realm_raid_chain:
-                next_realm_raid_at = datetime.now().replace(microsecond=0) + timedelta(minutes=1)
+            # 下一轮设在一分钟后：本轮若要打突破，突破会因优先级更高而先跑，
+            # 跑完御魂正好到点接上；无人打突破时总量已一次打完，不会走到这里。
+            next_orochi_at = datetime.now().replace(microsecond=0) + timedelta(minutes=1)
             try:
                 state = self.team_store.finish_round(
                     self.team_session,
                     success=success,
                     next_orochi_at=next_orochi_at,
-                    next_realm_raid_at=next_realm_raid_at,
                 )
             except StaleSessionError as exc:
                 logger.warning(f'御魂组队结束状态写入失败: {exc}')
@@ -400,7 +492,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         if state is None:
             if not self._schedule_reset_retry():
-                self.set_next_run('Orochi', finish=False, success=False)
+                self._schedule_pairing_retry()
+            # 调度写失败也不该吞掉本地突破链，否则本轮的突破整轮丢失
+            if self.team_enable_realm_raid_chain:
+                self._chain_realm_raid()
             return
 
         if state.get('phase') == PHASE_WAIT_NEXT_ROUND:
@@ -412,10 +507,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         else:
             self.set_next_run('Orochi', finish=True, success=bool(state.get('round_success')))
 
-        next_realm_raid = parse_state_datetime(state.get('next_realm_raid_at'))
-        if next_realm_raid is not None:
-            logger.info(f'组队御魂本轮完成，调度结界突破: {next_realm_raid}')
-            self.set_next_run('RealmRaid', target=next_realm_raid, server=False)
+        # 各自按本实例配置拉起突破，与对方是否开启无关
+        if self.team_enable_realm_raid_chain:
+            self._chain_realm_raid()
 
     def _finish_local_task(self, success: bool) -> None:
         """单人和野队保持原有调度行为。"""
@@ -427,8 +521,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 根据配置决定是否拉起RealmRaid任务
         if self.config.orochi.orochi_config.enable_realm_raid_chain:
             logger.info("Orochi task completed, starting RealmRaid task")
-            target=datetime.now() + timedelta(minutes=1)
-            self.set_next_run(task='RealmRaid', target=target)
+            self._chain_realm_raid()
         else:
             logger.info("Orochi task completed, RealmRaid chain disabled")
 
@@ -859,10 +952,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     if self.click(action_click, interval=1.5):
                         continue
                 return True
-            if self.appear(self.I_REWARD):
+            if self.appear(self.I_REWARD)\
+                or self.appear(self.I_GREED_GHOST)\
+                or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN)\
+                or self.appear(self.I_REWARD_GOLD):
                 # 魂
                 logger.info('Win battle')
-                appear_greed_ghost = self.appear(self.I_GREED_GHOST)
                 while 1:
                     self.screenshot()
                     action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])

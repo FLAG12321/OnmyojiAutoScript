@@ -261,10 +261,10 @@ class ConfigModel(ConfigBase):
         :param task: 同gui_args函数
         :return:
         """
-        task = convert_to_underscore(task)
-        task = getattr(self, task, None)
+        task_name = convert_to_underscore(task)
+        task = getattr(self, task_name, None)
         if task is None:
-            logger.warning(f'{task} is no inexistence')
+            logger.warning(f'{task_name} is no inexistence')
             return {}
 
         def extract_groups(sch):
@@ -320,7 +320,61 @@ class ConfigModel(ConfigBase):
             result[key] = merge_value(groups_value[key], value, schema["$defs"])
 
         self._inject_desktop_handle_options(result)
+        self._filter_orochi_team_fields(task_name, result)
         return result
+
+    def _filter_orochi_team_fields(self, task_name: str, result: dict) -> None:
+        """按御魂组队模式与身份裁剪界面字段，只留下该模式真正需要填的项。
+
+        纯展示层过滤：只从返回给界面的字典里摘掉条目，不动 pydantic 模型也不改
+        任何落盘值。切模式后重新打开设置页即按新模式显示，隐藏字段的值原样保留。
+
+        隐藏规则：
+          - 单人：组队组只留模式下拉；副本设置去掉身份（身份只服务于组队配对）
+          - 组队队员：层数、单轮限制、总量、邀请配置全部由队长决定或不参与流程
+          - 组队队长：leader_instance 是队员用来指认队长的，队长自己不需要填
+        """
+        if task_name != 'orochi':
+            return
+        team_items = result.get('team_config')
+        if not team_items:
+            return
+
+        def drop(group: str, names: set) -> None:
+            items = result.get(group)
+            if not items:
+                return
+            kept = [item for item in items if item.get('name') not in names]
+            # 一组字段被摘空时连分组一起去掉，避免界面上留一个空的设置框
+            if kept:
+                result[group] = kept
+            else:
+                result.pop(group, None)
+
+        team_mode = getattr(self.orochi.team_config, 'team_mode', None)
+        team_mode = getattr(team_mode, 'value', team_mode)
+        user_status = getattr(self.orochi.orochi_config, 'user_status', None)
+        user_status = getattr(user_status, 'value', user_status)
+
+        if team_mode != 'team':
+            # 单人：组队组只保留模式下拉，身份也不再参与流程
+            result['team_config'] = [
+                item for item in team_items if item.get('name') == 'team_mode'
+            ]
+            drop('orochi_config', {'user_status'})
+            return
+
+        if user_status == 'member':
+            # 队员：总量与单轮限制均由队长发布并同步过来，自己填了也不生效
+            drop('team_config', {'total_limit_count', 'total_limit_time'})
+            # 实际层数由队长选定，队员不进副本选层，因此层数也不需要填
+            drop('orochi_config', {'limit_count', 'limit_time', 'layer'})
+            # 队员不执行邀请动作；等待时间在组队流程里由长等待逻辑接管，无需再填
+            drop('invite_config', {'invite_number', 'friend_1', 'friend_2',
+                                   'find_mode', 'default_invite', 'wait_time'})
+        else:
+            # 队长：由自己发布场次，不需要指认别的实例作队长
+            drop('team_config', {'leader_instance'})
 
     def _inject_desktop_handle_options(self, result: dict) -> None:
         """桌面模式下把 handle 就地改成"已开客户端窗口"下拉，供界面选择而非手填 PID。
