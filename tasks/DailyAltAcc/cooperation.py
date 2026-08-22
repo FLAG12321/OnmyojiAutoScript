@@ -1,4 +1,5 @@
 # This Python file uses the following encoding: utf-8
+import re
 import time
 from typing import List
 from module.logger import logger
@@ -10,7 +11,51 @@ from tasks.DailyAltAcc.config import MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent
 
 
+def _parse_cooperation_monster(raw_text: str, prefix: str) -> str:
+    """从一行协作目标 OCR 文本中提取怪物名称。"""
+    text = re.sub(r"\s+", "", str(raw_text or ""))
+    text = re.sub(r"\d+[/／]\d+$", "", text)
+    if text.startswith(prefix):
+        text = text[len(prefix):]
+    return text.strip()
+
+
 class Cooperation(DailyAltAccBase):
+    def _read_normal_jade_targets(self, index: int) -> dict:
+        """读取普通勾协的发现者/好友击杀目标；失败时返回空结果。"""
+        image = getattr(getattr(self, "device", None), "image", None)
+        if image is None:
+            return {}
+        try:
+            discoverer_raw = getattr(
+                WantedQuestsAssets,
+                f"O_WQ_COOPERATION_DISCOVERER_{index + 1}",
+            ).ocr(image)
+            friend_raw = getattr(
+                WantedQuestsAssets,
+                f"O_WQ_COOPERATION_FRIEND_{index + 1}",
+            ).ocr(image)
+        except Exception as exc:
+            logger.warning(f"普通勾协目标 OCR 失败(index={index}): {exc}")
+            return {}
+
+        discoverer = _parse_cooperation_monster(discoverer_raw, "自己击败")
+        friend = _parse_cooperation_monster(friend_raw, "好友击败")
+        result = {}
+        if discoverer:
+            result["discoverer_monster"] = discoverer
+        if friend:
+            result["friend_monster"] = friend
+        if discoverer or friend:
+            result["monster_text"] = "&".join(
+                monster for monster in (discoverer, friend) if monster
+            )
+        logger.info(
+            f"normal jade cooperation index={index} "
+            f"discoverer={discoverer!r} friend={friend!r}"
+        )
+        return result
+
     def run_cooperation(self):   
         #self.account_info =[] #self.get_account_info()
         # 打开悬赏封印 界面
@@ -102,7 +147,14 @@ class Cooperation(DailyAltAccBase):
             if not normal_flag and not real_flag:
                 break
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_JADE_" + str(index + 1))):
-                retList.append({'type': CooperationType.Jade, 'inviteBtn': btn, 'real': real_flag})
+                cooperation = {
+                    'type': CooperationType.Jade,
+                    'inviteBtn': btn,
+                    'real': real_flag,
+                }
+                if not real_flag:
+                    cooperation.update(self._read_normal_jade_targets(index))
+                retList.append(cooperation)
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
                     self.push_notify(content=f"    发现现世勾协", title="协作任务提醒")
@@ -111,8 +163,13 @@ class Cooperation(DailyAltAccBase):
                 else:
                     logger.info(f"find  jade cooperation ")
                     self.push_notify(content=f"    发现普通勾协", title="协作任务提醒")
-                    self.msg.append([MSGType.cooperation,
-                                     {"type": "jade", "real": False, "label": "普通勾协"}])
+                    event = {"type": "jade", "real": False, "label": "普通勾协"}
+                    event.update({
+                        key: cooperation[key]
+                        for key in ("discoverer_monster", "friend_monster", "monster_text")
+                        if cooperation.get(key)
+                    })
+                    self.msg.append([MSGType.cooperation, event])
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
                 retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
