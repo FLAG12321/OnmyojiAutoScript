@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 import win32con
 
+import module.device.handle as handle_module
 from module.device.connection import Connection
 from module.device.connection_attr import ConnectionAttr
 from module.device.device import Device, EmulatorState
@@ -21,6 +22,19 @@ def _conn_with_serial(serial):
         script=types.SimpleNamespace(device=types.SimpleNamespace(serial=serial))
     )
     return conn
+
+
+@pytest.fixture(autouse=True)
+def _no_real_screen_wake(monkeypatch):
+    """屏蔽 desktop_keep_screen_on 的真实系统调用。
+
+    launch_desktop_client 会调它点亮显示器，里面三件事都作用于真实系统：
+    向 HWND_BROADCAST 发 SC_MONITORPOWER、模拟 VK_F15 键盘事件、
+    SetCursorPos 移动真实鼠标。测试不该动用户的屏幕与鼠标；此前
+    SendMessageW 的同步广播还让整个测试进程挂死过 26 分钟
+    （已改用 SendMessageTimeoutW，但测试仍应隔离，不依赖那个超时兜底）。
+    """
+    monkeypatch.setattr(handle_module, 'desktop_keep_screen_on', lambda enable: None)
 
 
 def test_is_desktop_true():

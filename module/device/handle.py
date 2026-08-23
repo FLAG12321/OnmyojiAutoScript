@@ -77,7 +77,13 @@ def desktop_keep_screen_on(enable: bool) -> None:
         # （实测只发它屏幕仍黑），必须再模拟一次无害键盘输入与鼠标移动，产生真实
         # 输入事件才能真正点亮。VK_F15(0x7E) 无副作用，不会干扰游戏。
         try:
-            ctypes.windll.user32.SendMessageW(0xFFFF, 0x0111, 0xF170, -1)
+            # 必须用 SendMessageTimeoutW 而不是 SendMessageW：目标是
+            # HWND_BROADCAST(0xFFFF)，SendMessageW 会同步等系统里每一个顶层窗口
+            # 处理完才返回，只要有一个窗口消息循环繁忙或无响应就永久阻塞调用线程
+            # （实测 pytest 里这一行挂死 26 分钟不返回，生产上等于 worker 线程卡住）。
+            # SMTO_ABORTIFHUNG(0x0002) 遇到无响应窗口直接放弃，1000ms 上限兜底。
+            ctypes.windll.user32.SendMessageTimeoutW(
+                0xFFFF, 0x0111, 0xF170, -1, 0x0002, 1000, None)
         except Exception as e:
             logger.warning(f'SC_MONITORPOWER wake failed: {e}')
         try:
