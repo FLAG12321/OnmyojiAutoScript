@@ -683,6 +683,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             "food_kind": event.get("food_kind"),
             "label": str(event.get("label", "") or ""),
         }
+        for key in ("discoverer_monster", "friend_monster", "monster_text"):
+            value = str(event.get(key, "") or "").strip()
+            if value:
+                record[key] = value
         if self._progress is not None:
             self._progress.append_coop(record)
         else:
@@ -843,14 +847,17 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 char = (r.get("character") or "").strip()
                 if not char:
                     continue
-                key = (char, r.get("svr") or "")
+                monster_text = ""
+                if r.get("type") == "jade" and not bool(r.get("real")):
+                    monster_text = (r.get("monster_text") or "").strip()
+                key = (char, r.get("svr") or "", monster_text)
                 counter[key] = counter.get(key, 0) + 1
                 first_rec.setdefault(key, r)
             lines.append("")
             lines.append(f"{category}（{len(items)}）")
-            for (char, svr), count in sorted(counter.items()):
-                rec = first_rec[(char, svr)]
-                role_line = f"• {char}"
+            for (char, svr, monster_text), count in sorted(counter.items()):
+                rec = first_rec[(char, svr, monster_text)]
+                role_line = f"• {monster_text}：{char}" if monster_text else f"• {char}"
                 meta = []
                 if svr:
                     meta.append(svr)
