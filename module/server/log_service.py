@@ -1388,23 +1388,53 @@ class LogBrowserService:
             raise LogServiceError(400, "LOG_CURSOR_INVALID", "Cursor offset is not valid")
         return offset
 
+    # 磁盘日志行的形状（file_formatter，见 module/logger.py:114）：
+    #   '2026-08-23 07:03:33.836 |            logger.py:0453 |     INFO | 正文'
+    # 四段用 ' | ' 分隔，级别是 %(levelname)8s（右对齐）。
+    # 只锚定前三段，正文允许含任意字符（包括 ' | ' 与形似源码位置的内容）。
+    _FILE_LINE_PATTERN = re.compile(
+        r"^\d{4}-\d{2}-\d{2} "              # 日期，转换时丢弃（历史日志按日期分文件，信息在文件名里）
+        r"(?P<time>\d{2}:\d{2}:\d{2}\.\d{3})"  # 时间戳，保留 3 位毫秒交给前端截断
+        r" \| "
+        r"\s*[^|\s]+:\d+"                  # 源码位置 filename:lineno，转换时丢弃
+        r" \| "
+        r"\s*(?P<level>[A-Z]+)"            # 级别，右对齐补空格，需重新左对齐
+        r" \| "
+        r"(?P<body>.*)$",
+        re.DOTALL,
+    )
+
     @staticmethod
     def _format_client_log_text(text: str) -> str:
-        """格式化普通日志给前端展示。
+        """把磁盘日志行转成前端认的 flutter 形状。
+
+        前端（OASX log_widget.dart）只认 flutter_formatter 的行首：
+            '%(levelname)-8s|%(asctime)s.%(msecs)03d| %(message)s'
+          -> 'INFO    |07:03:33.836| 正文'
+        实时日志走 WebSocket 时后端直接就是这个格式，而历史日志读的是磁盘文件，
+        用的是 file_formatter（带完整日期、源码位置列、右对齐级别）。两者不一致
+        会让历史日志在同一个列表里与实时日志错列，且前端 _trimMillis 的正则
+        `^(.{8}\\|\\d{2}:\\d{2}:\\d{2}\\.\\d)\\d{2}\\|` 完全匹配不上。
+
+        毫秒保留 3 位：前端 _trimMillis 在渲染层截成 1 位，controller.logs 里
+        仍是 3 位，所以复制日志与回翻历史都保留原始精度。两条通道都出 3 位，
+        走的才是完全相同的渲染路径。
+
+        源码位置（filename:lineno）只从展示文本里去掉，磁盘文件原样保留 ——
+        真机排查时打开 txt 仍能定位到出问题的代码行。
 
         Args:
             text: 原始日志展示文本, 可以是单行日志或多行日志内容。
 
         Returns:
-            逐行去掉源码位置, 并将 `YYYY-MM-DD HH:MM:SS.mmm` 转成 `MM-DD HH:MM:SS.mmm`。
-            无法匹配的行原样返回。
+            转换后的 flutter 形状文本；无法匹配的行（分隔线、traceback 框等）
+            原样返回，只去掉 rich 补到终端宽度的尾部空格。
         """
         lines = text.splitlines(True)
         if len(lines) > 1:
             return "".join(LogBrowserService._format_client_log_text(line) for line in lines)
-        if " | " not in text:
-            return text
 
+        # 行尾换行符单独摘出，转换后原样接回，避免影响调用方的行边界判断
         line_end = ""
         line = text
         if line.endswith("\r\n"):
@@ -1412,17 +1442,19 @@ class LogBrowserService:
         elif line.endswith("\n"):
             line, line_end = line[:-1], "\n"
 
-        parts = line.split(" | ", 3)
-        if len(parts) < 4:
+        match = LogBrowserService._FILE_LINE_PATTERN.match(line)
+        if match is None:
+            # 非日志行（分隔线、traceback）原样返回，连尾部空格都不动：
+            # 分隔线靠自身长度成列，截掉尾部会让 RESTART 分隔线短一截
             return text
 
-        head, source, level, message = parts
-        if not re.match(r"^\d{4}-\d{2}-\d{2} ", head):
-            return text
-        if not re.match(r"^\s*[^:]+:\d+$", source):
-            return text
-
-        return f"{head[5:]} | {level} | {message}{line_end}"
+        # 级别改左对齐 8 列。CRITICAL 恰好 8 字符、ljust 后不加空格直接接 `|`，
+        # 这是列宽相等的关键：按「级别 + 空格」拼会让 CRITICAL 占 9 列而错列。
+        level = match.group("level").ljust(8)
+        # rich（RichFileHandler 继承 RichHandler）渲染时把每行铺满终端宽度，
+        # 正文尾部带几十个空格；前端 maxLines:1 下这些空格会算进行宽
+        body = match.group("body").rstrip()
+        return f"{level}|{match.group('time')}| {body}{line_end}"
 
 
 log_browser_service = LogBrowserService()
