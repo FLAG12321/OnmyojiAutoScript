@@ -848,7 +848,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 if not char:
                     continue
                 monster_text = ""
-                if r.get("type") == "jade" and not bool(r.get("real")):
+                if (
+                    (r.get("type") == "jade" and not bool(r.get("real")))
+                    or r.get("type") == "sushi"
+                ):
                     monster_text = (r.get("monster_text") or "").strip()
                 key = (char, r.get("svr") or "", monster_text)
                 counter[key] = counter.get(key, 0) + 1

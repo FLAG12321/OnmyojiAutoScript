@@ -2,6 +2,7 @@
 import re
 import time
 from typing import List
+from module.atom.ocr import RuleOcr
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
 from tasks.DailyAltAcc.utils import DailyAltAccBase
@@ -20,25 +21,52 @@ def _parse_cooperation_monster(raw_text: str, prefix: str) -> str:
     return text.strip()
 
 
-class Cooperation(DailyAltAccBase):
-    def _read_normal_jade_targets(self, index: int) -> dict:
-        """读取普通勾协的发现者/好友击杀目标；失败时返回空结果。"""
-        image = getattr(getattr(self, "device", None), "image", None)
-        if image is None:
-            return {}
-        try:
-            discoverer_raw = getattr(
-                WantedQuestsAssets,
-                f"O_WQ_COOPERATION_DISCOVERER_{index + 1}",
-            ).ocr(image)
-            friend_raw = getattr(
-                WantedQuestsAssets,
-                f"O_WQ_COOPERATION_FRIEND_{index + 1}",
-            ).ocr(image)
-        except Exception as exc:
-            logger.warning(f"普通勾协目标 OCR 失败(index={index}): {exc}")
-            return {}
+def _parse_real_cooperation_monster(raw_text: str) -> str:
+    """从现世协作的“击败N个XXX”目标中提取怪物名称。"""
+    text = re.sub(r"\s+", "", str(raw_text or ""))
+    text = re.sub(r"\d+[/／]\d+$", "", text)
+    match = re.fullmatch(r"击败\d+个(.+)", text)
+    return match.group(1).strip() if match else ""
 
+
+# RuleImage.match() 会将成功匹配的实际位置写回 roi_front。普通邀请按钮的
+# 初始 roi_front 即其基准位置，须在第一次匹配前保存，避免后续匹配覆盖基准。
+NORMAL_COOPERATION_ANCHOR_REFERENCE = {
+    index: tuple(getattr(WantedQuestsAssets, f"I_WQ_INVITE_{index + 1}").roi_front[:2])
+    for index in range(3)
+}
+
+# 现世“享”标记在旧资源中仅 roi_back 是可靠搜索区域；这里保存与三张基准卡位
+# 对齐的实际匹配左上角。前两项由真实截图校准，第三项按同一 299px 槽位步长推导。
+REAL_COOPERATION_ANCHOR_REFERENCE = {
+    0: (159, 293),
+    1: (458, 293),
+    2: (757, 293),
+}
+
+
+class Cooperation(DailyAltAccBase):
+    @staticmethod
+    def _shift_roi(roi: tuple | list, delta: tuple[int, int]) -> tuple[int, int, int, int]:
+        x, y, width, height = roi
+        dx, dy = delta
+        return int(x + dx), int(y + dy), int(width), int(height)
+
+    @staticmethod
+    def _anchor_delta(anchor, reference: tuple[int, int]) -> tuple[int, int]:
+        """以同一锚点的实际匹配左上角相对基准左上角计算平移。"""
+        actual_x, actual_y = anchor.roi_front[:2]
+        reference_x, reference_y = reference
+        return int(actual_x - reference_x), int(actual_y - reference_y)
+
+    @staticmethod
+    def _ocr_single(image, roi: tuple[int, int, int, int], name: str) -> str:
+        return RuleOcr(
+            mode="Single", roi=roi, area=roi, method="Default", keyword="", name=name,
+        ).ocr(image)
+
+    @staticmethod
+    def _normal_target_result(discoverer_raw: str, friend_raw: str) -> dict:
         discoverer = _parse_cooperation_monster(discoverer_raw, "自己击败")
         friend = _parse_cooperation_monster(friend_raw, "好友击败")
         result = {}
@@ -50,11 +78,84 @@ class Cooperation(DailyAltAccBase):
             result["monster_text"] = "&".join(
                 monster for monster in (discoverer, friend) if monster
             )
+        return result
+
+    def _read_normal_cooperation_targets(self, index: int, anchor) -> dict:
+        """读取普通协作的双目标；固定 ROI 失败时按邀请锚点平移后重试一次。"""
+        image = getattr(getattr(self, "device", None), "image", None)
+        if image is None:
+            return {}
+        discoverer_ocr = getattr(
+            WantedQuestsAssets, f"O_WQ_COOPERATION_DISCOVERER_{index + 1}",
+        )
+        friend_ocr = getattr(
+            WantedQuestsAssets, f"O_WQ_COOPERATION_FRIEND_{index + 1}",
+        )
+        try:
+            fast_result = self._normal_target_result(
+                discoverer_ocr.ocr(image), friend_ocr.ocr(image),
+            )
+        except Exception as exc:
+            logger.warning(f"普通协作目标 OCR 失败(index={index}): {exc}")
+            fast_result = {}
+
+        if fast_result.get("discoverer_monster") and fast_result.get("friend_monster"):
+            return fast_result
+
+        delta = self._anchor_delta(anchor, NORMAL_COOPERATION_ANCHOR_REFERENCE[index])
+        try:
+            fallback_result = self._normal_target_result(
+                self._ocr_single(
+                    image,
+                    self._shift_roi(discoverer_ocr.roi, delta),
+                    f"wq_cooperation_discoverer_fallback_{index + 1}",
+                ),
+                self._ocr_single(
+                    image,
+                    self._shift_roi(friend_ocr.roi, delta),
+                    f"wq_cooperation_friend_fallback_{index + 1}",
+                ),
+            )
+        except Exception as exc:
+            logger.warning(f"普通协作目标 fallback OCR 失败(index={index}): {exc}")
+            fallback_result = {}
+
+        result = fallback_result or fast_result
         logger.info(
-            f"normal jade cooperation index={index} "
-            f"discoverer={discoverer!r} friend={friend!r}"
+            f"normal cooperation index={index} fallback_delta={delta} "
+            f"discoverer={result.get('discoverer_monster')!r} "
+            f"friend={result.get('friend_monster')!r}"
         )
         return result
+
+    def _read_real_sushi_target(self, index: int, anchor) -> dict:
+        """读取现世体协单目标；固定 ROI 失败时按“享”标记平移后重试一次。"""
+        image = getattr(getattr(self, "device", None), "image", None)
+        if image is None:
+            return {}
+        ocr_item = getattr(WantedQuestsAssets, f"O_WQ_REAL_COOPERATION_MONSTER_{index + 1}")
+        try:
+            monster = _parse_real_cooperation_monster(ocr_item.ocr(image))
+        except Exception as exc:
+            logger.warning(f"现世体协目标 OCR 失败(index={index}): {exc}")
+            monster = ""
+        if monster:
+            return {"monster_text": monster}
+
+        delta = self._anchor_delta(anchor, REAL_COOPERATION_ANCHOR_REFERENCE[index])
+        try:
+            monster = _parse_real_cooperation_monster(self._ocr_single(
+                image,
+                self._shift_roi(ocr_item.roi, delta),
+                f"wq_real_cooperation_monster_fallback_{index + 1}",
+            ))
+        except Exception as exc:
+            logger.warning(f"现世体协目标 fallback OCR 失败(index={index}): {exc}")
+            monster = ""
+        logger.info(
+            f"real sushi cooperation index={index} fallback_delta={delta} monster={monster!r}"
+        )
+        return {"monster_text": monster} if monster else {}
 
     def run_cooperation(self):   
         #self.account_info =[] #self.get_account_info()
@@ -153,7 +254,7 @@ class Cooperation(DailyAltAccBase):
                     'real': real_flag,
                 }
                 if not real_flag:
-                    cooperation.update(self._read_normal_jade_targets(index))
+                    cooperation.update(self._read_normal_cooperation_targets(index, btn))
                 retList.append(cooperation)
                 if real_flag:
                     logger.info(f"find real jade cooperation ")
@@ -186,17 +287,30 @@ class Cooperation(DailyAltAccBase):
                                  {"type": "food", "real": False, "food_kind": "cat", "label": "猫粮协作"}])
                 continue
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_SUSHI_" + str(index + 1))):
-                retList.append({'type': CooperationType.Sushi, 'inviteBtn': btn, 'real': real_flag})
+                cooperation = {
+                    'type': CooperationType.Sushi,
+                    'inviteBtn': btn,
+                    'real': real_flag,
+                }
+                if real_flag:
+                    cooperation.update(self._read_real_sushi_target(index, btn2))
+                else:
+                    cooperation.update(self._read_normal_cooperation_targets(index, btn))
+                retList.append(cooperation)
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")
-                    self.msg.append([MSGType.cooperation,
-                                     {"type": "sushi", "real": True, "label": "现世体协"}])
+                    event = {"type": "sushi", "real": True, "label": "现世体协"}
                     self.push_notify(content=f"    发现现世体协", title="协作任务提醒")
                 else:
                     logger.info(f"find  sushi cooperation ")
-                    self.msg.append([MSGType.cooperation,
-                                     {"type": "sushi", "real": False, "label": "普通体协"}])
+                    event = {"type": "sushi", "real": False, "label": "普通体协"}
                     self.push_notify(content=f"    发现普通体协", title="协作任务提醒")
+                event.update({
+                    key: cooperation[key]
+                    for key in ("discoverer_monster", "friend_monster", "monster_text")
+                    if cooperation.get(key)
+                })
+                self.msg.append([MSGType.cooperation, event])
                 continue
             # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
             if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):

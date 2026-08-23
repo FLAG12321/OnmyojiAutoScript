@@ -7,7 +7,12 @@ import pytest
 
 from module.atom.ocr import RuleOcr
 from tasks.DailyAltAcc.config import MSGType
-from tasks.DailyAltAcc.cooperation import Cooperation, _parse_cooperation_monster
+from tasks.DailyAltAcc.cooperation import (
+    Cooperation,
+    REAL_COOPERATION_ANCHOR_REFERENCE,
+    _parse_cooperation_monster,
+    _parse_real_cooperation_monster,
+)
 from tasks.MultiDailyAltAcc.script_task import ScriptTask
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.WantedQuests.config import CooperationType
@@ -45,6 +50,20 @@ def test_parse_cooperation_monster(raw_text, prefix, expected):
     assert _parse_cooperation_monster(raw_text, prefix) == expected
 
 
+@pytest.mark.parametrize(
+    ("raw_text", "expected"),
+    [
+        ("击败2个白狼", "白狼"),
+        ("击败 2 个 荒川之主", "荒川之主"),
+        ("击败2个荒川之主0/2", "荒川之主"),
+        ("击败2个", ""),
+        ("白狼", ""),
+    ],
+)
+def test_parse_real_cooperation_monster(raw_text, expected):
+    assert _parse_real_cooperation_monster(raw_text) == expected
+
+
 def test_cooperation_target_rois_are_fixed_by_slot():
     expected = {
         1: ((180, 403, 200, 30), (180, 448, 200, 30)),
@@ -58,6 +77,16 @@ def test_cooperation_target_rois_are_fixed_by_slot():
         assert getattr(
             WantedQuestsAssets, f"O_WQ_COOPERATION_FRIEND_{slot}"
         ).roi == list(friend_roi)
+
+    expected_real = {
+        1: (180, 425, 200, 32),
+        2: (480, 425, 200, 32),
+        3: (780, 425, 200, 32),
+    }
+    for slot, roi in expected_real.items():
+        assert getattr(
+            WantedQuestsAssets, f"O_WQ_REAL_COOPERATION_MONSTER_{slot}"
+        ).roi == list(roi)
 
 
 def test_normal_jade_reads_both_targets_and_keeps_order(monkeypatch):
@@ -94,11 +123,12 @@ def test_normal_jade_reads_both_targets_and_keeps_order(monkeypatch):
 @pytest.mark.parametrize(
     "active_type",
     [
-        "I_WQ_COOPERATION_TYPE_SUSHI_1",
         "I_WQ_COOPERATION_TYPE_GOLD_1",
+        "I_WQ_COOPERATION_TYPE_DOG_FOOD_1",
+        "I_WQ_COOPERATION_TYPE_CAT_FOOD_1",
     ],
 )
-def test_non_jade_does_not_call_target_ocr(monkeypatch, active_type):
+def test_non_target_cooperation_does_not_call_target_ocr(monkeypatch, active_type):
     coop = _coop(
         monkeypatch,
         WantedQuestsAssets.I_WQ_INVITE_1,
@@ -106,7 +136,7 @@ def test_non_jade_does_not_call_target_ocr(monkeypatch, active_type):
     )
 
     def fail_if_called(self, image):
-        raise AssertionError("target OCR must not run for non-jade cooperation")
+        raise AssertionError("target OCR must not run for this cooperation type")
 
     monkeypatch.setattr(RuleOcr, "ocr", fail_if_called)
     coop.get_cooperation_info()
@@ -153,6 +183,143 @@ def test_ocr_failure_keeps_original_normal_jade_event(monkeypatch):
     ]]
 
 
+def test_normal_sushi_reads_both_targets_with_fast_path(monkeypatch):
+    coop = _coop(
+        monkeypatch,
+        WantedQuestsAssets.I_WQ_INVITE_1,
+        WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_1,
+    )
+    called = []
+    ocr_result = {
+        "WQ_COOPERATION_DISCOVERER_1": "自己击败青蛙瓷器",
+        "WQ_COOPERATION_FRIEND_1": "好友击败雨女",
+    }
+
+    def fake_ocr(self, image):
+        called.append(self.name)
+        return ocr_result.get(self.name, "")
+
+    monkeypatch.setattr(RuleOcr, "ocr", fake_ocr)
+    result = coop.get_cooperation_info()
+
+    assert result[0]["type"] == CooperationType.Sushi
+    assert result[0]["real"] is False
+    assert result[0]["monster_text"] == "青蛙瓷器&雨女"
+    assert coop.msg[0][1]["monster_text"] == "青蛙瓷器&雨女"
+    assert called == ["WQ_COOPERATION_DISCOVERER_1", "WQ_COOPERATION_FRIEND_1"]
+
+
+def test_normal_sushi_retries_once_with_invite_anchor_shift(monkeypatch):
+    invite = WantedQuestsAssets.I_WQ_INVITE_1
+    coop = _coop(monkeypatch, invite, WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_1)
+    monkeypatch.setattr(invite, "roi_front", [147, 368, 39, 47])
+    calls = []
+    ocr_result = {
+        "WQ_COOPERATION_DISCOVERER_FALLBACK_1": "自己击败青蛙瓷器",
+        "WQ_COOPERATION_FRIEND_FALLBACK_1": "好友击败雨女",
+    }
+
+    def fake_ocr(self, image):
+        calls.append((self.name, tuple(self.roi)))
+        return ocr_result.get(self.name, "")
+
+    monkeypatch.setattr(RuleOcr, "ocr", fake_ocr)
+    result = coop.get_cooperation_info()
+
+    assert result[0]["monster_text"] == "青蛙瓷器&雨女"
+    assert calls == [
+        ("WQ_COOPERATION_DISCOVERER_1", (180, 403, 200, 30)),
+        ("WQ_COOPERATION_FRIEND_1", (180, 448, 200, 30)),
+        ("WQ_COOPERATION_DISCOVERER_FALLBACK_1", (190, 410, 200, 30)),
+        ("WQ_COOPERATION_FRIEND_FALLBACK_1", (190, 455, 200, 30)),
+    ]
+
+
+def test_normal_sushi_second_failure_keeps_original_event(monkeypatch):
+    coop = _coop(
+        monkeypatch,
+        WantedQuestsAssets.I_WQ_INVITE_1,
+        WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_1,
+    )
+    monkeypatch.setattr(RuleOcr, "ocr", lambda self, image: "")
+
+    result = coop.get_cooperation_info()
+
+    assert result[0] == {
+        "type": CooperationType.Sushi,
+        "inviteBtn": WantedQuestsAssets.I_WQ_INVITE_1,
+        "real": False,
+    }
+    assert coop.msg[0][1] == {"type": "sushi", "real": False, "label": "普通体协"}
+
+
+def test_real_sushi_reads_one_target_with_fast_path(monkeypatch):
+    from tasks.DailyAltAcc.assets import DailyAltAccAssets
+
+    flag = DailyAltAccAssets.I_REAL_FLAG_1
+    coop = _coop(
+        monkeypatch,
+        WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_1,
+        flag,
+    )
+    monkeypatch.setattr(flag, "roi_front", [159, 293, 29, 31])
+    called = []
+
+    def fake_ocr(self, image):
+        called.append(self.name)
+        return "击败2个白狼" if self.name == "WQ_REAL_COOPERATION_MONSTER_1" else ""
+
+    monkeypatch.setattr(RuleOcr, "ocr", fake_ocr)
+    result = coop.get_cooperation_info()
+
+    assert result[0]["type"] == CooperationType.Sushi
+    assert result[0]["real"] is True
+    assert result[0]["monster_text"] == "白狼"
+    assert coop.msg[0][1]["monster_text"] == "白狼"
+    assert called == ["WQ_REAL_COOPERATION_MONSTER_1"]
+
+
+def test_real_sushi_retries_once_with_real_flag_anchor_shift(monkeypatch):
+    from tasks.DailyAltAcc.assets import DailyAltAccAssets
+
+    flag = DailyAltAccAssets.I_REAL_FLAG_1
+    coop = _coop(monkeypatch, WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_1, flag)
+    reference = REAL_COOPERATION_ANCHOR_REFERENCE[0]
+    monkeypatch.setattr(flag, "roi_front", [reference[0] + 8, reference[1] + 5, 29, 31])
+    calls = []
+
+    def fake_ocr(self, image):
+        calls.append((self.name, tuple(self.roi)))
+        return "击败2个白狼" if self.name == "WQ_REAL_COOPERATION_MONSTER_FALLBACK_1" else ""
+
+    monkeypatch.setattr(RuleOcr, "ocr", fake_ocr)
+    result = coop.get_cooperation_info()
+
+    assert result[0]["monster_text"] == "白狼"
+    assert calls == [
+        ("WQ_REAL_COOPERATION_MONSTER_1", (180, 425, 200, 32)),
+        ("WQ_REAL_COOPERATION_MONSTER_FALLBACK_1", (188, 430, 200, 32)),
+    ]
+
+
+def test_real_sushi_second_failure_keeps_original_event(monkeypatch):
+    from tasks.DailyAltAcc.assets import DailyAltAccAssets
+
+    flag = DailyAltAccAssets.I_REAL_FLAG_1
+    coop = _coop(monkeypatch, WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_1, flag)
+    monkeypatch.setattr(flag, "roi_front", [159, 293, 29, 31])
+    monkeypatch.setattr(RuleOcr, "ocr", lambda self, image: "")
+
+    result = coop.get_cooperation_info()
+
+    assert result[0] == {
+        "type": CooperationType.Sushi,
+        "inviteBtn": WantedQuestsAssets.I_WQ_INVITE_1,
+        "real": True,
+    }
+    assert coop.msg[0][1] == {"type": "sushi", "real": True, "label": "现世体协"}
+
+
 def test_normal_jade_target_is_added_to_existing_summary_format():
     text = ScriptTask._build_summary_content([
         {
@@ -166,3 +333,20 @@ def test_normal_jade_target_is_added_to_existing_summary_format():
     ])
 
     assert "• 涂壁&管狐：Val2号（常世之国｜安卓）" in text
+
+
+@pytest.mark.parametrize("real", [False, True])
+def test_sushi_target_is_added_to_existing_summary_format(real):
+    text = ScriptTask._build_summary_content([
+        {
+            "type": "sushi",
+            "real": real,
+            "character": "Val2号",
+            "svr": "常世之国",
+            "apple_or_android": True,
+            "monster_text": "青蛙瓷器&雨女" if not real else "白狼",
+        },
+    ])
+
+    expected = "青蛙瓷器&雨女" if not real else "白狼"
+    assert f"• {expected}：Val2号（常世之国｜安卓）" in text
