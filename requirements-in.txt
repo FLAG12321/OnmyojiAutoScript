@@ -38,6 +38,10 @@ inflection==0.5.1
 schedule==1.2.2
 nest_asyncio==1.6.0
 
+# Data（points.py 用 scipy；DemonEncounter 数据导出用 pandas）
+scipy==1.15.3
+pandas==2.3.3
+
 # Frida (for AutoCheckinBigGod)
 frida==17.6.2
 frida-tools==14.5.2
