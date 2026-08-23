@@ -20,12 +20,19 @@ def run_logger_snippet(tmp_path, snippet):
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(tmp_path)
+    # 子进程通过管道输出中文；显式指定 UTF-8，避免 Windows 默认代码页与父进程
+    # 的 UTF-8 解码不一致，把正确的 GUI 回调文本变成替换字符。
+    env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-c", snippet],
         cwd=tmp_path,
         env=env,
         capture_output=True,
         text=True,
+        # 显式 utf-8：logger 输出含中文，Windows 默认 GBK 解码会抛
+        # UnicodeDecodeError 让 result.stdout 变成 None，断言拿不到真实内容
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
     )
 
@@ -91,7 +98,11 @@ print("OK")
     ).splitlines()
 
     assert len(lines) >= 3
-    # 与正常启动时 logger.hr('Start', level=0) 产生的格式一致：80 宽
+    # 与正常启动时 logger.hr('Start', level=0) 产生的压缩格式一致：
+    # 分隔线与 GUI 日志硬上限同为 80 列，不能只校验字符构成而放过宽度回退。
+    assert len(lines[0]) == 80
+    assert len(lines[1]) == 80
+    assert len(lines[2]) == 80
     assert set(lines[0].strip()) == {"═"}
     assert "START" in lines[1]
     assert set(lines[2].strip()) == {"═"}

@@ -86,6 +86,26 @@ logging.raiseExceptions = True  # Set True if wanna see encode errors on console
 #         # 其他处理器的属性和方法，根据需要进行获取和打印
 #         print()  # 打印空行，用于分隔处理器的信息
 
+# GUI（Flutter 前端）日志渲染宽度，单位是显示列。
+#
+# 行首装饰占 23 列（级别 8 + `|` 1 + 时间戳 12 + `|` 1 + 空格 1）；
+# 前端把毫秒三位截成一位后行首实际 21 列。
+#
+# 注意普通日志行**不再**按此宽度折行：FlutterHandler 用 soft_wrap 整行推出，
+# 折行改由前端 normalizeLogLines 按显示列硬折（rich 不会断 CJK，见那里的注释）。
+# 本常量现在只约束两处——traceback 的定宽框，以及 GuiRule 分隔线总宽。
+#
+# 取值沿革：最初 80（行首 24 列装饰，正文只余 56 列，实测 800 条真实日志有 8%
+# 要折行）→ 试过 160（需把正文字号压到 12 才能在 1280 窗口装下整行）→ 100 +
+# 行首压缩 → 回到 80 并保留行首压缩（23 列）→ 后端不再折行，宽度只管框与分隔线。
+GUI_LOG_WIDTH = 80
+
+# START/RESTART 分隔线总宽，与日志行同宽（80 列）。
+# 标题仍由 GuiRule.__str__ 按总宽两侧均分保持居中。
+# 前端的行宽硬上限 kLogLineWidthLimit（OASX lib/component/log/log_line_width.dart）
+# 等于它——那边兜住不经 rich、完全没有宽度约束的子进程 stdout，超出分隔线的才折。
+# 改这里必须同步改前端那个常量，否则子进程输出会溢出分隔线或被多折一次。
+GUI_RULE_WIDTH = GUI_LOG_WIDTH
 
 # Logger init
 logger_debug = False
@@ -96,7 +116,15 @@ file_formatter = logging.Formatter(
 console_formatter = logging.Formatter(
     fmt='%(asctime)s.%(msecs)03d │ %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 flutter_formatter = logging.Formatter(
-    fmt='| %(asctime)s.%(msecs)03d | %(message)08s', datefmt='%H:%M:%S')
+    # 行首压缩到 23 列：级别 8 + `|` + 时间戳 12 + `|` + 空格。
+    # 竖线两侧不留空格（原来是 ` | `），等宽字体下靠列位本身就成列，省 4 列给正文。
+    #
+    # 级别由本 formatter 输出而非 rich 的级别列（set_func_logger 里
+    # show_level=False）：rich 的列会在 ljust(8) 后再加一个列间空格，凑成 9 列，
+    # 且把折行的续行缩进对齐到正文列。改由 formatter 出级别有两个好处——
+    # 级别恰好 8 列（CRITICAL 也是 8，不会像 ljust(7) 那样多占一列破坏对齐），
+    # 续行从第 0 列起排、每条续行多得 9 列正文。代价是续行不再有悬挂缩进。
+    fmt='%(levelname)-8s|%(asctime)s.%(msecs)03d| %(message)s', datefmt='%H:%M:%S')
 
 
 # ======================================================================================================================
@@ -270,8 +298,51 @@ def set_file_logger(name=pyw_name, *, do_cleanup=False):
 #            Set flutter
 # ======================================================================================================================
 class FlutterHandler(RichHandler):
-    # Rename
-    pass
+    """推给前端的 handler：普通日志行整行推出，不在后端折行。
+
+    为什么不让 rich 折：rich 的折行按「单词」切（rich/_wrap.py 的
+    `re_word = r"\\s*\\S+\\s*"`），而中文整段没有空格，一条 34 字的中文消息
+    就是一个 68 列的「单词」。行首装饰占 23 列后只剩 57 列放不下它，
+    `divide_line` 于是在词首插换行——第一行只剩 `WARNING |07:42:27.350|`，
+    正文整段掉到第二行且不带行首。用户要求的
+    `WARNING |07:42:27.3| 内容` 格式就是这么被破坏的。
+
+    rich 没有 CJK 断行规则，调宽度或 no_wrap 都救不了（no_wrap 会直接截断丢内容）。
+    而前端 `normalizeLogLines`（OASX lib/component/log/log_line_width.dart）本来就
+    按显示列逐字符硬折、CJK 计 2 列、不切开代理对，能力强于 rich。因此分工改成
+    「后端只保证格式，前端负责折行」。
+
+    要真正不折，两处都得改，缺一不可（实测只做前者仍折成两行）：
+      1. `render()` 不再把消息塞进 `LogRender` 的 Table —— Table 按列宽折行，
+         不受 Console 的 soft_wrap 影响；
+      2. Console 那次 print 传 soft_wrap=True，见 SoftWrapConsole。
+
+    soft_wrap 同时关掉了 ljust 补位，载荷体积约减半（补位空格前端本来就要剥掉）。
+    traceback 例外：它是 rich 画的定宽框（┌─┐ 边框按 console 宽度对齐），
+    折行会毁掉框线，所以带 exc_info 的记录仍走 rich 原本的 Table + 定宽渲染。
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # 只有普通日志行走 soft_wrap；traceback 必须保留 rich 的定宽框渲染。
+        # 用 setattr 而非要求 console 是 SoftWrapConsole：万一将来换成普通
+        # Console，这里只是多设一个无人读的属性，不会 AttributeError 崩掉日志。
+        self.console.soft_next = not self._has_traceback(record)
+        try:
+            super().emit(record)
+        finally:
+            self.console.soft_next = False
+
+    def render(self, *, record, traceback, message_renderable):
+        """无 traceback 时直接返回消息本身，绕开 LogRender 的定宽 Table。"""
+        if traceback is None:
+            return message_renderable
+        return super().render(record=record, traceback=traceback,
+                              message_renderable=message_renderable)
+
+    def _has_traceback(self, record: logging.LogRecord) -> bool:
+        """本条记录是否会被 rich 渲染成 traceback 框（判定与 RichHandler.emit 一致）。"""
+        return bool(self.rich_tracebacks and record.exc_info
+                    and record.exc_info != (None, None, None))
 
 
 class FlutterConsole(Console):
@@ -305,21 +376,43 @@ class FlutterLogStream(TextIOBase):
         return len(msg)
 
 
+class SoftWrapConsole(Console):
+    """按 soft_next 逐条切换是否走 soft_wrap 的 Console。
+
+    soft_wrap 只能在 print() 调用时传，而 RichHandler.emit 内部那次 print 不接受
+    外部参数，所以由 FlutterHandler.emit 先置 soft_next、这里的 print 再取用。
+    单线程逐条 emit，且 FlutterHandler.emit 在 finally 里复位，不会跨记录串味。
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.soft_next = False
+
+    def print(self, *objects, **kwargs):
+        if self.soft_next:
+            kwargs.setdefault('soft_wrap', True)
+        return super().print(*objects, **kwargs)
+
+
 def set_func_logger(func):
     stream = FlutterLogStream(func=func)
-    stream_console = Console(
+    stream_console = SoftWrapConsole(
         file=stream,
         force_terminal=False,
         force_interactive=False,
         no_color=True,
         highlight=False,
-        width=80,
+        # 普通日志行走 soft_wrap 不受此宽度约束（见 FlutterHandler），
+        # 这里的宽度只对 traceback 的定宽框生效。
+        width=GUI_LOG_WIDTH,
     )
     hdlr = FlutterHandler(
         console=stream_console,
         show_path=False,
         show_time=False,
-        show_level=True,
+        # 级别改由 flutter_formatter 输出（见那里的注释）：rich 的级别列会额外占
+        # 一个列间空格并给续行加悬挂缩进，关掉后行首恰好 8 列、续行满宽。
+        show_level=False,
         rich_tracebacks=True,
         tracebacks_show_locals=True,
         tracebacks_extra_lines=3,
@@ -376,14 +469,24 @@ def print(*objects: ConsoleRenderable, **kwargs):
 
 
 class GuiRule(Rule):
+    """分隔线：固定 [GUI_RULE_WIDTH] 列，与日志行同宽（80 列）。
+
+    标题靠 __str__ 里按总宽两侧均分保持居中。
+
+    注意本类同时服务于文件日志（RichFileHandler.maybe_rollover 的 START 块），
+    那侧 Console 是 width=160，比本常量宽，分隔线画完右侧留白——历史行为，不变。
+    统计解析（module/server/log_stats.py）的 ═{15,} / ─{10,} 正则不限定具体宽度，
+    改宽不影响任务与会话边界识别。
+    """
+
     def __rich_console__(
             self, console: Console, options: ConsoleOptions
     ) -> RenderResult:
-        options.max_width = 80
+        options.max_width = GUI_RULE_WIDTH
         return super().__rich_console__(console, options)
 
     def __str__(self):
-        total_width = 80
+        total_width = GUI_RULE_WIDTH
         cell_len = len(self.title) + 2
         aside_len = (total_width - cell_len) // 2
         left = self.characters * aside_len
