@@ -15,9 +15,12 @@ pytestmark = pytest.mark.unit
 def test_empty_card_slot_screens_card_before_checking_effect(monkeypatch):
     """空槽位必须先筛选结界卡，不能进入效果标志等待。"""
     task = object.__new__(activation_module.ScriptTask)
-    task.I_A_ACTIVATE_YELLOW = object()
-    task.I_A_ACTIVATE_GRAY = object()
-    task.I_A_DEMOUNT = object()
+    # 桩必须带 name：appear_rgb 在 appear 返回 False 时会写
+    # logger.warning(f"[{target.name}]未匹配到")（tasks/base_task.py），
+    # 裸 object() 会让日志行抛 AttributeError
+    task.I_A_ACTIVATE_YELLOW = SimpleNamespace(name='I_A_ACTIVATE_YELLOW')
+    task.I_A_ACTIVATE_GRAY = SimpleNamespace(name='I_A_ACTIVATE_GRAY')
+    task.I_A_DEMOUNT = SimpleNamespace(name='I_A_DEMOUNT')
     task.config = SimpleNamespace(
         kekkai_activation=SimpleNamespace(
             activation_config=SimpleNamespace(card_type=CardType.DAILY)
@@ -45,9 +48,10 @@ def test_empty_card_slot_screens_card_before_checking_effect(monkeypatch):
 def test_unknown_card_effect_returns_after_timeout(monkeypatch):
     """按钮标志持续未知时应返回 None，而不是无限循环。"""
     task = object.__new__(activation_module.ScriptTask)
-    task.I_A_INVITE = object()
-    task.I_A_ACTIVATE_YELLOW = object()
-    task.I_A_ACTIVATE_GRAY = object()
+    # 同上：appear_rgb 未匹配时的日志行要读 target.name
+    task.I_A_INVITE = SimpleNamespace(name='I_A_INVITE')
+    task.I_A_ACTIVATE_YELLOW = SimpleNamespace(name='I_A_ACTIVATE_YELLOW')
+    task.I_A_ACTIVATE_GRAY = SimpleNamespace(name='I_A_ACTIVATE_GRAY')
     task.screenshot = lambda: None
     task.appear = lambda *_args, **_kwargs: False
 
