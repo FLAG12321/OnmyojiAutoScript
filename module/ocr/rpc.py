@@ -2,12 +2,15 @@
 # @author runhey
 # github https://github.com/runhey
 import atexit
+from contextlib import contextmanager
 import gc
 import os
 import pickle
+import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -27,6 +30,9 @@ _OCR_SERVER_PROCESS: Optional[subprocess.Popen] = None
 _OCR_CONTROL_CLIENT = None
 _OCR_CONTROL_ADDRESS: Optional[str] = None
 _OCR_CONTROL_LOCK = threading.Lock()
+# 非 Windows 环境的进程内兜底锁；Windows 使用下方文件锁实现跨实例协调。
+_OCR_RECOVERY_LOCKS: Dict[int, threading.Lock] = {}
+_OCR_RECOVERY_LOCKS_GUARD = threading.Lock()
 
 
 def _normalize_address(address: str) -> str:
@@ -147,6 +153,233 @@ def shutdown_ocr_server(timeout: float = 2.0) -> bool:
         return False
     finally:
         _OCR_SERVER_PROCESS = None
+
+
+def _ocr_process_alive(pid: int) -> bool:
+    """用 WMI 查询进程是否仍存活，查询失败时保守地视为仍存活。"""
+    try:
+        from win32com.client import GetObject
+        wmi = GetObject('winmgmts:')
+        for process in wmi.InstancesOf('Win32_Process'):
+            try:
+                if int(process.Properties_('ProcessID').Value) == int(pid):
+                    return True
+            except Exception:
+                continue
+        return False
+    except Exception as e:
+        logger.debug(f'确认 OCR 进程退出失败：{e}')
+        return True
+
+
+def _wait_ocr_process_exit(pid: int, timeout: float = 3.0) -> bool:
+    """等待 taskkill 的目标真正退出，避免 DLL 仍被占用就开始换包。"""
+    deadline = time.monotonic() + timeout
+    while _ocr_process_alive(pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+    return True
+
+
+def kill_orphan_ocr_servers(port: Optional[int] = None) -> int:
+    """终止 OCR RPC 服务进程，含由其它进程拉起的。
+
+    shutdown_ocr_server 只能停本进程记录的 _OCR_SERVER_PROCESS 子进程；
+    多开 / 残留 / GUI 先启动等场景下，22268 上的 OCR 服务由别的进程持有，
+    更新器换 onnxruntime 包时 DLL 仍被锁（WinError 5 拒绝访问）。
+    这里按 CommandLine 匹配 server_boot 入口，把这类进程一并终止，
+    确保换包前 onnxruntime.dll 真正释放。
+
+    Args:
+        port: 仅终止指定端口的服务；为空时保持更新器原有行为，终止全部服务。
+
+    Returns:
+        int: 终止的进程数。
+    """
+    # 测试环境下拒绝真实 taskkill：本函数会杀掉本机所有 OAS OCR 服务，
+    # 而 test_updater 里成片用例会走到 execute_pull 尾段的真实 align_ocr。
+    # 实际踩过——跑一次测试套件就把用户正在运行的实例打成 LostRemote。
+    # 需要覆盖终止逻辑的用例请 monkeypatch subprocess.run 后再断言。
+    if 'PYTEST_CURRENT_TEST' in os.environ:
+        logger.info('Running under pytest, skip killing OCR server processes')
+        return 0
+
+    try:
+        from win32com.client import GetObject
+        wmi = GetObject('winmgmts:')
+    except Exception as e:
+        logger.warning(f'无法枚举 OCR 服务进程（{e}），可能有外部进程仍占用 onnxruntime')
+        return -1
+
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    # 统一斜杠方向后再比较：两边都归一化，否则 'C:\a' in 'C:/a/b' 恒为 False，
+    # 会让下面的路径校验把所有进程都跳过（函数等于失效）。
+    normalized_root = project_root.replace('\\', '/').lower().rstrip('/')
+    root_prefix = normalized_root + '/'
+    # 路径比较必须带目录边界，避免 C:/OAS 误匹配 C:/OAS-backup。
+    def path_in_project(path: str) -> bool:
+        # WMI 的 ExecutablePath 通常无引号，CommandLine 在路径含空格时通常以引号开头；
+        # 去掉开头引号后再做带目录边界的前缀判断，不能因引号跳过应清理的 OCR 进程。
+        value = (path or '').replace('\\', '/').lower().strip().lstrip('"')
+        return value == normalized_root or value.startswith(root_prefix)
+
+    # 自愈只处理发生故障的端口，避免影响同一安装目录下的其它 OCR 服务。
+    port_pattern = None if port is None else re.compile(
+        rf'(?<!\S)--port(?:\s+|=){int(port)}(?=\s|$)'
+    )
+    killed = 0
+    cleanup_failed = False
+    for p in wmi.InstancesOf('Win32_Process'):
+        try:
+            pid = p.Properties_('ProcessID').Value
+            name = p.Properties_('Name').Value or ''
+            cmdline = p.Properties_('CommandLine').Value or ''
+            exe = p.Properties_('ExecutablePath').Value or ''
+        except Exception:
+            continue
+        if pid == os.getpid():
+            continue
+        if name not in ('python.exe', 'pythonw.exe'):
+            continue
+        if 'server_boot' not in cmdline:
+            continue
+        if port_pattern is not None and port_pattern.search(cmdline) is None:
+            continue
+        # 无法从可执行路径或命令行确认属于当前安装时宁可不杀，避免多开安装
+        # 之间互相终止 OCR 服务。
+        if not (path_in_project(exe) or path_in_project(cmdline)):
+            continue
+        logger.info(f'Kill OCR server process: PID {pid} ({exe or cmdline})')
+        try:
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+            result = subprocess.run(['taskkill', '/f', '/pid', str(pid)],
+                                    capture_output=True,
+                                    creationflags=flags)
+            if result.returncode != 0:
+                logger.warning(f'taskkill OCR server {pid} failed with code {result.returncode}')
+                cleanup_failed = True
+                continue
+            if not _wait_ocr_process_exit(pid):
+                logger.warning(f'OCR server process {pid} did not exit after taskkill')
+                cleanup_failed = True
+                continue
+            killed += 1
+        except Exception as e:
+            logger.warning(f'Failed to kill OCR server process {pid}: {e}')
+            cleanup_failed = True
+    return -1 if cleanup_failed else killed
+
+
+@contextmanager
+def _ocr_recovery_lock(port: int, timeout: float = 30.0):
+    """按端口协调 OCR 恢复，Windows 下可跨脚本实例互斥。"""
+    if not sys.platform.startswith('win'):
+        with _OCR_RECOVERY_LOCKS_GUARD:
+            lock = _OCR_RECOVERY_LOCKS.setdefault(port, threading.Lock())
+        acquired = lock.acquire(timeout=timeout)
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                lock.release()
+        return
+
+    import msvcrt
+
+    lock_path = os.path.join(tempfile.gettempdir(), f'oas_ocr_recovery_{port}.lock')
+    lock_file = open(lock_path, 'a+b')
+    if os.path.getsize(lock_path) == 0:
+        lock_file.write(b'\0')
+        lock_file.flush()
+
+    acquired = False
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.1)
+        yield acquired
+    finally:
+        if acquired:
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        lock_file.close()
+
+
+def _ping_ocr_server(address: str, timeout: float = 1.0) -> bool:
+    """用独立短连接确认 RPC 是否已被其它实例恢复。"""
+    client = zerorpc.Client(timeout=timeout)
+    try:
+        client.connect(_normalize_address(address))
+        return bool(client.ping())
+    except Exception:
+        return False
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def restart_ocr_server(address: str) -> bool:
+    """重启当前代理连接的本机 OCR 服务。
+
+    仅处理由本安装配置托管的本机地址；远程 OCR 地址不能由客户端擅自终止。
+    服务重启只恢复进程，失败的 OCR 请求仍由 ModelProxy 重新发送。
+    """
+    from module.server.setting import State
+
+    deploy_config = State.deploy_config
+    if not bool(deploy_config.StartOcrServer):
+        return False
+
+    host, port = _split_host_port(address)
+    host = host.strip().lower()
+    local_hosts = {'127.0.0.1', 'localhost', '0.0.0.0'}
+    if host not in local_hosts:
+        return False
+
+    configured_port = int(deploy_config.OcrServerPort or port)
+    if port != configured_port:
+        return False
+
+    with _ocr_recovery_lock(port) as acquired:
+        if not acquired:
+            logger.warning(f'Timeout waiting for OCR recovery lock on port {port}')
+            return False
+
+        # 进入跨进程锁后重新检查：其它实例可能已经完成恢复，避免再次杀服务。
+        if _ping_ocr_server(address):
+            logger.info(f'OCR server on port {port} has already recovered')
+            return True
+
+        logger.warning(f'Restart unresponsive OCR server on port {port}')
+        shutdown_ocr_server()
+        orphan_result = kill_orphan_ocr_servers(port=port)
+        if orphan_result < 0:
+            logger.error(f'Unable to confirm OCR server cleanup on port {port}')
+            return False
+
+        # taskkill 返回后端口可能还未立即释放，先等待再拉起，避免误判已有服务。
+        deadline = time.monotonic() + 3.0
+        while _is_port_in_use('127.0.0.1', port, timeout=0.1):
+            if time.monotonic() >= deadline:
+                logger.error(f'OCR server port {port} is still occupied after restart cleanup')
+                return False
+            time.sleep(0.1)
+
+        stale_control_client = _OCR_CONTROL_CLIENT
+        if stale_control_client is not None:
+            _reset_ocr_control_client(stale_control_client)
+        return ensure_ocr_server_started()
 
 
 def notify_ocr_instance_state(instance_id: str, active: bool) -> bool:
@@ -383,29 +616,156 @@ class ModelProxy:
     # 单次调用超时。首次调用要加载模型（GPU 建 session 更慢），
     # 因此给足余量；正常单帧只需数百毫秒。
     TIMEOUT = 120
-    # 连接握手重试次数：服务进程刚拉起时端口已监听但模型可能还在加载
+    # 连接握手重试次数：服务进程刚拉起时端口已监听但模型可能还在加载。
     CONNECT_RETRY = 3
+    # 传输故障后重放一次原请求；OCR 无副作用，重放不会产生重复操作。
+    REQUEST_RETRY = 1
+    # RPC 持续不可用时，fallback 期间最多每 30 秒探测/重启一次，避免每帧 OCR
+    # 都重复经历连接、重启和请求重放，形成重启风暴。
+    FALLBACK_RETRY_COOLDOWN = 30.0
+    RECOVERABLE_ERRORS = (zerorpc.LostRemote, zerorpc.TimeoutExpired)
+    # 重连阶段失败会包装成 ScriptError，公开 OCR 接口同样需要兜底。
+    FALLBACK_ERRORS = RECOVERABLE_ERRORS + (ScriptError,)
 
     def __init__(self, address: str, timeout: int = None) -> None:
         self.address = _normalize_address(address)
         self.timeout = self.TIMEOUT if timeout is None else timeout
-        # 不设 timeout 时服务异常会让调用永久阻塞，任务线程就此卡死
-        self.client = zerorpc.Client(timeout=self.timeout)
+        self.client = None
+        self._fallback_model = None
+        # 记录下一次允许探测 RPC 的时间；0 表示当前 RPC 健康，无需限流。
+        self._next_rpc_retry = 0.0
+        # 同一实例可能有多个 OCR 调用并发失败，只允许其中一个执行重启。
+        self._recovery_lock = threading.Lock()
+        self._connect()
+
+    @staticmethod
+    def _close_client(client) -> None:
+        """关闭失效连接；清理失败不能覆盖原始 RPC 异常。"""
+        if client is None:
+            return
+        try:
+            client.close()
+        except Exception as e:
+            logger.debug(f'Close OCR RPC client failed: {e}')
+
+    def _connect(self) -> None:
+        """创建新连接并完成 ping，失败的客户端不会继续复用。"""
         last_error = None
         for attempt in range(self.CONNECT_RETRY):
+            client = zerorpc.Client(timeout=self.timeout)
             try:
-                self.client.connect(self.address)
-                self.client.ping()
+                client.connect(self.address)
+                client.ping()
+                self.client = client
                 return
             except Exception as e:
                 last_error = e
-                logger.warning(f'OCR server ping failed ({attempt + 1}/{self.CONNECT_RETRY}): {e}')
-                time.sleep(1.0)
-        raise ScriptError(f"OCR server connection failed: {self.address}") from last_error
+                self._close_client(client)
+                logger.warning(
+                    f'OCR server ping failed ({attempt + 1}/{self.CONNECT_RETRY}): {e}'
+                )
+                if attempt + 1 < self.CONNECT_RETRY:
+                    time.sleep(1.0)
+        raise ScriptError(f'OCR server connection failed: {self.address}') from last_error
+
+    def _recover_connection(self, failed_client) -> None:
+        """恢复 RPC 连接；本机托管服务卡死时先重启服务。"""
+        with self._recovery_lock:
+            # 其它并发请求已经换好连接时，直接复用新连接，避免重复重启服务。
+            if self.client is not failed_client:
+                return
+            self._close_client(failed_client)
+            self.client = None
+            try:
+                restarted = restart_ocr_server(self.address)
+            except Exception as e:
+                # 服务清理自身失败也继续尝试重连，最终由公开接口执行本地兜底。
+                logger.exception(f'Restart OCR server failed: {e}')
+                restarted = False
+            if restarted:
+                logger.info('OCR server recovered, reconnecting failed request')
+            else:
+                logger.warning('OCR server was not restarted, reconnecting RPC client directly')
+            self._connect()
+
+    def _ensure_connection(self) -> None:
+        """等待并复用并发恢复中的新连接，避免读到空连接。"""
+        with self._recovery_lock:
+            if self.client is None:
+                # 上一次恢复若连不上会留下空连接；后续 OCR 仍应继续尝试连接或兜底。
+                self._connect()
+
+    def _call_with_recovery(self, method: str, *args):
+        """执行 RPC 请求；连接故障恢复后重放同一次 OCR。"""
+        for attempt in range(self.REQUEST_RETRY + 1):
+            if self.client is None:
+                self._ensure_connection()
+            client = self.client
+            try:
+                return getattr(client, method)(*args)
+            except self.RECOVERABLE_ERRORS as e:
+                if attempt >= self.REQUEST_RETRY:
+                    logger.error(f'OCR RPC request failed after recovery: {method}: {e}')
+                    raise
+                logger.warning(
+                    f'OCR RPC request interrupted, recover and retry: {method}: {e}'
+                )
+                self._recover_connection(client)
+        raise RuntimeError('Unreachable OCR RPC retry state')
+
+    def _rpc_retry_allowed(self) -> bool:
+        """判断并领取一次 fallback 后的 RPC 探测机会。"""
+        now = time.monotonic()
+        with self._recovery_lock:
+            # 0 表示 RPC 当前健康：正常并发 OCR 都可直接请求，不做限流。
+            if self._next_rpc_retry == 0.0:
+                return True
+            if now < self._next_rpc_retry:
+                return False
+            # 冷却到期后只放一个请求探测；探测完成会在成功/失败分支重设时间。
+            self._next_rpc_retry = float('inf')
+            return True
+
+    def _get_local_fallback_model(self):
+        """获取并缓存本地 OCR，避免 RPC 故障后每帧重复连接和加载。"""
+        if self._fallback_model is None:
+            from module.ocr.models import get_local_ocr_model
+            self._fallback_model = get_local_ocr_model('ch')
+            logger.warning('Switch OCR proxy to cached local fallback')
+        return self._fallback_model
+
+    def _local_ocr_single_line(self, image: np.ndarray):
+        """执行本地兜底；本地模型异常必须向上抛出诊断错误，不能伪装成空结果。"""
+        try:
+            return self._get_local_fallback_model().ocr_single_line(image)
+        except Exception as e:
+            logger.exception(f'Local OCR fallback failed: {e}')
+            raise ScriptError(f'Local OCR fallback failed: {e}') from e
+
+    def _local_detect_and_ocr(self, image: np.ndarray, **kwargs):
+        """执行本地检测兜底并保留原始异常上下文。"""
+        try:
+            return self._get_local_fallback_model().detect_and_ocr(image, **kwargs)
+        except Exception as e:
+            logger.exception(f'Local OCR fallback failed: {e}')
+            raise ScriptError(f'Local OCR fallback failed: {e}') from e
 
     def ocr_single_line(self, image: np.ndarray):
         payload = pickle.dumps(image, protocol=4)
-        return self.client.ocr_single_line(payload)
+        if not self._rpc_retry_allowed():
+            # RPC 仍处于冷却期，直接复用本地模型，不重复重启远端服务。
+            return self._local_ocr_single_line(image)
+        try:
+            result = self._call_with_recovery('ocr_single_line', payload)
+            if self._fallback_model is not None:
+                self._fallback_model = None
+                logger.info('OCR RPC recovered, stop using local fallback')
+            self._next_rpc_retry = 0.0
+            return result
+        except self.FALLBACK_ERRORS as e:
+            self._next_rpc_retry = time.monotonic() + self.FALLBACK_RETRY_COOLDOWN
+            logger.error(f'OCR RPC unavailable after retry, fall back to local OCR: {e}')
+            return self._local_ocr_single_line(image)
 
     def detect_and_ocr(
         self,
@@ -416,11 +776,32 @@ class ModelProxy:
         vertical: bool = False,
     ):
         payload = pickle.dumps(image, protocol=4)
-        results = self.client.detect_and_ocr(payload, drop_score, unclip_ratio, box_thresh, vertical)
+        kwargs = {
+            'drop_score': drop_score,
+            'unclip_ratio': unclip_ratio,
+            'box_thresh': box_thresh,
+            'vertical': vertical,
+        }
+        if not self._rpc_retry_allowed():
+            # 与单行识别相同：冷却期内只走缓存的本地 OCR。
+            return self._local_detect_and_ocr(image, **kwargs)
+        try:
+            results = self._call_with_recovery(
+                'detect_and_ocr', payload, drop_score, unclip_ratio, box_thresh, vertical
+            )
+            if self._fallback_model is not None:
+                self._fallback_model = None
+                logger.info('OCR RPC recovered, stop using local fallback')
+            self._next_rpc_retry = 0.0
+        except self.FALLBACK_ERRORS as e:
+            self._next_rpc_retry = time.monotonic() + self.FALLBACK_RETRY_COOLDOWN
+            logger.error(f'OCR RPC unavailable after retry, fall back to local OCR: {e}')
+            return self._local_detect_and_ocr(image, **kwargs)
         return [
             BoxedResult(item["box"], None, item["ocr_text"], item["score"])
             for item in results
         ]
+
 
 
 atexit.register(shutdown_ocr_server)
