@@ -18,7 +18,9 @@ class Installer(GitManager, PipManager, OcrDepsManager, AdbManager, FluentuiMana
             # 先确保内置 toolkit git 可用（不可用则下载完整版替换），再 git_install 拉代码
             self.ensure_git_ready()
             self.git_install()
-            self.process_kill()
+            # 未确认安装目录内进程已退出时禁止继续 pip 换包，避免 DLL 仍被占用。
+            if not self.process_kill():
+                raise ExecutionError('无法确认 OAS 进程已退出，停止安装以保护现有环境')
             self.pip_install()
             # OCR 依赖必须在 process_kill 之后对齐：Windows 会锁定已加载的
             # onnxruntime.dll，有推理进程存活时换包会留下损坏的 distribution
