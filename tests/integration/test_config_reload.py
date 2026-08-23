@@ -973,10 +973,11 @@ def test_spawn_cleanup_never_loses_local_handle(tmp_path, monkeypatch):
     assert process.state == ScriptState.INACTIVE
 
 
-def test_start_double_start_restores_running(tmp_path, monkeypatch):
-    """generation 匹配 + 旧进程存活时再次 start：终止旧进程、恢复 RUNNING 并 spawn 新进程。
+def test_start_double_start_is_noop_when_alive(tmp_path, monkeypatch):
+    """generation 匹配 + 旧进程存活时再次 start：幂等 no-op，不动旧句柄。
 
-    修复 double-start 后 state 卡死 INACTIVE 导致新进程状态通道失效的问题。
+    9579acd6 把 start 改成幂等后的语义：daemon 重启或 API/GUI 重复 start
+    不得把正常运行的脚本进程杀掉重拉（原实现等于 restart）。
     """
     store = make_generation_store(tmp_path)
     store.create_from_template("oas1", canonical_template())
@@ -1014,11 +1015,64 @@ def test_start_double_start_restores_running(tmp_path, monkeypatch):
 
     monkeypatch.setattr(script_process_module.multiprocessing, "Process", NewProc)
 
-    asyncio.run(process.start())
+    assert asyncio.run(process.start()) is True
 
-    assert old.killed is True
-    assert process.state == ScriptState.RUNNING  # double-start 后恢复 RUNNING，状态通道可消费
+    # 幂等：旧进程既不被终止也不被替换，更不会 spawn 新进程
+    assert old.killed is False
+    assert process._process is old
+    assert spawned == []
+
+
+def test_start_respawns_when_handle_is_stale(tmp_path, monkeypatch):
+    """句柄残留但进程已死：清理后重新 spawn 并恢复 RUNNING。
+
+    幂等只对存活进程生效；死句柄必须走 stop 清理再 spawn，
+    否则实例会卡在「有句柄但没进程」的状态永远拉不起来。
+    """
+    store = make_generation_store(tmp_path)
+    store.create_from_template("oas1", canonical_template())
+    process = ScriptProcess("oas1", store=store)
+
+    class DeadProc:
+        def __init__(self):
+            self.killed = False
+
+        def is_alive(self):
+            return False
+
+        def terminate(self):
+            self.killed = True
+
+        def join(self, timeout=0):
+            pass
+
+        def kill(self):
+            self.killed = True
+
+    dead = DeadProc()
+    process._process = dead
+    process._config_state_cache = {"stale": True}
+
+    spawned = []
+
+    class NewProc:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+
+        def start(self):
+            spawned.append(self)
+
+        def is_alive(self):
+            return True
+
+    monkeypatch.setattr(script_process_module.multiprocessing, "Process", NewProc)
+
+    assert asyncio.run(process.start()) is True
+
     assert len(spawned) == 1
+    assert process._process is spawned[0]
+    assert process.state == ScriptState.RUNNING
+    # 换进程后旧的配置状态缓存必须失效，否则新进程读到上一条的状态
     assert process._config_state_cache is None
 
 

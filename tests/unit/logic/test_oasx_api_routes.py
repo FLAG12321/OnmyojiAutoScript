@@ -3561,10 +3561,24 @@ def test_state_broadcaster_stale_handle_cas_preserves_restarted_child(
                 checked_child.arm_blocking_probe()
                 assert checked_child.probe_entered.wait(timeout=2.0)
 
-                # 同一 wrapper 在旧探针阻塞期间完成 stop + 新句柄替换。
-                assert await process.start() is True
-                replacement = process._process
+                # 同一 wrapper 在旧探针阻塞期间完成句柄替换。
+                #
+                # 直接构造并提交新句柄，不走 stop()+start()：本用例要验证的是
+                # broadcaster 拿着陈旧句柄返回时不得清理新句柄，前提是这中间
+                # 不产生 INACTIVE 广播（末尾那条断言只允许收尾 stop 有 INACTIVE）。
+                # 也不能单调 start()——9579acd6 起它对存活进程是幂等 no-op，
+                # 根本不会替换句柄，构造不出这个竞态。
+                replacement = FakeChild()
+                replacement.start()
+                process._commit_process_if_current(
+                    checked_child, replacement, ScriptState.RUNNING
+                )
+                assert process._process is replacement
                 assert replacement is not checked_child
+                # 被顶掉的旧句柄由本用例负责收尾：真实 restart 路径里这一步
+                # 由 stop() 完成，这里绕开了生命周期方法就得自己 kill，
+                # 否则末尾「所有子进程都已退出」的断言会被旧句柄拖住。
+                checked_child.kill()
                 marker = {"iteration": iteration}
                 process._config_state_cache = marker
 
