@@ -134,8 +134,11 @@ def test_script_import_chain_can_run_ocr():
         'text, score = m.ocr_single_line(np.zeros((32, 64, 3), dtype=np.uint8))\n'
         'print("OCR_OK device=" + m.resolved_device)\n'
     )
+    # 显式 utf-8：子进程输出含中文日志，Windows 默认 GBK 解码会抛
+    # UnicodeDecodeError 让 stdout 变成 None，断言拿不到真实内容
     out = subprocess.run([sys.executable, '-c', script], cwd=str(ROOT),
-                         capture_output=True, text=True, timeout=600)
+                         capture_output=True, text=True,
+                         encoding='utf-8', errors='replace', timeout=600)
     assert 'OCR_OK' in out.stdout, (
         f'import script 后 OCR 不可用。\n'
         f'stdout={out.stdout[-1500:]}\nstderr={out.stderr[-1500:]}'
