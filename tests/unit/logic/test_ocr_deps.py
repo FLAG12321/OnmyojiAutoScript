@@ -9,7 +9,8 @@
 2. 幂等：已对齐时不产生任何 pip 动作。
 3. Windows DLL 锁：当前进程已加载 onnxruntime 时拒绝换包。
 4. 用户级包安全边界：只精确卸载 OCR 冲突包，不碰 frida / av / paramiko。
-5. 损坏残留：换 ORT 发行版前清理 ~nnxruntime-* 等非法 distribution。
+5. 损坏残留：换 ORT 发行版前清理 ~nnxruntime / ~-nxruntime 等 pip 临时目录，
+   同时保护健康的正常安装不被误删。
 """
 import sys
 
@@ -17,7 +18,7 @@ import pytest
 
 from deploy.ocr_deps import (DIRECTML_DIST, ORT_VERSION, RAPIDOCR_VERSION,
                              USER_SITE_CONFLICTS, OcrDepsManager,
-                             _sanitize_log)
+                             _is_ort_pip_temp, _sanitize_log, _ORT_INSTALL_RE)
 
 pytestmark = pytest.mark.unit
 
@@ -50,6 +51,22 @@ def manager(tmp_path, monkeypatch):
         return mgr
 
     return build
+
+
+def test_ort_install_regex_has_exact_distribution_whitelist():
+    """只允许已知 ORT 发行版 metadata，不能匹配 onnxruntime_extensions。"""
+    assert _ORT_INSTALL_RE.match('onnxruntime')
+    assert _ORT_INSTALL_RE.match('onnxruntime-1.23.0.dist-info')
+    assert _ORT_INSTALL_RE.match('onnxruntime_directml-1.23.0.dist-info')
+    assert _ORT_INSTALL_RE.match('onnxruntime_gpu-1.23.0.dist-info')
+    assert _ORT_INSTALL_RE.match('onnxruntime_openvino-1.23.0.dist-info')
+    # 不能穷举旧白名单：这些真实 PyPI 发行版同样安装 onnxruntime 包目录。
+    assert _ORT_INSTALL_RE.match('onnxruntime_qnn-1.23.0.dist-info')
+    assert _ORT_INSTALL_RE.match('onnxruntime_training-1.23.0.dist-info')
+    assert _ORT_INSTALL_RE.match('onnxruntime_azure-1.23.0.dist-info')
+    assert not _ORT_INSTALL_RE.match('onnxruntime_extensions')
+    assert not _ORT_INSTALL_RE.match('onnxruntime_extensions-1.0.dist-info')
+    assert not _ORT_INSTALL_RE.match('onnxruntime-extensions-1.0.dist-info')
 
 
 # ---------------- plan(): 发行版选择 ----------------
@@ -91,6 +108,17 @@ def test_plan_removes_other_ort_flavor_when_cpu_forced(manager):
     plan = mgr.plan()
     assert DIRECTML_DIST in plan.uninstall
     assert f'onnxruntime=={ORT_VERSION}' in plan.install
+
+
+def test_plan_removes_additional_ort_distribution_before_install(manager):
+    # QNN 等共享 onnxruntime 包目录的发行版必须先卸载，避免 metadata 共存。
+    mgr = manager(
+        installed={'onnxruntime-qnn': ORT_VERSION},
+        OcrDevice='auto',
+    )
+    plan = mgr.plan()
+    assert 'onnxruntime-qnn' in plan.uninstall
+    assert f'{DIRECTML_DIST}=={ORT_VERSION}' in plan.install
 
 
 def test_plan_upgrades_wrong_ort_version(manager):
@@ -171,6 +199,147 @@ def test_user_site_cleanup_skips_absent_packages(manager):
 
 
 # ---------------- 损坏的 ORT 残留 ----------------
+
+# pip 的 AdjacentTempDirectory 生成规则（pip/_internal/utils/temp_dir.py）：
+# `"~" + (i-1 个 LEADING_CHARS 字符) + 原名[i:]`，逐个 i 试到不冲突为止。
+# 所以同一个 onnxruntime 会依次退化成 ~nnxruntime、~-nxruntime、~--xruntime……
+# 真机上 ~nnxruntime 与 ~-nxruntime 同时存在过。
+@pytest.mark.parametrize('name', [
+    '~nnxruntime',                              # i=1，最常见
+    '~-nxruntime',                              # i=2，真机实际出现过
+    '~--xruntime',                              # i=3
+    '~0nxruntime',                              # LEADING_CHARS 含数字
+    '~nnxruntime-1.16.3.dist-info',             # dist-info 同样会被改名
+    '~-nxruntime_directml-1.23.0.dist-info',
+    '-nnxruntime',                              # 历史上见过的 `-` 前缀残留
+])
+def test_pip_temp_names_are_remnants(name):
+    """pip 临时目录名必须被识别为残留。"""
+    assert _is_ort_pip_temp(name) is True
+
+
+@pytest.mark.parametrize('name', [
+    'onnxruntime',                              # 正常包目录，删了就是数据损坏
+    'onnxruntime-1.23.0.dist-info',             # 正常 CPU 版 metadata
+    'onnxruntime_directml-1.23.0.dist-info',    # 正常 DirectML 版 metadata
+    'onnxruntime_extensions',                   # 独立包，缺尾锚点时会被误删
+    'rapidocr-3.9.2.dist-info',
+    '~umpy',                                    # numpy 的 pip 残留，与 ORT 无关
+    '~ich',                                     # rich 的 pip 残留
+    '',
+])
+def test_healthy_and_unrelated_names_are_not_remnants(name):
+    """正常命名与其它包的残留都不能被当成 ORT 残留。
+
+    回归锚点：早先规则是 `^(?:[~_-]?onnxruntime|[~_-]nnxruntime)`，
+    `[~_-]?` 的 `?` 让正常的 onnxruntime 目录也命中，而
+    cleanup_ort_remnants 是无条件 rmtree —— 真机上把健康的
+    onnxruntime-directml 1.23.0 删到 capi/DirectML.dll 才因 WinError 5 停住。
+    同时缺尾锚点让 onnxruntime_extensions 这种独立包也在射程内。
+    """
+    assert _is_ort_pip_temp(name) is False
+
+
+def test_cleanup_keeps_healthy_install_while_removing_temp_dirs(
+        manager, tmp_path, monkeypatch):
+    """真机场景：健康安装旁边有 pip 临时目录，只能删临时目录。
+
+    这正是用户遇到的现场——~nnxruntime 让 has_ort_remnants 报 True，
+    于是 align 调用清理，旧规则把健康的 onnxruntime/ 一起删了。
+    """
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    # 一套健康的 onnxruntime-directml 1.23.0
+    package_dir = site_dir / 'onnxruntime'
+    (package_dir / 'capi').mkdir(parents=True)
+    (package_dir / '__init__.py').write_text('', encoding='utf-8')
+    (package_dir / 'capi' / 'onnxruntime_pybind11_state.pyd').write_bytes(b'')
+    (package_dir / 'capi' / 'DirectML.dll').write_bytes(b'')
+    (site_dir / 'onnxruntime_directml-1.23.0.dist-info').mkdir()
+    # 上一轮卸载中断留下的两个临时目录
+    (site_dir / '~nnxruntime').mkdir()
+    (site_dir / '~-nxruntime').mkdir()
+    # 无关的独立包
+    (site_dir / 'onnxruntime_extensions').mkdir()
+
+    mgr = manager()
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+    ok, err = mgr.cleanup_ort_remnants()
+
+    assert (ok, err) == (True, '')
+    assert sorted(p.name for p in site_dir.iterdir()) == [
+        'onnxruntime',
+        'onnxruntime_directml-1.23.0.dist-info',
+        'onnxruntime_extensions',
+    ]
+    # 原生入口必须还在，否则 OCR 直接废掉
+    assert (package_dir / 'capi' / 'DirectML.dll').is_file()
+    # 清完临时目录后不该再报残留，否则 check() 永远红
+    assert mgr.has_ort_remnants() is False
+
+
+@pytest.mark.parametrize('dist_info', [
+    'onnxruntime_qnn-1.23.0.dist-info',
+    'onnxruntime_training-1.23.0.dist-info',
+    'onnxruntime_azure-1.23.0.dist-info',
+])
+def test_cleanup_keeps_healthy_additional_ort_distributions(
+        manager, tmp_path, monkeypatch, dist_info):
+    """QNN/Training/Azure 的健康安装不能被误判，且不能删除包目录。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    package_dir = site_dir / 'onnxruntime'
+    (package_dir / 'capi').mkdir(parents=True)
+    (package_dir / '__init__.py').write_text('', encoding='utf-8')
+    (package_dir / 'capi' / 'onnxruntime_pybind11_state.pyd').write_bytes(b'')
+    (site_dir / dist_info).mkdir()
+
+    mgr = manager()
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+
+    assert mgr.has_ort_remnants() is False
+    assert mgr.cleanup_ort_remnants() == (True, '')
+    assert package_dir.is_dir(), '健康的 onnxruntime 包目录不得被删除'
+    assert (site_dir / dist_info).is_dir(), '健康发行版 metadata 不得被删除'
+
+
+def test_cleanup_is_noop_for_fully_healthy_site_packages(
+        manager, tmp_path, monkeypatch):
+    """完全健康时清理必须什么都不删（align 换发行版时也会走到这里）。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    package_dir = site_dir / 'onnxruntime'
+    (package_dir / 'capi').mkdir(parents=True)
+    (package_dir / '__init__.py').write_text('', encoding='utf-8')
+    (package_dir / 'capi' / 'onnxruntime_pybind11_state.pyd').write_bytes(b'')
+    (site_dir / 'onnxruntime_directml-1.23.0.dist-info').mkdir()
+
+    mgr = manager()
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+    before = sorted(p.name for p in site_dir.iterdir())
+    ok, err = mgr.cleanup_ort_remnants()
+
+    assert (ok, err) == (True, '')
+    assert sorted(p.name for p in site_dir.iterdir()) == before
+
+
+def test_cleanup_removes_orphan_package_without_dist_info(
+        manager, tmp_path, monkeypatch):
+    """包目录完整但 dist-info 没了：pip 不认它已安装，必须整套删掉重装。"""
+    site_dir = tmp_path / 'site-packages'
+    site_dir.mkdir()
+    package_dir = site_dir / 'onnxruntime'
+    (package_dir / 'capi').mkdir(parents=True)
+    (package_dir / '__init__.py').write_text('', encoding='utf-8')
+    (package_dir / 'capi' / 'onnxruntime_pybind11_state.pyd').write_bytes(b'')
+
+    mgr = manager()
+    monkeypatch.setattr(mgr, '_site_packages_dirs', lambda: [str(site_dir)])
+    assert mgr.has_ort_remnants() is True
+    ok, err = mgr.cleanup_ort_remnants()
+
+    assert (ok, err) == (True, '')
+    assert list(site_dir.iterdir()) == []
 
 def test_cleanup_removes_broken_ort_remnants(manager, tmp_path, monkeypatch):
     """清理残缺 onnxruntime 目录、非法 dist-info 与旧 directml metadata。"""

@@ -41,7 +41,16 @@ RAPIDOCR_VERSION = '3.9.2'
 DIRECTML_DIST = 'onnxruntime-directml'
 CPU_DIST = 'onnxruntime'
 # 所有已知的 onnxruntime 发行版，同一时间只允许存在一个
-ORT_DISTS = (CPU_DIST, DIRECTML_DIST, 'onnxruntime-gpu', 'onnxruntime-openvino')
+# 这些发行版都会安装同名 onnxruntime 包目录；同一环境只能保留目标发行版。
+ORT_DISTS = (
+    CPU_DIST,
+    DIRECTML_DIST,
+    'onnxruntime-gpu',
+    'onnxruntime-openvino',
+    'onnxruntime-qnn',
+    'onnxruntime-training',
+    'onnxruntime-azure',
+)
 
 # v5 运行时包。留着会把 onnxruntime 依赖拉回 1.16.3，必须卸掉
 V5_DISTS = ('ppocr-onnx', 'onnxocr')
@@ -57,13 +66,49 @@ USER_SITE_CONFLICTS = (
     'onnxocr',
 )
 
-# pip 在卸载被中断或 DLL 被锁时会留下 ~nnxruntime-* / -nnxruntime-* 这种
-# 缺首字母的非法 dist-info；它们会让 pip 跳过卸载，但 Python 仍可能 import
-# 到残缺的 onnxruntime 模块。换 ORT 发行版前必须清掉。
-_ORT_REMNANT_RE = re.compile(r'^(?:[~_-]?onnxruntime|[~_-]nnxruntime)',
-                             re.IGNORECASE)
-_INVALID_ORT_RE = re.compile(r'^(?:[~_-]onnxruntime|[~_-]nnxruntime)',
-                             re.IGNORECASE)
+# pip 在卸载被中断或 DLL 被锁时，会把原目录改名成一个「相邻临时目录」留在
+# site-packages 里（pip/_internal/utils/temp_dir.py 的 AdjacentTempDirectory）。
+# 命名规则是 `"~" + (i-1 个 LEADING_CHARS 里的字符) + 原名[i:]`，长度与原名相同：
+# onnxruntime -> ~nnxruntime(i=1) / ~-nxruntime(i=2) / ~--xruntime(i=3) ...
+# 这些名字会让 pip 跳过卸载，但 Python 仍可能 import 到残缺的 onnxruntime 模块，
+# 换 ORT 发行版前必须清掉。
+_PIP_TEMP_LEADING_CHARS = '-~.=%0123456789'
+# 首字符标记。pip 只生成 `~`，但历史上也见过 `-` 前缀的残留目录，一并认。
+# 刻意不含 `_`：pip 不会生成它，放进来只会扩大误删面。
+_PIP_TEMP_MARKERS = '~-'
+_ORT_MODULE = 'onnxruntime'
+
+# 正常命名的 ORT 安装产物：包目录 onnxruntime 本身，以及所有
+# `onnxruntime_<变体>-<版本>.dist-info` 发行版 metadata。
+# 不能穷举变体：qnn / training / azure 等真实 PyPI 发行版同样安装 onnxruntime 包目录。
+# 尾锚点与版本起始位共同限制匹配范围；extensions 是独立发行版，显式排除。
+_ORT_INSTALL_RE = re.compile(
+    r'^(?!onnxruntime_extensions-)(?:onnxruntime(?:_[a-z]+)?-[0-9][^-]*\.dist-info|onnxruntime)$',
+    re.IGNORECASE,
+)
+
+
+def _is_ort_pip_temp(name: str) -> bool:
+    """name 是否是 pip 为 onnxruntime 相关目录生成的临时残留名。
+
+    反向还原 pip 的命名规则：逐个试探被替换掉的前缀长度 i，
+    要求 `~` 后面到 i 之间全是 LEADING_CHARS 里的填充字符，
+    且残存的尾部 name[i:] 正好接得上 'onnxruntime'[i:]。
+    能还原出 onnxruntime 开头的原名才算残留。
+
+    正常命名（onnxruntime、onnxruntime_directml-1.23.0.dist-info）一律不匹配：
+    它们不以标记字符开头，第一步就被挡掉。
+    """
+    lower = name.lower()
+    if not lower[:1] or lower[0] not in _PIP_TEMP_MARKERS:
+        return False
+    for i in range(1, len(_ORT_MODULE) + 1):
+        # 标记字符之后、还原点之前的部分必须全是 pip 用的填充字符
+        if any(c not in _PIP_TEMP_LEADING_CHARS for c in lower[1:i]):
+            break
+        if lower[i:].startswith(_ORT_MODULE[i:]):
+            return True
+    return False
 
 # 模型目录里必须存在的文件名片段，用于判断模型是否已下载
 MODEL_MARKERS = ('det', 'rec')
@@ -187,7 +232,16 @@ class OcrDepsManager(DeployConfig):
         return list(dict.fromkeys(site.getsitepackages()))
 
     def cleanup_ort_remnants(self) -> Tuple[bool, str]:
-        """删除 site-packages 里可能残留的 ORT 包目录与损坏 dist-info。
+        """删除 site-packages 里的 ORT 残留：pip 临时名，以及确认损坏的安装。
+
+        两类目标的删除条件不同，绝不能合成一条规则（踩过的坑：早先用
+        `^[~_-]?onnxruntime` 一条正则兼任两者，`?` 让正常的 onnxruntime 目录
+        也无条件命中，真机上把健康的 onnxruntime-directml 1.23.0 删到
+        capi/DirectML.dll 才因 WinError 5 停住，留下半删的包）：
+
+        * pip 临时名（~nnxruntime / ~-nxruntime ...）：一定是垃圾，无条件删。
+        * 正常命名的安装（onnxruntime、onnxruntime_*.dist-info）：只有整套
+          安装确实损坏时才删，好让 pip 从干净状态重装。
 
         Returns:
             tuple: (是否成功, 错误说明)
@@ -195,9 +249,13 @@ class OcrDepsManager(DeployConfig):
         for site_dir in self._site_packages_dirs():
             if not os.path.isdir(site_dir):
                 continue
-            for name in os.listdir(site_dir):
-                if not _ORT_REMNANT_RE.match(name):
-                    continue
+            names = os.listdir(site_dir)
+            targets = [name for name in names if _is_ort_pip_temp(name)]
+            # 与 has_ort_remnants 用同一个判定：那边报损坏、这边就必须删得掉，
+            # 否则 check() 会永远报残留、align() 每次都白跑一轮清理
+            if self._ort_install_broken(site_dir, names):
+                targets += [name for name in names if _ORT_INSTALL_RE.match(name)]
+            for name in targets:
                 path = os.path.join(site_dir, name)
                 try:
                     if os.path.isdir(path) and not os.path.islink(path):
@@ -215,17 +273,27 @@ class OcrDepsManager(DeployConfig):
             if not os.path.isdir(site_dir):
                 continue
             names = os.listdir(site_dir)
-            if any(_INVALID_ORT_RE.match(name) for name in names):
+            if any(_is_ort_pip_temp(name) for name in names):
                 return True
-            package_dir = os.path.join(site_dir, 'onnxruntime')
-            has_ort_dist_info = any(
-                _ORT_REMNANT_RE.match(name) and name.lower().endswith('.dist-info')
-                for name in names
-            )
-            if os.path.isdir(package_dir) and (
-                    not has_ort_dist_info or not self._ort_package_complete(package_dir)):
+            if self._ort_install_broken(site_dir, names):
                 return True
         return False
+
+    def _ort_install_broken(self, site_dir: str, names: List[str]) -> bool:
+        """正常命名的那套 ORT 安装是否已损坏到必须整套删掉重装。
+
+        两种损坏：包目录缺原生推理入口（装了一半 / 被删了一半），
+        或者包目录在、配套 dist-info 没了（pip 不认它已安装，直接 install
+        会把新旧文件混在一起）。包目录不存在则谈不上损坏。
+        """
+        package_dir = os.path.join(site_dir, _ORT_MODULE)
+        if not os.path.isdir(package_dir):
+            return False
+        has_dist_info = any(
+            _ORT_INSTALL_RE.match(name) and name.lower().endswith('.dist-info')
+            for name in names
+        )
+        return not has_dist_info or not self._ort_package_complete(package_dir)
 
     @staticmethod
     def _ort_package_complete(package_dir: str) -> bool:
@@ -386,9 +454,11 @@ class OcrDepsManager(DeployConfig):
         if not plan.needs_action and not has_remnants:
             return True, 'OCR dependencies already aligned'
 
-        # 旧版卸载被中断时会留下 ~nnxruntime-* 等非法 distribution：
+        # 旧版卸载被中断时会留下 ~nnxruntime / ~-nxruntime 这类 pip 临时目录：
         # pip 会跳过卸载，但 Python 仍能 import 到残缺模块。换 ORT 前先
         # 清残留并重新计算计划，确保 pip install 从干净状态开始。
+        # 注意清理不会碰健康的安装，只删临时名与确认损坏的那套（见
+        # cleanup_ort_remnants）。
         swaps_ort = has_remnants or any(dist in ORT_DISTS for dist in plan.uninstall) or any(
             spec.partition('==')[0] in ORT_DISTS for spec in plan.install)
         if swaps_ort:
