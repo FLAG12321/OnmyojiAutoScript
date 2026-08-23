@@ -161,18 +161,6 @@ def test_annotator_list_configs_uses_manager_instance(store, monkeypatch):
     assert not isinstance(excinfo.value, TypeError)
 
 
-def test_gui_add_uses_store_active_names(store):
-    from module.gui.context.add import Add
-
-    add = Add()
-    add.store = store
-    assert add.all_script_files() == ["oas1"]
-    assert add.all_json_file() == ["template", "oas1"]
-    # copy 走 create_from_template
-    add.copy("oas2", "template")
-    assert store.load("oas2").canonical["config_name"] == "oas2"
-
-
 def test_config_modify_gui_set_task_uses_store_patch(store):
     from module.config.config_modify import ConfigModify
 

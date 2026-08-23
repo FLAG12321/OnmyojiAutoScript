@@ -4,7 +4,6 @@ pre_checks()
 
 from deploy.adb import AdbManager
 from deploy.process import ProcessManager
-from deploy.fluentui import FluentuiManager
 from deploy.config import ExecutionError
 from deploy.git import GitManager
 from deploy.logger import logger
@@ -12,7 +11,7 @@ from deploy.ocr_deps import OcrDepsManager
 from deploy.pip import PipManager
 
 
-class Installer(GitManager, PipManager, OcrDepsManager, AdbManager, FluentuiManager, ProcessManager):
+class Installer(GitManager, PipManager, OcrDepsManager, AdbManager, ProcessManager):
     def install(self):
         try:
             # 先确保内置 toolkit git 可用（不可用则下载完整版替换），再 git_install 拉代码

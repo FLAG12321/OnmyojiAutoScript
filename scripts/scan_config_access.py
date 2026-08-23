@@ -46,7 +46,7 @@ ALLOWED_FUNCTION_EXCEPTIONS = {}
 
 ROOT = Path(__file__).resolve().parent.parent
 SCAN_DIRS = [ROOT / "module", ROOT / "tasks", ROOT / "dev_tools"]
-SCAN_FILES = [ROOT / "script.py", ROOT / "gui.py", ROOT / "server.py"]
+SCAN_FILES = [ROOT / "script.py", ROOT / "server.py"]
 
 
 def _is_allowed_file(path: Path) -> bool:

@@ -25,7 +25,8 @@ pytestmark = pytest.mark.unit
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 # 会 import zerorpc/pyzmq 的进程入口，必须先预加载 OCR 后端
-ENTRY_POINTS = ['script.py', 'server.py', 'gui.py']
+# 旧 PySide6 GUI(gui.py) 已移除，前端统一由 OASX 承担
+ENTRY_POINTS = ['script.py', 'server.py']
 # pyzmq 相关模块名：出现在预加载之前即为缺陷
 ZMQ_MODULES = ('zerorpc', 'zmq')
 
