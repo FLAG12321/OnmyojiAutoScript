@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+from filelock import FileLock
 
 import pytest
 
@@ -15,7 +16,7 @@ from module.server.updater import Updater, _update_progress
 
 @pytest.fixture
 def updater(tmp_path):
-    """用临时 deploy.yaml 构造 Updater，隔离真实 config/deploy.yaml。"""
+    """用临时 deploy.yaml 构造 Updater，隔离真实 deploy.yaml 与工作区。"""
     deploy_file = tmp_path / 'deploy.yaml'
     updater = Updater(file=str(deploy_file))
     # 隔离模板默认分支（模板 Branch 已改为 run_now_2），测试明确用 master 作为基线
@@ -23,6 +24,11 @@ def updater(tmp_path):
     # execute_pull 尾段的 align_ocr 会按 StartOcrServer 恢复 OCR 服务，
     # 单元测试不应真拉起子进程，显式关掉（模板默认值已是 true）
     updater.StartOcrServer = False
+    # 必须同时关掉 OcrAutoAlignDeps：模板默认 true，否则 execute_pull 尾段会执行
+    # 真实 align_ocr，进而调用 kill_orphan_ocr_servers() 对本机 taskkill ——
+    # 跑一次测试就会把用户正在运行的 OCR 服务全部杀掉（实际踩过：任务报 LostRemote）。
+    # 需要覆盖对齐逻辑的用例自己显式打开并 mock 掉进程操作。
+    updater.OcrAutoAlignDeps = False
     return updater
 
 
@@ -520,6 +526,124 @@ def test_execute_update_starts_thread_after_finished(updater, monkeypatch):
     result = asyncio.run(home_router.execute_update())
     assert '后台开始' in result
     assert started, '非 running 状态应允许再次触发更新'
+
+
+@pytest.mark.unit
+def test_execute_update_claim_is_atomic(updater, monkeypatch):
+    """连续触发更新时，原子领取只允许一个后台线程启动。"""
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    started = []
+
+    class FakeThread:
+        def __init__(self, target=None, daemon=None):
+            started.append(target)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(home_router.threading, 'Thread', FakeThread)
+    _update_progress.finish(True)
+    first = asyncio.run(home_router.execute_update())
+    second = asyncio.run(home_router.execute_update())
+    assert '后台开始' in first
+    assert '运行' in second
+    assert len(started) == 1
+
+
+@pytest.mark.unit
+def test_align_ocr_restores_rpc_server_when_alignment_fails(updater, monkeypatch):
+    """OCR 对齐失败时，已经停掉的 RPC 服务也必须恢复。"""
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = True
+    calls = []
+    import sys
+    monkeypatch.delitem(sys.modules, 'onnxruntime', raising=False)
+
+    class FakeManager:
+        python = './toolkit/python.exe'
+
+        def check(self):
+            return False
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server',
+                        lambda: calls.append('shutdown') or True)
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', lambda: 0)
+    monkeypatch.setattr('module.ocr.rpc.ensure_ocr_server_started',
+                        lambda: calls.append('start') or True)
+    monkeypatch.setattr(updater, 'execute_stream', lambda *a, **k: False)
+
+    assert updater.align_ocr() is False
+    assert calls == ['shutdown', 'start']
+
+
+@pytest.mark.unit
+def test_update_config_rejects_invalid_direct_updater_values(updater):
+    """Updater 配置赋值层也要保护独立更新器入口。"""
+    with pytest.raises(ValueError, match='repository'):
+        updater.Repository = 'https://example.com/repo.git;whoami'
+    with pytest.raises(ValueError, match='branch'):
+        updater.Branch = 'master;whoami'
+
+
+@pytest.mark.unit
+def test_execute_pull_rejects_when_cross_process_lock_is_held(updater, monkeypatch):
+    """OASX 直接调用 execute_pull 时也必须和 Web 更新共享文件锁。"""
+    # 本用例验证超时后的拒绝语义，不应真的等待生产配置的 30 秒。
+    monkeypatch.setattr('module.server.updater.UPDATE_LOCK_WAIT', 0.01)
+    reset_progress()
+    lock_path = f'{os.path.abspath(updater.file)}.update.lock'
+    with FileLock(lock_path):
+        assert updater.execute_pull() is False
+    assert _update_progress.status == 'rejected'
+
+
+@pytest.mark.unit
+def test_execute_pull_uses_nonzero_lock_timeout(updater, monkeypatch):
+    """真实更新必须等待短暂的 --info fetch，而不是 timeout=0 立即拒绝。"""
+    from contextlib import contextmanager
+    import module.server.updater as updater_module
+
+    captured = []
+
+    @contextmanager
+    def fake_lock(file, timeout=0):
+        captured.append(timeout)
+        yield
+
+    monkeypatch.setattr(updater_module, 'update_lock', fake_lock)
+    monkeypatch.setattr(updater, '_execute_pull_locked', lambda before_ocr=None: True)
+
+    assert updater.execute_pull() is True
+    assert captured == [updater_module.UPDATE_LOCK_WAIT]
+    assert captured[0] >= 60, '等待时间必须覆盖两次 25 秒 fetch 的最坏情况'
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('repository', [
+    'https://example.com/repo.git;whoami',
+    'git@github.com:org/repo.git && whoami',
+])
+def test_update_config_rejects_repository_shell_injection(updater, monkeypatch, repository):
+    """仓库地址含 shell 元字符时不得进入 git shell 命令。
+
+    只断言「被拒且指明是 repository」，不锁具体错误文案：
+    校验器改成逐字符报告非法字符后文案会变，锁文案会把这个用例变成文案门禁，
+    而真正要守的是「危险输入进不去 shell」。
+    """
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    result = asyncio.run(home_router.update_config(repository=repository))
+    assert 'error' in result, 'shell 元字符必须被拒'
+    assert 'repository' in result['error'], f'错误应指明是 repository：{result}'
+
+
+@pytest.mark.unit
+def test_update_config_rejects_branch_shell_injection(updater, monkeypatch):
+    """分支名含命令分隔符时必须拒绝。"""
+    monkeypatch.setattr(home_router, 'Updater', lambda: updater)
+    result = asyncio.run(home_router.update_config(branch='master;whoami'))
+    assert 'error' in result, 'shell 元字符必须被拒'
+    assert 'branch' in result['error'], f'错误应指明是 branch：{result}'
 
 
 # 11. 进度 snapshot 字段齐全、状态流转正确
@@ -1069,9 +1193,7 @@ def test_update_info_returns_fetch_ok(updater, monkeypatch):
     assert result['fetch_ok'] is True
 
 
-# 29. align_ocr：更新后按 StartOcrServer 恢复 OCR RPC 服务
-#    对齐流程开头会无条件 shutdown_ocr_server() 释放 DLL 锁，即使依赖本已对齐
-#    （check 直接返回）也会停掉服务。这里锁住「停掉后必须按配置恢复」的行为。
+# 29. align_ocr：依赖已对齐时不停止正常 RPC，只确认服务按配置运行。
 @pytest.mark.unit
 def test_align_ocr_restarts_ocr_server_when_enabled(updater, monkeypatch):
     updater.OcrAutoAlignDeps = True
@@ -1093,11 +1215,28 @@ def test_align_ocr_restarts_ocr_server_when_enabled(updater, monkeypatch):
         return True
 
     monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server', fake_shutdown)
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', lambda: 0)
     monkeypatch.setattr('module.ocr.rpc.ensure_ocr_server_started', fake_start)
 
     assert updater.align_ocr() is True
-    assert calls['shutdown'] == 1, '必须先停掉旧服务以释放 onnxruntime.dll'
-    assert calls['start'] == 1, '依赖已对齐时也必须恢复 RPC 服务'
+    assert calls['shutdown'] == 0, '依赖已对齐时不得无故停止正常 RPC 服务'
+    assert calls['start'] == 1, '依赖已对齐时仍应确认 RPC 服务按配置运行'
+
+
+@pytest.mark.unit
+def test_align_ocr_fails_when_rpc_restore_fails(updater, monkeypatch):
+    """依赖已对齐但配置要求的 RPC 无法启动时，更新不得报告成功。"""
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = True
+
+    class FakeManager:
+        def check(self):
+            return True
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.ensure_ocr_server_started', lambda: False)
+
+    assert updater.align_ocr() is False
 
 
 @pytest.mark.unit
@@ -1113,6 +1252,7 @@ def test_align_ocr_does_not_start_server_when_disabled(updater, monkeypatch):
     monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
     monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server',
                         lambda *a, **k: True)
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', lambda: 0)
 
     def fake_start(*a, **k):
         calls['start'] += 1
@@ -1138,7 +1278,179 @@ def test_align_ocr_returns_false_on_deps_failure(updater, monkeypatch):
     monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
     monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server',
                         lambda *a, **k: True)
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', lambda: 0)
     monkeypatch.setattr(updater, 'execute_stream',
                         lambda cmd, on_line=None: False)
 
     assert updater.align_ocr() is False
+
+
+@pytest.mark.unit
+def test_align_ocr_kills_orphan_ocr_servers(updater, monkeypatch):
+    """对齐前必须终止外部持有的 OCR 服务进程，才能释放 onnxruntime.dll。
+
+    shutdown_ocr_server 只停本进程拉起的子进程；多开/残留场景下 OCR 服务
+    由别的进程持有，kill_orphan_ocr_servers 负责把这些外部进程一并终止。
+    """
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = False
+    calls = {'kill': 0}
+    import sys
+    monkeypatch.delitem(sys.modules, 'onnxruntime', raising=False)
+
+    class FakeManager:
+        python = './toolkit/python.exe'
+
+        def check(self):
+            return False
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server', lambda *a, **k: False)
+    monkeypatch.setattr(updater, 'execute_stream', lambda *a, **k: True)
+
+    def fake_kill():
+        calls['kill'] += 1
+        return 1
+
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', fake_kill)
+    monkeypatch.setattr('module.ocr.rpc.ensure_ocr_server_started', lambda: True)
+
+    assert updater.align_ocr() is True
+    assert calls['kill'] == 1, '对齐前必须终止外部 OCR 服务进程以释放 onnxruntime.dll'
+
+
+# ---- 独立更新器（deploy/update.py）相关 ----
+
+# 34. align_ocr：需要换包但本进程已加载 onnxruntime → 拒绝换包并给出出路
+@pytest.mark.unit
+def test_align_ocr_refuses_swap_when_ort_loaded_in_process(updater, monkeypatch):
+    """本进程持有 ORT 时不得发起注定失败的 pip 换包。
+
+    Windows 锁定已加载的 onnxruntime_providers_shared.dll，且 Python 无法卸载
+    已加载的扩展 DLL。server/gui/script 入口都会 preload ORT，此时换包必然
+    WinError 5 并留下半损坏 distribution，只能引导用户走独立更新器。
+    """
+    import sys as _sys
+
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = False
+    streamed = []
+
+    class FakeManager:
+        def check(self):
+            return False  # 需要换包
+
+        python = './toolkit/python.exe'
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server', lambda *a, **k: True)
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', lambda: 0)
+    monkeypatch.setattr(updater, 'execute_stream',
+                        lambda cmd, on_line=None: streamed.append(cmd) or True)
+    # 模拟 server 进程：onnxruntime 已在 sys.modules 里
+    monkeypatch.setitem(_sys.modules, 'onnxruntime', object())
+
+    reset_progress()
+    assert updater.align_ocr(_update_progress) is False
+    assert not any('deploy.ocr_deps' in c for c in streamed), \
+        '本进程持有 ORT 时不得启动 ocr_deps 换包，那必然失败并损坏依赖'
+    logs = '\n'.join(_update_progress.snapshot()['logs'])
+    assert 'oas-update.bat' in logs, '必须指出独立更新器这条出路'
+
+
+# 35. align_ocr：本进程已加载 ORT 但依赖本已对齐 → 不受守卫影响，正常通过
+@pytest.mark.unit
+def test_align_ocr_ort_loaded_but_already_aligned_still_ok(updater, monkeypatch):
+    """守卫只在真正需要换包时生效，不得把原本成功的更新变成失败。"""
+    import sys as _sys
+
+    updater.OcrAutoAlignDeps = True
+    updater.StartOcrServer = False
+
+    class FakeManager:
+        def check(self):
+            return True  # 无需变更
+
+    monkeypatch.setattr('deploy.ocr_deps.OcrDepsManager', lambda file: FakeManager())
+    monkeypatch.setattr('module.ocr.rpc.shutdown_ocr_server', lambda *a, **k: True)
+    monkeypatch.setattr('module.ocr.rpc.kill_orphan_ocr_servers', lambda: 0)
+    monkeypatch.setitem(_sys.modules, 'onnxruntime', object())
+
+    assert updater.align_ocr() is True
+
+
+# 36. execute_pull：before_ocr 钩子在 OCR 对齐之前执行，失败则整体失败
+@pytest.mark.unit
+def test_execute_pull_runs_before_ocr_hook_ahead_of_align(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.execute_output = lambda cmd: 'master\n'
+    updater.execute_stream = lambda cmd, on_line=None: True
+    order = []
+    updater.align_ocr = lambda prog=None: order.append('ocr') or True
+
+    assert updater.execute_pull(before_ocr=lambda prog: order.append('pip') or True) is True
+    assert order == ['pip', 'ocr'], 'pip 依赖必须在 OCR 对齐之前对齐'
+
+
+@pytest.mark.unit
+def test_execute_pull_fails_when_before_ocr_fails(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.execute_output = lambda cmd: 'master\n'
+    updater.execute_stream = lambda cmd, on_line=None: True
+    aligned = []
+    updater.align_ocr = lambda prog=None: aligned.append(1) or True
+
+    assert updater.execute_pull(before_ocr=lambda prog: False) is False
+    assert _update_progress.status == 'failed'
+    assert not aligned, 'pip 阶段失败后不应继续 OCR 对齐'
+
+
+# 37. execute_pull：不传 before_ocr 时行为不变（web 路径零回归）
+@pytest.mark.unit
+def test_execute_pull_without_hook_is_unchanged(updater):
+    reset_progress()
+    updater.check_git_usable = lambda: (True, '')
+    updater.execute_output = lambda cmd: 'master\n'
+    updater.execute_stream = lambda cmd, on_line=None: True
+    updater.align_ocr = lambda prog=None: True
+
+    assert updater.execute_pull() is True
+    assert _update_progress.status == 'done'
+
+
+# 38. UpdateProgress 监听器：阶段/日志/结束都实时转发，取消后不再收到
+@pytest.mark.unit
+def test_progress_listener_forwards_lines():
+    prog = _update_progress
+    seen = []
+    prog.reset('dev')
+    prog.set_listener(seen.append)
+    prog.set_step('fetch origin/dev')
+    prog.append('line1')
+    prog.finish(True)
+    prog.set_listener(None)
+    prog.append('after unset')
+
+    assert '> fetch origin/dev' in seen
+    assert 'line1' in seen
+    assert '更新完成' in seen
+    assert 'after unset' not in seen, '取消监听后不得继续转发'
+    prog.reset('')
+
+
+@pytest.mark.unit
+def test_progress_listener_exception_does_not_break_update():
+    """监听器抛异常不得影响更新流程本身。"""
+    prog = _update_progress
+    prog.reset('dev')
+
+    def boom(line):
+        raise RuntimeError('listener boom')
+
+    prog.set_listener(boom)
+    prog.append('still recorded')
+    prog.set_listener(None)
+    assert 'still recorded' in prog.snapshot()['logs']
+    prog.reset('')

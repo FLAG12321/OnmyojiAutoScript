@@ -10,6 +10,8 @@ import threading
 import time
 import zipfile
 import requests
+from filelock import FileLock, Timeout
+from contextlib import contextmanager
 from typing import Generator, List, Tuple
 
 from deploy.config import ExecutionError
@@ -26,6 +28,129 @@ from module.server.config import DeployConfig
 # 实测无法通过 https 拉取远程，装了也没用。
 GIT_MIN_VERSION = (2, 30, 0)
 GIT_UPGRADE_VERSION = '2.55.0.3'
+
+# repository / branch 校验。
+#
+# 这两个值会被**未加引号**拼进 shell=True 的 git 命令（见 execute_stream 与
+# ensure_origin 里的 f'"{self.git}" remote set-url origin {repository}'），
+# 所以真正的威胁面是 shell 元字符与参数注入，不是「地址长得像不像 GitHub」。
+#
+# 因此这里改成「拒绝危险字符 + 校验结构」，而不是枚举合法形态的白名单：
+# 白名单挡掉了大量真实合法的地址——带 PAT 的 https://ghp_xxx@github.com/o/r.git、
+# 带用户名密码的 https://user:pass@host/o/r.git、ssh://git@host:22/o/r.git、
+# 以及主机名带下划线的自建 GitLab（https://gitlab.my_corp.com/...）。
+# 用户改不了这些地址就等于用不了私有仓库，而它们对 shell 并不比公开地址危险。
+#
+# cmd.exe 的元字符（& | ; < > ^ ( ) % ! 换行 回车 制表 引号 反引号 $）一律拒绝；
+# 空格也拒绝——未加引号时空格会把一个参数拆成两个。
+# Git revision 通配符（* ? [ ]）同样拒绝；单引号、逗号、花括号在 cmd.exe
+# 参数中没有特殊语义，保留给合法 branch 使用。
+_SHELL_UNSAFE = set(' \t\r\n"`$&|;<>^();!*?[]')
+
+# 允许的协议。git 支持的远程协议远不止这些，但 OAS 的更新流程只用得到
+# http(s) 与 ssh；file:// 与 ext:: 之类能读写本地任意路径或执行外部命令，不放开。
+_REPOSITORY_SCHEMES = ('http://', 'https://', 'ssh://', 'git://')
+# scp 式短地址：git@host:owner/repo.git（无协议前缀，git 的默认形态）
+_REPOSITORY_SCP_RE = re.compile(r'^[A-Za-z0-9._~-]+@[A-Za-z0-9._-]+:[^:]+$')
+
+
+def _reject_shell_unsafe(value: str, field: str) -> None:
+    """拒绝会在 shell=True 下改变命令语义的字符。"""
+    bad = set(_SHELL_UNSAFE & set(value))
+    # URL 编码中的 `%40` / `%2F` 是合法凭据或路径；先剥掉全部 `%HH`，
+    # 剩下的 `%` 才可能是 `%VAR%` / `%%` 等 cmd.exe 展开语法。
+    if '%' in re.sub(r'%[0-9A-Fa-f]{2}', '', value):
+        bad.add('%')
+    if bad:
+        raise ValueError(f'{field} 含非法字符：{"".join(sorted(bad))!r}')
+
+
+def validate_repository(repository: str) -> str:
+    """校验仓库地址：拒绝 shell 元字符与不支持的协议，不限制主机与凭据形态。
+
+    刻意接受这些真实合法的写法（曾被白名单误拒）：
+        https://ghp_TOKEN@github.com/owner/repo.git   PAT
+        https://user:pass@host/owner/repo.git         用户名密码
+        ssh://git@github.com:22/owner/repo.git        显式 ssh 协议与端口
+        https://gitlab.my_corp.com/owner/repo.git     主机名含下划线的自建服务
+        git@github.com:owner/repo.git                 scp 式短地址
+    """
+    repository = str(repository).strip()
+    if not repository:
+        raise ValueError('repository 不能为空')
+    if len(repository) > 2048:
+        raise ValueError('repository 过长')
+    _reject_shell_unsafe(repository, 'repository')
+    # 前导 '-' 会被 git 当成选项而非地址（参数注入）
+    if repository.startswith('-'):
+        raise ValueError('repository 不能以 - 开头')
+    lowered = repository.lower()
+    if lowered.startswith(_REPOSITORY_SCHEMES):
+        # 协议后必须真有主机名
+        rest = repository.split('://', 1)[1]
+        if not rest or rest.startswith('/'):
+            raise ValueError('repository 缺少主机名')
+        return repository
+    if _REPOSITORY_SCP_RE.fullmatch(repository):
+        return repository
+    raise ValueError('repository 必须是 http(s)/ssh/git 协议或 git@host:path 形式')
+
+
+# Git 明令禁止的 ref 形态（git check-ref-format）。这里只保留真正的禁止项，
+# 不限制字符集——分支名允许非 ASCII，`_dev`、`修复/登录` 都是合法分支。
+_BRANCH_FORBIDDEN = ('..', '//', '@{', '\\', '~', ':')
+
+
+def validate_branch(branch: str) -> str:
+    """校验 Git 分支名：拒绝 shell 元字符与 Git 禁止的 ref 形态。
+
+    刻意接受下划线开头（`_dev`）与非 ASCII 分支名（`修复/登录`）——
+    两者都是 git check-ref-format 允许的，此前的 `^[A-Za-z0-9]` 白名单把它们误拒了。
+    """
+    branch = str(branch).strip()
+    if not branch:
+        raise ValueError('branch 不能为空')
+    if len(branch) > 255:
+        raise ValueError('branch 过长')
+    _reject_shell_unsafe(branch, 'branch')
+    # 前导 '-' 会被 git 当成选项（如 --force），属参数注入
+    if branch.startswith('-'):
+        raise ValueError('branch 不能以 - 开头')
+    for token in _BRANCH_FORBIDDEN:
+        if token in branch:
+            raise ValueError(f'branch 不能包含 {token!r}')
+    # Git 禁止：以 / 或 . 开头、以 / . 结尾、以 .lock 结尾、路径段以 . 开头
+    if (branch.startswith(('/', '.')) or branch.endswith(('/', '.'))
+            or branch.lower().endswith('.lock') or '/.' in branch
+            or branch == '@'):
+        raise ValueError('branch 不是合法的 Git ref')
+    # 控制字符与 DEL 同样被 git 拒绝
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in branch):
+        raise ValueError('branch 含控制字符')
+    return branch
+
+
+def update_lock(file=DEPLOY_CONFIG, timeout: float = 0):
+    """返回 OAS 更新/仓库操作共用的跨进程文件锁。
+
+    默认 timeout=0（立即失败）只适合只读查询。真实更新与写配置必须传
+    非零超时，见 UPDATE_LOCK_WAIT 的说明。
+    """
+    return FileLock(f'{os.path.abspath(file)}.update.lock', timeout=timeout)
+
+
+# 真实更新/写配置等待锁的秒数。
+#
+# 为什么不能用默认的 0：/update_info 与 deploy.update --info 也持这把锁，
+# 而它们内部的 check_update() 含 git fetch（连不上 GitHub 时可拖到十几秒），
+# 并非只读，暂时无法与写操作分锁。timeout=0 意味着用户在页面刚打开、
+# fetch 还没结束时点「更新」必被立即拒绝，看起来就是按钮没反应。
+#
+# check_update 最多两次 fetch，每次执行层 timeout=25 秒；等待上限必须留出
+# 两次失败重试的完整窗口，否则慢查询结束前点击更新仍会被误拒。
+UPDATE_LOCK_WAIT = 60.0
+
+
 # 国内源优先（淘宝 npmmirror / 华为云），GitHub 代理兜底，失败依次尝试下一个
 GIT_UPGRADE_URLS = [
     'https://registry.npmmirror.com/-/binary/git-for-windows/v2.55.0.windows.3/Git-2.55.0.3-64-bit.tar.bz2',
@@ -47,6 +172,40 @@ class UpdateProgress:
         self.branch = ''
         self.logs = []
         self.finished = False
+        # 行输出监听器。独立更新器（deploy/update.py）注册它把进度实时打到控制台；
+        # web 路径不注册，日志只留在内存 buffer 里供 /update_progress 轮询。
+        self._listener = None
+
+    def set_listener(self, listener) -> None:
+        """注册行输出监听器，传 None 取消。"""
+        with self._lock:
+            self._listener = listener
+
+    def _notify(self, line) -> None:
+        """把一行进度转发给监听器。
+
+        必须在锁外调用：监听器是外部回调，在锁内执行会让它有机会造成死锁。
+        监听器自身异常不得影响更新流程，因此整体吞掉。
+        """
+        listener = self._listener
+        if listener is None:
+            return
+        try:
+            listener(line)
+        except Exception:
+            pass
+
+    def try_start(self, branch='') -> bool:
+        """在进程内原子领取更新执行权，避免检查与启动线程之间的竞态。"""
+        with self._lock:
+            if self.status == 'running':
+                return False
+            self.status = 'running'
+            self.step = ''
+            self.branch = branch
+            self.logs = []
+            self.finished = False
+            return True
 
     def reset(self, branch):
         with self._lock:
@@ -61,6 +220,7 @@ class UpdateProgress:
             self.logs.append(line)
             if len(self.logs) > 200:
                 self.logs = self.logs[-200:]
+        self._notify(line)
 
     def set_step(self, step):
         # 在锁内直接写 logs，避免嵌套加锁
@@ -69,6 +229,7 @@ class UpdateProgress:
             self.logs.append(f'> {step}')
             if len(self.logs) > 200:
                 self.logs = self.logs[-200:]
+        self._notify(f'> {step}')
 
     def finish(self, ok):
         # 在锁内直接写 logs，避免嵌套加锁（threading.Lock 不可重入）
@@ -78,6 +239,7 @@ class UpdateProgress:
             self.logs.append('更新完成' if ok else '更新失败')
             if len(self.logs) > 200:
                 self.logs = self.logs[-200:]
+        self._notify('更新完成' if ok else '更新失败')
 
     def reject(self, reason):
         # 在锁内直接写 logs，避免嵌套加锁
@@ -87,6 +249,7 @@ class UpdateProgress:
             self.logs.append(reason)
             if len(self.logs) > 200:
                 self.logs = self.logs[-200:]
+        self._notify(reason)
 
     def snapshot(self):
         with self._lock:
@@ -103,6 +266,14 @@ _update_progress = UpdateProgress()
 
 
 class Updater(DeployConfig, GitManager, PipManager):
+    def __setattr__(self, key, value):
+        # 独立更新器也复用 Updater，校验放在配置赋值层才能覆盖所有入口。
+        if key == 'Repository' and value is not None:
+            value = validate_repository(value)
+        elif key == 'Branch' and value is not None:
+            value = validate_branch(value)
+        super().__setattr__(key, value)
+
     def __init__(self, file=DEPLOY_CONFIG):
         super().__init__(file=file)
         self.state = 0
@@ -253,17 +424,23 @@ class Updater(DeployConfig, GitManager, PipManager):
 
     def ensure_origin(self) -> bool:
         """确保 git origin 与 deploy.yaml 的 Repository 一致，不一致时自动切换。"""
+        try:
+            repository = validate_repository(self.Repository)
+            validate_branch(self.Branch)
+        except ValueError as e:
+            logger.error(f'更新配置校验失败：{e}')
+            return False
         current = self.execute_output(f'"{self.git}" remote get-url origin').strip()
         if current == self.Repository:
             return True
         if current.startswith(('http://', 'https://', 'git@')):
             # origin 存在但地址不同，set-url 覆盖
-            ok = self.execute_stream(f'"{self.git}" remote set-url origin {self.Repository}')
+            ok = self.execute_stream(f'"{self.git}" remote set-url origin {repository}')
         else:
             # origin 不存在（get-url 输出报错文本），用 add 创建
-            ok = self.execute_stream(f'"{self.git}" remote add origin {self.Repository}')
+            ok = self.execute_stream(f'"{self.git}" remote add origin {repository}')
         if ok:
-            logger.info(f'origin 已同步到 {self.Repository}')
+            logger.info(f'origin 已同步到 {repository}')
             return True
         logger.warning('同步 origin 失败，更新可能仍走旧远程')
         return False
@@ -561,7 +738,29 @@ class Updater(DeployConfig, GitManager, PipManager):
             logger.info(f"No update")
             return False
 
-    def execute_pull(self) -> bool:
+    def execute_pull(self, before_ocr=None) -> bool:
+        """在跨进程更新锁内执行完整更新，避免 OASX 与 Web 同时改 Git。"""
+        try:
+            # 等一个非零超时：只读查询（/update_info）也持这把锁且内含 git fetch，
+            # 立即失败会让「页面刚打开就点更新」必被拒。见 UPDATE_LOCK_WAIT。
+            with update_lock(self.file, timeout=UPDATE_LOCK_WAIT):
+                return self._execute_pull_locked(before_ocr=before_ocr)
+        except Timeout:
+            _update_progress.reject('已有其它 OAS 更新进程正在运行，拒绝并发更新')
+            logger.warning(f'Update lock is busy: {os.path.abspath(self.file)}.update.lock')
+            return False
+
+    def _execute_pull_locked(self, before_ocr=None) -> bool:
+        """拉取远端代码并对齐 OCR 依赖。幂等，中断后重跑会接上剩余阶段。
+
+        Args:
+            before_ocr: 可选钩子，签名 before_ocr(prog) -> bool，在代码更新完成、
+                OCR 对齐之前调用。独立更新器（deploy/update.py）用它插入 pip 依赖
+                对齐；web 路径不传，行为与此前完全一致。
+
+        Returns:
+            bool: 是否全流程成功。
+        """
         source = 'origin'
         prog = _update_progress
         prog.reset(branch=self.Branch)
@@ -698,7 +897,14 @@ class Updater(DeployConfig, GitManager, PipManager):
                 logger.warning('Git reset --hard failed during force sync')
                 return False
 
-        # 4. 代码已是最新，紧接着对齐 OCR 依赖与模型，让「一键更新」真正一键到位。
+        # 4. 代码已是最新。先按需对齐 pip 依赖（新代码可能引入新 requirements，
+        #    且 requirements 变动会牵动 ORT 的间接依赖），顺序与 deploy.installer 一致。
+        if before_ocr is not None:
+            if not before_ocr(prog):
+                prog.finish(False)
+                return False
+
+        # 5. 紧接着对齐 OCR 依赖与模型，让「一键更新」真正一键到位。
         #    finish(True) 必须放在 OCR 对齐之后：此前在 git 拉完就置 done，UI 显示
         #    "更新完成"时 OCR 依赖可能尚未对齐，对齐失败也会被"更新完成"掩盖，
         #    曾导致用户以为更新成功、实跑任务才发现 OCR 全挂。
@@ -740,59 +946,84 @@ class Updater(DeployConfig, GitManager, PipManager):
             logger.info(f'Removed {removed} stale git lock(s) under {git_dir}')
 
     def align_ocr(self, prog=None) -> bool:
-        """更新后对齐 PP-OCRv6 依赖与模型。
-
-        必须在独立子进程里执行：Windows 会锁定已加载的 onnxruntime.dll，
-        当前服务进程若换包会留下损坏的 distribution。先停掉 OCR RPC 服务
-        释放它持有的 DLL，再交给 deploy.ocr_deps 处理。
-
-        Args:
-            prog: 更新进度对象，用于把日志透出到前端；None 时只写日志。
-
-        Returns:
-            bool: 是否已对齐（跳过也算成功）。
-        """
+        """更新后对齐 OCR 依赖；只在确需换包时停止 RPC，并保证失败恢复。"""
         emit = prog.append if prog else logger.info
-
         if not self.OcrAutoAlignDeps:
             emit('OcrAutoAlignDeps 关闭，跳过 OCR 依赖对齐')
             return True
 
+        rpc_stopped = False
+        success = False
+        ensure_ocr_server_started = None
         try:
             from deploy.ocr_deps import OcrDepsManager
-            from module.ocr.rpc import ensure_ocr_server_started, shutdown_ocr_server
-
-            # 释放 OCR 服务进程持有的 onnxruntime.dll，否则卸载旧版会失败
-            shutdown_ocr_server()
+            from module.ocr.rpc import (ensure_ocr_server_started,
+                                        kill_orphan_ocr_servers,
+                                        shutdown_ocr_server)
 
             manager = OcrDepsManager(file=self.file)
+            # 只读检查和本进程 DLL 守卫必须先做，避免“无需换包”或注定失败时
+            # 先把正常运行的共享 OCR 服务停掉。
             if manager.check():
                 emit('OCR 依赖已是 PP-OCRv6，无需变更')
-            else:
-                if prog:
-                    prog.set_step('对齐 OCR 依赖（PP-OCRv6）')
-                ok = self.execute_stream(
-                    f'"{manager.python}" -m deploy.ocr_deps',
-                    on_line=emit,
-                )
-                if not ok:
-                    emit('OCR 依赖对齐失败，可能原因与处理建议：')
-                    emit(self._diagnose_ocr_blockers())
-                    return False
+                if self.StartOcrServer:
+                    if ensure_ocr_server_started():
+                        emit('OCR RPC 服务已确认运行')
+                    else:
+                        emit('OCR RPC 服务启动失败，可稍后重启 OAS 恢复')
+                        return False
+                success = True
+                return True
 
-            # 对齐开头为了释放 DLL 锁停掉了 OCR RPC 服务，这里按配置恢复它。
-            # 否则即使依赖本已对齐（check 直接返回），RPC 服务也会一直缺位，
-            # UseOcrServer=true 的多开机器会静默退回本地模型，省内存优化失效。
+            if 'onnxruntime' in sys.modules:
+                emit('OCR 依赖需要换包，但当前进程已加载 onnxruntime，Windows 锁定 DLL 会让换包失败，已跳过。')
+                emit('请关闭 OAS（含 GUI 与所有实例）后双击 oas-update.bat，在干净进程里完成更新与 OCR 对齐。')
+                return False
+
+            # 只有真正需要换包且当前进程没有加载 ORT 时才释放服务进程。
+            rpc_stopped = bool(shutdown_ocr_server())
+            orphan_result = kill_orphan_ocr_servers()
+            if orphan_result < 0:
+                emit('无法确认外部 OCR 服务已退出，已中止换包以避免损坏 onnxruntime。')
+                return False
+            rpc_stopped = rpc_stopped or orphan_result > 0
+            time.sleep(0.5)
+
+            if prog:
+                prog.set_step('对齐 OCR 依赖（PP-OCRv6）')
+            ok = self.execute_stream(
+                f'"{manager.python}" -m deploy.ocr_deps',
+                on_line=emit,
+            )
+            if not ok:
+                emit('OCR 依赖对齐失败，可能原因与处理建议：')
+                emit(self._diagnose_ocr_blockers())
+                return False
             if self.StartOcrServer:
-                if ensure_ocr_server_started():
-                    emit('OCR RPC 服务已恢复')
-                else:
-                    emit('OCR RPC 服务启动失败，可稍后重启 OAS 恢复')
+                if not ensure_ocr_server_started():
+                    emit('OCR RPC 服务恢复失败，更新未完成，请稍后重启 OAS')
+                    return False
+                emit('OCR RPC 服务已恢复')
+                # 已经在成功路径恢复，finally 不再重复拉起。
+                rpc_stopped = False
+            success = True
             return True
         except Exception as e:
             logger.exception(e)
             emit(f'OCR 依赖对齐异常：{e}')
             return False
+        finally:
+            # 清理成功或失败后都恢复曾由本流程停止的共享 OCR 服务。
+            if (rpc_stopped and self.StartOcrServer
+                    and ensure_ocr_server_started is not None):
+                try:
+                    if ensure_ocr_server_started():
+                        emit('OCR 对齐失败，已恢复原 RPC 服务')
+                    else:
+                        emit('OCR RPC 服务恢复失败，请稍后重启 OAS')
+                except Exception as e:
+                    logger.exception(f'恢复 OCR RPC 服务失败：{e}')
+                    emit(f'OCR 对齐失败，恢复 RPC 服务异常：{e}')
 
     def _diagnose_ocr_blockers(self) -> str:
         """OCR 对齐失败时定位可能占用 onnxruntime.dll 的进程，给出可操作提示。
