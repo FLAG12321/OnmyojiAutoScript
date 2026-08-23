@@ -3,13 +3,17 @@ log
 config/backup/*
 config/*.ini
 !config/template.ini
+# deploy.yaml 是每台机器本地的部署配置，不再进 git（见 CLAUDE.md 开发机配置隔离）
 config/*.yaml
-!config/deploy.*.yaml
 config/*.json
 config/tasks_config/
 config/tmp*
 !config/template*.json
 config/*.crt
+# FindJade 的账号数据文件：机器本地、含用户个人信息，不进 git
+config/findjade/find_jade.json
+# reboot 守护进程本地配置
+dev_tools/reboot/daemon_config.json
 *.pyw
 dev_tools/debug_tools
 .idea
