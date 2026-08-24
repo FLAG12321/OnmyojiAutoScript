@@ -81,7 +81,6 @@ def test_cooperation_target_rois_are_fixed_by_slot():
     expected_real = {
         1: (180, 425, 200, 32),
         2: (480, 425, 200, 32),
-        3: (780, 425, 200, 32),
     }
     for slot, roi in expected_real.items():
         assert getattr(
@@ -318,6 +317,34 @@ def test_real_sushi_second_failure_keeps_original_event(monkeypatch):
         "real": True,
     }
     assert coop.msg[0][1] == {"type": "sushi", "real": True, "label": "现世体协"}
+
+
+def test_real_sushi_index_three_does_not_run_monster_ocr(monkeypatch):
+    from tasks.DailyAltAcc.assets import DailyAltAccAssets
+
+    coop = _coop(
+        monkeypatch,
+        DailyAltAccAssets.I_REAL_FLAG_1,
+        DailyAltAccAssets.I_REAL_FLAG_2,
+        DailyAltAccAssets.I_REAL_FLAG_3,
+        WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI_3,
+    )
+
+    def fail_if_called(self, image):
+        raise AssertionError("real-world index three must not run monster OCR")
+
+    monkeypatch.setattr(RuleOcr, "ocr", fail_if_called)
+    result = coop.get_cooperation_info()
+
+    assert result == [{
+        "type": CooperationType.Sushi,
+        "inviteBtn": WantedQuestsAssets.I_WQ_INVITE_3,
+        "real": True,
+    }]
+    assert coop.msg == [[
+        MSGType.cooperation,
+        {"type": "sushi", "real": True, "label": "现世体协"},
+    ]]
 
 
 def test_normal_jade_target_is_added_to_existing_summary_format():

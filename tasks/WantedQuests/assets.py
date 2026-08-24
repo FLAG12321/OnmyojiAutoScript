@@ -103,8 +103,6 @@ class WantedQuestsAssets:
 	O_WQ_REAL_COOPERATION_MONSTER_1 = RuleOcr(roi=(180,425,200,32), area=(180,425,200,32), mode="Single", method="Default", keyword="", name="wq_real_cooperation_monster_1")
 	# 第二个现世协作卡 击败目标
 	O_WQ_REAL_COOPERATION_MONSTER_2 = RuleOcr(roi=(480,425,200,32), area=(480,425,200,32), mode="Single", method="Default", keyword="", name="wq_real_cooperation_monster_2")
-	# 第三个现世协作卡 击败目标
-	O_WQ_REAL_COOPERATION_MONSTER_3 = RuleOcr(roi=(780,425,200,32), area=(780,425,200,32), mode="Single", method="Default", keyword="", name="wq_real_cooperation_monster_3")
 
 	# Click Rule Assets
 	# 秘闻的挑战对话 
@@ -201,4 +199,3 @@ class WantedQuestsAssets:
 	# Swipe Rule Assets
 	# 手指向上滑动 
 	S_WQ_LIST_UP = RuleSwipe(roi_front=(60,250,2,4), roi_back=(65,200,2,4), mode="default", name="wq_list_up")
-

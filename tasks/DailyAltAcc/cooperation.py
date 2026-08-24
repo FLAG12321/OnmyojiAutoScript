@@ -36,12 +36,11 @@ NORMAL_COOPERATION_ANCHOR_REFERENCE = {
     for index in range(3)
 }
 
-# 现世“享”标记在旧资源中仅 roi_back 是可靠搜索区域；这里保存与三张基准卡位
-# 对齐的实际匹配左上角。前两项由真实截图校准，第三项按同一 299px 槽位步长推导。
+# 现世“享”标记在旧资源中仅 roi_back 是可靠搜索区域；这里保存与前两张
+# 现世体协卡位对齐的实际匹配左上角，均由真实截图校准。
 REAL_COOPERATION_ANCHOR_REFERENCE = {
     0: (159, 293),
     1: (458, 293),
-    2: (757, 293),
 }
 
 
@@ -292,10 +291,11 @@ class Cooperation(DailyAltAccBase):
                     'inviteBtn': btn,
                     'real': real_flag,
                 }
-                if real_flag:
+                if real_flag and index < 2:
                     cooperation.update(self._read_real_sushi_target(index, btn2))
                 else:
-                    cooperation.update(self._read_normal_cooperation_targets(index, btn))
+                    if not real_flag:
+                        cooperation.update(self._read_normal_cooperation_targets(index, btn))
                 retList.append(cooperation)
                 if real_flag:
                     logger.info(f"find real sushi cooperation ")

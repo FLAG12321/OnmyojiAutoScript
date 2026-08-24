@@ -88,14 +88,5 @@
     "method": "Default",
     "keyword": "",
     "description": "第二个现世协作卡 击败目标"
-  },
-  {
-    "itemName": "wq_real_cooperation_monster_3",
-    "roiFront": "780,425,200,32",
-    "roiBack": "780,425,200,32",
-    "mode": "Single",
-    "method": "Default",
-    "keyword": "",
-    "description": "第三个现世协作卡 击败目标"
   }
 ]
