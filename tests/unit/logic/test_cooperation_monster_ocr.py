@@ -368,7 +368,7 @@ def test_sushi_target_is_added_to_existing_summary_format(real):
         {
             "type": "sushi",
             "real": real,
-            "character": "Val2号",
+            "character": "角色A",
             "svr": "常世之国",
             "apple_or_android": True,
             "monster_text": "青蛙瓷器&雨女" if not real else "白狼",
@@ -376,4 +376,4 @@ def test_sushi_target_is_added_to_existing_summary_format(real):
     ])
 
     expected = "青蛙瓷器&雨女" if not real else "白狼"
-    assert f"• {expected}：Val2号（常世之国｜安卓）" in text
+    assert f"• {expected}：角色A（常世之国｜安卓）" in text
