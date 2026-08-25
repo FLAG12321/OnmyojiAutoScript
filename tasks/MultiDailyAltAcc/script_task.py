@@ -22,6 +22,7 @@ from tasks.MultiDailyAltAcc import DailyAltAccEx
 from tasks.MultiDailyAltAcc.assets import MultiDailyAltAccAssets
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc, ExtendedAccountInfo
 from tasks.MultiDailyAltAcc.progress import ProgressStore, acc_key, phase_flags_of, phase_id_of
+from tasks.MultiDailyAltAcc.task_plan import TaskPlan, load_task_plan
 from tasks.GameUi.game_ui import GameUi
 from tasks.DailyAltAcc.config import MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent, StatLogMixin
@@ -30,6 +31,8 @@ from script import Script
 
 class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     daily_conf: MultiDailyAltAcc = None
+    _task_plan: TaskPlan | None = None
+    _normal_plan_phase: str | None = None
     # 子任务进度存储，run() 中按配置实例创建
     _progress: ProgressStore = None
     # 添加一个类级别的锁，用于同步关机操作
@@ -69,6 +72,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             # 加载配置，获取returngift_enable状态
             self.daily_conf = self.config.multi_daily_alt_acc
             base_config = self.daily_conf.multi_daily_alt_acc_config
+            self._task_plan = load_task_plan()
+            self._normal_plan_phase = self._current_normal_plan_phase(base_config)
             returngift_enable = base_config.total_returngift_enable
             # 更新进度文件中的returngift_enable状态
             self._update_task_returngift_enable(config_name, returngift_enable)
@@ -77,7 +82,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             # 不一致说明上轮已成功并安排了新阶段，旧进度作废重建。
             self._progress = ProgressStore(config_name)
             self._progress.ensure_phase(
-                phase_flags_of(base_config), phase_id_of(self.start_time)
+                phase_flags_of(base_config, self._normal_plan_phase), phase_id_of(self.start_time)
             )
 
             sup_account_list = self._get_sorted_accounts()
@@ -443,17 +448,23 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         
         # 全局配置
         base_config = self.daily_conf.multi_daily_alt_acc_config
+        phase = getattr(self, "_normal_plan_phase", None)
+        plan = self._get_task_plan()
+
+        def enabled(task: str, total: bool, account: bool) -> bool:
+            return total and account and (phase is None or plan.enabled(phase, task))
+
         config.alliedteam_battle_enable = base_config.total_alliedteam_battle_enable and account_info.alliedteam_battle_enable
-        config.alliedteam_ap_enable = base_config.total_alliedteam_ap_enable and account_info.alliedteam_ap_enable
-        config.mail_enable = base_config.total_mail_enable and account_info.mail_enable
-        config.donatejade_enable = base_config.total_donatejade_enable and account_info.donatejade_enable
-        config.courtyard_enable = base_config.total_courtyard_enable and account_info.courtyard_enable
-        config.cooperation_enable = base_config.total_cooperation_enable and account_info.cooperation_enable
+        config.alliedteam_ap_enable = enabled("alliedteam_ap", base_config.total_alliedteam_ap_enable, account_info.alliedteam_ap_enable)
+        config.mail_enable = enabled("mail", base_config.total_mail_enable, account_info.mail_enable)
+        config.donatejade_enable = enabled("donatejade", base_config.total_donatejade_enable, account_info.donatejade_enable)
+        config.courtyard_enable = enabled("courtyard", base_config.total_courtyard_enable, account_info.courtyard_enable)
+        config.cooperation_enable = enabled("cooperation", base_config.total_cooperation_enable, account_info.cooperation_enable)
         config.returngift_enable = base_config.total_returngift_enable and account_info.returngift_enable
         config.weekaward_enable = base_config.total_weekaward_enable and account_info.weekaward_enable
         config.mysteryshop_enable = base_config.total_mysteryshop_enable and account_info.mysteryshop_enable
-        config.kekkaiActivation_enable = base_config.total_kekkaiActivation_enable and account_info.kekkaiActivation_enable
-        config.KekkaiUtilize_enable = base_config.total_KekkaiUtilize_enable and account_info.KekkaiUtilize_enable
+        config.kekkaiActivation_enable = enabled("kekkaiActivation", base_config.total_kekkaiActivation_enable, account_info.kekkaiActivation_enable)
+        config.KekkaiUtilize_enable = enabled("KekkaiUtilize", base_config.total_KekkaiUtilize_enable, account_info.KekkaiUtilize_enable)
         config.tree_planting_enable = min(base_config.total_tree_planting_enable, account_info.tree_planting_enable)
         config.trialbattle_enable = base_config.total_trialbattle_enable and account_info.trialbattle_enable
         config.summon_up_enable = base_config.total_summon_up_enable and account_info.summon_up_enable
@@ -465,6 +476,34 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         config.alliedteam_invite_count = account_info.alliedteam_invite_count
 
         return config
+
+    def _get_task_plan(self) -> TaskPlan:
+        plan = getattr(self, "_task_plan", None)
+        if plan is None:
+            plan = load_task_plan()
+            self._task_plan = plan
+        return plan
+
+    def _current_normal_plan_phase(self, base_config) -> str | None:
+        """仅普通轮交给 plan；回礼/同心轮必须完整保留原有效开关。"""
+        if base_config.total_returngift_enable or base_config.total_alliedteam_battle_enable:
+            return None
+        if 5 <= self.start_time.hour < 18:
+            return "morning"
+        if 18 <= self.start_time.hour <= 23:
+            return "afternoon"
+        return None
+
+    def _schedule_plan_phase(self, phase: str, start_time: datetime) -> None:
+        scheduled = self._get_task_plan().schedule_target(phase, start_time)
+        logger.info(
+            "MultiDaily %s target: %s + %s minutes = %s",
+            phase,
+            scheduled.base_time,
+            scheduled.delay_minutes,
+            scheduled.target,
+        )
+        self.set_next_run("MultiDailyAltAcc", target=scheduled.target, persist=False)
 
     @staticmethod
     def _enabled_task_keys(config):
@@ -964,7 +1003,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""
         # task_delay 会先 reload；必须先保存 next_run，再基于重载后的模型修改阶段开关。
-        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=18, minute=5), persist=False)
+        self._schedule_plan_phase("afternoon", start_time)
         self.daily_conf = self.config.model.multi_daily_alt_acc
         # 每周奖励/神秘商店已改由早晨 6:05 那趟领取（_schedule_after_midnight 开启），
         # 这里显式关闭，避免 18:05 晚间这趟重复领取
@@ -972,7 +1011,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = False
 
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
-        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
+        # normal 阶段的 AP 是否运行由 task_plan + 原总开关 + 账号开关共同决定。
+        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
@@ -988,14 +1028,15 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         total_returngift_enable 必然为 False，因此这里不再重复判断回礼。
         """
         # task_delay 会先 reload；必须先保存 next_run，再基于重载后的模型修改阶段开关。
-        self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=6, minute=5), persist=False)
+        self._schedule_plan_phase("morning", start_time)
         self.daily_conf = self.config.model.multi_daily_alt_acc
 
         # 如果开启了同心战斗，则调整设置
         if self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
             self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
             self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = True
-            self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
+            # 早晨庭院是否执行由 task_plan + 原总开关 + 账号开关共同决定。
+            self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = True
             self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
             self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
             # 周一开启周奖励、周三/周六开启神秘商店：由早晨 6:05 那趟领取
