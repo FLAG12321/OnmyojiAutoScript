@@ -195,7 +195,7 @@ PHASE_FLAG_KEYS = (
 )
 
 
-def phase_flags_of(base_config) -> dict:
+def phase_flags_of(base_config, task_plan_phase: str | None = None) -> dict:
     """提取决定「本轮做什么」的全局开关快照，用于判断调度阶段是否延续。
 
     这些键由 _schedule_normal_day / _schedule_evening / _schedule_after_midnight /
@@ -203,7 +203,12 @@ def phase_flags_of(base_config) -> dict:
     等价于「任务已分配下一次要做什么」，正是进度失效的边界。
     need_login / need_login_time 已删除，账号完成与否完全由进度文件判定。
     """
-    return {name: getattr(base_config, name, None) for name in PHASE_FLAG_KEYS}
+    flags = {name: getattr(base_config, name, None) for name in PHASE_FLAG_KEYS}
+    # task_plan 只影响普通早/下午轮；将阶段名纳入快照，避免二者恰好拥有相同
+    # total_* 值时错误接续上一轮账号进度。
+    if task_plan_phase is not None:
+        flags['task_plan_phase'] = task_plan_phase
+    return flags
 
 
 def phase_id_of(start_time) -> str:
