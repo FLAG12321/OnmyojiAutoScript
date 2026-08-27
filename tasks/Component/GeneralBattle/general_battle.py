@@ -159,8 +159,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         return True
 
     def reward_click_actions(self):
-        # 默认奖励结算随机点击三个安全区域，具体任务可覆盖以排除特殊区域。
-        return [self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3]
+        # 默认奖励结算随机点击安全区域：底部中央 + 右侧（左侧区域不符合人类点击习惯，已禁用），
+        # 具体任务可覆盖以排除特殊区域。
+        return [self.C_REWARD_1, self.C_REWARD_3]
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
@@ -210,8 +211,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         while 1:
             self.screenshot()
             if win:
-                # 点击赢了
-                action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
+                # 点击赢了：固定右侧区域（上/左区域不符合人类点击习惯，已禁用），
+                # 落点由拟人化层在区域内随机采样
+                action_click = self.C_WIN_3
                 if self.appear_then_click(self.I_WIN, action=action_click, interval=0.5):
                     continue
                 if not self.appear(self.I_WIN):

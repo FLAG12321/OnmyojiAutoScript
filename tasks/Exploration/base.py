@@ -145,8 +145,8 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         raise TaskEnd('Exploration')
 
     def reward_click_actions(self):
-        # 探索结算禁用 reward_1，避免点到左侧异常区域。
-        return [self.C_REWARD_2, self.C_REWARD_3]
+        # 探索结算禁用 reward_1（异常区域）；左侧区域不符合人类点击习惯，同样禁用。
+        return [self.C_REWARD_3]
 
     def _chapter_level_values(self) -> list[ExplorationLevel]:
         return [level for level in ExplorationLevel if level != ExplorationLevel.AUTO]

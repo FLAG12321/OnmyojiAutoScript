@@ -1154,9 +1154,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     continue
                 if self.appear_then_click(self.I_GI_SURE, interval=0.5):
                     continue
-            # 邀请弹窗消失后，点击胜利
+            # 邀请弹窗消失后，点击胜利：固定右侧区域（上/左区域不符合人类点击习惯，已禁用）
             if self.appear(self.I_WIN, threshold=0.8):
-                action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
+                action_click = self.C_WIN_3
                 self.appear_then_click(self.I_WIN, action=action_click, interval=0.5)
                 sleep(2)
                 # 点掉胜利后重新计空闲，给奖励页留足出现时间，避免过渡期提前break

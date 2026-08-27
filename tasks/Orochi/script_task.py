@@ -932,7 +932,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         logger.info("Start battle process")
         while 1:
             self.screenshot()
-            action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
+            # 胜利画面固定右侧区域（上/左区域不符合人类点击习惯，已禁用）
+            action_click = self.C_WIN_3
             if self.appear_then_click(self.I_WIN, action=action_click ,interval=0.8):
                 # 赢的那个鼓
                 continue
@@ -946,7 +947,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     continue
                 while 1:
                     self.screenshot()
-                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
+                    # 奖励结算仅底部中央+右侧（左侧区域已禁用）
+                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_3])
                     if not self.appear(self.I_GREED_GHOST):
                         break
                     if self.click(action_click, interval=1.5):
@@ -960,7 +962,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 logger.info('Win battle')
                 while 1:
                     self.screenshot()
-                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
+                    # 奖励结算仅底部中央+右侧（左侧区域已禁用）
+                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_3])
                     if self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5):
                         continue
                     if not self.appear(self.I_REWARD):

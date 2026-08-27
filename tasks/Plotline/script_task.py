@@ -690,8 +690,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     from tasks.Component.GeneralBuff.config_buff import BuffClass
     def reward_click_actions(self):
         if self._current_battle_type == 'exploration':
-            # Exploration 战斗结算禁用 reward_1，避免点到左侧异常区域。
-            return [self.C_REWARD_2, self.C_REWARD_3]
+            # Exploration 战斗结算禁用 reward_1（异常区域）；左侧区域不符合人类点击习惯，同样禁用。
+            return [self.C_REWARD_3]
         return super().reward_click_actions()
 
     def _need_switch_shikigami(self) -> bool:
@@ -884,8 +884,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 win = True
                 return win
             if win:
-                # 点击赢了
-                action_click = random.choice([self.C_WIN_1, self.C_WIN_2, self.C_WIN_3])
+                # 点击赢了：固定右侧区域（上/左区域不符合人类点击习惯，已禁用）
+                action_click = self.C_WIN_3
                 if self.appear_then_click(self.I_WIN, action=action_click, interval=0.5):
                     continue
                 if not self.appear(self.I_WIN):

@@ -107,8 +107,8 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
             logger.info("Catch failure")
         while 1:
             self.screenshot()
-            # 如果出现领奖励
-            action_click = random.choice([self.C_REWARD_1, self.C_REWARD_2, self.C_REWARD_3])
+            # 如果出现领奖励：仅底部中央+右侧（左侧区域已禁用）
+            action_click = random.choice([self.C_REWARD_1, self.C_REWARD_3])
             if self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5):
                 continue
             if self.appear_then_click(self.I_WIN, threshold=0.6):
