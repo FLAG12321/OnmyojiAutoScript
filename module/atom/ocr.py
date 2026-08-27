@@ -8,6 +8,7 @@ import cv2
 from module.ocr.base_ocr import BaseCor, OcrMode, OcrMethod, OcrMethodType
 from module.ocr.sub_ocr import Full, Single, Digit, DigitCounter, Duration, Quantity
 from module.logger import logger
+from module.device.humanize import get_current_humanizer
 
 
 class RuleOcr(Digit, DigitCounter, Duration, Single, Full, Quantity):
@@ -88,6 +89,13 @@ class RuleOcr(Digit, DigitCounter, Duration, Single, Full, Quantity):
 
         x, y, w, h = self.area
         logger.info(f"OCR [{self.name}] area: {self.area}")
+        # 维度 A 落点采样（Plan Task 13）：有绑定且启用时用拟人 RNG，无 context 或
+        # sample_point 返回 None（off/回退）时走原 np.random.randint 均匀采样
+        humanizer = get_current_humanizer()
+        if humanizer is not None:
+            point = humanizer.sample_point((x, y, w, h))
+            if point is not None:
+                return point
         x = np.random.randint(x, x + w)
         y = np.random.randint(y, y + h)
         return x, y

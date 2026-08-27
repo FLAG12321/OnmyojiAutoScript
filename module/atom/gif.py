@@ -4,6 +4,7 @@
 import numpy as np
 
 from module.atom.image import RuleImage
+from module.device.humanize import get_current_humanizer
 
 
 
@@ -49,7 +50,14 @@ class RuleGif:
 
 
     def coord(self) -> tuple:
+        # 维度 A 落点采样（Plan Task 13）：有绑定且启用时用拟人 RNG，无 context 或
+        # sample_point 返回 None（off/回退）时走原 np.random.randint 均匀采样
         x, y, w, h = self.roi_front
+        humanizer = get_current_humanizer()
+        if humanizer is not None:
+            point = humanizer.sample_point((x, y, w, h))
+            if point is not None:
+                return point
         return x + np.random.randint(0, w), y + np.random.randint(0, h)
 
     def front_center(self) -> tuple:

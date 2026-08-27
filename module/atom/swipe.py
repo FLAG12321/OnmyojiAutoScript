@@ -9,6 +9,7 @@ from math import dist
 from module.base.decorator import cached_property
 from module.atom.cBezier import BezierTrajectory
 from module.logger import logger
+from module.device.humanize import get_current_humanizer
 
 
 class RuleSwipe:
@@ -51,12 +52,29 @@ class RuleSwipe:
         获取坐标, 从roi_front随机获取坐标 和从roi_back随机获取的坐标
         :return: 两个坐标的tuple
         """
+        # 维度 A 落点采样（Plan Task 13）：有绑定且启用时前后两点都用拟人 RNG，
+        # 无 context 或 sample_point 返回 None（off/回退）时各点走原 np.random.randint
         x, y, w, h = self.roi_front
-        x = np.random.randint(x, x + w)
-        y = np.random.randint(y, y + h)
         x2, y2, w2, h2 = self.roi_back
-        x2 = np.random.randint(x2, x2 + w2)
-        y2 = np.random.randint(y2, y2 + h2)
+        humanizer = get_current_humanizer()
+        if humanizer is not None:
+            point = humanizer.sample_point((x, y, w, h))
+            if point is None:
+                x = np.random.randint(x, x + w)
+                y = np.random.randint(y, y + h)
+            else:
+                x, y = point
+            point2 = humanizer.sample_point((x2, y2, w2, h2))
+            if point2 is None:
+                x2 = np.random.randint(x2, x2 + w2)
+                y2 = np.random.randint(y2, y2 + h2)
+            else:
+                x2, y2 = point2
+        else:
+            x = np.random.randint(x, x + w)
+            y = np.random.randint(y, y + h)
+            x2 = np.random.randint(x2, x2 + w2)
+            y2 = np.random.randint(y2, y2 + h2)
         return x, y, x2, y2
 
     def trace(self) -> list:

@@ -5,6 +5,7 @@ import numpy as np
 
 from module.base.decorator import cached_property
 from module.logger import logger
+from module.device.humanize import get_current_humanizer
 
 
 class RuleClick:
@@ -27,7 +28,14 @@ class RuleClick:
         获取坐标, 从roi_front随机获取坐标
         :return:
         """
+        # 维度 A 落点采样（Plan Task 13）：有绑定且启用时用拟人 RNG，无 context 或
+        # sample_point 返回 None（off/回退）时走原 np.random.randint 均匀采样
         x, y, w, h = self.roi_front
+        humanizer = get_current_humanizer()
+        if humanizer is not None:
+            point = humanizer.sample_point((x, y, w, h))
+            if point is not None:
+                return point
         x = np.random.randint(x, x + w)
         y = np.random.randint(y, y + h)
         return x, y
@@ -37,7 +45,13 @@ class RuleClick:
         从roi_back随机获取坐标
         :return:
         """
+        # 维度 A 落点采样（Plan Task 13）：同上，roi_back
         x, y, w, h = self.roi_back
+        humanizer = get_current_humanizer()
+        if humanizer is not None:
+            point = humanizer.sample_point((x, y, w, h))
+            if point is not None:
+                return point
         x = np.random.randint(x, x + w)
         y = np.random.randint(y, y + h)
         return x, y
