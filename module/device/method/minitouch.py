@@ -550,6 +550,9 @@ class Minitouch(Connection):
     _minitouch_ws: websockets.WebSocketClientProtocol
     max_x: int
     max_y: int
+    # 设备能力协商的最大压力值（^ banner）；默认 50 对应 MuMu 内置 minitouch，
+    # TCP 握手成功后被真实值覆盖。压力随机化以它为量程基准
+    max_pressure: int = 50
 
     @cached_property
     def minitouch_builder(self):
@@ -612,7 +615,8 @@ class Minitouch(Connection):
         # self.max_contacts = max_contacts
         self.max_x = int(max_x)
         self.max_y = int(max_y)
-        # self.max_pressure = max_pressure
+        # 记录压力量程：压力随机化（humanized 路径）按它归一，避免发出 >max 被钳到 1.0
+        self.max_pressure = int(max_pressure)
 
         # $ <pid>
         out = socket_out.readline().replace("\n", "").replace("\r", "")
@@ -787,14 +791,23 @@ class Minitouch(Connection):
         if gap is not None:
             self._humanized_minitouch_gap_s = gap
         try:
+            # 压力随机化：down + 微颤点逐个取值；None 时全部保持恒定
+            pressures = self._humanized_pressure_seq(1 + len(plan.points))
+
             def run_humanized(builder, send):
-                builder.down(x, y).commit()
+                if pressures is None:
+                    builder.down(x, y).commit()
+                else:
+                    builder.down(x, y, pressure=pressures[0]).commit()
                 # delays[i] 是发送 points[i] 前的等待（全局契约 4）；量化 0 不
                 # 产生 w（与 swipe 的 MOVE 批同口径）
-                for (px, py), wait_ms in zip(plan.points, waits):
+                for i, ((px, py), wait_ms) in enumerate(zip(plan.points, waits)):
                     if wait_ms > 0:
                         builder.wait(wait_ms)
-                    builder.move(px, py).commit()
+                    if pressures is None:
+                        builder.move(px, py).commit()
+                    else:
+                        builder.move(px, py, pressure=pressures[1 + i]).commit()
                 builder.up().commit()
                 send()
 
@@ -1243,6 +1256,30 @@ class Minitouch(Connection):
             logger.exception('Minitouch B1 recovery failed')
             raise RequestHumanTakeover('Minitouch B1 recovery failed') from exc
 
+    def _humanized_pressure_seq(self, count):
+        """生成一次手势的 minitouch 压力序列（d/m 命令第 5 字段）。
+
+        背景：注入触摸的压力恒为 1.0（原代码恒发 100，超过 MuMu 量程 50 被钳到
+        1.0）是框架层可读的注入指纹；真机电容按压压力在 0.6~0.9 区间低频波动。
+        生成方式：手势基值 uniform(0.66, 0.84)×max，逐点叠加小 sigma 白噪并钳到
+        [0.5, 0.95]×max。
+
+        仅在 humanized 路径调用（off 档 RNG 不消费契约）；RNG 取 humanizer 的
+        persona 种子生成器。无 rng（测试桩）或量程非法时返回 None，调用方保持
+        原恒定压力。
+        """
+        rng = getattr(self.humanizer, 'rng', None)
+        if rng is None or not self.max_pressure or self.max_pressure <= 0:
+            return None
+        mx = float(self.max_pressure)
+        p = float(rng.uniform(0.66, 0.84)) * mx
+        out = []
+        for _ in range(count):
+            p += float(rng.normal(0.0, 0.015 * mx))
+            p = min(max(p, 0.50 * mx), 0.95 * mx)
+            out.append(int(round(p)))
+        return out
+
     def _run_humanized_minitouch(self, run_humanized, run_legacy):
         # B0/B1 按事件状态分支（契约 #11）：send() 在进入 minitouch_send() **之前**
         # 先切换 transport_started，因此任何「写入已开始但结果未知」异常保守归 B1，
@@ -1288,9 +1325,16 @@ class Minitouch(Connection):
         if gap is not None:
             self._humanized_minitouch_gap_s = gap
         try:
+            # 压力随机化：手势内单个 down 的压力（None 时保持恒定 100）
+            pressures = self._humanized_pressure_seq(1)
+            p0 = pressures[0] if pressures else None
+
             def run_humanized(builder, send):
                 press = self.humanizer.press_seconds()
-                builder.down(x, y).commit()
+                if p0 is None:
+                    builder.down(x, y).commit()
+                else:
+                    builder.down(x, y, pressure=p0).commit()
                 if press is not None and press > 0:
                     builder.wait(max(int(press * 1000 + 0.5), 1))
                 builder.up().commit()
@@ -1349,22 +1393,34 @@ class Minitouch(Connection):
                 # 禁止用 max(ms, 1) 静默放大总预算
                 return self._swipe_minitouch_legacy_impl(p1, p2, duration=duration)
             liftoff = self.humanizer.plan_touch_liftoff(end)
+            # 压力随机化：down + MOVE 点 + liftoff 点逐个取值；None 时全部保持恒定
+            n_move = len(plan.points) + (len(liftoff.points) if liftoff is not None else 0)
+            pressures = self._humanized_pressure_seq(1 + n_move)
 
             def run_humanized(builder, send):
-                builder.down(*start).commit()
+                if pressures is None:
+                    builder.down(*start).commit()
+                else:
+                    builder.down(*start, pressure=pressures[0]).commit()
                 send()
                 # MOVE 批内 wait → move → commit 连续追加后只调用一次 send（契约 #6）。
                 # w 是恒定回报率间隔（同值 ±1ms 抖动后量化），事件流与真实设备
                 # 固定采样率上报同构
-                for ms, point in zip(waits, plan.points):
-                    builder.wait(ms).move(*point).commit()
+                for i, (ms, point) in enumerate(zip(waits, plan.points)):
+                    if pressures is None:
+                        builder.wait(ms).move(*point).commit()
+                    else:
+                        builder.wait(ms).move(*point, pressure=pressures[1 + i]).commit()
                 if liftoff is not None:
                     liftoff_waits = _quantize_move_delays(list(liftoff.delays))
                     if liftoff_waits is None:
                         # 极端预算不足：liftoff 退化为不生成 wait（不放大预算）
                         liftoff_waits = [0] * len(liftoff.points)
-                    for ms, point in zip(liftoff_waits, liftoff.points):
-                        builder.wait(ms).move(*point).commit()
+                    for j, (ms, point) in enumerate(zip(liftoff_waits, liftoff.points)):
+                        if pressures is None:
+                            builder.wait(ms).move(*point).commit()
+                        else:
+                            builder.wait(ms).move(*point, pressure=pressures[1 + len(plan.points) + j]).commit()
                 send()
                 builder.up().commit()
                 send()
