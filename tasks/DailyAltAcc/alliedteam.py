@@ -304,10 +304,14 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         logger.info('Start run alone')
         alliedteam_limit_count=self.get_config().daily_alt_acc_config.alliedteam_limit_count
         logger.info(f' alliedteam_limit_count: {alliedteam_limit_count}')
+        # 游戏内自动战斗开关：开启后脚本不点战斗交互，只开自动、数场次、控总数
+        auto_battle_enable = self.get_config().daily_alt_acc_config.alliedteam_auto_battle_enable
         # 次数为 13 的账号：改为在准备界面切换援助式神，因此此处必须先解锁阵容
         # （若保持锁定状态，准备界面将无法切换援助式神）。其余次数维持原锁定阵容流程。
+        # 断点接续（current_count>0）且走自动时，援助式神已在阵上，无需再解锁切援助。
         if alliedteam_limit_count == 13:
-            self.check_lock(False)
+            if not (auto_battle_enable and self.current_count > 0):
+                self.check_lock(False)
             self._need_switch_help_shikigami = True
             self._help_shikigami_detect = True
         else:
@@ -327,6 +331,16 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                     )
                     return False
                 continue
+            # 本场起是否挂游戏内自动：13 次账号第一场（current_count==0）仍手动切
+            # 援助式神，第二场起挂自动；其余次数账号全部场次都挂自动。
+            # 自动模式与手动模式不同：进入后由游戏自动连续挑战（自动准备/开局/
+            # 结算），脚本只开自动、数场次、控总数，直到打满收尾或异常退出。
+            if auto_battle_enable and not (
+                    alliedteam_limit_count == 13 and self.current_count == 0):
+                # 开自动前必须先锁定队伍：未锁定时游戏自动准备可能带上错误阵容。
+                # check_lock 幂等，已锁定时一帧截图即返回。
+                self.check_lock(True)
+                return self._auto_battle_loop(alliedteam_limit_count)
             # 点击挑战
             while 1:
                 self.screenshot()
@@ -392,6 +406,103 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             logger.info('Wait for preparation page')
             sleep(random.uniform(0.4, 0.8))
         return False
+
+    def _read_room_countdown(self) -> str:
+        """读顶部房间倒数文字的原始 OCR 文本。
+
+        不用 ocr_appear：FULL 模式的 filter 在整串匹配失败时会降级成
+        「keyword 任一单字命中」（「0/分」会被房名等文本误触发），改用
+        detect_text 取原始文本由调用方做严格子串判断——「00分0」只认完整
+        出现才算自动开启标志，「01分」~「05分」的分钟级读数才算确认关闭
+        （同 _is_exp_extract_dialog）。
+        OCR 异常时返回空串按未识别处理，不影响主流程。
+        """
+        try:
+            return self.O_ITEM_3.detect_text(self.device.image)
+        except Exception:
+            logger.exception('房间倒数文字 OCR 失败，按未识别处理')
+            return ''
+
+    def _auto_battle_loop(self, limit_count: int) -> bool:
+        """游戏内自动战斗主循环：脚本不点任何战斗交互，只开自动、数场次、控总数。
+
+        自动开关（I_AUTO_OFF）与锁队按钮同在房间（挑战按钮 I_BATTLE 所在界面）
+        左下角。在房间点开自动后，游戏会自己点挑战、自动准备、自动战斗、自动
+        结算并连续下一场——全程脚本不点 I_BATTLE。脚本只做：
+          1. 房间内点击 I_AUTO_OFF（关态模板）开启自动；开启成功的标志是顶部
+             出现严格匹配的倒数文字「00分0」，或未经脚本点击却被拉进战斗；
+          2. 以「进入战斗」的上升沿累计场次，每场立刻落盘（中断可接续）；
+          3. 场次打满后回到房间：若仍读到「00分0」说明自动还开着，直接点击
+             I_AUTO_OFF 坐标（不识别模板，开启态下关态模板匹配不到），直到
+             倒数恢复「01分」~「05分」的分钟级读数才确认关闭；
+          4. 场次已满却仍被拉进战斗：说明自动没关掉，退出战斗并结束同心队流程。
+             场次此时已打完，所以仍判定为成功完成。
+        :param limit_count: 同心战斗总场次上限
+        :return: True 打满收尾（已确认关闭或场次已满退出战斗）
+        """
+        logger.info('进入游戏内自动战斗模式')
+        # 循环内脚本几乎不点击，登记长战斗标记避免 stuck 误判（同 battle_wait）
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        auto_on = False  # 已确认自动开启（读到过「00分0」或被动进过战斗）
+        in_battle_prev = False
+        while 1:
+            self.screenshot()
+            in_battle = self.is_in_real_battle(False)
+            if in_battle and not in_battle_prev:
+                if self.current_count >= limit_count:
+                    # 场次已满仍被拉进战斗：自动没关掉。退出战斗并结束同心队
+                    # 流程；场次已打完，判定为成功完成
+                    logger.warning('场次已满但自动未关闭，仍被拉进战斗，退出战斗并结束同心队战斗')
+                    self.exit_battle()
+                    return True
+                # 正常自动场次：计数并立刻落盘，保证中断后可接续。
+                # 未经脚本点击却被拉进战斗本身即自动已开启的证据
+                self.current_count += 1
+                self._persist_battle_count()
+                auto_on = True
+                logger.info(f'游戏内自动战斗: {self.current_count}/{limit_count}')
+            in_battle_prev = in_battle
+
+            if in_battle:
+                # 战斗中：游戏自动打，只等本场结束
+                continue
+
+            # ---- 战斗外 ----
+            # 御魂不一致弹窗在房间/结算界面都可能出现，照常处理避免卡住
+            if self.appear_then_click(self.I_DISABLE_7DAYS_DIFF_SOUL, interval=0.6):
+                continue
+            if self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL, interval=0.6):
+                continue
+
+            countdown = self._read_room_countdown()
+            if self.current_count >= limit_count:
+                # 打满收尾：房间内关自动，倒数从「00分0」恢复「01分」~「05分」
+                # 的分钟级读数才算确认关闭
+                if re.search(r'0[1-5]分', countdown):
+                    logger.info(f'倒数已恢复分钟级[{countdown}]，游戏内自动战斗已确认关闭')
+                    return True
+                if '00分0' in countdown:
+                    # 自动还开着：直接点击开关坐标关闭后重读倒数
+                    logger.info('场次已满，点击关闭游戏内自动战斗')
+                    self.click(self.I_AUTO_OFF)
+                    time.sleep(1)
+                    continue
+                # 结算/过场等其他界面或倒数暂不可读：等游戏流转回房间
+                continue
+
+            # ---- 未打满：房间内开自动，之后挑战由游戏自己点 ----
+            if self.appear(self.I_BATTLE):
+                if '00分0' in countdown:
+                    if not auto_on:
+                        logger.info('识别到房间倒数「00分0」，游戏内自动战斗已开启')
+                        auto_on = True
+                    continue
+                # 自动开关处于关态：点击开启；点击未生效时关态模板会再次
+                # 出现，interval 节流下自然重试
+                if self.appear_then_click(self.I_AUTO_OFF, interval=2):
+                    logger.info('已点击开启游戏内自动战斗，等待「00分0」确认')
+                    continue
+            # 其余界面（准备/结算/过场）：游戏自动流转，卡死由 stuck 机制兜底
 
 
 if __name__ == "__main__":

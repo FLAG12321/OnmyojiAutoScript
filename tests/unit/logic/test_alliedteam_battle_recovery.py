@@ -22,7 +22,7 @@ class FakeStore:
         return self.count
 
 
-def _make(limit=3):
+def _make(limit=3, auto=False):
     """构造绕过 __init__ 的裸 Alliedteam，装配 run_alone 所需的最小依赖。"""
     from types import SimpleNamespace
 
@@ -33,9 +33,12 @@ def _make(limit=3):
     obj._progress_key = 'a@b.com|小号一|两情相悦'
     obj.current_count = 0
     obj.screenshots = 0
-    # limit != 13 走 check_lock(True) 分支
+    # limit != 13 走 check_lock(True) 分支；auto=False 保持手动路径语义
     obj.get_config = lambda: SimpleNamespace(
-        daily_alt_acc_config=SimpleNamespace(alliedteam_limit_count=limit)
+        daily_alt_acc_config=SimpleNamespace(
+            alliedteam_limit_count=limit,
+            alliedteam_auto_battle_enable=auto,
+        )
     )
     obj.config = SimpleNamespace(
         daily_alt_acc=SimpleNamespace(general_battle_config=None)
@@ -43,6 +46,93 @@ def _make(limit=3):
     obj.screenshot = lambda: setattr(obj, 'screenshots', obj.screenshots + 1)
     obj.check_lock = lambda lock=True: True
     return obj
+
+
+class _AutoScene:
+    """逐帧脚本化的自动战斗场景，驱动 _auto_battle_loop 的分支。
+
+    每帧是一份界面状态字典：battle=战斗画面、challenge=房间（挑战按钮
+    I_BATTLE 可见）、countdown=顶部倒数 OCR 文本、auto_off=关态自动开关可见。
+    每调一次 screenshot() 前进一帧；帧耗尽后停在最后一帧（用例需保证终帧触发收尾）。
+    """
+
+    def __init__(self, obj, frames):
+        from types import SimpleNamespace
+
+        self.obj = obj
+        self.frames = frames
+        self.i = 0
+        self.clicks = []
+        self.exited = 0
+        obj.device = SimpleNamespace(stuck_record_add=lambda *a, **k: None)
+        obj.screenshot = lambda: setattr(self, 'i', min(self.i + 1, len(frames) - 1))
+        obj.is_in_real_battle = lambda screenshot=False: self.frame.get('battle', False)
+        obj.appear = lambda target, *a, **k: self.frame.get('challenge', False)
+        obj._read_room_countdown = lambda: self.frame.get('countdown', '')
+        obj.click = lambda target, interval=None: self.clicks.append(target)
+        obj.exit_battle = lambda skip_first=False: setattr(self, 'exited', self.exited + 1) or True
+
+        obj_ref = obj
+
+        def appear_then_click(target, *a, **k):
+            if target is obj_ref.I_AUTO_OFF:
+                return bool(self.frame.get('auto_off'))
+            return False
+
+        obj.appear_then_click = appear_then_click
+
+    @property
+    def frame(self):
+        return self.frames[self.i]
+
+
+@pytest.mark.unit
+def test_auto_battle_loop_counts_and_closes(monkeypatch):
+    """正常路径：房间开自动 → 两场各自计数落盘 → 打满后关自动并读到分钟级倒数。"""
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=2, auto=True)
+    scene = _AutoScene(obj, [
+        {'challenge': True, 'countdown': '01分30', 'auto_off': True},  # 房间点开自动
+        {'challenge': True, 'countdown': '00分0'},                     # 确认已开
+        {'battle': True},                                              # 第 1 场（游戏自动点挑战）
+        {'battle': True},
+        {'challenge': True, 'countdown': '00分0'},                     # 场间自动流转
+        {'battle': True},                                              # 第 2 场（打满）
+        {'battle': True},
+        {'challenge': True, 'countdown': '00分0'},                     # 还开着 → 点关闭
+        {'challenge': True, 'countdown': '01分30'},                    # 恢复分钟级 → 确认关闭
+    ])
+
+    assert obj._auto_battle_loop(2) is True
+    assert obj.current_count == 2, '进入战斗的上升沿应各计一场'
+    assert obj._progress.count == 2, '每场都必须落盘'
+    assert scene.exited == 0, '正常路径不应退出战斗'
+    # 挑战按钮必须由游戏点击，脚本全程不点 I_BATTLE（frames 中无任何脚本点挑战路径）
+
+
+@pytest.mark.unit
+def test_auto_battle_loop_exits_battle_when_full_and_pulled_in(monkeypatch):
+    """打满后未确认关闭仍被拉进战斗：退出战斗，场次已满判成功。"""
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=1, auto=True)
+    scene = _AutoScene(obj, [
+        {'challenge': True, 'countdown': '', 'auto_off': True},
+        {'challenge': True, 'countdown': '00分0'},
+        {'battle': True},                          # 第 1 场（打满）
+        {'battle': True},
+        {'challenge': True, 'countdown': '00分0'},  # 关一次没关掉
+        {'challenge': True, 'countdown': '00分0'},  # 再关仍没关掉
+        {'battle': True},                          # 被拉进意外战斗 → 退出
+    ])
+
+    assert obj._auto_battle_loop(1) is True, '场次已打完，退出战斗也应判成功'
+    assert scene.exited == 1, '被拉进意外战斗必须退出'
+    assert obj.current_count == 1, '意外进战的那场不得计数'
+    assert obj._progress.count == 1
 
 
 @pytest.mark.unit

@@ -18,6 +18,10 @@ class DailyAltAccConfig(BaseModel):
   alliedteam_limit_count: int = Field(default=30, description='战斗次数')
   # 邀请人数阈值：队友标记满该数量即进入下一流程，仅支持 1 或 2（默认2）
   alliedteam_invite_count: int = Field(default=2, ge=1, le=2, description='同心队需要邀请的队友人数(1或2)')
+  # 游戏内自动战斗：开启后脚本不点战斗交互（准备/技能），只负责开自动开关、
+  # 识别第几场并控制总次数；13次账号第一场仍手动切援助式神，第二场起挂自动。
+  # 开自动前脚本会先锁定队伍（未锁定时游戏自动准备可能带错阵容）。
+  alliedteam_auto_battle_enable: bool = Field(default=True, description='同心战斗是否使用游戏内自动战斗')
   alliedteam_ap_enable: bool = Field(default=False, description='是否开启补充体力')
   donatejade_enable: bool = Field(default=True, description='是否开启捐勾')
   courtyard_enable: bool = Field(default=True, description='是否开启庭院事务')
