@@ -70,6 +70,8 @@ class DailyAltAccAssets:
 	I_PAGE_INVITE = RuleImage(roi_front=(552,114,183,41), roi_back=(367,99,543,206), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/page_invite.png")
 	# description 
 	I_TREE_AWARD = RuleImage(roi_front=(479,216,328,59), roi_back=(352,136,588,225), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/tree_award.png")
+	# 自动战斗off 
+	I_AUTO_OFF = RuleImage(roi_front=(130,642,33,35), roi_back=(101,601,97,100), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_off.png")
 
 
 	# Ocr Rule Assets
@@ -77,6 +79,8 @@ class DailyAltAccAssets:
 	O_SELECT_LEVEL = RuleOcr(roi=(413,130,221,46), area=(0,0,100,100), mode="Single", method="Default", keyword="觉醒业火轮壹层", name="select_level")
 	# description 
 	O_FLAG_LEVEL = RuleOcr(roi=(393,186,200,383), area=(0,0,100,100), mode="Full", method="Default", keyword="层", name="flag_level")
+	# 开启自动挑战 
+	O_ITEM_3 = RuleOcr(roi=(531,9,223,37), area=(0,0,100,100), mode="Full", method="Default", keyword="00分0", name="item_3")
 
 
 	# Swipe Rule Assets

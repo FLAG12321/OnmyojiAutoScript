@@ -163,83 +163,92 @@
   },
   {
     "itemName": "exit3",
+    "imageName": "exit3.png",
     "roiFront": "722,415,75,33",
     "roiBack": "697,403,131,53",
-    "description": "description",
-    "imageName": "exit3.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "friend_help",
+    "imageName": "friend_help.png",
     "roiFront": "1205,541,38,71",
     "roiBack": "1187,512,71,118",
-    "description": "description",
-    "imageName": "friend_help.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "friend_help_flag",
+    "imageName": "friend_help_flag.png",
     "roiFront": "803,107,167,34",
     "roiBack": "782,93,210,63",
-    "description": "description",
-    "imageName": "friend_help_flag.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "click_evozone",
+    "imageName": "click_evozone.png",
     "roiFront": "168,354,169,42",
     "roiBack": "121,114,256,556",
-    "description": "description",
-    "imageName": "click_evozone.png",
     "method": "Template matching",
-    "threshold": "0.8"
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "click_level",
+    "imageName": "click_level.png",
     "roiFront": "459,269,61,32",
     "roiBack": "392,185,200,386",
-    "description": "description",
-    "imageName": "click_level.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "invite_friend",
+    "imageName": "invite_friend.png",
     "roiFront": "609,257,21,19",
     "roiBack": "363,246,546,37",
-    "description": "description",
-    "imageName": "invite_friend.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "invite_friend_over",
+    "imageName": "invite_friend_over.png",
     "roiFront": "605,256,19,20",
     "roiBack": "363,246,546,37",
-    "description": "description",
-    "imageName": "invite_friend_over.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "page_invite",
+    "imageName": "page_invite.png",
     "roiFront": "552,114,183,41",
     "roiBack": "367,99,543,206",
-    "description": "description",
-    "imageName": "page_invite.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "tree_award",
+    "imageName": "tree_award.png",
     "roiFront": "479,216,328,59",
     "roiBack": "352,136,588,225",
-    "description": "description",
-    "imageName": "tree_award.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "auto_off",
+    "imageName": "alliedteam_auto_off.png",
+    "roiFront": "130,642,33,35",
+    "roiBack": "101,601,97,100",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "自动战斗off"
   }
 ]
