@@ -151,7 +151,8 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
         p1 = (650, 520)
         p2 = (650, 350)
         logger.info('Swipe %s -> %s, 2S' % (point2str(*p1), point2str(*p2)))
-        self.device.swipe_adb(p1, p2, duration=2)
+        # 改走 device.swipe 分派：跟随 control_method 配置并可进入拟人化路径（ReturnGift 同步修改）
+        self.device.swipe(p1, p2, duration=2)
         # 惯性未停时模板匹配到的坐标会漂移，点击会落空，故等待列表停稳
         time.sleep(self.SWIPE_SETTLE_WAIT)
 

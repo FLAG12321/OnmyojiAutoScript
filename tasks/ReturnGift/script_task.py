@@ -176,7 +176,8 @@ class ScriptTask(GameUi,ReturnGiftAssets):
         p1 = (650, 520)
         p2 = (650, 350)
         logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
-        self.device.swipe_adb(p1, p2, duration=duration)
+        # 改走 device.swipe 分派：跟随 control_method 配置并可进入拟人化路径（直调 swipe_adb 会绕过两者）
+        self.device.swipe(p1, p2, duration=duration)
 
     def write_sr_count_result(self, items: list[dict]) -> list[dict]:
         """将SR碎片统计结果写入 config/tasks_config/sr_count.json，格式为 [{"name": "I_SR_X", "count": N}, ...]"""
@@ -338,7 +339,8 @@ class ScriptTask(GameUi,ReturnGiftAssets):
             p1 = (safe_pos_x, safe_pos_y)
             p2 = (safe_pos_x, safe_pos_y - 300)
             logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
-            self.device.swipe_adb(p1, p2, duration=duration)
+            # 同上：走 device.swipe 分派而非直调 swipe_adb
+            self.device.swipe(p1, p2, duration=duration)
             swipe_count += 1
        
         return send_time, send_btn_click_count

@@ -388,7 +388,8 @@ class ScriptTask(KU, KekkaiActivationAssets):
                 p1 = (safe_pos_x, safe_pos_y)
                 p2 = (safe_pos_x, safe_pos_y - 410)
                 logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
-                self.device.swipe_adb(p1, p2, duration=duration)
+                # 改走 device.swipe 分派：跟随 control_method 配置并可进入拟人化路径
+                self.device.swipe(p1, p2, duration=duration)
                 time.sleep(1)
                 continue
 

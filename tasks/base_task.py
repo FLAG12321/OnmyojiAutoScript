@@ -554,11 +554,12 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 logger.info(f'Wait_animate_stable({rule}) timeout')
                 break
 
-    def swipe(self, swipe: RuleSwipe, interval: float = None) -> None:
+    def swipe(self, swipe: RuleSwipe, interval: float = None, duration: tuple | float = None) -> None:
         """
 
         :param interval:
         :param swipe:
+        :param duration: 滑动时长（秒），float 或 (min, max)；None 用 device.swipe 默认 (0.1, 0.2) 随机
         :return:
         """
         if not isinstance(swipe, RuleSwipe):
@@ -577,7 +578,11 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 return
 
         x1, y1, x2, y2 = swipe.coord()
-        self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name)
+        # 指定 duration 时透传给 device.swipe，走 control_method 分派与拟人化路径
+        if duration is not None:
+            self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name, duration=duration)
+        else:
+            self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name)
 
         # 执行后，如果有限制时间，则重置限制时间
         if interval:
