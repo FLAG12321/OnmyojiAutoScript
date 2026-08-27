@@ -292,7 +292,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         retry_count = 0
         while 1:    
             self.screenshot()
-            if  retry_count >=10:
+            if  retry_count >=5:
                 self.msg.append([MSGType.neterror, "网络错误"])
                 raise TaskEnd(self.msg)
             if self.appear(self.I_NET_NORMAL_FLAG,interval=1):
@@ -300,7 +300,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 continue
 
             if self.appear_then_click(self.I_NET_CHECK,action=self.C_NET_CLICK,interval=1):
-                time.sleep(5)
+                time.sleep(7)
                 retry_count += 1
                 self.screenshot()
 
@@ -309,7 +309,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
 
             if self.appear(self.I_UI_BACK_RED):
                 self.device.click_record_clear()
-                self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=3)
+                self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=4)
                 if net_normal_flag:
                     break
                 continue
