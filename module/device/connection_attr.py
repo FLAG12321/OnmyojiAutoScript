@@ -292,12 +292,15 @@ class ConnectionAttr:
 
     def _adb_server_start(self):
         import subprocess
+        import sys
         logger.info('Adb server not running, starting...')
         try:
             subprocess.run(
                 [self.adb_binary, 'start-server'],
                 timeout=15,
-                capture_output=True
+                capture_output=True,
+                # 无控制台宿主（pythonw 启动的 server/GUI）下抑制 adb 的 cmd 窗口闪烁
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0,
             )
             logger.info('Adb server started')
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:

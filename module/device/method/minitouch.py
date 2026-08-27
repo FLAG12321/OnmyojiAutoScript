@@ -2,6 +2,8 @@ import asyncio
 import json
 import re
 import socket
+import subprocess
+import sys
 import time
 import numpy as np
 from functools import wraps
@@ -9,13 +11,19 @@ from typing import List
 
 import websockets
 from adbutils.errors import AdbError
+import uiautomator2 as u2
 from uiautomator2 import _Service
+from websockets.exceptions import WebSocketException
+from urllib3.util import Timeout as Urllib3Timeout
 
 from module.base.decorator import Config, cached_property, del_cached_property
 from module.base.timer import Timer
 from module.base.utils import random_rectangle_point
 from module.device.connection import Connection
-from module.device.method.utils import RETRY_TRIES, retry_sleep, handle_adb_error
+from module.device.humanize import timing
+from module.device.method.utils import (
+    RETRY_TRIES, retry_sleep, handle_adb_error, random_port, humanized_http_request,
+)
 from module.exception import RequestHumanTakeover, ScriptError
 from module.logger import logger
 
@@ -139,6 +147,116 @@ def smooth_path(points: list, min_distance: float = 30.0, offset_range: float = 
         smooth_points.append(points[-1])
 
     return smooth_points
+
+# ---------------------------------------------------------------------------
+# B 类投递异常恢复（Plan Task 16 契约 #11）：minitouch 只能以「可验证的 session
+# reset + 新连接 ready」作为 B1 恢复判据；builder.reset() / minitouch_send() 返回、
+# cleanup=True 或 cache 重建都不是成功事件。所有 deadline 一律用 time.monotonic()，
+# 不受系统时间校正影响。
+MINITOUCH_RECOVERY_POLL_S = 0.05
+MINITOUCH_RECOVERY_HTTP_CONNECT_TIMEOUT_S = 1.0
+MINITOUCH_RECOVERY_HTTP_CALL_TIMEOUT_S = 1.0
+MINITOUCH_RECOVERY_STOP_TIMEOUT_S = 3.0
+MINITOUCH_RECOVERY_START_TIMEOUT_S = 3.0
+MINITOUCH_RECOVERY_WS_CONNECT_TIMEOUT_S = 3.0
+MINITOUCH_RECOVERY_WS_READY_TIMEOUT_S = 1.0
+MINITOUCH_RECOVERY_WS_CLOSE_TIMEOUT_S = 1.0
+MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S = 3.0
+MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S = 1.0
+# 单批 WebSocket 投递的墙钟上限，避免 send() 阻塞时永远无法进入 B1 接管。
+MINITOUCH_WS_SEND_TIMEOUT_S = 1.0
+
+# TCP 握手三行各自的严格 fullmatch 校验（v <版本> / ^ <触点 宽 高 压> / $ <pid>），
+# 不得复用 minitouch_init() 的宽松 split/日志路径。
+_MINITOUCH_VERSION_RE = re.compile(r"v [1-9][0-9]*")
+_MINITOUCH_CAPABILITY_RE = re.compile(
+    # minitouch 的压力上限允许为 0（实际设备会返回 ``^ 10 720 1280 0``），
+    # 触点数和坐标范围仍必须是正整数。
+    r"\^ [1-9][0-9]* [1-9][0-9]* [1-9][0-9]* (?:0|[1-9][0-9]*)"
+)
+_MINITOUCH_PID_RE = re.compile(r"\$ ([1-9][0-9]*)")
+_MINITOUCH_ORIENTATION_RE = re.compile(
+    r'.*DisplayViewport{.*valid=true, .*orientation=(?P<orientation>\d+), '
+    r'.*deviceWidth=\d+, deviceHeight=\d+.*'
+)
+
+
+def _humanized_minitouch_ws_url(serial):
+    """把 minitouch 的 HTTP 服务地址转换为对应的 WebSocket 地址。"""
+    if serial.startswith('https://'):
+        return 'wss://' + serial[len('https://'):].rstrip('/') + '/minitouch'
+    if serial.startswith('http://'):
+        return 'ws://' + serial[len('http://'):].rstrip('/') + '/minitouch'
+    return serial.rstrip('/') + '/minitouch'
+
+
+def _parse_humanized_orientation(output):
+    """从 dumpsys display 输出解析 0~3 方向，无法确认时返回 None。"""
+    match = _MINITOUCH_ORIENTATION_RE.search(output or '')
+    if match is None:
+        return None
+    orientation = int(match.group('orientation'))
+    return orientation if type(orientation) is int and orientation in (0, 1, 2, 3) else None
+
+class _MinitouchRecoveryFailed(RuntimeError):
+    """B1 恢复流程内部失败标记：任一事件缺失/超时/非法即抛出，由调用方转 RequestHumanTakeover。"""
+
+
+def _recovery_remaining(deadline):
+    """B1 恢复阶段的剩余时间（秒）；超时立即抛 _MinitouchRecoveryFailed。"""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise _MinitouchRecoveryFailed('minitouch recovery deadline exceeded')
+    return remaining
+
+
+def _run_adb_recovery_command(device, args, deadline, stage):
+    """用可终止的 adb 子进程执行恢复命令，保证超时后不会留下后台 I/O。"""
+    timeout = _recovery_remaining(deadline)
+    try:
+        subprocess.run(
+            [device.adb_binary, '-s', device.serial, *map(str, args)],
+            check=True,
+            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            # 无控制台宿主（pythonw 启动的 server/GUI）下抑制 adb 的 cmd 窗口闪烁
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0,
+        )
+    except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError) as exc:
+        raise _MinitouchRecoveryFailed(f'{stage} failed') from exc
+
+
+def _quantize_move_delays(delays):
+    """把整条 delays 量化成整数毫秒，做累计余量结转（Plan 契约 #6）。
+
+    输入是 MovePlan 的完整浮点 delays（秒）；输出是与输入等长的整数毫秒列表：
+    0 delay 输出 0（不生成 w），正 delay 至少 1ms，整条输出总和严格等于
+    floor(sum(delays) * 1000 + 0.5)。目标总毫秒小于正 delay 数时返回 None——
+    该点数不可表示，禁止用 max(ms, 1) 静默放大预算，交由上层降点或回退。
+    """
+    positive = [d for d in delays if d > 0]
+    target_total_ms = int(sum(delays) * 1000 + 0.5)
+    if target_total_ms < len(positive):
+        return None
+    # 每个正 delay 预留 1ms，剩余毫秒按 max(d_i*1000 - 1, 0) 的比例用最大余数法
+    # 补齐；权重相同按原索引稳定打破平局（Python sort 稳定性保证）。
+    base = [1 if d > 0 else 0 for d in delays]
+    remaining = target_total_ms - len(positive)
+    extra = [0] * len(delays)
+    weights = [0.0 if d <= 0 else max(d * 1000.0 - 1.0, 0.0) for d in delays]
+    total_w = sum(weights)
+    if total_w > 0 and remaining > 0:
+        exact = [w / total_w * remaining for w in weights]
+        floors = [int(v) for v in exact]
+        deficit = remaining - sum(floors)
+        # 余数最大的索引先补齐；零权重（零 delay）的余数恒为 0，不会入选
+        order = sorted(range(len(exact)), key=lambda i: exact[i] - floors[i], reverse=True)
+        for i in order[:deficit]:
+            floors[i] += 1
+        extra = floors
+    return [b + e for b, e in zip(base, extra)]
+
 
 class Command:
     def __init__(
@@ -320,11 +438,37 @@ class MinitouchOccupiedError(Exception):
     pass
 
 
+# 投递中被 _run_humanized_minitouch 归类为 B 类（写入已开始 / 结果未知）的异常。
+# 必须定义在 MinitouchNotInstalledError / MinitouchOccupiedError 之后。
+_HUMANIZED_MINITOUCH_TRANSPORT_ERRORS = (
+    ConnectionError,
+    BrokenPipeError,
+    OSError,
+    TimeoutError,
+    asyncio.TimeoutError,
+    socket.timeout,
+    WebSocketException,
+    AdbError,
+    MinitouchNotInstalledError,
+    MinitouchOccupiedError,
+)
+
+
 class U2Service(_Service):
-    def __init__(self, name, u2obj):
+    def __init__(self, name, u2obj=None, service_url=None):
         self.name = name
         self.u2obj = u2obj
-        self.service_url = self.u2obj.path2url("/services/" + name)
+        if service_url is not None:
+            self.service_url = service_url
+        else:
+            self.service_url = self.u2obj.path2url("/services/" + name)
+
+
+def _humanized_http_timeout(http, connect, read, total):
+    """真实 uiautomator2 session 使用 urllib3 总 deadline，测试 fake 保留 tuple 契约。"""
+    if isinstance(http, getattr(u2, '_AgentRequestSession', ())):
+        return Urllib3Timeout(connect=connect, read=read, total=total)
+    return (connect, read)
 
 
 def retry(func):
@@ -486,13 +630,19 @@ class Minitouch(Connection):
         )
 
     @Config.when(DEVICE_OVER_HTTP=False)
-    def minitouch_send(self):
+    def minitouch_send(self, post_send_gap_s=None):
         content = self.minitouch_builder.to_minitouch()
         # logger.info("send operation: {}".format(content.replace("\n", "\\n")))
         byte_content = content.encode('utf-8')
         self._minitouch_client.sendall(byte_content)
         self._minitouch_client.recv(0)
-        time.sleep(self.minitouch_builder.delay / 1000 + self.minitouch_builder.DEFAULT_DELAY)
+        # 维度 I：enabled 时 post_send_gap_s 由 gap_seconds(0.05) 提供；None（off /
+        # 既有调用）继续使用 DEFAULT_DELAY，保证旧调用与 off 旁路逐事件不变
+        if post_send_gap_s is None:
+            post_send_gap_s = getattr(self, '_humanized_minitouch_gap_s', None)
+        if post_send_gap_s is None:
+            post_send_gap_s = self.minitouch_builder.DEFAULT_DELAY
+        time.sleep(self.minitouch_builder.delay / 1000 + post_send_gap_s)
         self.minitouch_builder.clear()
 
     @cached_property
@@ -510,11 +660,22 @@ class Minitouch(Connection):
         try:
             return self._minitouch_loop.run_until_complete(event)
         except websockets.ConnectionClosedError as e:
-            # ConnectionClosedError: no close frame received or sent
-            # ConnectionClosedError: sent 1011 (unexpected error) keepalive ping timeout; no close frame received
+            # 保持既有 off/legacy 语义：连接被远端关闭时交给 retry 的
+            # MinitouchOccupiedError 分支清理 builder 并重建连接。
             logger.error(e)
             raise MinitouchOccupiedError(
                 'ConnectionClosedError, '
+                'probably because another connection has been established'
+            )
+        except WebSocketException as e:
+            # 仅 humanized 无装饰投递收口为 B 类；off/legacy 保持原有异常行为，
+            # 避免公开 @retry 重放结果未知的旧批次。
+            if not getattr(self, '_humanized_minitouch_transport', False):
+                raise
+            # WebSocketException 覆盖关闭、握手和 URI/协议错误，统一转为 B 类传输异常。
+            logger.error(e)
+            raise MinitouchOccupiedError(
+                'WebSocket transport error, '
                 'probably because another connection has been established'
             )
 
@@ -539,8 +700,8 @@ class Minitouch(Connection):
                 break
             self.sleep(0.05)
 
-        # 'ws://127.0.0.1:7912/minitouch'
-        url = re.sub(r"^https?://", 'ws://', self.serial) + '/minitouch'
+        # 保持 HTTP/HTTPS 的安全级别：HTTPS 必须升级到 WSS，不能降级为明文 WS。
+        url = _humanized_minitouch_ws_url(self.serial)
         logger.attr('Minitouch', url)
 
         async def connect():
@@ -554,7 +715,7 @@ class Minitouch(Connection):
         self._minitouch_ws = self._minitouch_loop_run(connect())
 
     @Config.when(DEVICE_OVER_HTTP=True)
-    def minitouch_send(self):
+    def minitouch_send(self, post_send_gap_s=None):
         content = self.minitouch_builder.to_atx_agent()
 
         async def send():
@@ -562,30 +723,97 @@ class Minitouch(Connection):
                 # logger.info("send operation: {}".format(row.replace("\n", "\\n")))
                 await self._minitouch_ws.send(row)
 
-        self._minitouch_loop_run(send())
-        time.sleep(self.minitouch_builder.delay / 1000 + self.minitouch_builder.DEFAULT_DELAY)
+        # 只有 humanized 无装饰路径启用写入 deadline；off/legacy 保持原有
+        # minitouch_send 行为，避免把新增超时交给公开 @retry 后重放旧批次。
+        if getattr(self, '_humanized_minitouch_transport', False):
+            self._minitouch_loop_run(
+                asyncio.wait_for(send(), timeout=MINITOUCH_WS_SEND_TIMEOUT_S)
+            )
+        else:
+            self._minitouch_loop_run(send())
+        # 维度 I：与 TCP 实现同一口径——enabled 用 gap_seconds(0.05)，None 保持 DEFAULT_DELAY
+        if post_send_gap_s is None:
+            post_send_gap_s = getattr(self, '_humanized_minitouch_gap_s', None)
+        if post_send_gap_s is None:
+            post_send_gap_s = self.minitouch_builder.DEFAULT_DELAY
+        time.sleep(self.minitouch_builder.delay / 1000 + post_send_gap_s)
         self.minitouch_builder.clear()
 
-    @retry
-    def click_minitouch(self, x, y):
+    def _click_minitouch_legacy_impl(self, x, y):
+        """既有 click 方法体（无 @retry），off/未接入调用方与 B 类回退共用。"""
         builder = self.minitouch_builder
         builder.down(x, y).commit()
         builder.up().commit()
         self.minitouch_send()
 
     @retry
-    def long_click_minitouch(self, x, y, duration=1.0):
+    def click_minitouch(self, x, y):
+        # 公开 @retry 方法只包装 legacy impl：off 与既有调用方可观测行为不变；
+        # humanized 路径绝不经由本方法进入（契约 #11，避免 @retry 重放半截手势）
+        return self._click_minitouch_legacy_impl(x, y)
+
+    def _long_click_minitouch_legacy_impl(self, x, y, duration=1.0):
+        """既有 long_click 方法体（无 @retry）。本 Task 未接入 humanized 长按，
+        抽取仅为了保持「公开 @retry 只包装 legacy impl」的拓扑一致。"""
         duration = int(duration * 1000)
         builder = self.minitouch_builder
         builder.down(x, y).commit().wait(duration)
         builder.up().commit()
         self.minitouch_send()
 
+    def _long_click_minitouch_humanized_impl(self, x, y, duration=1.0):
+        """开档长按（维度 J hold 微颤）：单批 down → (wait+move)×N → up → send。
+
+        plan_hold 返回 None（off/'none' 策略/预算过短）时走 legacy——注意此时
+        可能已消费 hold 权重 RNG，但 legacy 不依赖 RNG，行为仍与 off 一致。
+        微颤点用 device_wait（w 由设备端执行，间隔精确）；wait 量化复用
+        _quantize_move_delays（契约 #6 口径：w 总和严格等于 floor(sum×1000)，
+        不用逐点 max(ms,1) 静默放大预算）。point_cap=200：与典型 1s hold 的
+        自然点量持平，2s 高回报率时摊长间隔——DEVICE_OVER_HTTP 模式逐条
+        ws.send 包在 1.0s 硬 deadline 里，500 点批（1504 条命令）可能超时
+        误判 B 类异常。坐标沿用传入值——minitouch 的 authoring→设备换算
+        在 builder 层，不在策略点。
+        """
+        plan = self.humanizer.plan_hold(
+            (int(x), int(y)), float(duration), timing_mode='device_wait',
+            point_cap=200)
+        if plan is None:
+            return self._long_click_minitouch_legacy_impl(x, y, duration)
+        # plan_hold 的 device_wait 地板已保证 delays ≥1ms；量化目标必然可表示
+        waits = _quantize_move_delays(list(plan.delays))
+        if waits is None:
+            return self._long_click_minitouch_legacy_impl(x, y, duration)
+        gap = self.humanizer.gap_seconds(0.05)
+        if gap is not None:
+            self._humanized_minitouch_gap_s = gap
+        try:
+            def run_humanized(builder, send):
+                builder.down(x, y).commit()
+                # delays[i] 是发送 points[i] 前的等待（全局契约 4）；量化 0 不
+                # 产生 w（与 swipe 的 MOVE 批同口径）
+                for (px, py), wait_ms in zip(plan.points, waits):
+                    if wait_ms > 0:
+                        builder.wait(wait_ms)
+                    builder.move(px, py).commit()
+                builder.up().commit()
+                send()
+
+            return self._run_humanized_minitouch(
+                run_humanized,
+                lambda: self._long_click_minitouch_legacy_impl(x, y, duration),
+            )
+        finally:
+            self.__dict__.pop('_humanized_minitouch_gap_s', None)
+
     @retry
-    def swipe_minitouch(self, p1, p2, duration=None):
+    def long_click_minitouch(self, x, y, duration=1.0):
+        # 公开 @retry 方法只包装 legacy impl（契约 #11）
+        return self._long_click_minitouch_legacy_impl(x, y, duration)
+
+    def _swipe_minitouch_legacy_impl(self, p1, p2, duration=None):
         """
         Swipe from one point to another with specified duration if provided
-        
+
         Args:
             p1: Starting point (x, y)
             p2: Ending point (x, y)
@@ -599,7 +827,7 @@ class Minitouch(Connection):
         else:
             # Use default algorithm when no duration specified
             points = insert_swipe(p0=p1, p3=p2)
-        
+
         builder = self.minitouch_builder
 
         builder.down(*points[0]).commit()
@@ -611,6 +839,11 @@ class Minitouch(Connection):
 
         builder.up().commit()
         self.minitouch_send()
+
+    @retry
+    def swipe_minitouch(self, p1, p2, duration=None):
+        # 公开 @retry 方法只包装 legacy impl（契约 #11），off 可观测行为不变
+        return self._swipe_minitouch_legacy_impl(p1, p2, duration)
     
     def _generate_bezier_points(self, p1, p2, num_points):
         """
@@ -657,6 +890,491 @@ class Minitouch(Connection):
             points.append((int(x), int(y)))
         
         return points
+
+    # ------------------------------------------------------------------
+    # B 类恢复与 humanized 投递（Plan Task 16，契约 #11）。以下方法全部无 @retry：
+    # 由 Control 的 humanized_*_methods 在 enabled 时直达，绝不经由公开 @retry 方法。
+    # ------------------------------------------------------------------
+
+    def _read_humanized_minitouch_line(self, stream, client, deadline, stage):
+        client.settimeout(min(MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S, _recovery_remaining(deadline)))
+        try:
+            line = stream.readline()
+        except (OSError, socket.timeout) as exc:
+            raise _MinitouchRecoveryFailed(f'{stage} handshake read failed') from exc
+        if not line:
+            raise _MinitouchRecoveryFailed(f'{stage} handshake line missing')
+        # readline 可能被逐字节滴流延长；返回后再次检查同一全局 deadline，
+        # 不允许过期握手被当作新会话证据。
+        _recovery_remaining(deadline)
+        return line.rstrip('\r\n')
+
+    def _validate_humanized_minitouch_handshake(self, version, capability, pid_line, old_pid):
+        if _MINITOUCH_VERSION_RE.fullmatch(version) is None:
+            raise _MinitouchRecoveryFailed(f'invalid minitouch version line: {version!r}')
+        capability_match = _MINITOUCH_CAPABILITY_RE.fullmatch(capability)
+        if capability_match is None:
+            raise _MinitouchRecoveryFailed(f'invalid minitouch capability line: {capability!r}')
+        pid_match = _MINITOUCH_PID_RE.fullmatch(pid_line)
+        if pid_match is None:
+            raise _MinitouchRecoveryFailed(f'invalid minitouch pid line: {pid_line!r}')
+
+        _, contacts, max_x, max_y, pressure = capability.split()
+        del contacts, pressure
+        new_pid = pid_match.group(1)
+        if new_pid == str(old_pid):
+            raise _MinitouchRecoveryFailed('minitouch pid did not change after recovery')
+        return int(max_x), int(max_y), new_pid
+
+    def _recover_humanized_minitouch_tcp(self, old_pid, deadline=None, restart_atx=True):
+        # TCP 建连证据：清理旧 forward → 新 forward → 严格三行握手。
+        # 已发生输入的 B1 恢复还要先重启 ATX 并验证 PID 改变；首次开档时
+        # uiautomator2 刚完成 ATX 初始化，不能再次 stop/start，否则 minitouch
+        # 服务可能尚未重新挂载，首个点击会在握手超时后被误判为人工接管。
+        # deadline 从恢复入口开始计时，避免前置 ATX/forward 操作不计入预算。
+        if deadline is None:
+            deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+        _recovery_remaining(deadline)
+        if restart_atx:
+            atx_agent_path = '/data/local/tmp/atx-agent'
+            _run_adb_recovery_command(
+                self, ['shell', atx_agent_path, 'server', '--stop'], deadline, 'tcp-restart-atx-stop')
+            _run_adb_recovery_command(
+                self,
+                ['shell', atx_agent_path, 'server', '--nouia', '-d', '--addr', '127.0.0.1:7912'],
+                deadline,
+                'tcp-restart-atx-start',
+            )
+        else:
+            logger.info('Skip ATX restart for first minitouch connection')
+        _recovery_remaining(deadline)
+        # 使用 adb CLI 的 --list/创建命令，两个 subprocess 都有真实 timeout；
+        # 不调用 adbutils.forward() 的无 timeout 控制连接。冷启动时旧进程可能仍
+        # 持有 minitouch socket；若复用陈旧 forward，TCP connect 会成功但读不到
+        # v/^/$ 握手，导致首次 humanized 输入被误判为接管。
+        def list_minitouch_ports():
+            try:
+                output = subprocess.run(
+                    [self.adb_binary, '-s', self.serial, 'forward', '--list'],
+                    check=True,
+                    timeout=_recovery_remaining(deadline),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    # 无控制台宿主下抑制 adb 的 cmd 窗口闪烁
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0,
+                ).stdout
+            except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError) as exc:
+                raise _MinitouchRecoveryFailed('tcp-forward-list failed') from exc
+            ports = set()
+            for line in output.splitlines():
+                fields = line.split()
+                if len(fields) == 3 and fields[0] == self.serial \
+                        and fields[2] == 'localabstract:minitouch' \
+                        and fields[1].startswith('tcp:'):
+                    try:
+                        ports.add(int(fields[1][4:]))
+                    except ValueError:
+                        raise _MinitouchRecoveryFailed(
+                            f'invalid minitouch forward port: {fields[1]!r}')
+            return ports
+
+        if old_pid is None:
+            # 首次开档没有远端触点，清理全部旧 forward 后必须新建端口，避免
+            # 复用上一个已退出 Device 留下的单连接 minitouch endpoint。
+            stale_ports = list_minitouch_ports()
+            if self._minitouch_port:
+                stale_ports.add(int(self._minitouch_port))
+            for stale_port in sorted(stale_ports):
+                _run_adb_recovery_command(
+                    self,
+                    ['forward', '--remove', f'tcp:{stale_port}'],
+                    deadline,
+                    'tcp-forward-remove',
+                )
+                _recovery_remaining(deadline)
+            port = random_port(self.config.FORWARD_PORT_RANGE)
+            _run_adb_recovery_command(
+                self,
+                ['forward', f'tcp:{port}', 'localabstract:minitouch'],
+                deadline,
+                'tcp-forward-create',
+            )
+        else:
+            if self._minitouch_port:
+                _run_adb_recovery_command(
+                    self,
+                    ['forward', '--remove', f'tcp:{self._minitouch_port}'],
+                    deadline,
+                    'tcp-forward-remove',
+                )
+                _recovery_remaining(deadline)
+            # B1 已发生输入后只复用当前 session 之外的可观察 forward；若没有，
+            # 创建新端口并通过新 PID 握手确认 session 已重建。
+            ports = list_minitouch_ports()
+            port = min(ports) if ports else None
+            if port is None:
+                port = random_port(self.config.FORWARD_PORT_RANGE)
+                _run_adb_recovery_command(
+                    self,
+                    ['forward', f'tcp:{port}', 'localabstract:minitouch'],
+                    deadline,
+                    'tcp-forward-create',
+                )
+        _recovery_remaining(deadline)
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            client.settimeout(min(MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S, _recovery_remaining(deadline)))
+            client.connect(('127.0.0.1', port))
+            stream = client.makefile()
+            version = self._read_humanized_minitouch_line(stream, client, deadline, 'version')
+            capability = self._read_humanized_minitouch_line(stream, client, deadline, 'capability')
+            pid_line = self._read_humanized_minitouch_line(stream, client, deadline, 'pid')
+            max_x, max_y, new_pid = self._validate_humanized_minitouch_handshake(
+                version, capability, pid_line, old_pid
+            )
+        except Exception:
+            client.close()
+            raise
+
+        self._minitouch_port = port
+        self._minitouch_client = client
+        self.max_x = max_x
+        self.max_y = max_y
+        self._minitouch_pid = new_pid
+        self.__dict__['minitouch_builder'] = CommandBuilder(self)
+
+    def _humanized_service_request(self, service, method, deadline):
+        # 每个 HTTP 请求显式传二元 timeout（connect, read）与 retry=False：
+        # 标量 timeout 会被 TimeoutRequestsSession 改写为 (3, scalar)，
+        # retry=True 会在 ReadTimeout 后调用 _prepare_atx_agent() 重发
+        remaining = _recovery_remaining(deadline)
+        connect_timeout = min(MINITOUCH_RECOVERY_HTTP_CONNECT_TIMEOUT_S, remaining)
+        read_timeout = min(MINITOUCH_RECOVERY_HTTP_CALL_TIMEOUT_S, remaining)
+        # 只读取已缓存/测试注入的 u2，不触发 connection_attr.u2 的第三方初始化。
+        u2_device = self.__dict__.get('u2')
+        http = getattr(u2_device, 'http', None)
+        timeout = _humanized_http_timeout(http, connect_timeout, read_timeout, remaining)
+        try:
+            # 同线程执行单次请求；二元 timeout 限制连接与读取，retry=False 禁止
+            # uiautomator2 恢复后重发。不得放到无法取消的 daemon worker 中。
+            if (
+                service.service_url.startswith(('http://', 'https://'))
+                and (
+                    http is None
+                    or isinstance(http, getattr(u2, '_AgentRequestSession', ()))
+                )
+            ):
+                # 真实 uiautomator2 session 的 read timeout 允许滴流续期；使用项目侧
+                # 单次 socket 请求，以 monotonic deadline 作为绝对上界，且无隐式重试。
+                request_deadline = min(
+                    deadline, time.monotonic() + MINITOUCH_RECOVERY_HTTP_CALL_TIMEOUT_S)
+                response = humanized_http_request(
+                    service.service_url, method, deadline=request_deadline)
+            else:
+                response = getattr(http, method)(
+                    service.service_url, timeout=timeout, retry=False)
+            _recovery_remaining(deadline)
+            service._raise_for_status(response)
+            return response
+        except Exception as exc:
+            raise _MinitouchRecoveryFailed(f'minitouch service {method} failed') from exc
+
+    def _wait_humanized_service_state(self, service, expected_running, deadline):
+        # 每 50ms 轮询一次 service running 状态，全部在阶段 deadline 内
+        while True:
+            response = self._humanized_service_request(service, 'get', deadline)
+            running = response.json().get('running')
+            if not isinstance(running, bool):
+                raise _MinitouchRecoveryFailed('minitouch service returned invalid running state')
+            if running is expected_running:
+                return
+            self.sleep(min(MINITOUCH_RECOVERY_POLL_S, _recovery_remaining(deadline)))
+
+    async def _await_humanized_minitouch_recovery(self, stage, awaitable, timeout_s):
+        return await asyncio.wait_for(awaitable, timeout=timeout_s)
+
+    async def _recover_humanized_minitouch_http_async(self):
+        # HTTP 恢复证据：stop → observed not running → start → observed running
+        # → 新 WS → 两条非空文本 ready 消息；任一超时/异常都关闭已建 WS 并接管
+        # 保持 HTTP/HTTPS 的安全级别：HTTPS 必须升级到 WSS，不能降级为明文 WS。
+        url = _humanized_minitouch_ws_url(self.serial)
+        ws = None
+        try:
+            ws = await self._await_humanized_minitouch_recovery(
+                'connect', websockets.connect(url), MINITOUCH_RECOVERY_WS_CONNECT_TIMEOUT_S
+            )
+            for stage in ('ready-1', 'ready-2'):
+                message = await self._await_humanized_minitouch_recovery(
+                    stage, ws.recv(), MINITOUCH_RECOVERY_WS_READY_TIMEOUT_S
+                )
+                if not isinstance(message, str) or not message.strip():
+                    raise _MinitouchRecoveryFailed(f'minitouch {stage} message is invalid')
+        except Exception:
+            if ws is not None:
+                try:
+                    await self._await_humanized_minitouch_recovery(
+                        'close', ws.close(), MINITOUCH_RECOVERY_WS_CLOSE_TIMEOUT_S
+                    )
+                except Exception:
+                    pass
+            raise
+        self._minitouch_ws = ws
+
+    def _recover_humanized_minitouch_http(self):
+        # 复用 U2Service 的 _raise_for_status 校验 HTTP 状态；不调用继承的无 timeout 的
+        # stop()/start()/running()，也不调用当前会跳过的 restart_atx()
+        # 直接构造绝对 service URL，禁止 U2Service.path2url() 在恢复阶段触发
+        # 第三方 forward_port、ATX 探测或自动恢复。
+        service = U2Service(
+            'minitouch', service_url=self.serial.rstrip('/') + '/services/minitouch')
+        stop_deadline = time.monotonic() + MINITOUCH_RECOVERY_STOP_TIMEOUT_S
+        self._humanized_service_request(service, 'delete', stop_deadline)
+        self._wait_humanized_service_state(service, False, stop_deadline)
+        start_deadline = time.monotonic() + MINITOUCH_RECOVERY_START_TIMEOUT_S
+        self._humanized_service_request(service, 'post', start_deadline)
+        self._wait_humanized_service_state(service, True, start_deadline)
+        self._minitouch_loop_run(self._recover_humanized_minitouch_http_async())
+        self.__dict__['minitouch_builder'] = CommandBuilder(self)
+
+    def _prepare_humanized_orientation(self, deadline):
+        """用单次有界通道读取方向，禁止进入 Connection.get_orientation() 的 @retry。"""
+        cached = self.__dict__.get('orientation')
+        if type(cached) is int and cached in (0, 1, 2, 3):
+            return cached
+        if self.config.DEVICE_OVER_HTTP:
+            request = {
+                'jsonrpc': '2.0',
+                'id': 'humanized-orientation',
+                'method': 'deviceInfo',
+                'params': [],
+            }
+            response = humanized_http_request(
+                self.serial.rstrip('/') + '/jsonrpc/0',
+                'post',
+                data=json.dumps(request),
+                headers={'Content-Type': 'application/json'},
+                deadline=deadline,
+            )
+            if response.status_code != 200:
+                raise _MinitouchRecoveryFailed('orientation RPC returned HTTP error')
+            payload = response.json()
+            result = (
+                payload.get('result')
+                if (
+                    isinstance(payload, dict)
+                    and payload.get('jsonrpc') == '2.0'
+                    and payload.get('id') == request['id']
+                    and 'error' not in payload
+                )
+                else None
+            )
+            orientation = result.get('displayRotation') if isinstance(result, dict) else None
+            if type(orientation) is not int or orientation not in (0, 1, 2, 3):
+                raise _MinitouchRecoveryFailed('orientation RPC returned invalid rotation')
+        else:
+            timeout = _recovery_remaining(deadline)
+            try:
+                output = subprocess.run(
+                    [self.adb_binary, '-s', self.serial, 'shell', 'dumpsys', 'display'],
+                    check=True,
+                    timeout=timeout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    # 无控制台宿主下抑制 adb 的 cmd 窗口闪烁
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0,
+                ).stdout
+            except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError) as exc:
+                raise _MinitouchRecoveryFailed('orientation query failed') from exc
+            _recovery_remaining(deadline)
+            orientation = _parse_humanized_orientation(output)
+            if orientation is None:
+                raise _MinitouchRecoveryFailed('orientation query returned invalid display data')
+        self.orientation = orientation
+        return orientation
+
+    def _prepare_humanized_minitouch_builder(self):
+        """为首次开档输入建立有界连接，不进入 legacy 的无界初始化。"""
+        cached = self.__dict__.get('minitouch_builder')
+        if cached is not None:
+            return cached
+        # 轻量 harness 通过未绑定方法复用 runner 时保留其自定义 property。
+        if not isinstance(self, Minitouch):
+            return self.minitouch_builder
+        try:
+            if self.config.DEVICE_OVER_HTTP:
+                orientation_deadline = time.monotonic() + MINITOUCH_RECOVERY_HTTP_CALL_TIMEOUT_S
+                self._prepare_humanized_orientation(orientation_deadline)
+                self.max_x, self.max_y = 1280, 720
+                self._recover_humanized_minitouch_http()
+            else:
+                orientation_deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+                self._prepare_humanized_orientation(orientation_deadline)
+                # 方向查询与连接恢复分别有明确上界，避免查询耗时挤占握手预算。
+                deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+                self._recover_humanized_minitouch_tcp(
+                    None, deadline=deadline, restart_atx=False)
+        except RequestHumanTakeover:
+            raise
+        except Exception as exc:
+            # 初始化失败时旧 legacy 会重入同一无界初始化，不能作为 B0 回退。
+            logger.exception('Minitouch first connection failed')
+            raise RequestHumanTakeover('Minitouch first connection failed') from exc
+        return self.__dict__['minitouch_builder']
+
+    def recover_humanized_minitouch_b1(self):
+        # B1 恢复唯一出口：只有「已观察到 session reset」且「新连接 ready」后正常返回；
+        # 任何超时/异常/缺失事件都转 RequestHumanTakeover，之后不得再发 DOWN/UP 或 legacy。
+        # 开头的 builder.clear() 只做本地卫生清理，不是成功判据。
+        try:
+            builder = self.minitouch_builder
+            builder.clear()
+            if self.config.DEVICE_OVER_HTTP:
+                self._recover_humanized_minitouch_http()
+            else:
+                old_pid = self._minitouch_pid
+                del_cached_property(self, 'minitouch_builder')
+                deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+                self._recover_humanized_minitouch_tcp(old_pid, deadline=deadline)
+        except RequestHumanTakeover:
+            raise
+        except Exception as exc:
+            logger.exception('Minitouch B1 recovery failed')
+            raise RequestHumanTakeover('Minitouch B1 recovery failed') from exc
+
+    def _run_humanized_minitouch(self, run_humanized, run_legacy):
+        # B0/B1 按事件状态分支（契约 #11）：send() 在进入 minitouch_send() **之前**
+        # 先切换 transport_started，因此任何「写入已开始但结果未知」异常保守归 B1，
+        # 不会误走 B0 重放。恢复证据完整前绝不调用 run_legacy()。
+        transport_started = False
+
+        def send():
+            nonlocal transport_started
+            transport_started = True
+            self._humanized_minitouch_transport = True
+            try:
+                self.minitouch_send()
+            finally:
+                self.__dict__.pop('_humanized_minitouch_transport', None)
+
+        def legacy():
+            # 清掉 enabled 尝试期间设的拟人 transport gap，否则 B0/B1 的 legacy 重放
+            # 会让 minitouch_send 读到它而改用拟人 gap 而非 DEFAULT_DELAY，legacy
+            # 就不再"逐事件回退"（契约 #11 A 类）
+            self._humanized_minitouch_gap_s = None
+            return run_legacy()
+
+        try:
+            prepare = getattr(self, '_prepare_humanized_minitouch_builder', None)
+            builder = prepare() if callable(prepare) else self.minitouch_builder
+            return run_humanized(builder, send)
+        except RequestHumanTakeover:
+            raise
+        except _HUMANIZED_MINITOUCH_TRANSPORT_ERRORS:
+            if not transport_started:
+                return legacy()
+            self.recover_humanized_minitouch_b1()
+            return legacy()
+
+    def _click_minitouch_humanized_impl(self, x, y):
+        """开档点击：单批 down → wait(press_ms) → up → send。
+
+        只消费 B（按压时长）与 I（transport gap）。按压时长取整数毫秒，正时长
+        至少 1ms，零时长不生成 wait；保持既有单个 minitouch_send() 批次，
+        不为按压时长拆分 DOWN/UP 两批。
+        """
+        gap = self.humanizer.gap_seconds(0.05)
+        if gap is not None:
+            self._humanized_minitouch_gap_s = gap
+        try:
+            def run_humanized(builder, send):
+                press = self.humanizer.press_seconds()
+                builder.down(x, y).commit()
+                if press is not None and press > 0:
+                    builder.wait(max(int(press * 1000 + 0.5), 1))
+                builder.up().commit()
+                send()
+
+            return self._run_humanized_minitouch(
+                run_humanized,
+                lambda: self._click_minitouch_legacy_impl(x, y),
+            )
+        finally:
+            self.__dict__.pop('_humanized_minitouch_gap_s', None)
+
+    def _swipe_minitouch_humanized_impl(self, p1, p2, duration=None):
+        """开档滑动：DOWN/MOVE/UP 三批，MOVE 批内按 wait(ms) → move → commit 追加。
+
+        light 保留 legacy 贝塞尔点位（不启用 C 几何），只替换 timing；
+        medium/heavy 由 facade 生成新几何与最终 MovePlan。触摸 liftoff（维度 F）
+        在 UP 前并入 MOVE 批。DOWN 使用 startPos，最终 endpoint 原样发送；
+        UP 后不消费 MovePlan delay。A 类计划回退（plan/量化不可表示）在事件
+        发出前直接走一次无装饰 legacy。
+        """
+        start = (int(p1[0]), int(p1[1]))
+        end = (int(p2[0]), int(p2[1]))
+        if self.humanizer.level == 'light' and duration is None:
+            # light 的点位复现依赖 duration×100；缺失时无法保持形状等价。
+            # 此时尚未消费任何 RNG，直接走 legacy 与 off 路径完全一致
+            return self._swipe_minitouch_legacy_impl(p1, p2, duration=duration)
+        gap = self.humanizer.gap_seconds(0.05)
+        if gap is not None:
+            self._humanized_minitouch_gap_s = gap
+        try:
+            legacy_points = None
+            base_delay_s = 0.010
+            if self.humanizer.level == 'light':
+                # light 复用现有 _generate_bezier_points 得到相同形状与点数，去掉起点；
+                # 预算 = 0.010 × duration×100 点 = duration，与 legacy 总时长一致
+                points = self._generate_bezier_points(start, end, max(int(duration * 100), 5))
+                legacy_points = [tuple(p) for p in points]
+                if legacy_points and legacy_points[0] == start:
+                    legacy_points.pop(0)
+            elif duration is not None:
+                # medium/heavy 预算 = 调用方 duration（legacy 总时长语义）：
+                # budget = base × PROFILE_MAX_POINTS。之前写死 base=0.010 →
+                # 预算恒 120ms，长滑动（如 2s）被压成 120ms（17 倍过快）
+                base_delay_s = duration / timing.PROFILE_MAX_POINTS
+            plan = self.humanizer.plan_swipe(
+                start, end, timing_mode='device_wait', base_delay_s=base_delay_s,
+                legacy_points=legacy_points,
+            )
+            if plan is None:
+                # A 类计划回退：事件尚未发出，直接调用一次无装饰 legacy impl
+                return self._swipe_minitouch_legacy_impl(p1, p2, duration=duration)
+            waits = _quantize_move_delays(list(plan.delays))
+            if waits is None:
+                # 契约 #6：目标总毫秒 < 正 delay 数，该点数不可表示 → 回退 legacy，
+                # 禁止用 max(ms, 1) 静默放大总预算
+                return self._swipe_minitouch_legacy_impl(p1, p2, duration=duration)
+            liftoff = self.humanizer.plan_touch_liftoff(end)
+
+            def run_humanized(builder, send):
+                builder.down(*start).commit()
+                send()
+                # MOVE 批内 wait → move → commit 连续追加后只调用一次 send（契约 #6）。
+                # w 是恒定回报率间隔（同值 ±1ms 抖动后量化），事件流与真实设备
+                # 固定采样率上报同构
+                for ms, point in zip(waits, plan.points):
+                    builder.wait(ms).move(*point).commit()
+                if liftoff is not None:
+                    liftoff_waits = _quantize_move_delays(list(liftoff.delays))
+                    if liftoff_waits is None:
+                        # 极端预算不足：liftoff 退化为不生成 wait（不放大预算）
+                        liftoff_waits = [0] * len(liftoff.points)
+                    for ms, point in zip(liftoff_waits, liftoff.points):
+                        builder.wait(ms).move(*point).commit()
+                send()
+                builder.up().commit()
+                send()
+
+            return self._run_humanized_minitouch(
+                run_humanized,
+                lambda: self._swipe_minitouch_legacy_impl(p1, p2, duration=duration),
+            )
+        finally:
+            self.__dict__.pop('_humanized_minitouch_gap_s', None)
 
     @retry
     def drag_minitouch(self, p1, p2, point_random=(-10, -10, 10, 10)):

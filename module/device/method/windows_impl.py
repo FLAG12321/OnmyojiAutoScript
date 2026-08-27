@@ -31,6 +31,7 @@ from module.base.decorator import Config
 from module.base.timer import timer
 from module.logger import logger
 from module.device.handle import Handle, window_scale_rate, EmulatorFamily, dpi_awareness
+from module.device.humanize.timing import PROFILE_MAX_POINTS
 
 
 
@@ -47,6 +48,23 @@ class Window(Handle):
     def __init__(self, *args, **kwargs):
         logger.info("Window init")
         super().__init__(*args, **kwargs)
+
+    @property
+    def _humanizer(self):
+        """拟人化门面（Device 绑定）。黄金基线桩或尚未绑定时返回 None，走原始旁路。"""
+        return getattr(self, 'humanizer', None)
+
+    def _desktop_move_budget_ms(self, start, end) -> float:
+        """桌面指针移动的请求预算（Spec §5 D）：light 15~30ms；medium/heavy 40~120ms × 人格速度缩放。
+
+        facade 的 plan_move 按传入 budget_ms 生成 delays，不自行套档位公式，
+        因此预算推导落在消费点（backend）——这正是契约 #10「消费点决定能力与预算」。
+        """
+        humanizer = self._humanizer
+        d = dist(start, end)
+        if humanizer is not None and humanizer.level in ('medium', 'heavy'):
+            return min(max(d * 0.35, 40.0), 120.0) * humanizer.persona.move_speed_scale
+        return min(max(d * 0.12, 15.0), 30.0)
 
     def screenshot_window_background(self):
         """
@@ -238,12 +256,26 @@ class Window(Handle):
         # 所有我在点击的时候会除以这个缩放比例
         # 但是后面发现又不是影响的很奇怪
 
-        x = int(x / self.window_scale_rate)
-        y = int(y / self.window_scale_rate)
-        if fast:
+        # humanizer 使用 1280x720 authoring 坐标；Win32 消息坐标可能受 DPI 缩放。
+        # 先在 authoring 画布生成并裁剪附加点，再逐点换算，避免缩放后仍按
+        # 1280x720 裁剪而把 liftoff 发出真实客户区。
+        target = (int(x), int(y))
+        x = int(target[0] / self.window_scale_rate)
+        y = int(target[1] / self.window_scale_rate)
+        humanizer = self._humanizer
+        # 维度 B：开档用拟人化按压时长；None（off/失败）回退原矩形均匀分布
+        press = humanizer.press_seconds(fast=fast) if humanizer else None
+        if press is not None:
+            press_time = press
+        elif fast:
             press_time: float = (random.randint(10, 40)) / 1000.0
         else:
             press_time: float = (random.randint(100, 200)) / 1000.0
+        # 维度 F（触摸语义）：UP 前微位移。策略点保留 authoring 坐标，backend
+        # 在发送时统一换算到消息空间；业务 UP 仍使用原目标换算值。
+        # 模拟器点击只消费 B/F（契约 #10）：不接 plan_move/plan_dwell，medium/heavy
+        # 对该点击动作没有新增维度，行为与耗时模型均同 light。
+        liftoff = humanizer.plan_touch_liftoff(target) if humanizer else None
         emulator_type = len(self.control_handle_list)
         if emulator_type == 2:  # mumu模拟器
             SendMessage(self.control_handle_list[0], WM_ACTIVATE, WA_ACTIVE, 0)  # 激活窗口
@@ -252,6 +284,14 @@ class Window(Handle):
             # mumu12模拟器 V3.5.16 之后后可以用下面的方式
             SendMessage(self.control_handle_list[1], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
             time.sleep(press_time)
+            if liftoff is not None:
+                # 触摸 liftoff：delay 在发点前消费，且必须在 UP 前（模拟器路径原本
+                # 没有任何收尾事件，这里是新增的 before-UP 微位移，不是搬移既有事件）
+                for (px, py), dt in zip(liftoff.points, liftoff.delays):
+                    time.sleep(dt)
+                    px = int(px / self.window_scale_rate)
+                    py = int(py / self.window_scale_rate)
+                    PostMessage(self.control_handle_list[1], WM_MOUSEMOVE, MK_LBUTTON, MAKELONG(px, py))
             SendMessage(self.control_handle_list[1], WM_LBUTTONUP, 0, MAKELONG(x, y))  # 模拟鼠标弹起 后是子窗口
         elif emulator_type > 2:  # 夜神模拟器
             SendMessage(self.control_handle_list[0], WM_LBUTTONDOWN, 0, MAKELONG(x, y))  # 模拟鼠标按下 先是父窗口 上面的框高度是57
@@ -259,11 +299,23 @@ class Window(Handle):
             SendMessage(self.control_handle_list[2], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
             SendMessage(self.control_handle_list[3], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
             time.sleep(press_time)
+            if liftoff is not None:
+                for (px, py), dt in zip(liftoff.points, liftoff.delays):
+                    time.sleep(dt)
+                    px = int(px / self.window_scale_rate)
+                    py = int(py / self.window_scale_rate)
+                    PostMessage(self.control_handle_list[3], WM_MOUSEMOVE, MK_LBUTTON, MAKELONG(px, py))
             SendMessage(self.control_handle_list[3], WM_LBUTTONUP, 0, MAKELONG(x, y))  # 模拟鼠标弹起 后是子窗口
         elif emulator_type == 1:  # 雷电模拟器
             clickPos = MAKELONG(x, y)
             SendMessage(self.control_handle_list[0], WM_LBUTTONDOWN, 0, clickPos)
             time.sleep(press_time)
+            if liftoff is not None:
+                for (px, py), dt in zip(liftoff.points, liftoff.delays):
+                    time.sleep(dt)
+                    px = int(px / self.window_scale_rate)
+                    py = int(py / self.window_scale_rate)
+                    PostMessage(self.control_handle_list[0], WM_MOUSEMOVE, MK_LBUTTON, MAKELONG(px, py))
             SendMessage(self.control_handle_list[0], WM_LBUTTONUP, 0, clickPos)
 
     def desktop_message_coord(self, x, y) -> tuple:
@@ -286,21 +338,51 @@ class Window(Handle):
         # 最小化的窗口收不到有效的后台点击，误操作导致最小化时先还原
         self.desktop_window_restore_if_minimized()
         hwnd = self.root_handle_num
-        # 后台消息点击由客户端按 down/up 事件判定，无需模拟真人按压时长；
-        # 保留小幅随机抖动避免固定间隔特征
-        if fast:
+        humanizer = self._humanizer
+        # 维度 B：开档用拟人化按压时长；None（off/失败）回退原矩形均匀分布。
+        # fast 只缩放中位数，下界仍为 45ms（Spec §5 B「fast 的语义」）
+        press = humanizer.press_seconds(fast=fast) if humanizer else None
+        if press is not None:
+            press_time = press
+        elif fast:
             press_time: float = (random.randint(10, 25)) / 1000.0
         else:
             press_time: float = (random.randint(30, 60)) / 1000.0
+        # 预定位：move_desktop_window_message 内部消费 plan_move（pointer_move 语义），
+        # medium 的 C 与 light 的 D 因此计入完整点击动作
         self.move_desktop_window_message(x, y)
         mx, my = self.desktop_message_coord(x, y)
         lparam = MAKELONG(mx, my)
+        # 维度 E：到位停顿，仅桌面指针语义且只属 medium/heavy（§7.2：light 无 E）。
+        # DwellPlan 语义写死为"先发点、再等待"；None 段只等待，settle 段发
+        # ±(1~2)px 的 WM_MOUSEMOVE 保持悬停刷新
+        if humanizer is not None and humanizer.level in ('medium', 'heavy'):
+            dwell = humanizer.plan_dwell((int(x), int(y)))
+        else:
+            dwell = None
+        if dwell is not None:
+            for point, sec in dwell.segments:
+                if point is not None:
+                    px, py = self.desktop_message_coord(*point)
+                    PostMessage(hwnd, WM_MOUSEMOVE, 0, MAKELONG(px, py))
+                time.sleep(sec)
         PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
         time.sleep(press_time)
         PostMessage(hwnd, WM_LBUTTONUP, 0, lparam)
         SendMessage(hwnd, WM_CAPTURECHANGED, 0, 0)
-        # 抬起后补一次移动，让客户端刷新悬停状态
-        PostMessage(hwnd, WM_MOUSEMOVE, 0, lparam)
+        # 维度 F（指针语义）：UP 后漂移替换原有同坐标移动（hover 刷新）。
+        # plan_pointer_tail 永不返回 None——"完全不补"会丢 hover，风险不值
+        tail = humanizer.plan_pointer_tail((int(x), int(y))) if humanizer else None
+        if tail is not None:
+            for (px, py), dt in zip(tail.points, tail.delays):
+                time.sleep(dt)
+                qx, qy = self.desktop_message_coord(px, py)
+                PostMessage(hwnd, WM_MOUSEMOVE, 0, MAKELONG(qx, qy))
+            # tail 是最后实际发送的指针位置，后续移动与 idle 必须从这里开始。
+            self._desktop_cursor = (int(tail.points[-1][0]), int(tail.points[-1][1]))
+        else:
+            # 抬起后补一次移动，让客户端刷新悬停状态
+            PostMessage(hwnd, WM_MOUSEMOVE, 0, lparam)
 
     def move_desktop_window_message(self, x: int, y: int) -> None:
         """桌面客户端后台鼠标移动：从上一落点沿贝塞尔轨迹移动到 (x, y)。
@@ -334,10 +416,44 @@ class Window(Handle):
         if len(trace) > self.DESKTOP_MOVE_MAX_POINTS:
             step = len(trace) / self.DESKTOP_MOVE_MAX_POINTS
             trace = [trace[int(i * step)] for i in range(self.DESKTOP_MOVE_MAX_POINTS)]
+        # 维度 D（light 桌面移动的主要收益点，今天零 sleep）：把既有轨迹点交给
+        # plan_move，light 由 facade 剥离与 start 相同的首点后补近恒定间隔，
+        # medium/heavy 生成新二维几何。None（off/越界/失败）回退原裸循环（逐点连发）
+        humanizer = self._humanizer
+        if humanizer is not None:
+            # desktop_trace 返回 list，facade 的起点/终点比较用 tuple：统一转 tuple，
+            # 否则 [600,500] != (600,500) 会让 light 判定"末项非终点"而整体回退
+            legacy_points = [tuple(p) for p in trace]
+            plan = humanizer.plan_move(
+                start, target, gesture_kind='pointer_move',
+                legacy_points=legacy_points,
+                budget_ms=self._desktop_move_budget_ms(start, target))
+            if plan is not None:
+                # MovePlan.delays[i] 是发送 points[i] 前的等待；无 DOWN 的纯 pointer
+                # move 中 delays[0] 是上一动作到第一点的前置反应延迟，不得跳过
+                for (px, py), dt in zip(plan.points, plan.delays):
+                    time.sleep(dt)
+                    post_move(px, py)
+                self._desktop_cursor = target
+                return
         for px, py in trace:
             post_move(px, py)
         post_move(target[0], target[1])
         self._desktop_cursor = target
+
+    def move_desktop_plan(self, plan) -> None:
+        """把 MovePlan 逐点投递为桌面 WM_MOUSEMOVE（维度 G 空闲 / 计划直投）。
+
+        供 Control.click 在 plan_idle 返回非 None 时调用：桌面指针语义下把空闲游移
+        逐点投递并更新光标位置。delays[i] 在 points[i] 前消费；不产生 DOWN/UP，
+        因此不会触发点击、截图或 control check。
+        """
+        hwnd = self.root_handle_num
+        for (px, py), dt in zip(plan.points, plan.delays):
+            time.sleep(dt)
+            mx, my = self.desktop_message_coord(px, py)
+            PostMessage(hwnd, WM_MOUSEMOVE, 0, MAKELONG(mx, my))
+        self._desktop_cursor = (int(plan.points[-1][0]), int(plan.points[-1][1]))
 
     @staticmethod
     def desktop_trace(start_pos, end_pos, interval: int = 10) -> list:
@@ -364,6 +480,41 @@ class Window(Handle):
         return BezierTrajectory.trackArray(start=list(start_pos), end=list(end_pos), numberList=number_list,
                                            le=le, deviation=deviation, bias=0.5, type=b_type, cbb=0, yhh=20)
 
+    def _hold_jitter_moves(self, hwnd, x, y, duration: float, press_wparam: int) -> None:
+        """长按 hold 期间发送微颤 MOVE 流（维度 J，2026-08-26 调研对标新增）。
+
+        入参 x,y 必须是 authoring 坐标（1280×720 截图空间）——plan_hold 在
+        facade 的 authoring 画布上生成微颤点，发送时由 _hold_jitter_coord
+        单次换算到消息空间（与 click 的 liftoff 同模式，绝不双重缩放）。
+        平台长按识别器留 8~10px 移动容差（iOS allowableMovement / Android touch
+        slop）正说明真人按住期间手指持续微动；旧实现 hold 期间零事件（纯 sleep）
+        是整秒级事件流死寂。plan_hold 返回 None（off/'none'/预算过短）时回退
+        纯 sleep——注意 none 时可能已消费 hold 权重 RNG，但 sleep 不依赖 RNG。
+        press_wparam：按住期间的 MOVE 用 MK_LBUTTON（模拟器语义，按键按住中），
+        桌面指针语义用 0。python_sleep 通道 point_cap=50：wall-clock 由 Python
+        sleep 驱动（精度 ~2.9ms/点 + 抖动），点数过多累积偏差会吃掉业务时长。
+        """
+        humanizer = self._humanizer
+        is_desktop = getattr(self, 'is_desktop_window', False)
+        plan = (humanizer.plan_hold((int(x), int(y)), float(duration), point_cap=50,
+                                    mouse=is_desktop)
+                if humanizer is not None else None)
+        if plan is None:
+            time.sleep(duration)
+            return
+        for (px, py), dt in zip(plan.points, plan.delays):
+            # delays[i] 是发送 points[i] 前的等待（全局契约 4）
+            time.sleep(dt)
+            qx, qy = self._hold_jitter_coord(px, py)
+            PostMessage(hwnd, WM_MOUSEMOVE, press_wparam, MAKELONG(qx, qy))
+
+    def _hold_jitter_coord(self, x, y) -> tuple:
+        """hold 微颤点的消息坐标换算；模拟器入口走 window_scale_rate，
+        桌面入口走 desktop_message_coord（与各自 DOWN/UP 的换算同源）。"""
+        if getattr(self, 'is_desktop_window', False):
+            return self.desktop_message_coord(x, y)
+        return int(x / self.window_scale_rate), int(y / self.window_scale_rate)
+
     def long_click_window_message(self, x: int, y: int, duration: float):
         """
 
@@ -376,6 +527,9 @@ class Window(Handle):
             return self.long_click_desktop_window_message(x, y, duration)
         # 我不知道为什么的使用的pywin32==306的版本会导致获取的图片的是(1024, 576)
         # 所有我在点击的时候会除以这个缩放比例
+        # hold 微颤的 target 用 authoring 坐标（缩放前）：plan_hold 在 authoring
+        # 画布生成微颤点，发送时才单次换算（与 click 的 liftoff 同模式）
+        hold_target = (int(x), int(y))
         x = int(x / self.window_scale_rate)
         y = int(y / self.window_scale_rate)
 
@@ -384,19 +538,20 @@ class Window(Handle):
             SendMessage(self.control_handle_list[1], WM_ACTIVATE, WA_ACTIVE, 0)  # 激活窗口
             # SendMessage(self.control_handle_list[0], WM_LBUTTONDOWN, 0, MAKELONG(x, y+self.mumu_head_height))  # 模拟鼠标按下 先是父窗口 上面的框高度是57
             SendMessage(self.control_handle_list[1], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
-            time.sleep(duration)  # 长按时间1000ms-1500ms
+            # 维度 J：hold 期间微颤 MOVE 流替换纯 sleep（None 时内部回退 sleep）
+            self._hold_jitter_moves(self.control_handle_list[1], *hold_target, duration, MK_LBUTTON)
             SendMessage(self.control_handle_list[1], WM_LBUTTONUP, 0, MAKELONG(x, y))  # 模拟鼠标弹起 后是子窗口
         elif emulator_type > 2:  # 夜神模拟器
             SendMessage(self.control_handle_list[0], WM_LBUTTONDOWN, 0, MAKELONG(x, y))  # 模拟鼠标按下 先是父窗口 上面的框高度是57
             SendMessage(self.control_handle_list[1], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
             SendMessage(self.control_handle_list[2], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
             SendMessage(self.control_handle_list[3], WM_LBUTTONDOWN, 0, MAKELONG(x, y))
-            time.sleep(duration)  # 长按时间1000ms-1500ms
+            self._hold_jitter_moves(self.control_handle_list[3], *hold_target, duration, MK_LBUTTON)
             SendMessage(self.control_handle_list[3], WM_LBUTTONUP, 0, MAKELONG(x, y))  # 模拟鼠标弹起 后是子窗口
         elif emulator_type == 1:  # 雷电模拟器
             clickPos = MAKELONG(x, y)
             SendMessage(self.control_handle_list[0], WM_LBUTTONDOWN, 0, clickPos)  # 模拟鼠标按下
-            time.sleep(duration)  # 长按时间1000ms-1500ms
+            self._hold_jitter_moves(self.control_handle_list[0], *hold_target, duration, MK_LBUTTON)
             SendMessage(self.control_handle_list[0], WM_LBUTTONUP, 0, clickPos)  # 模拟鼠标弹起
 
     def long_click_desktop_window_message(self, x: int, y: int, duration: float):
@@ -404,13 +559,39 @@ class Window(Handle):
         # 最小化时后台长按同样不可靠，先还原窗口
         self.desktop_window_restore_if_minimized()
         hwnd = self.root_handle_num
+        # 预定位：move_desktop_window_message 内部消费 plan_move（pointer_move 语义）
         self.move_desktop_window_message(x, y)
         lparam = MAKELONG(*self.desktop_message_coord(x, y))
+        humanizer = self._humanizer
+        # 维度 E：到位停顿，仅桌面指针语义且只属 medium/heavy（§7.2）。
+        # 既有长按时长是业务参数，不由维度 B 重采样
+        if humanizer is not None and humanizer.level in ('medium', 'heavy'):
+            dwell = humanizer.plan_dwell((int(x), int(y)))
+        else:
+            dwell = None
+        if dwell is not None:
+            for point, sec in dwell.segments:
+                if point is not None:
+                    px, py = self.desktop_message_coord(*point)
+                    PostMessage(hwnd, WM_MOUSEMOVE, 0, MAKELONG(px, py))
+                time.sleep(sec)
         PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
-        time.sleep(duration)
+        # 维度 J：hold 期间微颤 MOVE 流替换纯 sleep（桌面指针语义，wparam=0）
+        self._hold_jitter_moves(hwnd, int(x), int(y), duration, 0)
         PostMessage(hwnd, WM_LBUTTONUP, 0, lparam)
         SendMessage(hwnd, WM_CAPTURECHANGED, 0, 0)
-        PostMessage(hwnd, WM_MOUSEMOVE, 0, lparam)
+        # 维度 F（指针语义）：UP 后漂移替换原有同坐标移动（hover 刷新）
+        tail = humanizer.plan_pointer_tail((int(x), int(y))) if humanizer else None
+        if tail is not None:
+            for (px, py), dt in zip(tail.points, tail.delays):
+                time.sleep(dt)
+                qx, qy = self.desktop_message_coord(px, py)
+                PostMessage(hwnd, WM_MOUSEMOVE, 0, MAKELONG(qx, qy))
+            # 与点击路径一致，记录 after-UP tail 的真实末点。
+            self._desktop_cursor = (int(tail.points[-1][0]), int(tail.points[-1][1]))
+        else:
+            # 抬起后补一次移动，让客户端刷新悬停状态
+            PostMessage(hwnd, WM_MOUSEMOVE, 0, lparam)
 
     # @timer
     def swipe_window_message(self, startPos: list, endPos: list) -> None:
@@ -452,17 +633,76 @@ class Window(Handle):
         # SendMessage(self.control_handle_list[0], WM_MOUSEACTIVATE, WM_LBUTTONDOWN, tmpPos)
         # PostMessage(handleNum, WM_ACTIVATE, WA_ACTIVE, 0)
 
-        # 先移动到第一个点
-        tmpPos = MAKELONG(trace[0][0], trace[0][1])
+        humanizer = self._humanizer
+        # 维度 D/H：light 保留既有逐点 sleep（近恒定，D no-op），只由 facade 应用
+        # H 末段替换；medium/heavy 用最终 plan_swipe（新几何）。None（off/失败）
+        # 回退原逐点循环。维度 I：UP 前固定 sleep(0.05) 换成同均值抖动
+        manual_control: int = 3  # 手动控制最后几个点的数量
+        total_len: int = len(trace)
+        plan = None
+        # off 档必须整体走旧循环：legacy_delays 的 random.randint 预消耗会让 fallback
+        # 再消费一次全局 RNG（契约 #1 off 零回归），故门控加 humanizer.enabled
+        if humanizer is not None and humanizer.enabled:
+            # 按既有算法预生成 legacy_delays，facade 原样保留基础 delay、只替换末段。
+            # trackArray 返回 list，facade 的起点/终点比较用 tuple：先统一转 tuple
+            legacy_rng_state = random.get_state()
+            legacy_points = [tuple(p) for p in trace]
+            legacy_delays = [
+                0.08 if manual_control >= total_len - index
+                else (interval + random.randint(-2, 2)) / 1000.0
+                for index, pos in enumerate(trace)
+            ]
+            plan = humanizer.plan_swipe(
+                tuple(startPos), tuple(endPos),
+                legacy_points=legacy_points, legacy_delays=legacy_delays,
+                # medium/heavy 预算 = legacy 总时长（window_message 无 duration 入参，
+                # 时长由 trackArray 点位数随距离伸缩）。不传时 facade 用固定 120ms，
+                # 长滑动会被压快。light 路径直接消费 legacy_delays，不读该参数
+                base_delay_s=sum(legacy_delays) / PROFILE_MAX_POINTS)
+            if plan is None:
+                # 计划失败时完全回到原始循环，撤销仅为拟人化计划预消费的随机数，
+                # 让 enabled fallback 与原 legacy 路径保持同一事件和 RNG 序列。
+                random.set_state(legacy_rng_state)
+            # 维度 I：UP 前固定 sleep(0.05) 换成同均值抖动。只随主计划成功生效——
+            # plan 失败（off/越界）时整体回退原旁路，连 gap 也保持原常量
+            gap = humanizer.gap_seconds(0.05) if plan is not None else None
+        else:
+            gap = None
+        final_gap = gap if gap is not None else 0.05
+
+        # 只有计划实际生成成功时才换算 DPI 消息坐标；策略失败必须完整回退原始
+        # legacy 轨迹，不能因为 enabled 仍然改写业务端点或中间点。
+        scale_humanized = plan is not None
+
+        def message_coord(x, y):
+            if not scale_humanized:
+                return int(x), int(y)
+            return int(x / self.window_scale_rate), int(y / self.window_scale_rate)
+
+        # 先移动到第一个点。off/legacy 必须保持原始消息坐标；只有 enabled 且
+        # 计划成功时使用 authoring 坐标换算到 DPI 虚拟化客户区。
+        tx, ty = message_coord(trace[0][0], trace[0][1])
+        tmpPos = MAKELONG(tx, ty)
         SendMessage(handleNum, WM_NCHITTEST, 0, tmpPos)
         SendMessage(handleNum, WM_SETCURSOR, handleNum, MAKELONG(HTCLIENT, WM_LBUTTONDOWN))
         PostMessage(handleNum, WM_LBUTTONDOWN, 0, tmpPos)
 
+        if plan is not None:
+            # 最终计划逐点投递：delays[i] 在 points[i] 前消费；UP 后不消费计划 delay
+            for (px, py), dt in zip(plan.points, plan.delays):
+                time.sleep(dt)
+                mx, my = message_coord(px, py)
+                PostMessage(handleNum, WM_MOUSEMOVE, MK_LBUTTON, MAKELONG(mx, my))
+            time.sleep(final_gap)
+            ex, ey = message_coord(endPos[0], endPos[1])
+            end_lparam = MAKELONG(ex, ey)
+            PostMessage(handleNum, WM_LBUTTONUP, 0, end_lparam)
+            return
+
         # 一点一点移动鼠标
-        manual_control: int = 3  # 手动控制最后几个点的数量
-        total_len: int = len(trace)
         for index, pos in enumerate(trace):
-            lparam = MAKELONG(pos[0], pos[1])
+            mx, my = message_coord(pos[0], pos[1])
+            lparam = MAKELONG(mx, my)
             PostMessage(handleNum, WM_MOUSEMOVE, MK_LBUTTON, lparam)
             if manual_control >= total_len - index:
                 time.sleep(0.08)
@@ -470,8 +710,9 @@ class Window(Handle):
                 time.sleep((interval + random.randint(-2, 2)) / 1000.0)
 
         # 最后释放鼠标
-        time.sleep(0.05)
-        end_lparam = MAKELONG(trace[-1][0], trace[-1][1])
+        time.sleep(final_gap)
+        ex, ey = message_coord(endPos[0], endPos[1])
+        end_lparam = MAKELONG(ex, ey)
         PostMessage(handleNum, WM_LBUTTONUP, 0, end_lparam)
 
     def swipe_desktop_window_message(self, startPos: list, endPos: list) -> None:
@@ -482,12 +723,59 @@ class Window(Handle):
         interval: int = 10
         trace = self.desktop_trace(startPos, endPos, interval=interval)
         # 先把鼠标移到起点，再按下，避免客户端因缺少 hover 忽略按下事件
+        # （预定位内部消费 plan_move，pointer_move 语义）
         self.move_desktop_window_message(startPos[0], startPos[1])
         start_lparam = MAKELONG(*self.desktop_message_coord(startPos[0], startPos[1]))
         PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, start_lparam)
-        # 一点一点移动鼠标，最后几个点放慢，让客户端识别为拖拽而非瞬移
+        # 维度 D/H：手势主体走 plan_swipe——light 保留既有逐点 sleep（D no-op），
+        # 只由 facade 应用 H 末段替换；medium/heavy 用最终 plan_swipe（新几何）。
+        # None（off/失败）回退原逐点循环。维度 I：UP 前固定 sleep(0.05) 换同均值抖动
+        humanizer = self._humanizer
         manual_control: int = 3
         total_len: int = len(trace)
+        plan = None
+        # off 档必须整体走旧循环：legacy_delays 的 random.randint 预消耗会让 fallback
+        # 再消费一次全局 RNG（契约 #1 off 零回归），故门控加 humanizer.enabled
+        if humanizer is not None and humanizer.enabled:
+            # 按既有算法预生成 legacy_delays，facade 原样保留基础 delay、只替换末段。
+            # desktop_trace 返回 list，facade 的起点/终点比较用 tuple：先统一转 tuple
+            legacy_rng_state = random.get_state()
+            legacy_points = [tuple(p) for p in trace]
+            legacy_delays = [
+                0.08 if manual_control >= total_len - index
+                else (interval + random.randint(-2, 2)) / 1000.0
+                for index, pos in enumerate(trace)
+            ]
+            plan = humanizer.plan_swipe(
+                tuple(startPos), tuple(endPos),
+                legacy_points=legacy_points, legacy_delays=legacy_delays,
+                # 同模拟器入口：medium/heavy 预算 = legacy 总时长（desktop_trace 点位
+                # 数随距离伸缩），light 不读该参数。桌面拖拽是鼠标语义，
+                # 回报率走鼠标区间（125~1000Hz，python_sleep 下被 clamp 到 200Hz）
+                base_delay_s=sum(legacy_delays) / PROFILE_MAX_POINTS,
+                mouse=True)
+            if plan is None:
+                # 计划失败时完全回到原始循环，撤销仅为拟人化计划预消费的随机数。
+                random.set_state(legacy_rng_state)
+            # 维度 I：UP 前固定 sleep(0.05) 换成同均值抖动。只随主计划成功生效——
+            # plan 失败（off/越界）时整体回退原旁路，连 gap 也保持原常量
+            gap = humanizer.gap_seconds(0.05) if plan is not None else None
+        else:
+            gap = None
+        final_gap = gap if gap is not None else 0.05
+        if plan is not None:
+            # 最终计划逐点投递：delays[i] 在 points[i] 前消费；UP 后不消费计划 delay
+            for (px, py), dt in zip(plan.points, plan.delays):
+                time.sleep(dt)
+                lparam = MAKELONG(*self.desktop_message_coord(px, py))
+                PostMessage(hwnd, WM_MOUSEMOVE, MK_LBUTTON, lparam)
+            time.sleep(final_gap)
+            end_lparam = MAKELONG(*self.desktop_message_coord(endPos[0], endPos[1]))
+            PostMessage(hwnd, WM_LBUTTONUP, 0, end_lparam)
+            SendMessage(hwnd, WM_CAPTURECHANGED, 0, 0)
+            self._desktop_cursor = (int(endPos[0]), int(endPos[1]))
+            return
+        # 一点一点移动鼠标，最后几个点放慢，让客户端识别为拖拽而非瞬移
         for index, pos in enumerate(trace):
             lparam = MAKELONG(*self.desktop_message_coord(pos[0], pos[1]))
             PostMessage(hwnd, WM_MOUSEMOVE, MK_LBUTTON, lparam)
@@ -495,7 +783,7 @@ class Window(Handle):
                 time.sleep(0.08)
             else:
                 time.sleep((interval + random.randint(-2, 2)) / 1000.0)
-        time.sleep(0.05)
+        time.sleep(final_gap)
         end_lparam = MAKELONG(*self.desktop_message_coord(endPos[0], endPos[1]))
         PostMessage(hwnd, WM_LBUTTONUP, 0, end_lparam)
         SendMessage(hwnd, WM_CAPTURECHANGED, 0, 0)
@@ -641,5 +929,3 @@ if __name__ == "__main__":
     # PostMessage(handle, WM_MOUSEWHEEL, wparam, lparam)
 
     w.long_click_window_message(142, 310, 1.5)
-
-

@@ -5,6 +5,7 @@ import platform
 import re
 import socket
 import subprocess
+import sys
 import time
 from functools import wraps
 
@@ -145,7 +146,13 @@ class Connection(ConnectionAttr):
         # To disable it, edit gooey/gui/util/taskkill.py
 
         # No gooey anymore, just shell=False
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=False)
+        # 无控制台宿主（pythonw 启动的 server/GUI）下，adb.exe 这类控制台子进程
+        # 会各自弹出一个 cmd 窗口，命令结束即销毁——启动实例时 adb 调用密集，
+        # 表现为连续闪屏。CREATE_NO_WINDOW 抑制子进程控制台窗口分配，
+        # 与 updater.py / ocr/rpc.py 的既有处理同模式（对控制台宿主无影响）
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=False,
+                                   creationflags=flags)
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:

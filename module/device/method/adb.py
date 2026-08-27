@@ -180,7 +180,12 @@ class Adb(Connection):
         start = time.time()
         self.adb_shell(['input', 'tap', x, y])
         if time.time() - start <= 0.05:
-            self.sleep(0.05)
+            # 维度 I 动作间隔（Plan Task 19）：开档把固定 0.05 换成同均值抖动；
+            # 无 humanizer（off/未绑定）或 gap_seconds 返回 None 时用旧常量。
+            # input tap 命令文本在四档全部逐字节不变（维度 B 已放弃）。
+            humanizer = getattr(self, 'humanizer', None)
+            gap = humanizer.gap_seconds(0.05) if humanizer is not None else None
+            self.sleep(gap if gap is not None else 0.05)
 
     @retry
     def swipe_adb(self, p1, p2, duration=0.1):

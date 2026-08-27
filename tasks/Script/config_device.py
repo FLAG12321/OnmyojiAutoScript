@@ -6,6 +6,8 @@ from typing import Union
 from pydantic import BaseModel, ValidationError, Field
 
 from module.logger import logger
+# 拟人化档位枚举唯一来源在 module.device.humanize，这里只导入不复制定义（Plan Task 12）
+from module.device.humanize import HumanizeLevel
 
 class PackageName(str, Enum):
     AUTO = 'auto'
@@ -81,6 +83,12 @@ class Device(BaseModel):
     # 启动时纯后台运行模拟器，不显示窗口和任务栏
     run_background_only: bool = Field(default=False,
                                              description='模拟器无UI后台运行，关掉后重启脚本会重新显示（无需重启OAS）')
+    # 拟人化输入档位。默认 off 是零回归旁路（事件/时长/随机序列逐字节不变）；
+    # light 增加落点/按压/间隔/滑动末段拟人，Python 逐点 sleep 有毫秒级时间代价；
+    # medium/heavy 逐级增加几何轨迹与到位停顿（时间代价随档位增加）。
+    # 合法取值固定为 off/light/medium/heavy，定义唯一来源在 module.device.humanize。
+    humanize_level: HumanizeLevel = Field(default='off',
+                                          description='拟人化输入档位：off 零回归全旁路；light 增加落点/按压/间隔/滑动末段，逐点 sleep 约几十毫秒时间代价；medium/heavy 逐级开启几何轨迹与停顿（时间代价随档位增加）')
 
 
 

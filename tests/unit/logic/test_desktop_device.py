@@ -2,6 +2,7 @@
 import types
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 import win32con
 
@@ -13,6 +14,8 @@ from module.device.handle import Handle, DESKTOP_RESIZE_ATTEMPTS
 from module.device.screenshot import Screenshot
 from module.exception import (EmulatorNotRunningError, GameNotRunningError,
                               GameStuckError, RequestHumanTakeover)
+from module.device.humanize import HumanizerContext
+from module.device.humanize.persona import Persona
 from module.device.method.windows_impl import Window
 
 
@@ -285,6 +288,32 @@ def test_move_desktop_window_message_caps_points(monkeypatch):
     # 轨迹点被抽稀到上限，再加终点补发一次
     assert len(calls) <= w.DESKTOP_MOVE_MAX_POINTS + 1
     assert w._desktop_cursor == (1280, 720)
+
+
+def test_desktop_light_move_wall_clock_scales_with_points():
+    """桌面 light 移动墙钟最低估算按「距离 → 点数 → 每点请求 → 逐点地板」四步推导
+    （Spec §7.3.2）：点数越多估算越高，只有 720px 满载 12 点才走到 35~47ms 上界，
+    典型 100~400px 预定位落在 17~35ms——禁止对所有移动套用同一个 35~47ms 区间。
+
+    2.9ms 只是本机最低估算地板，不是所有机器的通用上界；目标机中位数/P95 必须
+    用 Spec §11 的校准表单独记录，不能外推到其它机器。
+    """
+    def estimate(dist):
+        # 距离 → 点数：DESKTOP_MOVE_STEP=60 每 60px 一点，DESKTOP_MOVE_MAX_POINTS 截断
+        points = min(int(dist / Window.DESKTOP_MOVE_STEP),
+                     Window.DESKTOP_MOVE_MAX_POINTS)
+        # 每点请求：light 预算公式 _desktop_move_budget_ms（15~30ms 区间）
+        budget_ms = min(max(dist * 0.12, 15.0), 30.0)
+        per_point_s = budget_ms / points / 1000.0
+        # 逐点地板：墙钟最低估算 = sum(max(每点请求, 2.9ms))
+        return points, sum(max(per_point_s, 0.0029) for _ in range(points))
+
+    pts_240, est_240 = estimate(240.0)
+    pts_720, est_720 = estimate(720.0)
+    assert (pts_240, pts_720) == (4, 12), '距离 → 点数推导：240px→4 点、720px→12 点'
+    assert est_240 < est_720, '墙钟与点数强相关，不是固定区间'
+    assert 0.017 <= est_240 <= 0.035, f'典型预定位应落 17~35ms，实际 {est_240 * 1000:.2f}ms'
+    assert 0.034 <= est_720 <= 0.047, f'满载 12 点应落 35~47ms，实际 {est_720 * 1000:.2f}ms'
 
 
 def test_screenshot_desktop_bitblt_raises_when_minimized(monkeypatch):
@@ -2486,3 +2515,286 @@ def test_emulator_stop_desktop_returns_false_when_not_released():
     dev = _desktop_device()
     dev.desktop_stop_client = lambda: False
     assert dev.emulator_stop() is False
+
+
+# ---------------- 拟人化桌面输入：Task 14 消费点（plan_move/dwell/press/pointer_tail） ----------------
+
+_DESKTOP_HZ_PERSONA = Persona.generate(20260825)
+
+
+def _humanized_desktop(level, seed, cursor=(100, 100), scale=1.0):
+    """构造带拟人化门面的桌面 Window 桩。
+
+    humanizer 直接构造（复用固定人格/种子约定），不经过 Device.__init__——
+    这里只测 backend 消费点，不测绑定。
+    """
+    w = _desktop_window(scale=scale)
+    w._desktop_cursor = cursor
+    w.humanizer = HumanizerContext(
+        enabled=True, level=level, persona=_DESKTOP_HZ_PERSONA,
+        rng=np.random.Generator(np.random.PCG64(seed)), canvas_size=(1280, 720))
+    return w
+
+
+def _record_desktop(fn, monkeypatch):
+    """运行 fn，把 PostMessage/SendMessage/time.sleep 记成事件序列。"""
+    calls = []
+    monkeypatch.setattr('module.device.method.windows_impl.PostMessage',
+                        lambda hwnd, msg, wp, lp: calls.append(('Post', hwnd, msg, wp, lp)))
+    monkeypatch.setattr('module.device.method.windows_impl.SendMessage',
+                        lambda hwnd, msg, wp, lp: calls.append(('Send', hwnd, msg, wp, lp)))
+    monkeypatch.setattr('module.device.method.windows_impl.time.sleep',
+                        lambda s: calls.append(('sleep', s)))
+    fn()
+    return calls
+
+
+def _desktop_msgs(events):
+    """事件列表 → 与事件对齐的消息序列（sleep 事件映射为 None，保证索引对齐）。"""
+    return [e[2] if len(e) >= 3 else None for e in events]
+
+
+def _move_points(events):
+    """从事件里取所有 WM_MOUSEMOVE 的 (x, y)（lParam 解码：MAKELONG(x, y) => y<<16|x）。"""
+    return [(e[4] & 0xFFFF, (e[4] >> 16) & 0xFFFF)
+            for e in events if len(e) >= 3 and e[2] == win32con.WM_MOUSEMOVE]
+
+
+def test_desktop_click_humanized_medium_consumes_plan_dwell_press_tail(monkeypatch):
+    # 桌面点击 medium：预定位 plan_move + 到位停顿 E + 按压 B + 抬起后指针尾 F。
+    # 事件顺序：MOVE(预定位/dwell) → DOWN → sleep(按压) → UP → CAPTURECHANGED → MOVE(尾)
+    w = _humanized_desktop('medium', seed=1)
+    events = _record_desktop(lambda: w.click_desktop_window_message(640, 360, fast=False),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    cap = msgs.index(win32con.WM_CAPTURECHANGED)
+    # 保留语义：WM_CAPTURECHANGED 在 UP 后立即发送
+    assert cap == up + 1
+    # DOWN 前有预定位/到位停顿的 MOUSEMOVE（plan_move 与 settle 段）
+    assert any(m == win32con.WM_MOUSEMOVE for m in msgs[:down])
+    # 按压时长来自维度 B（不在原 randint(30,60) 矩形区间），位于 DOWN/UP 之间
+    press_sleeps = [e[1] for e in events[down:up] if e[0] == 'sleep']
+    assert press_sleeps, 'DOWN 与 UP 之间必须有按压 sleep'
+    assert not any(0.030 <= s <= 0.060 for s in press_sleeps), \
+        f'按压不应落在 legacy 矩形区间: {press_sleeps}'
+    # UP/CAPTURECHANGED 之后仍有 after-UP 指针尾漂移（hover 刷新）
+    assert any(m == win32con.WM_MOUSEMOVE for m in msgs[cap + 1:])
+    assert w._desktop_cursor == _move_points(events)[-1]
+    # 预定位纳入动作级预算：DOWN 前至少存在一次 sleep（plan_move 的逐点 delay 或 dwell）
+    assert any(e[0] == 'sleep' for e in events[:down])
+
+
+def test_desktop_click_humanized_light_has_b_and_tail(monkeypatch):
+    # 桌面点击 light：B/F/D 启用；fast 按压来自 B（下界 45ms），不在 legacy 的 10~25ms
+    w = _humanized_desktop('light', seed=2)
+    events = _record_desktop(lambda: w.click_desktop_window_message(640, 360, fast=True),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    cap = msgs.index(win32con.WM_CAPTURECHANGED)
+    assert cap == up + 1
+    # F 在 light 也启用：CAPTURECHANGED 后仍有尾移动
+    assert any(m == win32con.WM_MOUSEMOVE for m in msgs[cap + 1:])
+    press_sleeps = [e[1] for e in events[down:up] if e[0] == 'sleep']
+    assert press_sleeps and not any(0.010 <= s <= 0.025 for s in press_sleeps), \
+        f'fast 按压不应落在 legacy 的 10~25ms: {press_sleeps}'
+
+
+def test_desktop_long_click_humanized_preserves_duration(monkeypatch):
+    # 桌面长按：E 停顿 + F 尾；既有长按时长是业务参数，不被维度 B 重采样。
+    # hold 段守恒断言对维度 J 两个策略分支都成立：'none' 时是单次 0.5s 纯 sleep，
+    # 'tremor' 时是 N 个小 sleep、sum ≈ 0.5s（±1ms/点抖动带宽）——不 pin 策略，
+    # 避免 RNG 消耗顺序变化把 seed 翻到另一分支导致脆断
+    w = _humanized_desktop('medium', seed=3)
+    events = _record_desktop(lambda: w.long_click_desktop_window_message(640, 360, 0.5),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    cap = msgs.index(win32con.WM_CAPTURECHANGED)
+    holds = [e[1] for e in events[down + 1:up] if e[0] == 'sleep']
+    assert abs(sum(holds) - 0.5) <= 0.001 * len(holds) + 0.001, \
+        f'hold 段时长应守恒 0.5s: {holds}'
+    assert cap == up + 1
+    assert any(m == win32con.WM_MOUSEMOVE for m in msgs[cap + 1:])
+    assert w._desktop_cursor == _move_points(events)[-1]
+
+
+def test_desktop_move_light_strips_start_and_budget(monkeypatch):
+    # 移动 light：plan_move 剥离与 start 相同的首点；首个 MOVE != start；末项仍为终点；
+    # 请求预算落在 15~30ms（Spec §5 D light）
+    w = _humanized_desktop('light', seed=4)
+    events = _record_desktop(lambda: w.move_desktop_window_message(600, 500), monkeypatch)
+    pts = _move_points(events)
+    assert pts, '开档移动必须发出 MOVE'
+    assert pts[0] != (100, 100), '首个 MOVE 不得等于起点（light 剥离）'
+    assert pts[-1] == (600, 500), '末项必须仍为终点'
+    sleeps = [e[1] for e in events if e[0] == 'sleep']
+    assert 0.015 <= sum(sleeps) <= 0.030 + 1e-6, \
+        f'light 移动请求预算应 15~30ms，实际 {sum(sleeps):.4f}'
+    assert w._desktop_cursor == (600, 500)
+
+
+def test_desktop_move_medium_caps_message_count(monkeypatch):
+    # 移动 medium：消息数 ≤ DESKTOP_MOVE_MAX_POINTS，请求预算 ≥ 40ms
+    w = _humanized_desktop('medium', seed=5)
+    w._desktop_cursor = (0, 0)
+    events = _record_desktop(lambda: w.move_desktop_window_message(1279, 719), monkeypatch)
+    pts = _move_points(events)
+    assert len(pts) <= w.DESKTOP_MOVE_MAX_POINTS, f'MOVE 消息数超上限: {len(pts)}'
+    sleeps = [e[1] for e in events if e[0] == 'sleep']
+    assert sum(sleeps) >= 0.040 - 1e-6, f'medium 请求预算应 ≥ 40ms，实际 {sum(sleeps):.4f}'
+    assert w._desktop_cursor == (1279, 719)
+
+
+def test_desktop_move_oob_target_falls_back_to_original(monkeypatch):
+    # Spec §4.11：终点越界（(1280,720) 超出 1280×720 画布）→ plan_move 返回 None →
+    # 回退原旁路。原移动循环没有逐点 sleep，因此 sleep 总数为 0，光标仍更新到目标
+    w = _humanized_desktop('medium', seed=6)
+    w._desktop_cursor = (0, 0)
+    events = _record_desktop(lambda: w.move_desktop_window_message(1280, 720), monkeypatch)
+    sleeps = [e[1] for e in events if e[0] == 'sleep']
+    assert sleeps == [], '越界回退走原旁路，不应有任何逐点 sleep'
+    assert w._desktop_cursor == (1280, 720)
+
+
+def test_desktop_swipe_humanized_plan_swipe_and_preposition(monkeypatch):
+    # 桌面滑动 medium：起点预定位（plan_move）+ 手势主体 plan_swipe + UP 前 gap（I）。
+    # DOWN 前有预定位 MOUSEMOVE，DOWN 后有带按键 MOUSEMOVE，结尾 UP + CAPTURECHANGED
+    w = _humanized_desktop('medium', seed=7)
+    w._desktop_cursor = (50, 50)
+    events = _record_desktop(lambda: w.swipe_desktop_window_message([100, 100], [300, 400]),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    # 预定位：DOWN 前有不带按键的 MOUSEMOVE（move 消费 plan_move）
+    assert any(m == win32con.WM_MOUSEMOVE for m in msgs[:down])
+    # 手势主体：DOWN 后有带按键的 MOUSEMOVE
+    assert any(m == win32con.WM_MOUSEMOVE for m in msgs[down:up])
+    assert win32con.WM_CAPTURECHANGED in msgs[up:]
+    assert w._desktop_cursor == (300, 400)
+
+
+def test_desktop_swipe_budget_scales_with_legacy_duration(monkeypatch):
+    """medium/heavy 桌面滑动预算 = legacy 总时长（desktop_trace 点位数随距离
+    伸缩 + 3×80ms 手动收尾），不再固定 120ms：长滑动的手势主体 sleep 总量
+    必须显著超过旧固定预算 + gap 的上界。强制 natural 尾段排除 H 替换干扰。"""
+    from module.device.humanize import HumanizerContext
+    orig_choose = HumanizerContext._choose
+
+    def forced_natural(self, d, allowed):
+        return 'natural' if d == 'swipe_tail' else orig_choose(self, d, allowed)
+    monkeypatch.setattr(HumanizerContext, '_choose', forced_natural)
+
+    w = _humanized_desktop('medium', seed=9)
+    w._desktop_cursor = (50, 50)
+    events = _record_desktop(lambda: w.swipe_desktop_window_message([50, 200], [1150, 500]),
+                             monkeypatch)
+    down_i = next(i for i, e in enumerate(events)
+                  if len(e) >= 3 and e[2] == win32con.WM_LBUTTONDOWN)
+    up_i = next(i for i, e in enumerate(events)
+                if len(e) >= 3 and e[2] == win32con.WM_LBUTTONUP)
+    body = [e[1] for e in events[down_i:up_i] if e[0] == 'sleep']
+    # 旧固定预算路径主体 = 120ms + gap(≤110ms) ≈ ≤0.23s；新预算 ≥ 240ms 收尾
+    # + N 点×10ms 间隔（1100px 长滑 ≥ 10 点）+ gap，必然 > 0.3s
+    assert sum(body) > 0.30, \
+        f'长滑动手势主体 sleep 总量 {sum(body):.3f}s 应超过旧固定 120ms 预算区间'
+
+
+def test_desktop_swipe_oob_fallback_restores_legacy_rng(monkeypatch):
+    """桌面策略失败时预生成 delay 不得改变 legacy 的事件与随机时序。"""
+    import random as _stdlib_random
+
+    def run(humanized):
+        _stdlib_random.seed(20260826)
+        np.random.seed(20260826)
+        w = _humanized_desktop('medium', seed=7) if humanized else _desktop_window(scale=1.0)
+        w._desktop_cursor = (100, 100)
+        return _record_desktop(
+            lambda: w.swipe_desktop_window_message([100, 100], [1280, 400]),
+            monkeypatch,
+        )
+
+    assert run(True) == run(False)
+
+
+def test_desktop_click_message_count_within_cap(monkeypatch):
+    # Task 14 验收：消息点数不超过 DESKTOP_MOVE_MAX_POINTS + 收尾条数上限。
+    # 跨屏移动被抽稀到 12 点，再加 dwell/尾收尾，总 MOVE 消息数仍受上限约束
+    w = _humanized_desktop('medium', seed=8)
+    w._desktop_cursor = (0, 0)
+    events = _record_desktop(lambda: w.click_desktop_window_message(1279, 719, fast=True),
+                             monkeypatch)
+    moves = [e for e in events if len(e) >= 3 and e[2] == win32con.WM_MOUSEMOVE]
+    assert len(moves) <= w.DESKTOP_MOVE_MAX_POINTS + 8, \
+        f'MOVE 总数超上限: {len(moves)}（12 点移动 + 收尾）'
+
+
+def test_desktop_long_click_hold_jitter_stream(monkeypatch):
+    """维度 J（hold 微颤）：长按 hold 期间不再死寂——DOWN 与 UP 之间出现
+    微颤 MOUSEMOVE 流，且总 sleep 守恒业务时长（UP 不提前）。"""
+    w = _humanized_desktop('medium', seed=11)
+    events = _record_desktop(lambda: w.long_click_desktop_window_message(640, 360, 1.0),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    # hold 期间（DOWN 后 UP 前）有 MOUSEMOVE：事件流不再死寂
+    hold_moves = [m for m in msgs[down + 1:up] if m == win32con.WM_MOUSEMOVE]
+    assert hold_moves, 'hold 期间应有微颤 MOVE 流'
+    # 微颤幅度 ≤6px（换算前是 authoring 坐标；scale=1.0 时消息坐标即 authoring）
+    for e in events[down + 1:up]:
+        if len(e) == 5 and e[2] == win32con.WM_MOUSEMOVE:
+            lp = e[4]
+            px, py = lp & 0xFFFF, (lp >> 16) & 0xFFFF
+            assert abs(px - 640) <= 6 and abs(py - 360) <= 6
+    # 预算守恒：hold 段 sleep 总量 ≈ 1.0s（±1ms/点抖动带宽）
+    hold_sleeps = [e[1] for e in events[down + 1:up] if e[0] == 'sleep']
+    assert abs(sum(hold_sleeps) - 1.0) <= 0.001 * len(hold_sleeps) + 0.001
+
+
+def test_desktop_long_click_hold_jitter_none_falls_back_to_sleep(monkeypatch):
+    """维度 J 'none' 策略：hold 段回退纯 sleep(duration)，行为与旧实现一致。"""
+    w = _humanized_desktop('medium', seed=12)
+    monkeypatch.setattr(w.humanizer, 'plan_hold',
+                        lambda target, duration_s, **kw: None)
+    events = _record_desktop(lambda: w.long_click_desktop_window_message(640, 360, 0.5),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    # 回退路径：hold 段只有一个 0.5s 纯 sleep，无 MOVE
+    hold_moves = [m for m in msgs[down + 1:up] if m == win32con.WM_MOUSEMOVE]
+    assert hold_moves == []
+    hold_sleeps = [e[1] for e in events[down + 1:up] if e[0] == 'sleep']
+    assert hold_sleeps == [0.5]
+
+
+def test_desktop_long_click_hold_jitter_scale_not_one(monkeypatch):
+    """桌面 hold 微颤在 DPI≠100% 下不得双重缩放：微颤点 authoring 空间
+    生成，desktop_message_coord 单次换算（消息空间 = authoring/scale）。
+    scale=1.5 时消息空间幅度 ≤ 6/1.5 + 1（取整余量）；预算守恒不受影响。"""
+    w = _humanized_desktop('medium', seed=13, scale=1.5)
+    events = _record_desktop(lambda: w.long_click_desktop_window_message(640, 360, 0.5),
+                             monkeypatch)
+    msgs = _desktop_msgs(events)
+    down = msgs.index(win32con.WM_LBUTTONDOWN)
+    up = msgs.index(win32con.WM_LBUTTONUP)
+    down_lp = [e for e in events if len(e) == 5 and e[2] == win32con.WM_LBUTTONDOWN][0][4]
+    down_pos = (down_lp & 0xFFFF, (down_lp >> 16) & 0xFFFF)
+    moved = [e for e in events[down + 1:up]
+             if len(e) == 5 and e[2] == win32con.WM_MOUSEMOVE]
+    assert moved, 'hold 段应有微颤 MOVE'
+    limit = 6 / 1.5 + 1
+    for e in moved:
+        lp = e[4]
+        mx, my = lp & 0xFFFF, (lp >> 16) & 0xFFFF
+        assert abs(mx - down_pos[0]) <= limit, \
+            f'MOVE ({mx},{my}) 距 DOWN {down_pos} 超限 {limit:.1f}px——疑似双重缩放'
+        assert abs(my - down_pos[1]) <= limit
+    hold_sleeps = [e[1] for e in events[down + 1:up] if e[0] == 'sleep']
+    assert abs(sum(hold_sleeps) - 0.5) <= 0.001 * len(hold_sleeps) + 0.001

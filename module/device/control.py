@@ -1,4 +1,5 @@
 # from module.base.button import Button
+import time
 from module.base.decorator import cached_property
 from module.base.timer import Timer
 from module.base.utils import *
@@ -26,6 +27,71 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             'window_message': self.click_window_message if IS_WINDOWS else None,
             # 'Hermit': self.click_hermit,
             # 'MaaTouch': self.click_maatouch,
+        }
+
+    def _humanizer_enabled(self):
+        # off 档或 Device 未绑定 humanizer 时走原始 click_methods 分派（Plan 契约 1/11）
+        context = getattr(self, 'humanizer', None)
+        return bool(context is not None and context.enabled)
+
+    def _desktop_pointer_ready(self):
+        """维度 G 门控：桌面指针语义（is_desktop_window）且 humanizer 启用。
+
+        模拟器 window_message / minitouch / uiautomator2 / ADB 是触摸协议，契约 #10
+        明确禁止接入 G（即使逐点可控也不行）；off 档 humanizer 未启用时返回 False，
+        不消费任何策略 RNG。
+        """
+        return bool(self._humanizer_enabled() and getattr(self, 'is_desktop_window', False))
+
+    def _maybe_deliver_idle(self):
+        """把点击间空闲计划投递为桌面指针移动；无计划或光标未知时静默跳过。
+
+        在 Control.click 选择具体 backend 之前调用（Task 20）：plan_idle 返回
+        MovePlan 就经 move_desktop_plan 逐点投递为 WM_MOUSEMOVE——无 DOWN/UP，
+        因此不会触发 click / screenshot / control check；返回 None（未达阈值 /
+        光标未知 / 失败）则调用方原 click 原样执行。
+        """
+        if not self._desktop_pointer_ready():
+            return
+        # 首次点击没有历史时间戳时 since_last 记为 0（低于 2s 阈值 → 首击不游移）
+        last = getattr(self, '_last_action_ts', None)
+        since_last = 0.0 if last is None else max(0.0, time.time() - last)
+        # cursor 取当前桌面光标；未知时 plan_idle 返回 None——凭空把光标从未知处
+        # 拽到某坐标是引入新的可观测行为而不是拟人化（Spec §4.10）
+        cursor = getattr(self, '_desktop_cursor', None)
+        plan = self.humanizer.plan_idle(since_last, cursor)
+        if plan is not None:
+            self.move_desktop_plan(plan)
+
+    @cached_property
+    def humanized_click_methods(self):
+        # enabled 时 Control.click 直达各 backend 的无装饰 humanized impl，
+        # 绝不进入带 @retry 的公开方法（契约 11 的可达拓扑）。minitouch（Task 16）
+        # 与 uiautomator2（Task 18）已接入；未接入的 backend 不在此表，click 走
+        # click_methods 里的公开 @retry 方法（ADB 单条 shell 命令属 A 类，允许）。
+        return {
+            'minitouch': self._click_minitouch_humanized_impl,
+            'uiautomator2': self._click_uiautomator2_humanized_impl,
+        }
+
+    @cached_property
+    def humanized_swipe_methods(self):
+        # enabled 时 Control.swipe 经 _dispatch_humanized_swipe 直达无装饰 humanized
+        # impl；minitouch（Task 16）与 uiautomator2（Task 18）均已接入。
+        return {
+            'minitouch': self._swipe_minitouch_humanized_impl,
+            'uiautomator2': self._swipe_uiautomator2_humanized_impl,
+        }
+
+    @cached_property
+    def humanized_long_click_methods(self):
+        # enabled 时 Control.long_click 直达各 backend 的无装饰 humanized 长按 impl
+        # （维度 J hold 微颤）。未列出的 backend 走 long_click_methods 的公开
+        # @retry 方法：window_message 的 humanized 路径在方法体内（0 个 @retry），
+        # ADB 单条 shell 命令属 A 类（维度 B 已放弃的同理）。
+        return {
+            'minitouch': self._long_click_minitouch_humanized_impl,
+            'uiautomator2': self._long_click_uiautomator2_humanized_impl,
         }
 
     @cached_property
@@ -75,10 +141,24 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         logger.info(
             'Click %s @ %s' % (point2str(x, y), control_name)
         )
-        method = self.click_methods.get(
-            self.config.script.device.control_method,
-            self.click_adb
-        )
+        # 维度 G 点击间空闲（Task 20）：选择具体 backend 之前，桌面指针语义
+        # 且 humanizer 启用时先做空闲游移（plan_idle → move_desktop_plan）。
+        # 返回 None（off / 未达阈值 / 光标未知 / 失败）则下方原 click 原样执行。
+        self._maybe_deliver_idle()
+        # 所有档位（含 off）都刷新空闲计时基准：off 跳过 plan_idle，不消费策略
+        # RNG、不产生游移，但同样更新时间戳——保证开档的首次点击 since_last ≈ 0
+        self._last_action_ts = time.time()
+        # enabled 时优先走 humanized_click_methods 的无装饰 humanized impl（不触发
+        # @retry 重放）；映射没有该 backend 时回退 click_methods 的公开方法——
+        # window_message 的 humanized 路径在方法体内（0 个 @retry），ADB 单条 shell
+        # 命令属 A 类。绝不能默认落到 click_adb，否则桌面 window_message 会被 ADB 抢占。
+        control_method = self.config.script.device.control_method
+        if self._humanizer_enabled():
+            method = self.humanized_click_methods.get(control_method)
+            if method is None:
+                method = self.click_methods.get(control_method, self.click_adb)
+        else:
+            method = self.click_methods.get(control_method, self.click_adb)
         method(x, y)
 
 
@@ -145,12 +225,19 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         logger.info(
             'Click %s @ %s %s' % (point2str(x, y), control_name, duration)
         )
-        method = self.long_click_methods.get(
-            self.config.script.device.control_method,
-            self.long_click_adb)
+        # enabled 时优先走 humanized_long_click_methods 的无装饰 humanized impl
+        # （维度 J hold 微颤，不触发 @retry 重放）；映射没有该 backend 时回退
+        # long_click_methods 的公开方法——与 click 的 dispatch 拓扑一致。
+        control_method = self.config.script.device.control_method
+        if self._humanizer_enabled():
+            method = self.humanized_long_click_methods.get(control_method)
+            if method is None:
+                method = self.long_click_methods.get(control_method, self.long_click_adb)
+        else:
+            method = self.long_click_methods.get(control_method, self.long_click_adb)
         method(x, y, duration)
 
-    def swipe(self, p1, p2, duration=(0.1, 0.2), control_name='SWIPE', distance_check=True):
+    def swipe(self, p1, p2, duration=(1.0, 1.5), control_name='SWIPE', distance_check=True):
         self.handle_control_check(control_name)
         p1, p2 = ensure_int(p1, p2)
         duration = ensure_time(duration)
@@ -184,6 +271,11 @@ class Control(Minitouch, Adb, Scrcpy, Window):
                 logger.info('Swipe distance < 10px, dropped')
                 return
 
+        # enabled 且 backend 已接入时唯一早返回：直达无装饰 humanized impl，
+        # 不进入下方带 @retry 的公开方法；off 时返回 False 继续原有分支。
+        if self._dispatch_humanized_swipe(method, p1, p2, duration):
+            return
+
         if method == 'minitouch':
             self.swipe_minitouch(p1, p2, duration=duration)
         elif method == 'window_message':
@@ -197,8 +289,19 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         else:
             self.swipe_adb(p1, p2, duration=duration)
 
+    def _dispatch_humanized_swipe(self, method, p1, p2, duration):
+        # off / 未绑定 humanizer / backend 未接入时返回 False，swipe() 走原分支；
+        # enabled 且映射存在时直达无装饰 humanized impl 并返回 True。
+        if not self._humanizer_enabled():
+            return False
+        humanized_method = self.humanized_swipe_methods.get(method)
+        if humanized_method is None:
+            return False
+        humanized_method(p1, p2, duration=duration)
+        return True
+
     def swipe_vector(self, vector, box=(123, 159, 1175, 628), random_range=(0, 0, 0, 0), padding=15,
-                     duration=(0.1, 0.2), whitelist_area=None, blacklist_area=None, name='SWIPE', distance_check=True):
+                     duration=(1.0, 1.5), whitelist_area=None, blacklist_area=None, name='SWIPE', distance_check=True):
         """Method to swipe.
 
         Args:

@@ -21,6 +21,7 @@ from module.exception import (GameNotRunningError,
                               RequestHumanTakeover,
                               EmulatorNotRunningError)
 from module.logger import logger
+from module.device.humanize import HumanizerContext, set_current_humanizer
 import time
 from enum import Enum
 
@@ -55,6 +56,11 @@ class Device(Platform, Screenshot, Control, AppControl):
         # 用于在模拟器拉起链路的检查点尽快放弃拉起。默认 None 表示从不取消，行为与原先一致。
         self._cancel_event = cancel_event
         self.emulator_state = EmulatorState.COLD
+        # 维度 G 空闲计时基准（Task 20）：每个 Device 实例独立持有、互不共享，
+        # 保证多开实例的时间戳彼此隔离。放在 __init__ 最前面，四条初始化路径
+        # （含 desktop 早返回分支）都会执行；首次点击时 since_last ≈ 0，低于
+        # 2s 阈值 → 首击不游移。
+        self._last_action_ts = None
         from module.device.emulator_health import EmulatorHealth
         self.health = EmulatorHealth(self)
         from module.device.emulator_reset import FullReset
@@ -65,6 +71,8 @@ class Device(Platform, Screenshot, Control, AppControl):
         try:
             super().__init__(*args, **kwargs)
             initialized = True
+            # 路径 1：首次 super 初始化成功后立即绑定拟人化上下文（须早于 Rule.coord()）
+            self._ensure_humanizer_context()
         except EmulatorNotRunningError:
             emulator_down = True
             logger.warning('super().__init__ saw EmulatorNotRunningError — will run full_recovery')
@@ -76,6 +84,9 @@ class Device(Platform, Screenshot, Control, AppControl):
                                 'please start the game and bind PID first')
                 raise RequestHumanTakeover from None
             self._init_desktop()
+            # 路径 3：desktop 分支提前 return 前再保证一次绑定（不得只在函数尾部调用，
+            # 否则 desktop 分支会漏绑）
+            self._ensure_humanizer_context()
             return
 
         # Probe health first — if the user already has a working emulator,
@@ -99,6 +110,8 @@ class Device(Platform, Screenshot, Control, AppControl):
 
         if not initialized:
             super().__init__(*args, **kwargs)
+            # 路径 2：恢复后的第二次 super 成功后立即绑定
+            self._ensure_humanizer_context()
 
         # Auto-fill emulator info
         if IS_WINDOWS and self.config.script.device.emulatorinfo_type == 'auto':
@@ -109,6 +122,21 @@ class Device(Platform, Screenshot, Control, AppControl):
         # Auto-select the fastest screenshot method
         if self.config.script.device.screenshot_method == 'auto':
             self.run_simple_screenshot_benchmark()
+
+        # 路径 4：普通初始化末尾再幂等保证一次（已在路径 1/2 绑定时为 no-op）
+        self._ensure_humanizer_context()
+
+    def _ensure_humanizer_context(self) -> None:
+        # 幂等：配置就绪后的每一条成功初始化路径都会调用，已绑定或配置缺失时直接返回。
+        # 绑定须发生在 tasks/base_task.py 调用 Rule.coord() 之前——只在 Control.click
+        # 层绑定会错过落点采样（Spec §4.3）。
+        if getattr(self, 'humanizer', None) is not None:
+            return
+        config = getattr(self, 'config', None)
+        if config is None:
+            return
+        self.humanizer = HumanizerContext.from_config(config, canvas_size=(1280, 720))
+        set_current_humanizer(self.humanizer)
 
     def _desktop_ensure_launched(self) -> bool:
         """桌面模式确保客户端已启动并绑定 PID：窗口缺失/PID 未绑定时自动启动。

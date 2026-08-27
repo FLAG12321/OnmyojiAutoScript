@@ -179,7 +179,12 @@ class EmulatorManager(Connection):
         """
         command = command.replace(r"\\", "/").replace("\\", "/").replace('"', '"')
         logger.info(f'Execute: {command}')
-        return subprocess.Popen(command, close_fds=True)  # only work on Windows
+        # 无控制台宿主（pythonw 启动的 server/GUI）下，模拟器启动/taskkill 这类
+        # 控制台命令会弹出 cmd 窗口并在命令结束时销毁——即用户看到的"闪屏"。
+        # CREATE_NO_WINDOW 抑制子进程控制台窗口分配，对控制台宿主无影响
+        import sys
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+        return subprocess.Popen(command, close_fds=True, creationflags=flags)  # only work on Windows
 
     @staticmethod
     def task_kill(pid=None, name=None):
