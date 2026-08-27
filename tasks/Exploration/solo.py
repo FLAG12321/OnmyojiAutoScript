@@ -511,21 +511,21 @@ class SoloExploration(BaseExploration):
 
 class ScriptTask(SoloExploration):
     def run(self):
-        try : 
+        try :
             logger.hr('exploration')
-            random_click_cnt = 0
-            while 1:
+            # 首帧自带截图（reuse_screenshot=False）
+            scene = self.get_current_scene(reuse_screenshot=False)
+            # 未知场景时改为纯轮询等待（接管窗口 ~3.6s，与原死区点击节奏相当）：
+            # 原 C_SAFE_RANDOM 死区点击落点固定在左上角 (0,0,111,12) 窄条内，
+            # 物理上点不中任何游戏元素，对改变画面无作用，只保留等待语义即可。
+            # 游戏若正在加载进探索（过渡帧），几秒后 scene 可识别，可直接接管、
+            # 跳过 pre_process 的重新导航；庭院等稳定页面则等窗口耗尽后走导航。
+            unknown_timer = Timer(3.6).start()
+            while scene == Scene.UNKNOWN and not unknown_timer.reached():
+                logger.warning('Unknown scene, waiting for scene transition')
+                sleep(1.2)
                 self.screenshot()
                 scene = self.get_current_scene()
-                if random_click_cnt >= 2:
-                    break
-                if scene == Scene.UNKNOWN:
-                    logger.warning('Unknown scene, random click')
-                    if self.click(self.C_SAFE_RANDOM, interval=1.5):
-                        random_click_cnt += 1
-                    continue
-                else:
-                    break
 
             if scene == Scene.UNKNOWN:
                 self.pre_process()
