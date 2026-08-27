@@ -10,10 +10,14 @@ from module.device.method.minitouch import Minitouch
 from module.device.method.adb import Adb
 from module.device.method.scrcpy import Scrcpy
 from module.device.method.windows import Window
+from module.device.method.nemu_ipc import NemuIpc
 from module.logger import logger
 
 
-class Control(Minitouch, Adb, Scrcpy, Window):
+class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
+    # NemuIpc 入基类：click/long_click/humanized 分派表在构造期就要解析
+    # nemu_ipc 的实现方法；Device 侧经 Screenshot 也会拿到同一 NemuIpc，
+    # MRO 自动去重无菱形冲突
     def handle_control_check(self, button):
         # Will be overridden in Device
         pass
@@ -24,6 +28,9 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             'ADB': self.click_adb,
             'uiautomator2': self.click_uiautomator2,
             'minitouch': self.click_minitouch,
+            # nemu_ipc：MuMu 官方 IPC 注入（设备侧零驻留进程），down/up 见
+            # NemuIpcImpl；仅 MuMu 实例可用，坐标恒等透传
+            'nemu_ipc': self.click_nemu_ipc,
             'window_message': self.click_window_message if IS_WINDOWS else None,
             # 'Hermit': self.click_hermit,
             # 'MaaTouch': self.click_maatouch,
@@ -69,9 +76,11 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         # 绝不进入带 @retry 的公开方法（契约 11 的可达拓扑）。minitouch（Task 16）
         # 与 uiautomator2（Task 18）已接入；未接入的 backend 不在此表，click 走
         # click_methods 里的公开 @retry 方法（ADB 单条 shell 命令属 A 类，允许）。
+        # nemu_ipc 的 down/up 是原子 IPC 调用（A 类），humanized impl 无 @retry。
         return {
             'minitouch': self._click_minitouch_humanized_impl,
             'uiautomator2': self._click_uiautomator2_humanized_impl,
+            'nemu_ipc': self._click_nemu_ipc_humanized_impl,
         }
 
     @cached_property
@@ -81,6 +90,7 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         return {
             'minitouch': self._swipe_minitouch_humanized_impl,
             'uiautomator2': self._swipe_uiautomator2_humanized_impl,
+            'nemu_ipc': self._swipe_nemu_ipc_humanized_impl,
         }
 
     @cached_property
@@ -92,6 +102,7 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         return {
             'minitouch': self._long_click_minitouch_humanized_impl,
             'uiautomator2': self._long_click_uiautomator2_humanized_impl,
+            'nemu_ipc': self._long_click_nemu_ipc_humanized_impl,
         }
 
     @cached_property
@@ -100,6 +111,7 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             'ADB': self.long_click_adb,
             'uiautomator2': self.long_click_uiautomator2,
             'minitouch': self.long_click_minitouch,
+            'nemu_ipc': self.long_click_nemu_ipc,
             'window_message': self.long_click_window_message if IS_WINDOWS else None,
             'scrcpy': self.long_click_scrcpy
             # 'Hermit': self.click_hermit,
@@ -248,6 +260,9 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             logger.info('Swipe %s -> %s' % (point2str(*p1), point2str(*p2)))
         elif method == 'uiautomator2':
             logger.info('Swipe %s -> %s, %s' % (point2str(*p1), point2str(*p2), duration))
+        elif method == 'nemu_ipc':
+            # nemu 逐点 down 支持任意节奏，无需 ADB 的 2.5 倍减速
+            logger.info('Swipe %s -> %s, %s' % (point2str(*p1), point2str(*p2), duration))
         elif method == 'scrcpy':
             logger.info('Swipe %s -> %s' % (point2str(*p1), point2str(*p2)))
         # elif method == 'MaaTouch':
@@ -282,6 +297,9 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             self.swipe_window_message(p1, p2)
         elif method == 'uiautomator2':
             self.swipe_uiautomator2(p1, p2, duration=duration)
+        elif method == 'nemu_ipc':
+            # nemu 逐点 down 由内核解释为 MOVE，时长由每点 sleep 决定，直接透传 duration
+            self.swipe_nemu_ipc(p1, p2, duration=duration)
         elif method == 'scrcpy':
             self.swipe_scrcpy(p1, p2)
         # elif method == 'MaaTouch':
@@ -342,6 +360,8 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             self.drag_uiautomator2(
                 p1, p2, segments=segments, shake=shake, point_random=point_random, shake_random=shake_random,
                 swipe_duration=swipe_duration, shake_duration=shake_duration)
+        elif method == 'nemu_ipc':
+            self.drag_nemu_ipc(p1, p2, point_random=point_random)
         elif method == 'scrcpy':
             self.drag_scrcpy(p1, p2, point_random=point_random)
         # elif method == 'MaaTouch':

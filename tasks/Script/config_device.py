@@ -33,6 +33,8 @@ class ControlMethod(str, Enum):
     ADB = 'adb'
     UIAUTOMATOR2 = 'uiautomator2'
     MINITOUCH = 'minitouch'
+    # MuMu 官方 IPC 注入：内核级事件、设备侧零驻留进程（仅 MuMu 实例可用）
+    NEMU_IPC = 'nemu_ipc'
     WINDOW_MESSAGE = 'window_message'
 
 class EmulatorInfoType(str, Enum):

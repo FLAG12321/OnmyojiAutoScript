@@ -424,15 +424,19 @@ class NemuIpcImpl:
 
     def convert_xy(self, x, y):
         """
-        Convert classic ADB coordinates to Nemu's
-        `self.height` must be updated before calling this method
+        坐标透传（恒等）。
+
+        实测依据（QMUMU1, MuMu nx_device 12.0, 横屏 1280x720, 2026-08-27 探针）：
+        DLL 参数本身就是屏幕坐标——DLL 内部映射 kernel=(720-b, a) 写入竖屏触摸面板
+        "Xiaomi Input"(X∈[0,720], Y∈[0,1280])，框架按 viewport orientation=1 旋转回
+        横屏后恰好还原为 (a, b)。原 ALAS 继承的旋转 (height-y, x) 是给竖屏场景用的，
+        在横屏 MuMu12 上会把落点转置+翻转（导致右半屏/下方越界坐标被系统丢弃）。
+        完整推导与验证记录见 dev_tools/probe_nemu_input.py。
 
         Returns:
             int, int
         """
-        x, y = int(x), int(y)
-        x, y = self.height - y, x
-        return x, y
+        return int(x), int(y)
 
     @retry
     def down(self, x, y):
@@ -600,12 +604,14 @@ class NemuIpc():
         self.nemu_ipc.up()
         self.sleep(0.050)
 
-    def swipe_nemu_ipc(self, p1, p2):
+    def swipe_nemu_ipc(self, p1, p2, duration=None):
         points = insert_swipe(p0=p1, p3=p2)
+        # 时长按点数均分；未指定时保持原 10ms/点 的节奏
+        step = 0.010 if duration is None else max(float(duration) / len(points), 0.004)
 
         for point in points:
             self.nemu_ipc.down(*point)
-            self.sleep(0.010)
+            self.sleep(step)
 
         self.nemu_ipc.up()
         self.sleep(0.050)
@@ -626,3 +632,61 @@ class NemuIpc():
 
         self.nemu_ipc.up()
         self.sleep(0.050)
+
+    # ------------------------------------------------------------------
+    # humanized 三件套（无 @retry）：Control 的 humanized_*_methods 在
+    # enabled 时直达。nemu 的 down/up 本身是单次原子 IPC 调用（内部自带
+    # ev_run_sync 重试），属于契约 #11 允许的 A 类，重放不会产生半截手势。
+    # ------------------------------------------------------------------
+
+    def _click_nemu_ipc_humanized_impl(self, x, y):
+        # 开档点击：press_seconds 消费维度 B（按压时长）；None（off/策略回退）
+        # 时单次调用无装饰 legacy
+        press = self.humanizer.press_seconds()
+        if press is None:
+            return self.click_nemu_ipc(x, y)
+        self.nemu_ipc.down(x, y)
+        self.sleep(press)
+        self.nemu_ipc.up()
+        # 维度 I：enabled 用 gap_seconds(0.05) 收尾，与 minitouch/u2 同口径
+        gap = self.humanizer.gap_seconds(0.05)
+        self.sleep(gap if gap is not None else 0.050)
+
+    def _long_click_nemu_ipc_humanized_impl(self, x, y, duration=1.0):
+        # 开档长按（维度 J hold 微颤）：plan_hold 返回 None（off/'none'/预算过短）
+        # 时单次调用无装饰 legacy。nemu 单次 down 仅 ~0.3ms IPC 往返，
+        # point_cap 与 minitouch 同取 200，微颤点可全量投递
+        plan = self.humanizer.plan_hold(
+            (int(x), int(y)), float(duration), point_cap=200)
+        if plan is None:
+            return self.long_click_nemu_ipc(x, y, duration)
+        self.nemu_ipc.down(x, y)
+        # delays[i] 是发送 points[i] 前的等待（全局契约 4）
+        for (px, py), dt in zip(plan.points, plan.delays):
+            self.sleep(dt)
+            self.nemu_ipc.down(px, py)
+        self.nemu_ipc.up()
+        gap = self.humanizer.gap_seconds(0.05)
+        self.sleep(gap if gap is not None else 0.050)
+
+    def _swipe_nemu_ipc_humanized_impl(self, p1, p2, duration=0.1):
+        # 开档滑动：plan_swipe 消费 C/D/H；None（off/越界/几何失败）时走 legacy。
+        # 语义与 swipe_nemu_ipc 相同：沿轨迹逐点 down（连续 down 被内核解释为
+        # 同一接触点的 MOVE，见探针 getevent 验证），结尾 up。point_cap=100 与
+        # uiautomator2 同口径（100 点/2s ≈ 50Hz 有效回报率）
+        from module.device.humanize import timing
+        # 分派链路（ensure_int）可能给 list，plan 校验要求 tuple，这里统一归一
+        p1 = (int(p1[0]), int(p1[1]))
+        p2 = (int(p2[0]), int(p2[1]))
+        plan = self.humanizer.plan_swipe(
+            p1, p2, base_delay_s=duration / timing.PROFILE_MAX_POINTS,
+            point_cap=100)
+        if plan is None:
+            return self.swipe_nemu_ipc(p1, p2)
+        self.nemu_ipc.down(*p1)
+        for (px, py), dt in zip(plan.points, plan.delays):
+            self.sleep(dt)
+            self.nemu_ipc.down(px, py)
+        self.nemu_ipc.up()
+        gap = self.humanizer.gap_seconds(0.05)
+        self.sleep(gap if gap is not None else 0.050)
