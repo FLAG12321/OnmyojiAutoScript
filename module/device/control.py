@@ -50,6 +50,29 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         """
         return bool(self._humanizer_enabled() and getattr(self, 'is_desktop_window', False))
 
+    def _pace_action_before(self):
+        """全操作共享 CD（2026-08-27）：输入操作的执行前兜底等待。
+
+        预付制：正常流程的间隔要求已由 Device.screenshot 的 pace_view 等满
+        （等待发生在「看」之前，决策画面新鲜），这里恒为 0；仅「无截图背靠背
+        操作」的罕见场景（要求未被消费）补最多 EXECUTE_PACE_MAX_S，剩余留给
+        下一个消费点。off 档 pace_execute 返回 0 且不消费 RNG（零回归契约）。
+
+        必须与 _pace_action_after 配对调用。
+        """
+        if self._humanizer_enabled():
+            self.humanizer.pace_execute()
+
+    def _pace_action_after(self, target=None, name=None):
+        """全操作共享 CD 的收尾打点：操作完成后更新节奏统计与下次要求。
+
+        name（点击控件名，如 GB_DE_WIN）传入时按名判同一资源（优先级高于
+        坐标半径）；target（点击坐标）作无名点击的兜底；swipe/drag 两者
+        皆无 → 重置重复计数。off 档无副作用。
+        """
+        if self._humanizer_enabled():
+            self.humanizer.record_action(target, name)
+
     def _maybe_deliver_idle(self):
         """把点击间空闲计划投递为桌面指针移动；无计划或光标未知时静默跳过。
 
@@ -156,6 +179,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         # 维度 G 点击间空闲（Task 20）：选择具体 backend 之前，桌面指针语义
         # 且 humanizer 启用时先做空闲游移（plan_idle → move_desktop_plan）。
         # 返回 None（off / 未达阈值 / 光标未知 / 失败）则下方原 click 原样执行。
+        # 全操作共享 CD：执行前兜底（正常要求已由截图入口 pace_view 等满）
+        self._pace_action_before()
         self._maybe_deliver_idle()
         # 所有档位（含 off）都刷新空闲计时基准：off 跳过 plan_idle，不消费策略
         # RNG、不产生游移，但同样更新时间戳——保证开档的首次点击 since_last ≈ 0
@@ -172,6 +197,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         else:
             method = self.click_methods.get(control_method, self.click_adb)
         method(x, y)
+        # 全操作共享 CD：操作结束打点（控件名优先判同一资源，坐标兜底）
+        self._pace_action_after((x, y), control_name)
 
 
     def multi_click(self, button, n, interval=(0.1, 0.2)):
@@ -240,6 +267,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         # enabled 时优先走 humanized_long_click_methods 的无装饰 humanized impl
         # （维度 J hold 微颤，不触发 @retry 重放）；映射没有该 backend 时回退
         # long_click_methods 的公开方法——与 click 的 dispatch 拓扑一致。
+        # 全操作共享 CD：执行前兜底（正常要求已由截图入口 pace_view 等满）
+        self._pace_action_before()
         control_method = self.config.script.device.control_method
         if self._humanizer_enabled():
             method = self.humanized_long_click_methods.get(control_method)
@@ -248,6 +277,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         else:
             method = self.long_click_methods.get(control_method, self.long_click_adb)
         method(x, y, duration)
+        # 操作结束打点（控件名优先判同一资源，坐标兜底）
+        self._pace_action_after((x, y), control_name)
 
     def swipe(self, p1, p2, duration=(1.0, 1.5), control_name='SWIPE', distance_check=True):
         self.handle_control_check(control_name)
@@ -286,9 +317,14 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
                 logger.info('Swipe distance < 10px, dropped')
                 return
 
+        # 全操作共享 CD：放在 distance_check 早退之后——dropped 的滑动没有
+        # 输入事件发生，不等待也不打点，不污染节奏统计
+        self._pace_action_before()
+
         # enabled 且 backend 已接入时唯一早返回：直达无装饰 humanized impl，
         # 不进入下方带 @retry 的公开方法；off 时返回 False 继续原有分支。
         if self._dispatch_humanized_swipe(method, p1, p2, duration):
+            self._pace_action_after()
             return
 
         if method == 'minitouch':
@@ -306,6 +342,7 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         #     self.swipe_maatouch(p1, p2)
         else:
             self.swipe_adb(p1, p2, duration=duration)
+        self._pace_action_after()
 
     def _dispatch_humanized_swipe(self, method, p1, p2, duration):
         # off / 未绑定 humanizer / backend 未接入时返回 False，swipe() 走原分支；
@@ -354,6 +391,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
             'Drag %s -> %s' % (point2str(*p1), point2str(*p2))
         )
         method = self.config.script.emulator.control_method
+        # 全操作共享 CD：drag 与 click/long_click/swipe 共享同一份节奏状态
+        self._pace_action_before()
         if method == 'minitouch':
             self.drag_minitouch(p1, p2, point_random=point_random)
         elif method == 'uiautomator2':
@@ -371,3 +410,4 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
                            f'falling back to ADB swipe may cause unexpected behaviour')
             self.swipe_adb(p1, p2, duration=ensure_time(swipe_duration * 2))
             # self.click(Button(area=(), color=(), button=area_offset(point_random, p2), name=name))
+        self._pace_action_after()

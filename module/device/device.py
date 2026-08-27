@@ -319,6 +319,12 @@ class Device(Platform, Screenshot, Control, AppControl):
         Returns:
             np.ndarray:
         """
+        # 全操作共享 CD 的预付等待（2026-08-27）：上一次操作挂起的间隔要求在
+        # 截图前等满——截图是 appear_then_click 等决策模式的依据，等待发生在
+        # 「看」之前既保住节奏语义，又保证决策画面新鲜：目标已消失（弹窗过期、
+        # 结算画面关闭）时识别自然失败，不再产生按旧目标点击的过期点击
+        if self._humanizer_enabled():
+            self.humanizer.pace_view()
         self.stuck_record_check()
 
         # 桌面模式：窗口缺失说明客户端没在运行（空闲期被「Close emulator during wait」

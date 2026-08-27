@@ -99,6 +99,10 @@ class _SingleRpcHarness:
             plan_swipe=lambda *args, **kwargs: SimpleNamespace(
                 points=[(30, 30)], delays=[0.1]
             ),
+            # 全操作共享 CD（2026-08-27）入口：本文件只测 u2 分派拓扑，
+            # 节奏等待与打点用 no-op（返回 0 即不 sleep，不影响事件断言）
+            pace_execute=lambda: 0.0,
+            record_action=lambda target=None, name=None: None,
         )
 
     def sleep(self, seconds):
@@ -374,7 +378,9 @@ def test_u2_transport_context_resets_after_rpc_failure():
 def test_control_u2_enabled_dispatch_never_enters_public_retry(monkeypatch, entry, public_name, humanized_name, args):
     device = object.__new__(Control)
     device.config = SimpleNamespace(script=SimpleNamespace(device=SimpleNamespace(control_method='uiautomator2')))
-    device.humanizer = SimpleNamespace(enabled=True)
+    # 全操作共享 CD（2026-08-27）入口：本测试只关心分派拓扑，节奏入口 no-op
+    device.humanizer = SimpleNamespace(
+        enabled=True, pace_execute=lambda: 0.0, record_action=lambda target=None, name=None: None)
     device.handle_control_check = lambda name: None
     public_retry = Mock(side_effect=AssertionError('公开 @retry 路径不得进入'))
     humanized_impl = Mock()

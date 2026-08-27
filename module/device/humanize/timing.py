@@ -37,6 +37,49 @@ GAP_SIGMA = 0.22
 GAP_CLIP_FACTOR = (0.5, 2.2)
 GAP_OPTIONS = ('fixed', 'jitter')
 
+# ---------------------------------------------------------------- 全操作共享间隔常量
+
+# 输入操作间最小间隔的上下限（秒）：人类在两个独立操作之间至少需要"反应 +
+# 视线/手指移动"时间，0.5~1.5 覆盖从熟练到从容的区间（2026-08-28 应用户
+# 要求从 0.3~1.0 抬高：0.3s 仍偏机器节奏）
+INTER_CLICK_MIN_S = 0.5
+INTER_CLICK_MAX_S = 1.5
+# 自适应基准 base 每次操作的调整步长（秒）：小步长体现"慢慢变高/变短"的动态
+# 平衡；区间从 0.3~1.0 扩到 0.5~1.5 后步长等比放大（保持约 5 步爬满区间）
+INTER_CLICK_STEP_S = 0.2
+# 原始间隔统计窗口大小：最近几次间隔的均值参与判定，平滑单次抖动
+# （脚本偶发一次连击不应立刻把要求抬满）
+INTER_CLICK_WINDOW = 5
+# 本次目标间隔的抽样形态：右偏 lognormal（人类反应时间的典型形态——多数操作
+# 偏快、偶尔拖沓），拒绝均匀分布的"有规律"指纹。中位数取 base 的
+# MEDIAN_RATIO 倍，长尾被 base 截断、短尾被 MIN_S 托底
+INTER_CLICK_SIGMA = 0.45
+INTER_CLICK_MEDIAN_RATIO = 0.55
+
+# ---------------------------------------------------------------- 同一资源重复点击退避常量
+
+# 连续点击同一资源（控件名相同 / 坐标半径内）的退避标称序列（秒）：
+# 第 2 次 2s、第 3 次 3s、第 4 次 4s、第 5 次 10s、第 6 次起封顶 16s
+# （2026-08-28 应用户要求修订：前段缓升 2→3→4，随后跳 10、封顶 16——
+# 比纯指数翻倍更贴近"先耐心重试、确认无响应后明显迟疑"的人类节奏）。
+# 人类对"点了没反应"的目标会越来越迟疑地重试，机械等间隔连点是明显脚本指纹
+REPEAT_BACKOFF_NOMINAL_S = (2.0, 3.0, 4.0, 10.0, 16.0)
+# 同一资源判定半径（像素）：按钮级区域（720p 下常见按钮 100+px 宽）。
+# 仅作无名点击的兜底——有控件名时按名判重（2026-08-28 修订）
+REPEAT_BACKOFF_RADIUS_PX = 50
+# 标称值上下的随机浮动区间：退避不取精确的标称值，在 [0.8×, 1.2×] 内随机
+REPEAT_BACKOFF_JITTER = (0.8, 1.2)
+
+# ---------------------------------------------------------------- 欠账模型常量
+
+# 执行前等待上限（秒）。任务层的主流点击是 appear_then_click 模式：appear 基于
+# 缓存截图决策、click 立即执行——决策与执行之间的画面有效期窗口原本几乎为零。
+# 拟人等待若全额插在这里，执行时画面可能已经切换（弹窗过期、结算自动关闭），
+# 点击会落在过期目标上（2026-08-27 实测：结算画面关闭后仍点在庭院功能区）。
+# 因此执行前最多等这么久，剩余等待作为欠账在下一次截图入口偿还——截图才是
+# 决策依据，等待发生在「截图→识别」之前既安全又保住节奏语义
+EXECUTE_PACE_MAX_S = 0.3
+
 
 def _require_finite_non_negative(value: float, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -102,6 +145,93 @@ def gap_seconds(
     # sigma=0.22 时均值约为 default*1.025，配合对称裁剪后偏差在 1% 量级
     value = rng.lognormal(math.log(default), GAP_SIGMA)
     return float(np.clip(value, default * lo, default * hi))
+
+
+def next_action_requirement(
+    rng: np.random.Generator,
+    recent_gaps,
+    base_s: float,
+    repeat_count: int,
+) -> tuple[float, float]:
+    """操作结束时计算**下一次**操作的间隔要求（预付制纯函数）。
+
+    预付制（2026-08-27 二次修订）：等待全部发生在下一次**截图**之前
+    （pace_view），操作执行前零等待——截图是 appear_then_click 决策的依据，
+    等在「看」之前保证决策画面新鲜；动作一旦决定立即执行（反应慢、动作快，
+    正是人类模型）。旧模型把等待插在执行前，实测导致决策-执行之间画面
+    过期（接受邀请弹窗过期、结算画面关闭后误点庭院）。
+
+    逻辑：
+    - 窗口均值 < base（近期节奏偏快）→ base 抬高一步，强制间隔慢慢变高；
+    - 窗口均值 >= base（近期节奏偏慢，含几秒级识别等待）→ base 回落一步；
+    - 常规要求 target 按右偏 lognormal 抽样（中位数 = MEDIAN_RATIO×base，
+      多数偏快、偶尔拖沓），截断在 [MIN, base]；
+    - repeat_count >= 2（本次已是同一资源第 2+ 次连续点击，下次大概率还是
+      它）：与退避查表取 max——下次（连续第 repeat_count+1 次）要求
+      backoff(repeat_count+1)（3/4/10/16s...）。repeat_count == 1（首次点该
+      资源）**不**预付退避：下次换目标的概率不低（结算画面交替点击不同
+      奖励区域、点完接受弹窗进房间），全额预付 backoff(2) 会让每一次点击
+      都白等 2s 起步——代价是第 2 次同资源点击的间隔只有常规量级
+      （0.5~1.5s），从第 3 次起进入 3/4/10/16s 退避；
+    - 预付的退避在下次实际换目标时成为白等——拟人上可解释（愣神/视线
+      转移），且目标消失时识别自然失败、不会产生过期点击。
+
+    窗口必须记**意图间隔**（自然节奏，不含机制注入的等待，调用方负责
+    扣除），否则控制器会被自己制造的慢"欺骗"而放松，形成压-松振荡。
+
+    Args:
+        rng: 人格派生的随机源（persona-seeded）
+        recent_gaps: 最近 INTER_CLICK_WINDOW 次意图间隔（秒）
+        base_s: 当前的最小间隔基准（秒），必须在 [MIN, MAX] 内
+        repeat_count: 本次操作的同一资源连续次数（1 = 首次点该资源）
+    Returns:
+        (require_s, new_base_s)：require 是对下一次操作的间隔要求，
+        new_base 是调整后的基准。
+    """
+    base_s = _require_finite_non_negative(base_s, 'next_action_requirement.base_s')
+    if not INTER_CLICK_MIN_S <= base_s <= INTER_CLICK_MAX_S:
+        raise ValueError(
+            f'next_action_requirement: base_s 必须在 [{INTER_CLICK_MIN_S}, '
+            f'{INTER_CLICK_MAX_S}] 内，收到 {base_s}')
+    gaps = [float(g) for g in recent_gaps]
+    # 用窗口均值判定节奏方向：快了抬要求、慢了降要求，小步长动态平衡
+    if gaps:
+        mean_gap = sum(gaps) / len(gaps)
+        if mean_gap < base_s:
+            base_s = min(INTER_CLICK_MAX_S, base_s + INTER_CLICK_STEP_S)
+        else:
+            base_s = max(INTER_CLICK_MIN_S, base_s - INTER_CLICK_STEP_S)
+    # 常规要求：右偏 lognormal（不是均匀分布——均匀在区间内等概率取值
+    # 本身就是规律）；中位数 = MEDIAN_RATIO×base，长尾截断到 base、短尾托底 MIN
+    require = float(rng.lognormal(
+        math.log(base_s * INTER_CLICK_MEDIAN_RATIO), INTER_CLICK_SIGMA))
+    require = min(max(require, INTER_CLICK_MIN_S), base_s)
+    # 同一资源重复点击退避：只有已确认重复（第 2+ 次连续点击）才预付退避，
+    # 首次点击（repeat_count==1）下次换目标概率不低，全额预付 backoff(2)
+    # 会让每次点击都白等 2s 起步（正常任务换目标节奏被灾难性拖慢）
+    if repeat_count >= 2:
+        backoff = repeat_backoff_seconds(rng, repeat_count + 1)
+        require = max(require, backoff)
+    return require, base_s
+
+
+def repeat_backoff_seconds(rng: np.random.Generator, count: int) -> float:
+    """同一资源连续第 count 次点击的退避目标间隔（秒，纯函数）。
+
+    count 是含首次点击的连续次数（控件名相同 / 坐标半径内的连续点击）：
+    - count < 2（首次 / 非重复）：不退避，返回 0.0 且不消费 RNG；
+    - count = 2/3/4/5/6+：标称 = 查表 (2, 3, 4, 10, 16)s，末档封顶 16s；
+    - 在标称 × JITTER 区间内均匀随机浮动，避免精确的标称规律值。
+
+    调用方把返回值与常规动态平衡要求取 max——退避是"点了没反应越来越迟疑"，
+    常规要求是"两次独立操作的节奏"，两者独立成立。
+    """
+    if count < 2:
+        return 0.0
+    nominal = REPEAT_BACKOFF_NOMINAL_S[
+        min(count - 2, len(REPEAT_BACKOFF_NOMINAL_S) - 1)]
+    lo, hi = REPEAT_BACKOFF_JITTER
+    return float(rng.uniform(nominal * lo, nominal * hi))
 
 
 # ---------------------------------------------------------------- 维度 D 常量

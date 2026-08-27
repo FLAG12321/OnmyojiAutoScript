@@ -18,7 +18,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
 
+from collections import deque
 import math
+import time
 
 import numpy as np
 
@@ -120,6 +122,23 @@ class HumanizerContext:
         self.persona = persona
         self.rng = rng
         self.canvas_size = canvas_size
+        # 全操作共享间隔（2026-08-27 新增）状态：click/long_click/swipe/drag
+        # 共用同一份 CD。这是门面首个有状态维度——窗口与基准跟随 Device 生命周期。
+        # 预付制：操作结束时计算下一次操作的间隔要求（_pending_require），
+        # 由下一次截图入口（pace_view）等满——等待全部发生在「看」之前，
+        # 动作一旦决定立即执行（反应慢、动作快，人类模型）
+        self._gap_last_ts: float | None = None
+        self._gap_window: deque = deque(maxlen=timing.INTER_CLICK_WINDOW)
+        self._gap_base: float = timing.INTER_CLICK_MIN_S
+        self._pending_require: float = 0.0
+        # 自上次操作以来机制注入的等待总量：record 时从间隔里扣除得到
+        # 「意图节奏」，防止控制器被自己制造的慢"欺骗"而压-松振荡
+        self._mech_wait: float = 0.0
+        # 同一资源重复点击的指数退避状态：判定键优先用点击控件名（不同按钮
+        # 即便相邻也不会误判；同名模板即同一资源），无名点击退回坐标半径兜底
+        self._repeat_point: 'tuple[int, int] | None' = None
+        self._repeat_name: str | None = None
+        self._repeat_count: int = 0
 
     # ---------------------------------------------------------------- 构造
 
@@ -678,6 +697,112 @@ class HumanizerContext:
         if not self.enabled:
             return None
         return timing.gap_seconds(self.rng, self.persona, default, option='jitter')
+
+    def pace_view(self) -> float:
+        """预付制等待的主消费点：在下一次**截图**之前等满操作间隔要求。
+
+        由 Device.screenshot 入口调用。截图是 appear_then_click 等决策模式
+        的依据——等待发生在「看」之前保证决策画面新鲜：目标仍在 → 动作
+        立即执行（执行前零等待）；目标已消失（弹窗过期、结算画面自动关闭）
+        → 识别自然失败、不会产生按旧目标点击的过期点击。这是 2026-08-27
+        修复两个线上现象（接受邀请过期没进房、结算关闭后误点庭院）的核心：
+        旧模型把等待插在「决策→执行」之间，执行时画面早已切换。
+
+        Returns:
+            本次等待的秒数（off / 无要求 / 已自然满足返回 0）。
+        """
+        if not self.enabled:
+            return 0.0
+        if self._gap_last_ts is None or self._pending_require <= 0:
+            return 0.0
+        elapsed = time.time() - self._gap_last_ts
+        wait = self._pending_require - elapsed
+        if wait <= 0:
+            self._pending_require = 0.0
+            return 0.0
+        self._pending_require = 0.0
+        time.sleep(wait)
+        # 机制等待记账：record 时从间隔里扣除，窗口只统计意图节奏
+        self._mech_wait += wait
+        return wait
+
+    def pace_execute(self) -> float:
+        """执行前兜底等待：仅覆盖「无截图背靠背操作」的罕见场景。
+
+        正常流程的操作间隔要求已由 pace_view（截图入口）等满，这里恒为 0。
+        只有两次操作之间没有任何截图时（如 multi_click 循环），要求未被
+        消费才在这里补——封顶 EXECUTE_PACE_MAX_S（保护决策-执行的画面
+        有效期窗口），剩余要求留给下一次 pace_view / pace_execute。
+        """
+        if not self.enabled:
+            return 0.0
+        if self._gap_last_ts is None or self._pending_require <= 0:
+            return 0.0
+        elapsed = time.time() - self._gap_last_ts
+        wait = min(max(0.0, self._pending_require - elapsed),
+                   timing.EXECUTE_PACE_MAX_S)
+        if wait > 0:
+            time.sleep(wait)
+            self._mech_wait += wait
+        # 扣除已流逝/已等待的部分，剩余要求留给后续消费点
+        self._pending_require = max(
+            0.0, self._pending_require - (elapsed + wait))
+        return wait
+
+    def record_action(self, target=None, name=None) -> None:
+        """操作结束打点：更新节奏统计 + 同一资源重复判定 + 计算下次要求。
+
+        由 Control 在每次输入操作（click/long_click/swipe/drag）完成后调用。
+        - 意图间隔 = (本次操作时刻 - 上次操作结束时刻) - 期间机制等待：
+          窗口只统计任务层的自然节奏，防止控制器被自己制造的慢"欺骗"；
+        - 同一资源判定（优先级从高到低）：
+          ① name（点击控件名，如 GB_DE_WIN）：同名模板即同一资源——不同按钮
+            即便坐标相邻（结算画面的多个奖励区域）也不会误判；
+          ② target 坐标半径（REPEAT_BACKOFF_RADIUS_PX）：无名点击（直接
+            device.click 未传控件名）的兜底；
+          ③ 都没有（swipe/drag）：重置计数。
+          判定命中 → 连续计数 +1，下次要求并入指数退避（连续第 2/3/4/5+
+          次 2/4/8/16s 封顶）；换资源重新从 1 计；
+        - 下次要求由 timing.next_action_requirement 计算（动态平衡基准 +
+          右偏 lognormal 常规要求 + 退避取 max），挂起待 pace_view 消费。
+
+        off 档无副作用。
+        """
+        if not self.enabled:
+            return
+        now = time.time()
+        if self._gap_last_ts is not None:
+            # 意图间隔：扣除机制注入的等待（pace_view/pace_execute 的 sleep），
+            # 窗口记录的是任务层想多快，而不是被我们拖慢后的实际节奏
+            intent = max(0.0, (now - self._gap_last_ts) - self._mech_wait)
+            self._gap_window.append(intent)
+        self._gap_last_ts = now
+        self._mech_wait = 0.0
+        # 同一资源判定：控件名优先，坐标半径兜底，swipe/drag 重置
+        if name is not None and name not in ('Click', 'LongClick', 'SWIPE', 'DRAG'):
+            # 有真实控件名的点击按名判重（泛称视同无名，走坐标兜底）
+            if self._repeat_name == name:
+                self._repeat_count += 1
+            else:
+                self._repeat_count = 1
+            self._repeat_name = name
+            self._repeat_point = None  # 名称判定后坐标兜底不再参与
+        elif target is not None:
+            if (self._repeat_point is not None
+                    and math.hypot(target[0] - self._repeat_point[0],
+                                   target[1] - self._repeat_point[1])
+                    <= timing.REPEAT_BACKOFF_RADIUS_PX):
+                self._repeat_count += 1
+            else:
+                self._repeat_count = 1
+            self._repeat_point = (int(target[0]), int(target[1]))
+            self._repeat_name = None
+        else:
+            self._repeat_count = 0
+            self._repeat_name = None
+            self._repeat_point = None
+        self._pending_require, self._gap_base = timing.next_action_requirement(
+            self.rng, self._gap_window, self._gap_base, self._repeat_count)
 
     def plan_idle(self, since_last_s: float, cursor: Point | None) -> MovePlan | None:
         """维度 G 点击间空闲。cursor 未知或未达阈值时返回 None（策略层语义）。"""
