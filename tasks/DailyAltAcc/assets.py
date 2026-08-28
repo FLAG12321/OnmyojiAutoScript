@@ -75,13 +75,13 @@ class DailyAltAccAssets:
 	# 灰色纸人 
 	I_PAPER_2 = RuleImage(roi_front=(294,635,32,42), roi_back=(265,606,97,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_paper_2.png")
 	# 自动喂食 
-	I_AUTO_FEED_OFF = RuleImage(roi_front=(386,178,37,105), roi_back=(366,155,77,156), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_feed_off.png")
+	I_AUTO_FEED_OFF = RuleImage(roi_front=(382,204,45,78), roi_back=(366,155,77,156), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_feed_off.png")
 	# 挑战次数打开 
 	I_AUTO_CONUT_ON = RuleImage(roi_front=(257,450,159,31), roi_back=(207,413,276,144), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_conut_on.png")
 	# 挑战次数关闭 
 	I_AUTO_CONUT_OFF = RuleImage(roi_front=(257,450,159,31), roi_back=(207,413,276,144), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_conut_off.png")
 	# 自动喂养打开 
-	I_AUTO_FEED_ON = RuleImage(roi_front=(386,178,37,105), roi_back=(366,155,77,156), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_feed_on.png")
+	I_AUTO_FEED_ON = RuleImage(roi_front=(382,204,45,78), roi_back=(366,155,77,156), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_auto_feed_on.png")
 	# 打开纸人标志 
 	I_PAPER = RuleImage(roi_front=(294,635,32,42), roi_back=(265,606,97,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_paper.png")
 

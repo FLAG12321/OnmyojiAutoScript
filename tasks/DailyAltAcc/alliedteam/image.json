@@ -263,10 +263,10 @@
   {
     "itemName": "auto_feed_off",
     "imageName": "alliedteam_auto_feed_off.png",
-    "roiFront": "386,178,37,105",
+    "roiFront": "382,204,45,78",
     "roiBack": "366,155,77,156",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "自动喂食"
   },
   {
@@ -290,10 +290,10 @@
   {
     "itemName": "auto_feed_on",
     "imageName": "alliedteam_auto_feed_on.png",
-    "roiFront": "386,178,37,105",
+    "roiFront": "382,204,45,78",
     "roiBack": "366,155,77,156",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "自动喂养打开"
   },
   {
