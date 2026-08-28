@@ -250,5 +250,59 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "自动战斗off"
+  },
+  {
+    "itemName": "paper_2",
+    "imageName": "alliedteam_paper_2.png",
+    "roiFront": "294,635,32,42",
+    "roiBack": "265,606,97,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "灰色纸人"
+  },
+  {
+    "itemName": "auto_feed_off",
+    "imageName": "alliedteam_auto_feed_off.png",
+    "roiFront": "386,178,37,105",
+    "roiBack": "366,155,77,156",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "自动喂食"
+  },
+  {
+    "itemName": "auto_conut_on",
+    "imageName": "alliedteam_auto_conut_on.png",
+    "roiFront": "257,450,159,31",
+    "roiBack": "207,413,276,144",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "挑战次数打开"
+  },
+  {
+    "itemName": "auto_conut_off",
+    "imageName": "alliedteam_auto_conut_off.png",
+    "roiFront": "257,450,159,31",
+    "roiBack": "207,413,276,144",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "挑战次数关闭"
+  },
+  {
+    "itemName": "auto_feed_on",
+    "imageName": "alliedteam_auto_feed_on.png",
+    "roiFront": "386,178,37,105",
+    "roiBack": "366,155,77,156",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "自动喂养打开"
+  },
+  {
+    "itemName": "paper",
+    "imageName": "alliedteam_paper.png",
+    "roiFront": "294,635,32,42",
+    "roiBack": "265,606,97,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "打开纸人标志"
   }
 ]
