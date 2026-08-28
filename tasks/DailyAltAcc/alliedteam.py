@@ -25,6 +25,9 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     _need_switch_help_shikigami: bool = False
     # 援助式神切换标记，仅首场战斗切换一次，切换后置 False（后续场次直接点准备）
     _help_shikigami_detect: bool = True
+    # 纸人设置硬编码开关（True=开自动前配置「自动喂养 ON / 设置挑战次数 OFF」，
+    # False=跳过纸人设置）。按需手动改这里，不接配置文件
+    _paper_settings_enable: bool = True
 
     def _restore_battle_count(self) -> int:
         """从进度文件恢复已完成场次到 current_count。
@@ -423,12 +426,67 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             logger.exception('房间倒数文字 OCR 失败，按未识别处理')
             return ''
 
+    def _setup_paper_settings(self) -> None:
+        """配置纸人设置弹窗：自动喂养 ON、设置挑战次数 OFF。
+
+        paper/paper_2 与自动喂养、挑战次数的 on/off 开关都是同位置的明暗两态
+        模板，纯模板匹配会互相误命中，全部用 appear_rgb（模板匹配 + 平均颜色
+        比对）区分明暗态。流程：准备界面（房间）点击 paper 打开弹窗 → 自动
+        喂养识别到 OFF 态就点击置 ON、设置挑战次数识别到 ON 态就点击置 OFF
+        → 点击 paper_2 关闭弹窗，重新看到 paper 即确认回到准备界面。
+        任一步识别超时只告警跳过，不阻断自动战斗主流程。
+        """
+        logger.info('配置纸人设置：自动喂养 ON、设置挑战次数 OFF')
+        # 点击纸人按钮打开设置弹窗
+        open_timer = Timer(5).start()
+        while not open_timer.reached():
+            self.screenshot()
+            if self.appear_rgb(self.I_PAPER):
+                self.click(self.I_PAPER)
+                time.sleep(1)
+                break
+        else:
+            logger.warning('未识别到纸人按钮，跳过纸人设置')
+            return
+        # 等设置弹窗弹出（任一开关可见即视为已打开）
+        popup_timer = Timer(5).start()
+        while not popup_timer.reached():
+            self.screenshot()
+            if (self.appear_rgb(self.I_AUTO_FEED_OFF) or self.appear_rgb(self.I_AUTO_FEED_ON)
+                    or self.appear_rgb(self.I_AUTO_CONUT_ON) or self.appear_rgb(self.I_AUTO_CONUT_OFF)):
+                break
+        else:
+            logger.warning('纸人设置弹窗未出现，跳过设置')
+            return
+        # 自动喂养置 ON：仅当前为 OFF 态时点击切换
+        if self.appear_rgb(self.I_AUTO_FEED_OFF):
+            self.click(self.I_AUTO_FEED_OFF)
+            time.sleep(0.5)
+            logger.info('自动喂养已置为 ON')
+        # 设置挑战次数置 OFF：仅当前为 ON 态时点击切换
+        if self.appear_rgb(self.I_AUTO_CONUT_ON):
+            self.click(self.I_AUTO_CONUT_ON)
+            time.sleep(0.5)
+            logger.info('设置挑战次数已置为 OFF')
+        # 点击 paper_2 关闭弹窗；重新看到 paper 即确认回到准备界面
+        close_timer = Timer(5).start()
+        while not close_timer.reached():
+            self.screenshot()
+            if self.appear_rgb(self.I_PAPER):
+                logger.info('纸人设置完成，已回到准备界面')
+                return
+            if self.appear_rgb(self.I_PAPER_2):
+                self.click(self.I_PAPER_2)
+                time.sleep(1)
+        logger.warning('纸人设置弹窗关闭确认超时')
+
     def _auto_battle_loop(self, limit_count: int) -> bool:
         """游戏内自动战斗主循环：脚本不点任何战斗交互，只开自动、数场次、控总数。
 
         自动开关（I_AUTO_OFF）与锁队按钮同在房间（挑战按钮 I_BATTLE 所在界面）
-        左下角。在房间点开自动后，游戏会自己点挑战、自动准备、自动战斗、自动
-        结算并连续下一场——全程脚本不点 I_BATTLE。脚本只做：
+        左下角。进入循环先配置纸人设置（_setup_paper_settings：自动喂养 ON、
+        设置挑战次数 OFF），随后在房间点开自动，游戏会自己点挑战、自动准备、
+        自动战斗、自动结算并连续下一场——全程脚本不点 I_BATTLE。脚本只做：
           1. 房间内点击 I_AUTO_OFF（关态模板）开启自动；开启成功的标志是顶部
              出现严格匹配的倒数文字「00分0」，或未经脚本点击却被拉进战斗；
           2. 以「进入战斗」的上升沿累计场次，每场立刻落盘（中断可接续）；
@@ -443,6 +501,11 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         logger.info('进入游戏内自动战斗模式')
         # 循环内脚本几乎不点击，登记长战斗标记避免 stuck 误判（同 battle_wait）
         self.device.stuck_record_add('BATTLE_STATUS_S')
+        # 开自动前先配置纸人设置（自动喂养 ON / 设置挑战次数 OFF）。
+        # 由类属性 _paper_settings_enable 硬编码控制，关掉即整个跳过；
+        # 开着时失败也只告警不阻断，主流程照常开自动
+        if self._paper_settings_enable:
+            self._setup_paper_settings()
         auto_on = False  # 已确认自动开启（读到过「00分0」或被动进过战斗）
         in_battle_prev = False
         while 1:

@@ -65,6 +65,9 @@ class _AutoScene:
         self.clicks = []
         self.exited = 0
         obj.device = SimpleNamespace(stuck_record_add=lambda *a, **k: None)
+        # 纸人设置在 _auto_battle_loop 入口调用，主循环用例里屏蔽（其分支逻辑
+        # 由 test_setup_paper_settings 单独覆盖）
+        obj._setup_paper_settings = lambda: None
         obj.screenshot = lambda: setattr(self, 'i', min(self.i + 1, len(frames) - 1))
         obj.is_in_real_battle = lambda screenshot=False: self.frame.get('battle', False)
         obj.appear = lambda target, *a, **k: self.frame.get('challenge', False)
@@ -133,6 +136,78 @@ def test_auto_battle_loop_exits_battle_when_full_and_pulled_in(monkeypatch):
     assert scene.exited == 1, '被拉进意外战斗必须退出'
     assert obj.current_count == 1, '意外进战的那场不得计数'
     assert obj._progress.count == 1
+
+
+class _PaperScene:
+    """逐帧脚本化的纸人设置场景，驱动 _setup_paper_settings 的分支。
+
+    每帧是当前界面可见的资源对象集合；每点击一次前进一帧（点击改变界面状态）。
+    appear_rgb 按集合成员判定，click 记录点击序列并推进帧。
+    """
+
+    def __init__(self, obj, frames):
+        self.obj = obj
+        self.frames = frames
+        self.i = 0
+        self.clicks = []
+        obj.screenshot = lambda: None
+        scene = self
+
+        def appear_rgb(target, *a, **k):
+            return target in scene.frames[scene.i]
+
+        def click(target, interval=None):
+            scene.clicks.append(target)
+            scene.i = min(scene.i + 1, len(scene.frames) - 1)
+
+        obj.appear_rgb = appear_rgb
+        obj.click = click
+
+    @property
+    def frame(self):
+        return self.frames[self.i]
+
+
+@pytest.mark.unit
+def test_setup_paper_settings_toggles_and_closes(monkeypatch):
+    """纸人设置：开弹窗 → 喂养 OFF 点成 ON、次数 ON 点成 OFF → 关弹窗回界面。"""
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    from tasks.DailyAltAcc.alliedteam import Alliedteam
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=3, auto=True)
+    scene = _PaperScene(obj, [
+        {Alliedteam.I_PAPER},                                    # 准备界面：点纸人开弹窗
+        {Alliedteam.I_AUTO_FEED_OFF, Alliedteam.I_AUTO_CONUT_ON,
+         Alliedteam.I_PAPER_2},                                  # 弹窗：喂养 OFF、次数 ON
+        {Alliedteam.I_AUTO_FEED_ON, Alliedteam.I_AUTO_CONUT_ON,
+         Alliedteam.I_PAPER_2},                                  # 喂养已切 ON，次数仍 ON
+        {Alliedteam.I_AUTO_FEED_ON, Alliedteam.I_AUTO_CONUT_OFF,
+         Alliedteam.I_PAPER_2},                                  # 次数已切 OFF，点 paper_2 关弹窗
+        {Alliedteam.I_PAPER},                                    # 回到准备界面
+    ])
+
+    obj._setup_paper_settings()
+
+    assert scene.clicks == [
+        Alliedteam.I_PAPER,            # 开弹窗
+        Alliedteam.I_AUTO_FEED_OFF,    # 喂养 OFF → 点击置 ON
+        Alliedteam.I_AUTO_CONUT_ON,    # 次数 ON → 点击置 OFF
+        Alliedteam.I_PAPER_2,          # 关弹窗
+    ], '只点击开弹窗/两个待切换开关/关弹窗，已是目标态的开关不得点'
+
+
+@pytest.mark.unit
+def test_setup_paper_settings_skips_when_paper_missing(monkeypatch):
+    """准备界面识别不到纸人按钮：只告警跳过，不点击任何东西。"""
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=3, auto=True)
+    scene = _PaperScene(obj, [set()])  # 一直什么都识别不到
+
+    obj._setup_paper_settings()
+    assert scene.clicks == [], '识别不到纸人按钮时不得有任何点击'
 
 
 @pytest.mark.unit
