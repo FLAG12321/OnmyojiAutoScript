@@ -426,6 +426,23 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             logger.exception('房间倒数文字 OCR 失败，按未识别处理')
             return ''
 
+    def _countdown_minutes_stable(self, stable_seconds: float = 2) -> bool:
+        """复测窗口内倒数是否持续为分钟级读数（01分~05分）。
+
+        战斗结束回到房间的瞬间会闪现一帧「0X分XX」的假读数（自动仍开着，
+        下一帧就跳回「00分0X」开下一场）。单帧读到分钟级不能确认自动已关，
+        必须在 stable_seconds 内持续复读都是分钟级才算真关。
+        :return: True 倒数稳定为分钟级（自动确实已关闭）；
+                 False 期间出现「00分0」等秒级读数（闪现假读数，仍开着）
+        """
+        stable_timer = Timer(stable_seconds).start()
+        while not stable_timer.reached():
+            self.screenshot()
+            if not re.search(r'0[1-5]分', self._read_room_countdown()):
+                logger.info('复测中倒数回到秒级，判定为闪现假读数，自动仍开着')
+                return False
+        return True
+
     def _setup_paper_settings(self) -> None:
         """配置纸人设置弹窗：自动喂养 ON、设置挑战次数 OFF。
 
@@ -524,6 +541,12 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                 self._persist_battle_count()
                 auto_on = True
                 logger.info(f'游戏内自动战斗: {self.current_count}/{limit_count}')
+                # 每场开始整体重置卡死看门狗（60s 与 300s 计时器一并归零）并重挂
+                # 长战斗标记：开自动前的纸人/开关点击会把入口处的标记清掉，而
+                # 自动战斗中脚本零点击，不重置会被 60s 普通超时打死（实测第 5
+                # 场后 GameStuckError）
+                self.device.stuck_record_clear()
+                self.device.stuck_record_add('BATTLE_STATUS_S')
             in_battle_prev = in_battle
 
             if in_battle:
@@ -540,10 +563,16 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             countdown = self._read_room_countdown()
             if self.current_count >= limit_count:
                 # 打满收尾：房间内关自动，倒数从「00分0」恢复「01分」~「05分」
-                # 的分钟级读数才算确认关闭
+                # 的分钟级读数才算确认关闭。战斗结束回房间的瞬间会闪现一帧
+                # 「0X分XX」再跳回「00分0X」（自动仍开着下一场），单帧读数不
+                # 可信，必须连续 STABLE_CONFIRM_S 秒都是分钟级才确认
                 if re.search(r'0[1-5]分', countdown):
-                    logger.info(f'倒数已恢复分钟级[{countdown}]，游戏内自动战斗已确认关闭')
-                    return True
+                    if self._countdown_minutes_stable():
+                        logger.info(f'倒数稳定在分钟级[{countdown}]，游戏内自动战斗已确认关闭')
+                        return True
+                    # 稳定复测中看到了「00分0」：闪现读数，自动仍开着，
+                    # 回到主循环走点开关关闭的分支
+                    continue
                 if '00分0' in countdown:
                     # 自动还开着：直接点击开关坐标关闭后重读倒数
                     logger.info('场次已满，点击关闭游戏内自动战斗')

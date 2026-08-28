@@ -6,6 +6,7 @@ I_BATTLE 消失。原来 run_alone 只能空转到 60s stuck 抛 GameStuckError�
 剩余场次全丢；现在复用建队链路推回挑战界面，恢复不了则按「未打满」收尾。
 """
 from pathlib import Path
+import re
 
 import pytest
 
@@ -64,7 +65,10 @@ class _AutoScene:
         self.i = 0
         self.clicks = []
         self.exited = 0
-        obj.device = SimpleNamespace(stuck_record_add=lambda *a, **k: None)
+        obj.device = SimpleNamespace(
+            stuck_record_add=lambda *a, **k: None,
+            stuck_record_clear=lambda: None,
+        )
         # 纸人设置在 _auto_battle_loop 入口调用，主循环用例里屏蔽（其分支逻辑
         # 由 test_setup_paper_settings 单独覆盖）
         obj._setup_paper_settings = lambda: None
@@ -74,6 +78,9 @@ class _AutoScene:
         obj._read_room_countdown = lambda: self.frame.get('countdown', '')
         obj.click = lambda target, interval=None: self.clicks.append(target)
         obj.exit_battle = lambda skip_first=False: setattr(self, 'exited', self.exited + 1) or True
+        # 关闭确认的稳定复测：直接以当前帧读数判断（逐帧推进由 screenshot 模拟）
+        obj._countdown_minutes_stable = lambda stable_seconds=2: re.search(
+            r'0[1-5]分', self.frame.get('countdown', '')) is not None
 
         obj_ref = obj
 
@@ -136,6 +143,33 @@ def test_auto_battle_loop_exits_battle_when_full_and_pulled_in(monkeypatch):
     assert scene.exited == 1, '被拉进意外战斗必须退出'
     assert obj.current_count == 1, '意外进战的那场不得计数'
     assert obj._progress.count == 1
+
+
+@pytest.mark.unit
+def test_auto_battle_loop_close_rejects_flicker_minutes(monkeypatch):
+    """打满后回房瞬间闪现「01分59」（自动仍开着）：稳定复测识破后必须走
+    点开关关闭的分支，不得直接当已关闭收尾。"""
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=1, auto=True)
+    obj.current_count = 1  # 已打满
+    scene = _AutoScene(obj, [
+        {'challenge': True, 'countdown': ''},        # 占位初始帧
+        {'challenge': True, 'countdown': '01分59'},  # 战斗结束闪现的假分钟级读数
+        {'challenge': True, 'countdown': '00分03'},  # 复测推进一帧：秒级，识破闪现
+        {'challenge': True, 'countdown': '00分03'},  # 主循环复读秒级 → 点开关关闭
+        {'challenge': True, 'countdown': '01分30'},  # 关闭后恢复真分钟级
+    ])
+    # 简化版稳定复测：推进一帧后判断新读数是否仍为分钟级
+    def fake_stable(stable_seconds=2):
+        scene.i = min(scene.i + 1, len(scene.frames) - 1)
+        return re.search(r'0[1-5]分', scene.frame.get('countdown', '')) is not None
+
+    obj._countdown_minutes_stable = fake_stable
+
+    assert obj._auto_battle_loop(1) is True
+    assert obj.I_AUTO_OFF in scene.clicks, '识破闪现假读数后必须点击关闭自动'
 
 
 class _PaperScene:
