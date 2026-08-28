@@ -25,9 +25,6 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     _need_switch_help_shikigami: bool = False
     # 援助式神切换标记，仅首场战斗切换一次，切换后置 False（后续场次直接点准备）
     _help_shikigami_detect: bool = True
-    # 纸人设置硬编码开关（True=开自动前配置「自动喂养 ON / 设置挑战次数 OFF」，
-    # False=跳过纸人设置）。按需手动改这里，不接配置文件
-    _paper_settings_enable: bool = False
 
     def _restore_battle_count(self) -> int:
         """从进度文件恢复已完成场次到 current_count。
@@ -518,10 +515,9 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         logger.info('进入游戏内自动战斗模式')
         # 循环内脚本几乎不点击，登记长战斗标记避免 stuck 误判（同 battle_wait）
         self.device.stuck_record_add('BATTLE_STATUS_S')
-        # 开自动前先配置纸人设置（自动喂养 ON / 设置挑战次数 OFF）。
-        # 由类属性 _paper_settings_enable 硬编码控制，关掉即整个跳过；
-        # 开着时失败也只告警不阻断，主流程照常开自动
-        if self._paper_settings_enable:
+        # 开自动前先配置纸人设置（自动喂养 ON / 设置挑战次数 OFF），由配置
+        # alliedteam_paper_settings_enable 控制；失败只告警不阻断
+        if self.get_config().daily_alt_acc_config.alliedteam_paper_settings_enable:
             self._setup_paper_settings()
         auto_on = False  # 已确认自动开启（读到过「00分0」或被动进过战斗）
         in_battle_prev = False

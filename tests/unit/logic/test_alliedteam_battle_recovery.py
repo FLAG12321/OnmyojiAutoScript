@@ -34,11 +34,13 @@ def _make(limit=3, auto=False):
     obj._progress_key = 'a@b.com|小号一|两情相悦'
     obj.current_count = 0
     obj.screenshots = 0
-    # limit != 13 走 check_lock(True) 分支；auto=False 保持手动路径语义
+    # limit != 13 走 check_lock(True) 分支；auto=False 保持手动路径语义。
+    # 纸人开关默认关（_auto_battle_loop 入口会读它决定是否调用 _setup_paper_settings）
     obj.get_config = lambda: SimpleNamespace(
         daily_alt_acc_config=SimpleNamespace(
             alliedteam_limit_count=limit,
             alliedteam_auto_battle_enable=auto,
+            alliedteam_paper_settings_enable=False,
         )
     )
     obj.config = SimpleNamespace(

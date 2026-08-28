@@ -4,6 +4,12 @@ def get_config(self):
     config=DailyAltAcc()
     config.daily_alt_acc_config.alliedteam_battle_enable = self.account_info.alliedteam_battle_enable
     config.daily_alt_acc_config.alliedteam_ap_enable = self.account_info.alliedteam_ap_enable
+    # 同心战斗自动模式与纸人设置：不加 Multi 侧配置，直接镜像大号配置文件里
+    # DailyAltAcc 的当前值——大号是什么，所有小号就是什么
+    config.daily_alt_acc_config.alliedteam_auto_battle_enable = \
+        self.config.daily_alt_acc.daily_alt_acc_config.alliedteam_auto_battle_enable
+    config.daily_alt_acc_config.alliedteam_paper_settings_enable = \
+        self.config.daily_alt_acc.daily_alt_acc_config.alliedteam_paper_settings_enable
     config.daily_alt_acc_config.mail_enable = self.account_info.mail_enable
     config.daily_alt_acc_config.donatejade_enable = self.account_info.donatejade_enable
     config.daily_alt_acc_config.courtyard_enable = self.account_info.courtyard_enable

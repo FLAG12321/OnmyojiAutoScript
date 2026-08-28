@@ -22,6 +22,9 @@ class DailyAltAccConfig(BaseModel):
   # 识别第几场并控制总次数；13次账号第一场仍手动切援助式神，第二场起挂自动。
   # 开自动前脚本会先锁定队伍（未锁定时游戏自动准备可能带错阵容）。
   alliedteam_auto_battle_enable: bool = Field(default=True, description='同心战斗是否使用游戏内自动战斗')
+  # 纸人设置：开自动前点纸人按钮配置「自动喂养 ON / 设置挑战次数 OFF」，
+  # 关闭则跳过直接开自动
+  alliedteam_paper_settings_enable: bool = Field(default=False, description='同心战斗开自动前是否配置纸人设置')
   alliedteam_ap_enable: bool = Field(default=False, description='是否开启补充体力')
   donatejade_enable: bool = Field(default=True, description='是否开启捐勾')
   courtyard_enable: bool = Field(default=True, description='是否开启庭院事务')
