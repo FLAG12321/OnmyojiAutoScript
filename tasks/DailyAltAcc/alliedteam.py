@@ -27,7 +27,7 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     _help_shikigami_detect: bool = True
     # 纸人设置硬编码开关（True=开自动前配置「自动喂养 ON / 设置挑战次数 OFF」，
     # False=跳过纸人设置）。按需手动改这里，不接配置文件
-    _paper_settings_enable: bool = True
+    _paper_settings_enable: bool = False
 
     def _restore_battle_count(self) -> int:
         """从进度文件恢复已完成场次到 current_count。
