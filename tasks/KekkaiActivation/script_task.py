@@ -161,9 +161,11 @@ class ScriptTask(KU, KekkaiActivationAssets):
                         target=datetime.now() + self.ACTIVATION_RETRY_DELAY,
                     )
                     return False
+                # 正常挂卡中的下次上号时间叠加随机延时，避免准点上线
+                next_time = self.apply_random_delay('KekkaiActivation', interval + datetime.now())
                 if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY :
-                    self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
-                self.set_next_run("KekkaiActivation", target=interval+datetime.now())
+                    self.config.notifier.push(content=f'结界下次挂卡时间: {next_time}', title='结界挂卡')
+                self.set_next_run("KekkaiActivation", target=next_time)
                 return False
             # 如果已经选中这张卡了， 那就激活这张卡
             if card_status and not card_effect:
@@ -194,9 +196,11 @@ class ScriptTask(KU, KekkaiActivationAssets):
                         target=datetime.now() + self.ACTIVATION_RETRY_DELAY,
                     )
                     return False
+                # 正常挂卡后的下次上号时间叠加随机延时，避免准点上线
+                next_time = self.apply_random_delay('KekkaiActivation', interval + datetime.now())
                 if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY :
-                    self.config.notifier.push(content=f'结界下次挂卡时间: {interval + datetime.now()}', title='结界挂卡')
-                self.set_next_run("KekkaiActivation", target=interval + datetime.now())
+                    self.config.notifier.push(content=f'结界下次挂卡时间: {next_time}', title='结界挂卡')
+                self.set_next_run("KekkaiActivation", target=next_time)
                 return True
     def goto_cards(self):
         """

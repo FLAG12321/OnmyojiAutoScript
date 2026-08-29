@@ -432,6 +432,10 @@ class Script:
                 # 避免调度层先因游戏未运行触发 Restart 造成顶号（禁止时间段内本不应上号）
                 forbidden_end = self.config.get_forbidden_time_end(task.command)
                 if forbidden_end is not None:
+                    # 解禁时刻叠加随机延时，避免每次都在解禁的整点准点上线
+                    random_delay = self.config.get_task_random_delay(task.command)
+                    if random_delay is not None:
+                        forbidden_end = forbidden_end + random_delay
                     logger.info(f'Task `{task.command}` 处于禁止运行时间段内，推迟到 {forbidden_end}')
                     self.config.task_delay(task.command, target=forbidden_end, server=False)
                     continue

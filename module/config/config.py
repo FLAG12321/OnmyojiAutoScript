@@ -138,6 +138,8 @@ def _blocked_overlaps(blocked_path, changed_set: set) -> bool:
 # 需要在调度层做"禁止运行时间段"保护的任务名 -> 配置子模型名。
 # 命中禁止区间时调度层会把任务推迟到区间结束，避免在区间内因游戏未运行触发 Restart 造成顶号。
 # 子模型需提供 forbidden_time_enable(bool) 与 forbidden_time_range(str) 字段。
+# 同一张表也用于 get_task_random_delay 的"下次上号随机延时"注册，
+# 子模型额外提供 random_delay_enable(bool)/random_delay_min(int)/random_delay_max(int) 字段。
 FORBIDDEN_TIME_TASKS = {
     'KekkaiUtilize': 'utilize_config',
     'KekkaiActivation': 'activation_config',
@@ -945,6 +947,35 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             return None
         now = now or datetime.now()
         return forbidden_range_end(now, time_range)
+
+    def get_task_random_delay(self, task: str) -> timedelta | None:
+        """
+        读取任务的下次上号随机延时配置。
+        开启且区间合法时返回 [min, max] 分钟内的随机 timedelta，否则返回 None。
+
+        :param task: 任务名，大驼峰，如 'KekkaiUtilize'（需在 FORBIDDEN_TIME_TASKS 注册）
+        :return: 随机延时的 timedelta 或 None（未注册/未开启/区间非法）
+        """
+        submodel_name = FORBIDDEN_TIME_TASKS.get(task)
+        if submodel_name is None:
+            return None
+        task_object = getattr(self.model, convert_to_underscore(task), None)
+        if task_object is None:
+            return None
+        sub = getattr(task_object, submodel_name, None)
+        if sub is None:
+            return None
+        if not getattr(sub, 'random_delay_enable', False):
+            return None
+        # min/max 颠倒时自动对调，避免配置笔误导致 randint 抛 ValueError
+        delay_min = getattr(sub, 'random_delay_min', 0)
+        delay_max = getattr(sub, 'random_delay_max', 0)
+        if delay_min > delay_max:
+            delay_min, delay_max = delay_max, delay_min
+        if delay_max <= 0:
+            return None
+        # random 模块已被 Config 用于服务器更新抖动，此处复用同一随机源
+        return timedelta(minutes=random.randint(delay_min, delay_max))
 
     def get_schedule_data(self) -> dict[str, dict]:
         """

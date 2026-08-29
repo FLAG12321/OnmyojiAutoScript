@@ -794,11 +794,29 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                                                                             second=custom_time.second)
         self.set_next_run(task, target=target_time)
 
+    def apply_random_delay(self, task: str, target: datetime) -> datetime:
+        """
+        给下次运行时间叠加随机延时（防检测），未启用时原样返回。
+        适用于任务正常完成后的调度点（如挂卡/寄养后按卡剩余时间设定下次运行）。
+
+        :param task: 任务名称，大驼峰的，如 'KekkaiUtilize'（需在 FORBIDDEN_TIME_TASKS 注册）
+        :param target: 原定的下次运行时间
+        :return: 叠加随机延时后的下次运行时间
+        """
+        random_delay = self.config.get_task_random_delay(task)
+        if random_delay is None:
+            return target
+        target = target + random_delay
+        logger.info(f'[{task}] 下次运行时间叠加随机延时 {random_delay}，调整为 {target}')
+        return target
+
     def check_forbidden_time(self, task: str, enable: bool, time_range: str) -> None:
         """
         检查当前时间是否落在禁止运行时间段内。
         命中则把下次运行时间设为该区间结束时刻，并抛出 TaskEnd 跳过本次运行。
         跨天区间（如 23:00-01:00）命中后结束时间会落在次日，由 forbidden_range_end 处理。
+        开启随机延时配置时，下次运行时间在区间结束时刻上再叠加随机分钟数，
+        避免每次都在解禁的整点准点上线。
 
         :param task: 任务名称，大驼峰的，如 'KekkaiUtilize'
         :param enable: 是否启用禁止时间段功能
@@ -810,6 +828,11 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         end_dt = forbidden_range_end(datetime.now(), time_range)
         if end_dt is None:
             return
+        # 禁止时间段解禁时刻叠加随机延时，避免每次都在解禁的整点准点上线
+        random_delay = self.config.get_task_random_delay(task)
+        if random_delay is not None:
+            end_dt = end_dt + random_delay
+            logger.info(f'[{task}] 禁止时间段解禁后叠加随机延时 {random_delay}')
         logger.info(f'[{task}] 当前处于禁止运行时间段内，跳过本次运行，下次运行时间设为 {end_dt}')
         self.set_next_run(task, target=end_dt, server=False)
         raise TaskEnd(task)

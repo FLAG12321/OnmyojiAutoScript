@@ -283,6 +283,9 @@
       "harvest_guild_max_times": 0,
       "forbidden_time_enable": false,
       "forbidden_time_range": "",
+      "random_delay_enable": false,
+      "random_delay_min": 10,
+      "random_delay_max": 30,
       "utilize_enable": true,
       "pets_enable": false,
       "guild_ap_enable": true,
@@ -314,7 +317,10 @@
       "card_not_found_count": 0,
       "pets_enable": false,
       "forbidden_time_enable": false,
-      "forbidden_time_range": ""
+      "forbidden_time_range": "",
+      "random_delay_enable": false,
+      "random_delay_min": 10,
+      "random_delay_max": 30
     }
   },
   "demon_encounter": {

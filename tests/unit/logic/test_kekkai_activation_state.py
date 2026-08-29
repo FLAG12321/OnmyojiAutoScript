@@ -24,7 +24,9 @@ def test_empty_card_slot_screens_card_before_checking_effect(monkeypatch):
     task.config = SimpleNamespace(
         kekkai_activation=SimpleNamespace(
             activation_config=SimpleNamespace(card_type=CardType.DAILY)
-        )
+        ),
+        # apply_random_delay 会读该接口；返回 None 表示未启用随机延时
+        get_task_random_delay=lambda _task: None,
     )
 
     status = iter([False, True])
