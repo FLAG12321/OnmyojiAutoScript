@@ -164,6 +164,33 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             return False
         return not prefix or prefix.isdigit()
 
+    @staticmethod
+    def _bottom_ocr_texts(ocr_results) -> tuple[str, ...]:
+        """提取 OCR 结果中最下面一组文字，用于判断列表是否已经滑到底部。
+
+        同一条目内的服务器名、登录时间和角色名检测框通常在同一水平行，按检测框
+        的纵向重叠归为一组；只比较这一组可避开上方条目的登录时间动态变化。
+        """
+        if not ocr_results:
+            return ()
+
+        def box_bounds(item):
+            box = item.box
+            ys = [point[1] for point in box]
+            return min(ys), max(ys)
+
+        bottom_item = max(ocr_results, key=lambda item: box_bounds(item)[1])
+        bottom_top, bottom_bottom = box_bounds(bottom_item)
+        bottom_group = []
+        for item in ocr_results:
+            item_top, item_bottom = box_bounds(item)
+            if item_top <= bottom_bottom and item_bottom >= bottom_top:
+                bottom_group.append(item)
+
+        # 统一按横坐标排序，避免 OCR 返回顺序变化导致相同底部文字被误判不同
+        bottom_group.sort(key=lambda item: min(point[0] for point in item.box))
+        return tuple(item.ocr_text for item in bottom_group)
+
     def switch_character(self, characterName: str):
         """
               需保证账号已登录 且处于登录界面
@@ -195,13 +222,14 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             self.screenshot() """
 
         self.O_SA_SELECT_SVR_CHARACTER_LIST.keyword = characterName
-        lastCharacterNameList = []
+        lastBottomCharacterTexts = ()
         while 1:
             self.screenshot()
             if self.appear_then_click(self.I_CANCEL_TOINVITE,interval=1.5):
                 continue
             ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
             characterNameList =[ocrResItem.ocr_text for ocrResItem in ocrRes]
+            bottomCharacterTexts = self._bottom_ocr_texts(ocrRes)
             #logger.info(characterNameList)
             ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
             for index, item in enumerate(characterNameList):
@@ -230,10 +258,10 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                                               interval=3) """
                 logger.info("character %s found,and clicked svr icon", characterName)
                 return True
-            if lastCharacterNameList == characterNameList:
+            if lastBottomCharacterTexts == bottomCharacterTexts:
                 break
             logger.info(f'{characterName} not found,start swipe')
-            lastCharacterNameList = characterNameList
+            lastBottomCharacterTexts = bottomCharacterTexts
             self.swipe(self.S_SA_SVR_SWIPE_LEFT)
             # 等待滑动动画完成
             time.sleep(1.5)

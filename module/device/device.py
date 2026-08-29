@@ -402,6 +402,11 @@ class Device(Platform, Screenshot, Control, AppControl):
         self.click_record_add(button)
         self.click_record_check()
 
+    def handle_swipe_control_check(self):
+        """滑动前重置状态，但不把滑动计入连续点击保护。"""
+        self.stuck_record_clear()
+        self.click_record_clear()
+
     def click_record_add(self, button):
         self.click_record.append(str(button))
 

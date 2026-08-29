@@ -22,6 +22,10 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         # Will be overridden in Device
         pass
 
+    def handle_swipe_control_check(self):
+        # 滑动不参与连续点击保护，由 Device 子类负责重置相关状态
+        pass
+
     @cached_property
     def click_methods(self):
         return {
@@ -281,7 +285,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         self._pace_action_after((x, y), control_name)
 
     def swipe(self, p1, p2, duration=(1.0, 1.5), control_name='SWIPE', distance_check=True):
-        self.handle_control_check(control_name)
+        # 滑动动作持续时间较长，不参与连续点击保护，避免合法的连续翻页被误判为卡死
+        self.handle_swipe_control_check()
         p1, p2 = ensure_int(p1, p2)
         duration = ensure_time(duration)
         method = self.config.script.device.control_method

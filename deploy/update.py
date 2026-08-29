@@ -23,6 +23,7 @@ OCR 换包必然撞 WinError 5 拒绝访问——它跑在 server 进程内，�
 --info 的 JSON 字段与 /home/update_info 逐字段一致，因此前端的解析模型可直接复用。
 """
 import argparse
+import importlib
 import json
 import os
 import subprocess
@@ -30,6 +31,30 @@ import sys
 
 from deploy.logger import logger
 from deploy.process import ProcessManager
+
+# 首次安装自举阶段，最小 toolkit 只带 pip/requests/pywin32 等引导依赖，还没有 rich/filelock。
+# module.server.updater 会连带拉起 module.logger(rich)（见 module/server/__init__.py、updater.py、
+# module/base/retry.py）与 filelock，缺依赖时 import 直接裸崩 ModuleNotFoundError。
+# 这里提前探测并给出可执行的提示，而不是让用户看到一条 traceback。
+def _check_bootstrap_deps() -> None:
+    missing = []
+    for name in ('rich', 'filelock'):
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            missing.append(name)
+    if missing:
+        print(
+            '缺少更新器依赖：' + '、'.join(missing)
+            + '\n如果是首次安装，请先运行 oas-backend.bat（或 python -m deploy.installer）完成依赖安装；'
+              '已安装可手动补齐：toolkit\\python.exe -m pip install ' + ' '.join(missing),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+_check_bootstrap_deps()
+
 from module.server.updater import (Updater, Timeout, _update_progress,
                                   update_lock, validate_branch, validate_repository,
                                   UPDATE_LOCK_WAIT)

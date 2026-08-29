@@ -154,3 +154,53 @@ def test_switch_svr_falls_back_to_character_list_when_login_form_misses():
 
     assert obj.switch_svr('猫川别馆') is True
     obj.switch_character.assert_called_once_with('猫川别馆')
+
+
+class _OcrItem:
+    """角色列表 OCR 结果桩，提供文字与检测框两个字段。"""
+
+    def __init__(self, text, x, y, width=40, height=20):
+        self.ocr_text = text
+        self.box = [(x, y), (x + width, y), (x + width, y + height), (x, y + height)]
+
+
+def test_bottom_ocr_group_ignores_upper_dynamic_text():
+    """上方登录时间变化时，只要最下面一组文字不变仍应判定到底。"""
+    first = [
+        _OcrItem('上方时间1', 10, 20),
+        _OcrItem('底部服务器', 10, 100),
+        _OcrItem('底部角色', 100, 100),
+    ]
+    second = [
+        _OcrItem('上方时间2', 10, 20),
+        _OcrItem('底部服务器', 10, 100),
+        _OcrItem('底部角色', 100, 100),
+    ]
+
+    assert LoginAccount._bottom_ocr_texts(first) == ('底部服务器', '底部角色')
+    assert LoginAccount._bottom_ocr_texts(first) == LoginAccount._bottom_ocr_texts(second)
+
+
+def test_switch_character_stops_when_bottom_group_repeats():
+    """角色列表上方文字变化但底部组重复时，只执行一次滑动后结束。"""
+    obj = _bare_login_account()
+    obj.screenshot = lambda: None
+    obj.appear = mock.Mock(return_value=True)
+    obj.appear_then_click = mock.Mock(return_value=False)
+    obj.ui_click_until_disappear = mock.Mock()
+    obj.I_SA_CHECK_SELECT_SVR_1 = mock.Mock()
+    obj.I_CANCEL_TOINVITE = mock.Mock()
+    obj.S_SA_SVR_SWIPE_LEFT = mock.Mock(name='sa_svr_swipe_left')
+    obj.O_SA_SELECT_SVR_CHARACTER_LIST = mock.Mock()
+    obj.O_SA_SELECT_SVR_CHARACTER_LIST.roi = (0, 0, 100, 100)
+    obj.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr.side_effect = [
+        [_OcrItem('上方时间1', 10, 20), _OcrItem('底部服务器', 10, 100), _OcrItem('底部角色', 100, 100)],
+        [_OcrItem('上方时间2', 10, 20), _OcrItem('底部服务器', 10, 100), _OcrItem('底部角色', 100, 100)],
+    ]
+    obj.device = mock.Mock()
+    obj.swipe = mock.Mock()
+
+    with mock.patch('tasks.Component.SwitchAccount.login_account.time.sleep'):
+        assert obj.switch_character('不存在') is False
+
+    obj.swipe.assert_called_once_with(obj.S_SA_SVR_SWIPE_LEFT)
