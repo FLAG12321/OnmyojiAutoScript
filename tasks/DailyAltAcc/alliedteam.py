@@ -25,6 +25,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     _need_switch_help_shikigami: bool = False
     # 援助式神切换标记，仅首场战斗切换一次，切换后置 False（后续场次直接点准备）
     _help_shikigami_detect: bool = True
+    # 连续多少秒不在战斗画面才确认上一场结束（防 I_BATTLE_INFO 单帧抖动误计场）
+    BATTLE_END_CONFIRM_S = 3
 
     def _restore_battle_count(self) -> int:
         """从进度文件恢复已完成场次到 current_count。
@@ -504,6 +506,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
           1. 房间内点击 I_AUTO_OFF（关态模板）开启自动；开启成功的标志是顶部
              出现严格匹配的倒数文字「00分0」，或未经脚本点击却被拉进战斗；
           2. 以「进入战斗」的上升沿累计场次，每场立刻落盘（中断可接续）；
+             战斗画面单帧识别抖动由结束确认防抖过滤：连续 BATTLE_END_CONFIRM_S
+             秒不在战斗画面才确认上一场结束，确认前的上升沿视为同场抖动不计数；
           3. 场次打满后回到房间：若仍读到「00分0」说明自动还开着，直接点击
              I_AUTO_OFF 坐标（不识别模板，开启态下关态模板匹配不到），直到
              倒数恢复「01分」~「05分」的分钟级读数才确认关闭；
@@ -521,22 +525,44 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             self._setup_paper_settings()
         auto_on = False  # 已确认自动开启（读到过「00分0」或被动进过战斗）
         in_battle_prev = False
+        # 上一场是否已确认结束：初始视为已结束（首场前无「上一场」）。
+        # I_BATTLE_INFO 单模板在战斗动画中偶发丢一帧，若直接按上升沿计数，
+        # 同一场战斗会被误计多场（实测日志出现 2.1s 异常短间隔）。只有连续
+        # BATTLE_END_CONFIRM_S 秒都不在战斗画面才确认本场结束，确认前的
+        # 战斗上升沿一律视为同场识别抖动，不计数。
+        battle_confirmed_end = True
+        battle_end_timer = None  # 离开战斗画面时启动的计时器；回战斗画面即清空
         while 1:
             self.screenshot()
             in_battle = self.is_in_real_battle(False)
+            if not in_battle:
+                # 不在战斗画面：启动/保持结束计时，连续达标才确认上一场结束
+                if battle_end_timer is None:
+                    battle_end_timer = Timer(self.BATTLE_END_CONFIRM_S).start()
+                elif battle_end_timer.reached():
+                    battle_confirmed_end = True
+            else:
+                # 回到战斗画面：结束计时作废，重新从零开始计
+                battle_end_timer = None
             if in_battle and not in_battle_prev:
-                if self.current_count >= limit_count:
+                if not battle_confirmed_end:
+                    # 同一场战斗内的模板识别抖动（丢一帧又匹配上），不是新场次
+                    logger.info('战斗画面识别抖动，忽略该次上升沿')
+                elif self.current_count >= limit_count:
                     # 场次已满仍被拉进战斗：自动没关掉。退出战斗并结束同心队
                     # 流程；场次已打完，判定为成功完成
                     logger.warning('场次已满但自动未关闭，仍被拉进战斗，退出战斗并结束同心队战斗')
                     self.exit_battle()
                     return True
-                # 正常自动场次：计数并立刻落盘，保证中断后可接续。
-                # 未经脚本点击却被拉进战斗本身即自动已开启的证据
-                self.current_count += 1
-                self._persist_battle_count()
-                auto_on = True
-                logger.info(f'游戏内自动战斗: {self.current_count}/{limit_count}')
+                else:
+                    # 正常自动场次：计数并立刻落盘，保证中断后可接续。
+                    # 未经脚本点击却被拉进战斗本身即自动已开启的证据
+                    self.current_count += 1
+                    self._persist_battle_count()
+                    auto_on = True
+                    logger.info(f'游戏内自动战斗: {self.current_count}/{limit_count}')
+                    # 新场次开始：本场尚未结束，重置结束确认状态
+                    battle_confirmed_end = False
                 # 每场开始整体重置卡死看门狗（60s 与 300s 计时器一并归零）并重挂
                 # 长战斗标记：开自动前的纸人/开关点击会把入口处的标记清掉，而
                 # 自动战斗中脚本零点击，不重置会被 60s 普通超时打死（实测第 5

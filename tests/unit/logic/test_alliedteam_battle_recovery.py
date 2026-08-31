@@ -59,8 +59,10 @@ class _AutoScene:
     每调一次 screenshot() 前进一帧；帧耗尽后停在最后一帧（用例需保证终帧触发收尾）。
     """
 
-    def __init__(self, obj, frames):
+    def __init__(self, obj, frames, monkeypatch=None, step=5.0):
         from types import SimpleNamespace
+
+        import module.base.timer as timer_mod
 
         self.obj = obj
         self.frames = frames
@@ -74,7 +76,19 @@ class _AutoScene:
         # 纸人设置在 _auto_battle_loop 入口调用，主循环用例里屏蔽（其分支逻辑
         # 由 test_setup_paper_settings 单独覆盖）
         obj._setup_paper_settings = lambda: None
-        obj.screenshot = lambda: setattr(self, 'i', min(self.i + 1, len(frames) - 1))
+        # 虚拟时钟：每次截图（推进一帧）时间前进 step 秒。主循环的「战斗结束
+        # 确认防抖」用 Timer(真实时间) 判定连续 3 秒不在战斗画面，不挂虚拟
+        # 时钟的话逐帧推进瞬间完成、结束永远确认不了，两场以上的场景无法覆盖
+        self.clock = SimpleNamespace(now=1000.0)
+        self.clock.time = lambda: self.clock.now
+        if monkeypatch is not None:
+            monkeypatch.setattr(timer_mod, 'time', self.clock)
+
+        def _screenshot():
+            self.i = min(self.i + 1, len(self.frames) - 1)
+            self.clock.now += step
+
+        obj.screenshot = _screenshot
         obj.is_in_real_battle = lambda screenshot=False: self.frame.get('battle', False)
         obj.appear = lambda target, *a, **k: self.frame.get('challenge', False)
         obj._read_room_countdown = lambda: self.frame.get('countdown', '')
@@ -111,17 +125,79 @@ def test_auto_battle_loop_counts_and_closes(monkeypatch):
         {'battle': True},                                              # 第 1 场（游戏自动点挑战）
         {'battle': True},
         {'challenge': True, 'countdown': '00分0'},                     # 场间自动流转
+        {'challenge': True, 'countdown': '00分0'},                     # 场外停留超 3s → 上一场确认结束
         {'battle': True},                                              # 第 2 场（打满）
         {'battle': True},
         {'challenge': True, 'countdown': '00分0'},                     # 还开着 → 点关闭
         {'challenge': True, 'countdown': '01分30'},                    # 恢复分钟级 → 确认关闭
-    ])
+    ], monkeypatch=monkeypatch, step=5.0)
 
     assert obj._auto_battle_loop(2) is True
     assert obj.current_count == 2, '进入战斗的上升沿应各计一场'
     assert obj._progress.count == 2, '每场都必须落盘'
     assert scene.exited == 0, '正常路径不应退出战斗'
     # 挑战按钮必须由游戏点击，脚本全程不点 I_BATTLE（frames 中无任何脚本点挑战路径）
+
+
+@pytest.mark.unit
+def test_auto_battle_loop_ignores_flicker_within_battle(monkeypatch):
+    """战斗画面单帧识别抖动（丢一帧又匹配上）：不得重复计数。
+
+    根因：I_BATTLE_INFO 单模板在战斗动画中偶发丢一帧，旧逻辑按上升沿计数，
+    同一场被误计两场（实测日志 2.1s 异常短间隔）。帧间隔必须小于
+    BATTLE_END_CONFIRM_S（3 秒），否则「离开一帧」会被当成上一场结束。
+    """
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=2, auto=True)
+    scene = _AutoScene(obj, [
+        {'challenge': True, 'countdown': '01分30', 'auto_off': True},  # 房间点开自动
+        {'challenge': True, 'countdown': '00分0'},                     # 确认已开
+        {'battle': True},                                              # 第 1 场开始
+        {'battle': False},                                             # 抖动：模板丢一帧
+        {'battle': True},                                              # 抖动恢复：不得再计数
+        {'battle': True},
+        {'challenge': True, 'countdown': '00分0'},                     # 第 1 场真正结束（场外开始计时）
+        {'challenge': True, 'countdown': '00分0'},                     # 停留中
+        {'challenge': True, 'countdown': '00分0'},                     # 停留 4s > 3s → 上一场确认结束
+        {'battle': True},                                              # 第 2 场
+        {'battle': True},
+        {'challenge': True, 'countdown': '00分0'},                     # 打满 → 点关闭
+        {'challenge': True, 'countdown': '01分30'},                    # 确认关闭
+    ], monkeypatch=monkeypatch, step=2.0)  # 帧间隔 2s：抖动帧距上一帧仅 2s < 3s，不构成结束确认
+
+    assert obj._auto_battle_loop(2) is True
+    assert obj.current_count == 2, '同场抖动不得重复计数'
+    assert obj._progress.count == 2
+    assert scene.exited == 0
+
+
+@pytest.mark.unit
+def test_auto_battle_loop_flicker_after_full_battle_no_exit(monkeypatch):
+    """打满后最后一场进行中抖动一帧：不得触发 exit_battle 丢掉正在打的场次。
+
+    旧逻辑的隐藏 bug：第 13 场战斗中模板丢一帧再恢复，上升沿撞上
+    current_count >= limit 判定，会把正在打的最后一场强行退出。
+    """
+    import tasks.DailyAltAcc.alliedteam as alliedteam_mod
+    monkeypatch.setattr(alliedteam_mod.time, 'sleep', lambda s: None)
+
+    obj = _make(limit=1, auto=True)
+    scene = _AutoScene(obj, [
+        {'challenge': True, 'countdown': '', 'auto_off': True},   # 房间点开自动
+        {'challenge': True, 'countdown': '00分0'},                # 确认已开
+        {'battle': True},                                         # 第 1 场（打满）
+        {'battle': False},                                        # 抖动：模板丢一帧
+        {'battle': True},                                         # 恢复：仍属同场，不退出
+        {'battle': True},
+        {'challenge': True, 'countdown': '00分0'},                # 场次结束回房 → 点关闭
+        {'challenge': True, 'countdown': '01分30'},               # 确认关闭
+    ], monkeypatch=monkeypatch, step=0.5)
+
+    assert obj._auto_battle_loop(1) is True
+    assert scene.exited == 0, '同场抖动不得触发退出战斗'
+    assert obj.current_count == 1
 
 
 @pytest.mark.unit
@@ -138,8 +214,9 @@ def test_auto_battle_loop_exits_battle_when_full_and_pulled_in(monkeypatch):
         {'battle': True},
         {'challenge': True, 'countdown': '00分0'},  # 关一次没关掉
         {'challenge': True, 'countdown': '00分0'},  # 再关仍没关掉
+        {'challenge': True, 'countdown': '00分0'},  # 场外停留超 3s → 上一场确认结束
         {'battle': True},                          # 被拉进意外战斗 → 退出
-    ])
+    ], monkeypatch=monkeypatch, step=5.0)
 
     assert obj._auto_battle_loop(1) is True, '场次已打完，退出战斗也应判成功'
     assert scene.exited == 1, '被拉进意外战斗必须退出'
