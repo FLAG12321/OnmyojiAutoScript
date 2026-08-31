@@ -789,12 +789,12 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         total_cooperation_enable 关闭则不出协作段落，total_mysteryshop_enable
         关闭则不出商店段落。
 
-        「空轮也发一条」只由协作开关驱动：协作开 + 0 记录仍发 0 角色/0 任务的
-        空轮汇总（既有行为）；协作关时，只有商店真有记录才发，否则完全不发
-        —— 否则会推出一条写着「本轮未发现协作任务」的空汇总，比原来多噪音。
-        两边都不该发时整个汇总体系退出，恢复原版 TaskEnd「任务提醒」语义
-        （script.py 此时不再抑制）；读不到开关配置（如测试环境）时保持原发送
-        行为，避免误吞完成通知。
+        「无汇总可发」（协作关且商店无记录，如同心战斗轮/回礼轮）时，改为发送
+        普通完成推送 _notify_plain_completion（内容列出本轮实际启用的项目），
+        保证任意轮次完成都有且仅有一条完成通知；两种推送共用 coop_notified
+        幂等标记，防止崩溃重启后重复推送。MultiDailyAltAcc 已从 script.py 的
+        TASK_END_NOTIFY_LIST 移除，通用「任务提醒」不再参与本任务。
+        读不到开关配置（如测试环境）时保持原发送行为，避免误吞完成通知。
         """
         if self._progress is None:
             return
@@ -807,15 +807,17 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         except Exception:
             # 读取开关失败（如测试环境无 daily_conf）→ 保持原行为，不阻断完成通知
             pass
+        # 本轮完成通知（汇总或普通）只发一次：已标记（如崩溃后重启接续再次进入
+        # 完成分支）→ 跳过，继续正常 next_run / clear
+        if self._progress.is_coop_notified():
+            logger.info('本轮已完成完成通知，跳过重复推送')
+            return
         coops = self._progress.load_coops() if coop_on else []
         mshops = self._progress.load_mshops() if mshop_on else []
-        # 协作关闭时不发空轮汇总，只在商店确有记录时才发（见 docstring）
+        # 协作关闭时不发空轮汇总，改发普通完成推送（含本轮执行项目）
         if not coop_on and not mshops:
-            logger.info('寻找协作关闭且无神秘商店记录，跳过汇总通知'
-                        '（恢复原版 TaskEnd 任务提醒）')
-            return
-        if self._progress.is_coop_notified():
-            logger.info('本轮已完成汇总通知，跳过重复推送')
+            logger.info('寻找协作关闭且无神秘商店记录，改发普通完成通知')
+            self._notify_plain_completion()
             return
         try:
             # title 自带完整前缀「config_name｜…」，并跳过 Notifier 的全局 config_name 拼接，
@@ -838,6 +840,91 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         else:
             # best-effort：失败不标记已通知、不重试、不阻塞收尾（可能漏通知，可接受）
             logger.warning('汇总通知返回失败（不标记已通知，整轮仍视为成功）')
+
+    # 普通完成推送：total_* 全局开关 → 中文名；7 个 plan 键普通轮再按早晚阶段过滤
+    _PLAIN_PUSH_TASKS = (
+        ('total_alliedteam_battle_enable', '同心战斗', None),
+        ('total_alliedteam_ap_enable', '同心体力', 'alliedteam_ap'),
+        ('total_donatejade_enable', '捐勾', 'donatejade'),
+        ('total_courtyard_enable', '庭院事务', 'courtyard'),
+        ('total_mail_enable', '邮件', 'mail'),
+        ('total_cooperation_enable', '协作', 'cooperation'),
+        ('total_returngift_enable', '回礼', None),
+        ('total_weekaward_enable', '每周奖励', None),
+        ('total_mysteryshop_enable', '神秘商店', None),
+        ('total_kekkaiActivation_enable', '挂卡', 'kekkaiActivation'),
+        ('total_KekkaiUtilize_enable', '蹭卡', 'KekkaiUtilize'),
+        ('total_tree_planting_enable', '种树', None),
+        ('total_trialbattle_enable', '试炼战斗', None),
+        ('total_summon_up_enable', 'UP召唤礼包', None),
+        ('total_publish_sr_enable', '发布SR碎片', None),
+    )
+
+    def _build_plain_items(self) -> list[str]:
+        """列出本轮实际启用的项目中文名。
+
+        与 _create_account_config 的开关判定同源：total_* 全局开关决定做不做，
+        7 个 plan 键（庭院/邮件/协作/捐勾/同心体力/挂卡/蹭卡）普通早晚轮再按
+        task_plan 阶段过滤；回礼轮/同心轮（phase 为 None）不过滤。
+        种树是 0/1/2 三值开关，分别显示为买花/买花捐树。
+        读不到 plan（异常）时退化为不过滤，宁可多列不漏列。
+        """
+        try:
+            cfg = self.daily_conf.multi_daily_alt_acc_config
+        except Exception:
+            return []
+        phase = getattr(self, '_normal_plan_phase', None)
+        plan = None
+        if phase is not None:
+            try:
+                plan = self._get_task_plan()
+            except Exception:
+                logger.exception('读取 task_plan 失败，普通完成推送不过滤阶段项')
+                plan = None
+        items = []
+        for flag_name, label, plan_key in self._PLAIN_PUSH_TASKS:
+            value = getattr(cfg, flag_name, None)
+            if flag_name == 'total_tree_planting_enable':
+                # 种树：0 不运行 / 1 买花 / 2 买花捐树
+                if value == 1:
+                    items.append('买花')
+                elif value == 2:
+                    items.append('买花捐树')
+                continue
+            if not value:
+                continue
+            # 普通轮且该任务受 plan 管控：阶段计划关闭则本轮不做
+            if plan is not None and plan_key is not None and not plan.enabled(phase, plan_key):
+                continue
+            items.append(label)
+        return items
+
+    def _notify_plain_completion(self):
+        """无协作/商店汇总时的普通完成推送：列出本轮实际执行的项目。
+
+        与汇总推送共用 coop_notified 幂等标记与「{config_name}｜多账号日常完成」
+        标题；推送失败不写标记、不阻塞整轮收尾（best-effort，与汇总路径一致）。
+        项目列表读不出来时仍发推送，只是不含项目行——完成通知本身不能丢。
+        """
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = ["多账号日常完成", "", f"完成时间：{now_str}"]
+        items = self._build_plain_items()
+        if items:
+            lines.append(f"本轮执行项目：{'、'.join(items)}")
+        try:
+            ok = self.config.notifier.push(
+                content="\n".join(lines),
+                title=f"{self.config.config_name}｜多账号日常完成",
+                skip_config_prefix=True,
+            )
+        except Exception as e:
+            logger.warning(f'普通完成通知发送失败（不影响整轮结果）: {e}')
+            return
+        if ok:
+            self._progress.mark_coop_notified()
+        else:
+            # best-effort：失败不标记已通知、不重试、不阻塞收尾
+            logger.warning('普通完成通知返回失败（不标记已通知，整轮仍视为成功）')
 
     @classmethod
     def _build_summary_content(cls, coops, completed_at=None, show_account=False,

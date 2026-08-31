@@ -722,7 +722,8 @@ def test_notifier_skip_config_prefix_keeps_raw_title(monkeypatch):
 
 @pytest.mark.unit
 def test_should_notify_task_end_suppresses_multidaily():
-    """通用「任务提醒」对 MultiDailyAltAcc 抑制，其他任务保留。"""
+    """MultiDailyAltAcc 已从 TASK_END_NOTIFY_LIST 移除：通用「任务提醒」不再推，
+    完成通知完全由任务内 _notify_daily_completion 负责；其他任务保留。"""
     from script import Script
 
     s = object.__new__(Script)
@@ -796,12 +797,16 @@ def test_summary_sends_mshop_only_when_coop_toggle_off(tmp_path):
 
 @pytest.mark.unit
 def test_summary_skipped_when_coop_off_and_no_mshop(tmp_path):
-    """协作关 + 商店无记录：完全不发，避免推出「未发现协作任务」的空汇总。"""
+    """协作关 + 商店无记录：不发汇总，改发普通完成推送（含本轮执行项目）。"""
     task = _task_with_toggles(tmp_path, coop_enable=False)
     task._progress.append_coop(_COOP_A)
     task._notify_daily_completion()
-    assert task.config.notifier.pushes == []
-    assert task._progress.is_coop_notified() is False
+    assert len(task.config.notifier.pushes) == 1
+    push = task.config.notifier.pushes[0]
+    assert push['title'] == SUMMARY_TITLE
+    assert '本轮执行项目' in push['content']
+    assert '本轮未发现协作任务' not in push['content']
+    assert task._progress.is_coop_notified() is True
 
 
 @pytest.mark.unit
@@ -844,12 +849,18 @@ def test_archive_covers_mshop_records(tmp_path):
 
 @pytest.mark.unit
 def test_notify_skipped_when_coop_toggle_off(tmp_path):
-    """寻找协作关闭：整轮完成也不发送新增协作汇总，且不写 coop_notified。"""
+    """寻找协作关闭：不发协作汇总，改发普通完成推送并标记已通知。
+    该构造器只带协作/商店两个开关，其余 total_* 缺失 → 项目行为空。"""
     task = _task_with_coop_cfg(tmp_path, coop_enable=False)
     task._progress.append_coop(_COOP_A)
     task._notify_daily_completion()
-    assert task.config.notifier.pushes == []
-    assert task._progress.is_coop_notified() is False
+    assert len(task.config.notifier.pushes) == 1
+    push = task.config.notifier.pushes[0]
+    assert push['title'] == SUMMARY_TITLE
+    # 无任何 total_* 开关可列 → 不出项目行，但完成通知本身不丢
+    assert '本轮执行项目' not in push['content']
+    assert '本轮未发现协作任务' not in push['content']
+    assert task._progress.is_coop_notified() is True
 
 
 @pytest.mark.unit
@@ -876,28 +887,21 @@ def test_notify_with_coop_when_toggle_on(tmp_path):
 
 
 @pytest.mark.unit
-def test_task_end_notify_follows_coop_toggle():
-    """TaskEnd 抑制跟随寻找协作开关：开→抑制；关→回落原版（返回 True）。"""
+def test_task_end_notify_list_excludes_multidaily():
+    """MultiDailyAltAcc 不在 TASK_END_NOTIFY_LIST：完成通知由任务内统一负责，
+    通用「任务提醒」不因寻找协作开关变化而改变（原 _multidaily_coop_notify_enabled
+    依赖收尾时已被改写的开关，存在同心轮两头皆空的时序漏洞，已删除）。"""
     from script import Script
 
-    def script_with(coop_enable):
-        s = object.__new__(Script)
-        s.config = SimpleNamespace(
-            multi_daily_alt_acc=SimpleNamespace(
-                multi_daily_alt_acc_config=SimpleNamespace(total_cooperation_enable=coop_enable)))
-        return s
-
-    # 寻找协作开启 → 协作汇总承担完成通知 → 抑制原 TaskEnd 提醒
-    assert Script._should_notify_task_end(script_with(True), 'MultiDailyAltAcc') is False
-    # 寻找协作关闭 → 恢复原版（MultiDailyAltAcc 在 TASK_END_NOTIFY_LIST → 推送）
-    assert Script._should_notify_task_end(script_with(False), 'MultiDailyAltAcc') is True
-    # 其他任务不受影响
-    assert Script._should_notify_task_end(script_with(False), 'Orochi') is True
+    assert 'MultiDailyAltAcc' not in Script.TASK_END_NOTIFY_LIST
+    # 其余任务保持原有完成提醒
+    assert 'Orochi' in Script.TASK_END_NOTIFY_LIST
+    assert not hasattr(Script, '_multidaily_coop_notify_enabled')
 
 
 @pytest.mark.unit
 def test_task_end_toggle_three_configs_isolated(tmp_path):
-    """三个 config 的寻找协作开关相互独立：开/关/关 各自行为互不影响。"""
+    """三个 config 的寻找协作开关相互独立：开发汇总，关发普通完成推送。"""
     on = _task_with_coop_cfg(tmp_path, coop_enable=True, config_name='小号1')
     off1 = _task_with_coop_cfg(tmp_path, coop_enable=False, config_name='小号2')
     off2 = _task_with_coop_cfg(tmp_path, coop_enable=False, config_name='小号3')
@@ -907,8 +911,13 @@ def test_task_end_toggle_three_configs_isolated(tmp_path):
     off1._notify_daily_completion()
     off2._notify_daily_completion()
     assert len(on.config.notifier.pushes) == 1
-    assert off1.config.notifier.pushes == []
-    assert off2.config.notifier.pushes == []
+    assert '协作任务数量：1' in on.config.notifier.pushes[0]['content']
+    # 协作关的两个实例改发普通完成推送，各一条（该构造器无其他 total_* 开关，
+    # 项目行为空，验证标题即可）
+    assert len(off1.config.notifier.pushes) == 1
+    assert off1.config.notifier.pushes[0]['title'] == '小号2｜多账号日常完成'
+    assert len(off2.config.notifier.pushes) == 1
+    assert off2.config.notifier.pushes[0]['title'] == '小号3｜多账号日常完成'
 
 
 @pytest.mark.unit
@@ -978,6 +987,124 @@ def test_summary_show_account_switch():
         coops, datetime(2026, 8, 17, 20, 30), show_account=True)
     assert 'user@163.com' not in text_off
     assert '• 角色A（常世之国｜安卓｜user@163.com）' in text_on
+
+
+# =====================================================================
+# 8.5 普通完成推送（协作关且无商店记录时，列出本轮执行项目）
+# =====================================================================
+
+def _plain_task(tmp_path, coop_enable=False, **flag_overrides):
+    """构造带完整 total_* 开关的任务（真实 ProgressStore），供普通推送测试。
+
+    tmp_path 传子目录可实现多实例隔离（coop_notified 标记按配置名落盘）。"""
+    flags = {'total_cooperation_enable': coop_enable,
+             'total_mysteryshop_enable': False}
+    flags.update(flag_overrides)
+    cfg = SimpleNamespace(**flags)
+    task = _make_task()
+    task.config = _fake_config(_FakeNotifier(), config_name='oas1',
+                               multi_daily_alt_acc=SimpleNamespace(multi_daily_alt_acc_config=cfg))
+    task.daily_conf = task.config.multi_daily_alt_acc
+    task._progress = ProgressStore('oas1', base_dir=tmp_path)
+    task._progress.ensure_phase(FLAGS_A, '20260817-0605')
+    return task
+
+
+@pytest.mark.unit
+def test_plain_push_lists_enabled_tasks(tmp_path):
+    """普通推送列出 total_* 开启的项目（回礼轮不受 plan 过滤）。"""
+    task = _plain_task(tmp_path, total_returngift_enable=True, total_mail_enable=True)
+    # 回礼轮：phase 为 None，全部按开关列出
+    task._normal_plan_phase = None
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    push = task.config.notifier.pushes[0]
+    assert push['title'] == SUMMARY_TITLE
+    assert push.get('skip_config_prefix') is True
+    assert '本轮执行项目：邮件、回礼' in push['content']
+    assert task._progress.is_coop_notified() is True
+
+
+@pytest.mark.unit
+def test_plain_push_respects_alliedteam_round(tmp_path):
+    """同心战斗轮：只列同心战斗相关项（协作/邮件等开关均关）。"""
+    task = _plain_task(tmp_path,
+                       total_alliedteam_battle_enable=True,
+                       total_alliedteam_ap_enable=True,
+                       total_mail_enable=False, total_courtyard_enable=False)
+    task._normal_plan_phase = None
+    task._notify_daily_completion()
+    content = task.config.notifier.pushes[0]['content']
+    assert '本轮执行项目：同心战斗、同心体力' in content
+
+
+@pytest.mark.unit
+def test_plain_push_morning_plan_filters_items(tmp_path):
+    """普通早轮：7 个 plan 键按 task_plan 阶段过滤（默认早晨 courtyard 关）。"""
+    task = _plain_task(tmp_path, total_courtyard_enable=True, total_mail_enable=True,
+                       total_kekkaiActivation_enable=True, total_KekkaiUtilize_enable=True,
+                       total_donatejade_enable=True)
+    task._normal_plan_phase = 'morning'
+    # 未预载 plan 时 _get_task_plan 会 load 默认文件，早晨 courtyard=False
+    task._notify_daily_completion()
+    content = task.config.notifier.pushes[0]['content']
+    assert '庭院事务' not in content
+    for label in ('邮件', '捐勾', '挂卡', '蹭卡'):
+        assert label in content
+
+
+@pytest.mark.unit
+def test_plain_push_afternoon_plan_filters_items(tmp_path):
+    """普通下午轮：默认 afternoon 同心体力关，不列入。"""
+    task = _plain_task(tmp_path, total_alliedteam_ap_enable=True, total_mail_enable=True)
+    task._normal_plan_phase = 'afternoon'
+    task._notify_daily_completion()
+    content = task.config.notifier.pushes[0]['content']
+    assert '同心体力' not in content
+    assert '邮件' in content
+
+
+@pytest.mark.unit
+def test_plain_push_tree_planting_labels(tmp_path):
+    """种树三值开关：1=买花、2=买花捐树、0=不列。两个实例各自独立 ProgressStore。"""
+    t1 = _plain_task(tmp_path / 'a', total_tree_planting_enable=1)
+    t1._normal_plan_phase = None
+    t1._notify_daily_completion()
+    assert '本轮执行项目：买花' in t1.config.notifier.pushes[0]['content']
+
+    t2 = _plain_task(tmp_path / 'b', total_tree_planting_enable=2)
+    t2._normal_plan_phase = None
+    t2._notify_daily_completion()
+    assert '本轮执行项目：买花捐树' in t2.config.notifier.pushes[0]['content']
+
+
+@pytest.mark.unit
+def test_plain_push_idempotent_with_coop_notified(tmp_path):
+    """普通推送与汇总共用 coop_notified 标记：已通知后再次进入完成分支不重发。"""
+    task = _plain_task(tmp_path, total_mail_enable=True)
+    task._normal_plan_phase = None
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+    # 模拟崩溃重启接续再次进入完成分支
+    task._notify_daily_completion()
+    assert len(task.config.notifier.pushes) == 1
+
+
+@pytest.mark.unit
+def test_plain_push_failure_does_not_mark(tmp_path):
+    """普通推送失败：不写 coop_notified、不抛异常，整轮仍可收尾。"""
+    notifier = _FakeNotifier()
+    notifier.fail = True
+    cfg = SimpleNamespace(total_cooperation_enable=False, total_mysteryshop_enable=False)
+    task = _make_task()
+    task.config = _fake_config(notifier, config_name='oas1',
+                               multi_daily_alt_acc=SimpleNamespace(multi_daily_alt_acc_config=cfg))
+    task.daily_conf = task.config.multi_daily_alt_acc
+    task._progress = ProgressStore('oas1', base_dir=tmp_path)
+    task._progress.ensure_phase(FLAGS_A, '20260817-0605')
+    task._notify_daily_completion()
+    assert notifier.pushes == []
+    assert task._progress.is_coop_notified() is False
 
 
 # =====================================================================
