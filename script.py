@@ -84,6 +84,14 @@ class Script:
         # for exit decision. Incremented when a full_recovery cycle fails; reset
         # to 0 after any task succeeds. Exit(1) when >= 3.
         self.recovery_failure_count = 0
+        # 连续页面识别失败（GamePageUnknownError）计数：登录后弹窗链遮挡等偶发
+        # 场景下一轮任务重试时常能自愈，给满 3 次机会才重启客户端兜底；
+        # 任务正常结束（TaskEnd）即清零。
+        self.page_unknown_count = 0
+        # 页面未识别失败的放行标志：该异常已自行安排恢复策略（重试/满 3 次
+        # Restart），即使 error.handle_error=False 也不允许停摆调度器，由
+        # loop() 消费后重置。
+        self._page_unknown_recoverable = False
         # Set True by reactive health check (Task 19) when an exception
         # confirms emulator is ZOMBIE; next loop iteration triggers full_recovery.
         self._needs_recovery = False
@@ -555,6 +563,8 @@ class Script:
             task_module.ScriptTask(config=self.config, device=self.device).run()
         except TaskEnd as e:
             task_name = self._resolve_task_end_name(command, e)
+            # 任务正常结束说明页面识别已恢复，清零连续未识别计数
+            self.page_unknown_count = 0
             if self._should_notify_task_end(task_name):
                 self.config.notifier.push(
                     title=f'任务提醒',
@@ -591,10 +601,21 @@ class Script:
             return False
         except GamePageUnknownError:
             logger.info('Game server may be under maintenance or network may be broken, check server status now')
-            # 这个还不重要 留着坑填
-            logger.critical('Game page unknown')
+            # 连续 3 次无法识别页面才重启客户端：偶发弹窗遮挡在下一轮任务重试时
+            # 往往已自行消失（弹窗有有效期），立刻重启代价过高；3 次内恢复识别则
+            # 由 TaskEnd 分支清零计数
+            self.page_unknown_count += 1
+            logger.critical(f'Game page unknown ({self.page_unknown_count}/3)')
             self.save_error_log()
             self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> GamePageUnknownError")
+            if self.page_unknown_count >= 3:
+                # 连续多次认不出页面（弹窗卡死/维护等），重启客户端兜底并重新计数
+                logger.critical('Game page unknown for 3 consecutive tasks, restart app to recover')
+                self.config.task_call('Restart')
+                self.page_unknown_count = 0
+            # 页面未识别已自行安排恢复（下一轮重试或 Restart），标记放行，
+            # 避免 error.handle_error=False 时调度器停摆
+            self._page_unknown_recoverable = True
             return False
         except ScriptError as e:
             logger.critical(e)
@@ -706,7 +727,10 @@ class Script:
                 # 任务结束边界：WARM/COLD 刷新并上报 config_state
                 self._config_checkpoint("task_end")
                 continue
-            elif self.config.script.error.handle_error:
+            elif self.config.script.error.handle_error or self._page_unknown_recoverable:
+                # page unknown 失败自带恢复策略（重试/满 3 次 Restart），
+                # 即使 handle_error=False 也放行继续调度，不停摆
+                self._page_unknown_recoverable = False
                 # 可恢复异常后边界：WARM/COLD 刷新并上报 config_state
                 self._config_checkpoint("task_end")
                 # self.checker.check_now()
