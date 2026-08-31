@@ -64,7 +64,6 @@ def _normalize_svr(text: str) -> str:
 class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     character: str
     svr: str
-    skip_onmyoji_genie: bool = False
 
     def __init__(self, *wargs, **kwargs):
         super().__init__(*wargs, **kwargs)
@@ -125,16 +124,19 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                     logger.info("Close bind phone")
                     break
             return True
-        # 关闭各种邀请弹窗(主要时结界卡寄养邀请)
-        from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
-        if self.appear_then_click(gia.I_I_REJECT, interval=0.8):
-            logger.info("reject invites")
-            return True
-        # 关闭阴阳师精灵提示
-        if not self.skip_onmyoji_genie and self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
-            logger.info("click onmyoji genie")
-            return True
+        # 拒绝邀请弹窗已移除：匹配帧与点击帧之间存在竞态——邀请在点击落地前
+        # 消失会让点击穿透到庭院左缘入口上，误开灯笼菜单导致页面识别死循环
+        # （2026-08-31 远程事故）；登录期间的邀请放任自然过期即可。
+        # from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
+        # if self.appear_then_click(gia.I_I_REJECT, interval=0.8):
+        #     logger.info("reject invites")
+        #     return True
+        # 阴阳师精灵提示分支已移除（用户决策），skip_onmyoji_genie 参数一并清理
+        # if not self.skip_onmyoji_genie and self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
+        #     logger.info("click onmyoji genie")
+        #     return True
         return False
+    
 
     def _app_handle_login(self) -> bool:
         """

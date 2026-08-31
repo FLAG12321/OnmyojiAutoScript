@@ -100,7 +100,6 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         logger.info("%s login suc", self.to_account_info.character)
         # 处理位于登录界面各种奇葩弹窗
         login_handler = LoginHandler(config=self.config, device=self.device)
-        login_handler.skip_onmyoji_genie = True
         login_handler.set_specific_usr(self.to_account_info.character, self.to_account_info.svr)
         login_handler.app_handle_login()
 

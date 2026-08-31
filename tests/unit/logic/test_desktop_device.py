@@ -2137,7 +2137,6 @@ def _login_handler_for_popup(monkeypatch, device):
     t.device.stuck_record_add = lambda name: None
     t.device.get_orientation = lambda: None
     t.screenshot = lambda: None
-    t.skip_onmyoji_genie = True
     # 除"式神录按钮出现"外的图像判定统一为假，让循环只走弹窗分支与跳出判定
     t.appear_then_click = lambda *a, **kw: False
     t.click = lambda *a, **kw: False
@@ -2221,7 +2220,6 @@ def test_login_popup_handles_and_returns_immediately():
     """
     from tasks.Restart.login import LoginHandler
     t = object.__new__(LoginHandler)
-    t.skip_onmyoji_genie = True
     clicked = []
     # 第一个分支（抵扣券）就命中
     t.appear_then_click = lambda rule, **kw: clicked.append(rule.name) or True
@@ -2233,24 +2231,8 @@ def test_login_popup_returns_false_when_nothing_present():
     # 一个弹窗都没有才返回 False，让调用方去判庭院
     from tasks.Restart.login import LoginHandler
     t = object.__new__(LoginHandler)
-    t.skip_onmyoji_genie = True
     t.appear_then_click = lambda *a, **kw: False
     assert t._login_popup_blocking() is False
-
-
-def test_login_popup_respects_skip_genie():
-    # 阴阳师精灵提示在 skip 时不该被点掉，那是用户主动要求保留的提示
-    from tasks.Restart.login import LoginHandler
-    t = object.__new__(LoginHandler)
-    seen = []
-    t.appear_then_click = lambda rule, **kw: seen.append(rule.name) or False
-    t.skip_onmyoji_genie = True
-    t._login_popup_blocking()
-    assert LoginHandler.I_LOGIN_LOGIN_ONMYOJI_GENIE.name not in seen
-    seen.clear()
-    t.skip_onmyoji_genie = False
-    t._login_popup_blocking()
-    assert LoginHandler.I_LOGIN_LOGIN_ONMYOJI_GENIE.name in seen
 
 
 def test_courtyard_confirm_delay_exceeds_popup_intervals():
@@ -2263,7 +2245,6 @@ def test_courtyard_confirm_delay_exceeds_popup_intervals():
     """
     from tasks.Restart.login import LoginHandler, LOGIN_COURTYARD_CONFIRM_DELAY
     t = object.__new__(LoginHandler)
-    t.skip_onmyoji_genie = False
     intervals = []
 
     def appear_then_click(rule, **kw):
@@ -2298,7 +2279,6 @@ def _login_handler_for_courtyard(monkeypatch, appear, turn, popup=None):
     t.device.stuck_record_add = lambda name: None
     t.device.get_orientation = lambda: None
     t.screenshot = lambda: None
-    t.skip_onmyoji_genie = True
     t.click = lambda *a, **kw: False
     t.ocr_appear = lambda *a, **kw: False
     t.ocr_appear_click = lambda *a, **kw: False
@@ -2430,19 +2410,19 @@ def test_login_popup_covers_every_closed_popup():
 
     漏掉一个，它出现的那些帧就会被当成「没有弹窗」而放行庭院判定——弹窗压着庭院却认成登录
     完成，正是这么来的。I_CANCEL_BATTLE 与切号相关按钮在主循环里单独处理，不属于这里。
+    邀请弹窗（GI_I_REJECT）与阴阳师精灵提示已从登录流程移除：前者存在
+    匹配帧与点击帧的竞态（邀请消失瞬间点击穿透误开灯笼菜单，2026-08-31
+    远程事故），后者为用户决策，均不参与本清单。
     """
     from tasks.Restart.login import LoginHandler
-    from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
 
     expected = {
         LoginHandler.I_OFF_TICKET, LoginHandler.I_LOGIN_GET_COUPON,
         LoginHandler.I_LOGIN_LOAD_DOWN, LoginHandler.I_WATCH_VIDEO_CANCEL,
         LoginHandler.I_LOGIN_RED_CLOSE, LoginHandler.I_LOGIN_YELLOW_CLOSE,
-        LoginHandler.I_LOGIN_LOGIN_GOTO_BIND_PHONE, gia.I_I_REJECT,
-        LoginHandler.I_LOGIN_LOGIN_ONMYOJI_GENIE,
+        LoginHandler.I_LOGIN_LOGIN_GOTO_BIND_PHONE,
     }
     t = object.__new__(LoginHandler)
-    t.skip_onmyoji_genie = False
     seen = []
     t.appear_then_click = lambda rule, **kw: seen.append(rule.name) or False
     t._login_popup_blocking()
