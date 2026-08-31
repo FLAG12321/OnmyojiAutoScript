@@ -4,6 +4,7 @@
 import time
 
 import importlib
+import sys
 from pathlib import Path
 
 from datetime import datetime
@@ -54,9 +55,16 @@ class GameUi(BaseTask, GameUiAssets):
             if not page_file.exists():
                 continue
             module_name = f"tasks.{task_dir.name}.page"
+            # 已加载过则直接复用缓存：重复 exec 会重新执行模块级 Page() 构造，
+            # 把同名页面反复注册进 PageRegistry（每轮任务 +1），
+            # 页面识别时注册表越遍历越慢（实测事故中单轮从 14s 拖到 53s）
+            if module_name in sys.modules:
+                continue
             spec = importlib.util.spec_from_file_location(module_name, page_file)
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
+                # 先写入 sys.modules 再 exec，保证本次加载后后续调用能命中上面的缓存检查
+                sys.modules[module_name] = module
                 spec.loader.exec_module(module)
 
     @property
