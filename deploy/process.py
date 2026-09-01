@@ -110,10 +110,11 @@ class ProcessManager(DeployConfig):
         success = True
         for row in self.iter_process_by_name(name):
             logger.info(' '.join(map(str, row)))
-            if not self.execute(f'taskkill /f /t /pid {row[2]}',
-                                allow_failure=True, output=False):
-                success = False
-                continue
+            self.execute(f'taskkill /f /t /pid {row[2]}',
+                         allow_failure=True, output=False)
+            # taskkill 报错不必然代表失败：若枚举列表里父进程排在子进程之前，
+            # 对父进程的 /t 树杀会连带终止子进程，随后对已死子进程 PID 的
+            # taskkill 会报「找不到进程」。以进程是否真正退出为唯一判据。
             if not self._wait_process_exit(row[2]):
                 logger.warning(f'Process {row[2]} did not exit after taskkill')
                 success = False

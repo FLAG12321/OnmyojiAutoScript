@@ -56,3 +56,33 @@ def test_process_module_import_does_not_require_psutil():
     assert result.returncode == 0, result.stderr
     assert 'OK' in result.stdout
 
+
+def test_kill_by_name_treats_tree_killed_process_as_success(monkeypatch):
+    """树杀连带场景：taskkill 对已死 PID 报错但进程确已退出时应判成功。
+
+    枚举列表里父进程排在子进程之前时，对父进程的 `taskkill /f /t` 树杀会
+    连带终止子进程，随后对已死子进程 PID 的 taskkill 报「找不到进程」。
+    若按 taskkill 退出码判失败，process_kill 会返回 False 并触发
+    ExecutionError('无法确认 OAS 进程已退出') 中止安装——正常清理被误判。
+    """
+    manager = ProcessManager.__new__(ProcessManager)  # 跳过 DeployConfig 读盘
+
+    def make_rows(*pids):
+        return [(r'C:/OAS/toolkit/pythonw.exe', 'pythonw.exe', pid) for pid in pids]
+
+    # 场景 1：taskkill 全部报错，但进程实际都已退出（被树杀连带终止）→ 成功
+    monkeypatch.setattr(ProcessManager, 'iter_process_by_name',
+                        lambda self, name: iter(make_rows(111, 222)))
+    monkeypatch.setattr(ProcessManager, 'execute',
+                        lambda self, cmd, **kwargs: False)
+    monkeypatch.setattr(ProcessManager, '_wait_process_exit',
+                        lambda self, pid, timeout=5.0: True)
+    assert manager.kill_by_name('pythonw.exe') is True
+
+    # 场景 2：taskkill 报错且进程确实没死（如跨提权杀不掉）→ 仍判失败
+    monkeypatch.setattr(ProcessManager, 'iter_process_by_name',
+                        lambda self, name: iter(make_rows(111)))
+    monkeypatch.setattr(ProcessManager, '_wait_process_exit',
+                        lambda self, pid, timeout=5.0: False)
+    assert manager.kill_by_name('pythonw.exe') is False
+
