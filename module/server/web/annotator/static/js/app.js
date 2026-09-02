@@ -1830,7 +1830,20 @@
 
     for (const field of getRuleFields()) {
       const element = document.getElementById(getRuleFieldDomId(field.key));
-      setElementValue(element, rule[field.key] ?? field.default ?? "");
+      let value = rule[field.key] ?? field.default ?? "";
+      if (field.control === "select" && Array.isArray(field.options) && field.options.length) {
+        // 兼容存量规则文件里的全大写 mode（如 "FULL"）：select 的 options 来自 schema
+        // 的标准写法，直接赋不存在的值会导致读回空串、updateRuleFromForm 把 mode
+        // 静默洗成默认值（OCR 行为由 Full 变 Single）。此处按大小写不敏感回填标准写法。
+        const raw = String(value ?? "");
+        if (raw && !field.options.includes(raw)) {
+          const matched = field.options.find((opt) => String(opt).toLowerCase() === raw.toLowerCase());
+          if (matched !== undefined) {
+            value = matched;
+          }
+        }
+      }
+      setElementValue(element, value);
     }
 
     const front = rule.roiFront || "0,0,100,100";

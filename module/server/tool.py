@@ -753,6 +753,19 @@ class AnnotatorManager:
             )
         return normalized
 
+    @staticmethod
+    def _match_mode_option(mode: str, allowed: set[str]) -> str | None:
+        """大小写不敏感地匹配 mode，命中返回允许集合里的标准写法，未命中返回 None。
+
+        存量 res/*.json 里 mode 存在全大写写法（如 "FULL"/"SINGLE"），而运行时
+        OcrMode 用 OcrMode[mode.upper()] 解析、本就不区分大小写；校验须与运行时
+        对齐，否则合法的存量文件无法通过保存校验。
+        """
+        for option in allowed:
+            if option.lower() == mode.lower():
+                return option
+        return None
+
     def _normalize_ocr_rules(self, rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
         for index, rule in enumerate(rules):
@@ -760,8 +773,11 @@ class AnnotatorManager:
             if not item_name:
                 raise AnnotatorError("invalid_rule", f"第 {index + 1} 条规则缺少 itemName", 400)
             mode = str(rule.get("mode", field_default("ocr", "mode", "Single"))).strip() or field_default("ocr", "mode", "Single")
-            if mode not in ALLOWED_OCR_MODE:
+            # 大小写不敏感匹配并归一化为 schema 标准写法写回，兼容存量全大写文件
+            matched_mode = self._match_mode_option(mode, ALLOWED_OCR_MODE)
+            if matched_mode is None:
                 raise AnnotatorError("invalid_rule", f"第 {index + 1} 条规则 mode 不支持: {mode}", 400)
+            mode = matched_mode
             normalized.append(
                 {
                     "itemName": item_name,
@@ -798,8 +814,12 @@ class AnnotatorManager:
             if not item_name:
                 raise AnnotatorError("invalid_rule", f"第 {index + 1} 条滑动规则缺少 itemName", 400)
             mode = str(rule.get("mode", field_default("swipe", "mode", "default"))).strip() or field_default("swipe", "mode", "default")
-            if mode not in ALLOWED_SWIPE_MODE:
+            # 大小写不敏感匹配并归一化为 schema 标准写法写回；存量文件里的 "Default"
+            # 运行时（RuleSwipe 严格比较 'default'）会直接 ValueError，归一化后即修复
+            matched_mode = self._match_mode_option(mode, ALLOWED_SWIPE_MODE)
+            if matched_mode is None:
                 raise AnnotatorError("invalid_rule", f"第 {index + 1} 条滑动规则 mode 不支持: {mode}", 400)
+            mode = matched_mode
             normalized.append(
                 {
                     "itemName": item_name,
