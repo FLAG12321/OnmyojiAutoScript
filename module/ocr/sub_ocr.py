@@ -84,19 +84,31 @@ class Single(BaseCor):
         if self.roi:
             result = self.ocr_single_line(image)
             if result != "":
-                return result
+                # 带 keyword 的纯 Single 未严格命中时，可能是多行文字被整图单行
+                # 识别按列乱序（两行「进入/游戏」读成「讲游入戏」），值得回退到
+                # 检测路径重试；其余情况（无 keyword / 非纯 Single / 已命中）维
+                # 持原行为直接返回
+                if not self.keyword or self.mode != OcrMode.SINGLE or result == self.keyword:
+                    return result
+                logger.info(f"[{self.name}] Single result [{result}] mismatch keyword [{self.keyword}], retry with detect")
+            else:
+                # 如果没有识别到，这个时候考虑到可能是竖方向的文本, 使用detect_and_ocr来进行识别
+                logger.info(f"[{self.name}] Try to detect vertically")
 
-            # 如果没有识别到，这个时候考虑到可能是竖方向的文本, 使用detect_and_ocr来进行识别
-            logger.info(f"[{self.name}] Try to detect vertically")
-            result = self.detect_and_ocr(image)
-            if not result:
+            # 回退 detect_and_ocr：先检测文本行再逐框识别，与 annotator 测试路径
+            # 一致；多行文字（竖排单列除外）只有这条路能识别正确
+            boxed_results = self.detect_and_ocr(image)
+            if not boxed_results:
                 logger.info(f"[{self.name}]: No text detected in ROI")
-                return ""
-            if result[0].ocr_text != "" and result[0].score > self.score:
-                return result[0].ocr_text
+                return result
+            # 拼接全部识别框文本：多行文字的 keyword 跨框（「进入」+「游戏」），
+            # 只取首框会永远差半截
+            texts = [boxed_result.ocr_text for boxed_result in boxed_results if boxed_result.ocr_text]
+            if texts:
+                return "".join(texts)
 
             # 如果还是没有识别到。那可能就是真的没有识别到了
-            return ""
+            return result
         else:
             raise ScriptError("Roi is empty")
 
