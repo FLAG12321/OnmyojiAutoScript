@@ -21,7 +21,7 @@
     "itemName": "form_over",
     "imageName": "alliedteam_form_over.png",
     "roiFront": "736,25,51,54",
-    "roiBack": "716,10,83,81",
+    "roiBack": "716,9,197,83",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

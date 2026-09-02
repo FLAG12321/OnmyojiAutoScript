@@ -21,7 +21,7 @@ class DailyAltAccAssets:
 	# description 
 	I_FORM = RuleImage(roi_front=(530,482,61,42), roi_back=(469,470,324,72), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_form.png")
 	# description 
-	I_FORM_OVER = RuleImage(roi_front=(736,25,51,54), roi_back=(716,10,83,81), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_form_over.png")
+	I_FORM_OVER = RuleImage(roi_front=(736,25,51,54), roi_back=(716,9,197,83), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_form_over.png")
 	# description 
 	I_SELECT_LEVEL = RuleImage(roi_front=(965,641,66,54), roi_back=(953,626,86,84), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/alliedteam/alliedteam_select_level.png")
 	# description 
