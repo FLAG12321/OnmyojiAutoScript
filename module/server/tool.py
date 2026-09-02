@@ -1094,12 +1094,16 @@ class AnnotatorManager:
                         }
                     )
                 elif rule_type == "ocr":
+                    mode_raw = str(item.get("mode", "Single"))
                     rules.append(
                         {
                             "itemName": str(item.get("itemName", "")),
                             "roiFront": str(item.get("roiFront", "0,0,100,100")),
                             "roiBack": str(item.get("roiBack", "0,0,100,100")),
-                            "mode": str(item.get("mode", "Single")),
+                            # 读取时即按大小写不敏感归一化为 schema 标准写法（如存量
+                            # "FULL" -> "Full"），前端 select 直接命中；匹配不上保留
+                            # 原值，读取阶段不做拒绝，拒绝留给保存/测试校验
+                            "mode": AnnotatorManager._match_mode_option(mode_raw, ALLOWED_OCR_MODE) or mode_raw,
                             "method": str(item.get("method", "Default")),
                             "keyword": str(item.get("keyword", "")),
                             "description": str(item.get("description", "")),
@@ -1115,12 +1119,15 @@ class AnnotatorManager:
                         }
                     )
                 elif rule_type == "swipe":
+                    swipe_mode_raw = str(item.get("mode", "default"))
                     rules.append(
                         {
                             "itemName": str(item.get("itemName", "")),
                             "roiFront": str(item.get("roiFront", "0,0,100,100")),
                             "roiBack": str(item.get("roiBack", "0,0,100,100")),
-                            "mode": str(item.get("mode", "default")),
+                            # 同 OCR：读取时归一化 mode（存量 "Default" -> "default"），
+                            # 匹配不上保留原值
+                            "mode": AnnotatorManager._match_mode_option(swipe_mode_raw, ALLOWED_SWIPE_MODE) or swipe_mode_raw,
                             "description": str(item.get("description", "")),
                         }
                     )
