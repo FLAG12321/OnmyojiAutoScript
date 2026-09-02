@@ -2,6 +2,8 @@
 # @author 
 # github 
 import random
+import re
+from pathlib import Path
 import time
 from time import sleep
 from datetime import datetime, timedelta, time as dtime
@@ -13,7 +15,7 @@ from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall
+from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall, page_friends
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
 from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode
 from tasks.Exploration.solo import SoloExploration
@@ -24,6 +26,7 @@ from tasks.GoldYoukai.assets import GoldYoukaiAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.RichMan.assets import RichManAssets
+from tasks.DailyAltAcc.assets import DailyAltAccAssets
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -33,6 +36,7 @@ from tasks.Component.config_base import Time
 from module.logger import logger
 from module.exception import TaskEnd, RequestHumanTakeover, GameNotRunningError
 from module.base.timer import Timer
+from module.base.utils import save_image
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, MasterDiscipleAssets,
@@ -48,6 +52,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     # 切号后设备停在徒弟号上且没有切回逻辑，此时把探索/经验妖怪等标记成已完成，
     # 改的是本配置实例大号的调度——徒弟干的活算到大号头上，大号会白白跳过一轮。
     _account_switched: bool = False
+    # 当前徒弟角色名（切号时记录）：探索完成截图存证用它命名文件；未切号时为 None，退化为配置实例名
+    _current_disciple_name: str = None
     def run(self) -> bool:
         """
         师徒任务主入口
@@ -57,6 +63,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         # 每次运行重置切号标记，避免同一实例复用时残留上一轮的状态
         self._account_switched = False
+        # 同理重置徒弟角色名，避免残留上一轮切号对象导致截图命名错误
+        self._current_disciple_name = None
 
         limit_count = self.config.master_disciple.master_disciple_config.limit_count
         limit_time = self.config.master_disciple.master_disciple_config.limit_time
@@ -377,6 +385,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 只要发起过切号就置标记（不论成败）：设备已无法保证仍停在原账号上，
         # 收尾时不得再把探索/经验妖怪等标记成大号已完成。
         self._account_switched = True
+        # 记录当前徒弟角色名：探索完成截图存证用它命名（切号失败不会执行任务，无消费方）
+        self._current_disciple_name = account_info.character
 
         success = SwitchAccount(self.config, self.device, account_info).switchAccount()
         if not success:
@@ -1301,6 +1311,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         徒弟模式 - 探索任务
         参照Plotline流程：自动寻找最高章节 → 执行15次战斗 → 切换援助式神 → 锁定队伍
         配置不暴露给用户，全部在代码中初始化
+        正常结束（含15分钟超时退出）后导航好友协战页截图存证
         """
         logger.info("Running exploration as disciple")
 
@@ -1334,10 +1345,61 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         except Exception as e:
             logger.error(f"Exploration task error: {e}")
             self.config.notifier.push(content=f'探索任务异常: {e}', title='MasterDisciple')
+        else:
+            # 探索正常结束（含超时退出）：导航好友协战次数页截图存证，与同心协战一致
+            self._save_exploration_evidence()
         finally:
             # 恢复原始方法
             solo_exploration.battle_wait = original_battle_wait
             solo_exploration.battle_before = original_battle_before
+
+    def _save_exploration_evidence(self):
+        """
+        探索任务完成后截图存证：导航到好友协战次数页（与同心协战的存证方式一致，
+        参照 tasks/DailyAltAcc/alliedteam.py 的 return_to_main），
+        截图保存到 screenshots/Battle_Screenshots_<年_月_日>/<角色名>.png，同天同角色覆盖。
+        整体异常只记日志不上抛，避免存证失败触发探索整任务重试。
+        """
+        try:
+            # 从探索章节入口页回到庭院，再进好友页
+            self.screenshot()
+            self.ui_get_current_page()
+            self.ui_goto(page_main)
+            self.screenshot()
+            self.ui_goto(page_friends)
+            # 等好友协战页加载完成，期间点击协战入口
+            while 1:
+                self.screenshot()
+                if self.appear(DailyAltAccAssets.I_FRIEND_HELP_FLAG, interval=1):
+                    break
+                if self.appear_then_click(DailyAltAccAssets.I_FRIEND_HELP,
+                                          action=DailyAltAccAssets.C_FRIEND_HELP_CLICK, interval=1):
+                    continue
+            now = datetime.now()
+            # 角色名：切号跑徒弟时用徒弟角色名，未切号退化为配置实例名
+            char_name = self._current_disciple_name or self.config.config_name
+            # 替换 Windows 文件名非法字符，避免保存失败
+            char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+            save_dir = Path(f'screenshots/Battle_Screenshots_{now.year}_{now.month:02d}_{now.day:02d}')
+            save_dir.mkdir(parents=True, exist_ok=True)
+            # 同一角色同一天重复运行时直接覆盖，只保留最新一张
+            save_path = save_dir / f'{char_name}.png'
+            save_image(self.screenshot(), str(save_path))
+            logger.info(f'探索任务完成截图已保存: {save_path}')
+            # 退出好友协战页回庭院（最多等5秒，期间点一次红色返回）
+            exit_timer = Timer(5)
+            exit_timer.start()
+            while 1:
+                self.screenshot()
+                if exit_timer.reached():
+                    break
+                if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                    break
+            self.screenshot()
+            if self.ui_get_current_page() != page_main:
+                self.ui_goto(page_main)
+        except Exception as e:
+            logger.warning(f'探索任务截图存证失败: {e}')
 
     def _disciple_exploration_battle_before(self, buff: BuffClass | list[BuffClass], 
                                               config: GeneralBattleConfig, timeout: float = 10) -> bool:
