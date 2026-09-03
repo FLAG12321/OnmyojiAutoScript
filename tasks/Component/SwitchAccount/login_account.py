@@ -397,37 +397,35 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     
                     # 不要立即截图验证，而是跳出内层循环，让外层循环进行状态检查
                     # 这样可以让代码自然地流转到上面的状态检查部分
-                    break  # 跳出 for index, ocr_account in enumerate...
+                    break  # 跳出 for，回到 while 顶部做状态检查
 
-                # 如果在上面的循环中找到了账号并点击了，这里会重新进入while循环
-                # 如果没有找到账号，执行下面的逻辑
-                
-                    # 在for循环正常结束（未break）时执行此块，即未找到账号
-                    # 未找到该账号
-                if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_ADD_ACCOUNT):
-                    retry_count =0
-                    while 1:
-                        if retry_count > 3:
-                            return False
-                        self.screenshot()
-                        if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
-                            break
-                        self.click(self.C_SA_LOGIN_FORM_DROPDOWN_BTN)
-                        retry_count += 1
-                        time.sleep(1.5)
-                    break
-                if account_list_swipe_start is None:
-                    account_list_swipe_start = time.time()
-                elif time.time() - account_list_swipe_start >= 60:
-                    # 连续滑动60秒未收敛时，检测是否闪退到MuMu桌面，避免在桌面上持续滑动
-                    self._ensure_game_alive()
-                    account_list_swipe_start = time.time()
-                self.swipe(self.S_SA_ACCOUNT_LIST_UP, 1.5)
-                time.sleep(0.5)
-                continue  # 继续while循环，重新OCR识别
-                    
-                # 如果上面break了（找到了账号并点击），重新进入while循环检查状态
-                continue
+                # for 正常结束（未 break）＝本屏 OCR 未找到账号才走这里。
+                # 找到账号的路径绝不能再滑动：点击选中后下拉已收起，
+                # S_SA_ACCOUNT_LIST_UP 的起点 (697,537,28,9) 会落在登录表单的
+                # 「选择其他登录方式」热区上，滑动的 touch-down 直接触发页面跳转
+                else:
+                    # 列表已到底（出现添加账号按钮）则重开下拉后放弃
+                    if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_ADD_ACCOUNT):
+                        retry_count =0
+                        while 1:
+                            if retry_count > 3:
+                                return False
+                            self.screenshot()
+                            if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
+                                break
+                            self.click(self.C_SA_LOGIN_FORM_DROPDOWN_BTN)
+                            retry_count += 1
+                            time.sleep(1.5)
+                        break
+                    if account_list_swipe_start is None:
+                        account_list_swipe_start = time.time()
+                    elif time.time() - account_list_swipe_start >= 60:
+                        # 连续滑动60秒未收敛时，检测是否闪退到MuMu桌面，避免在桌面上持续滑动
+                        self._ensure_game_alive()
+                        account_list_swipe_start = time.time()
+                    self.swipe(self.S_SA_ACCOUNT_LIST_UP, 1.5)
+                    time.sleep(0.5)
+                    continue  # 继续while循环，重新OCR识别
         logger.info("account [ %s ] not found after multiple attempts", accountInfo.account)
         return False
         """ def selectAccount(self, accountInfo: AccountInfo):
