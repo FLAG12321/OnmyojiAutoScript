@@ -386,7 +386,17 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     retry_count=0
                     while 1:
                         if retry_count > 4:
-                            break
+                            # 连点5次后做最后一次确认（第5次点击后未再检查过）。
+                            # 仍未出现登录按钮＝点击未生效：直接判定失败交给上层
+                            # 兜底。原 break 会回 while 顶部重新 OCR 再点，但列表
+                            # 未滑动、账号恒在原位，会原地无限循环（点击持续清
+                            # stuck 记录，GameStuckError 也不会触发）
+                            self.screenshot()
+                            if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
+                                break
+                            logger.warning("account [ %s ] clicked 5 times but login button never appeared",
+                                           accountInfo.account)
+                            return False
                         self.screenshot()
                         if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                             break
