@@ -9,6 +9,7 @@ from time import sleep
 from datetime import datetime, timedelta, time as dtime
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import weighted_choice
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite, RoomType
 from tasks.Component.GeneralInvite.config_invite import InviteConfig, InviteNumber, FindMode
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
@@ -1164,10 +1165,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     continue
                 if self.appear_then_click(self.I_GI_SURE, interval=0.5):
                     continue
-            # 邀请弹窗消失后，点击胜利：固定右侧区域（上/左区域不符合人类点击习惯，已禁用）
+            # 邀请弹窗消失后，点击胜利：全屏减去常驻禁点区域（与奖励页共用安全区域）；
+            # 结算场景按概率连点（双击/三击），见 settlement_click
             if self.appear(self.I_WIN, threshold=0.8):
-                action_click = self.C_WIN_3
-                self.appear_then_click(self.I_WIN, action=action_click, interval=0.5)
+                action_click = weighted_choice(self.reward_click_actions())
+                self.settlement_click(self.I_WIN, action_click, interval=0.5)
                 sleep(2)
                 # 点掉胜利后重新计空闲，给奖励页留足出现时间，避免过渡期提前break
                 idle_timer.reset()

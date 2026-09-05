@@ -17,6 +17,7 @@ from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.Exploration.assets import ExplorationAssets
 from tasks.Exploration.config import ChooseRarity, AutoRotate, AttackNumber, UpType, ExplorationLevel
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import FORBIDDEN_KEKKAI
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_exploration, page_shikigami_records, page_main
 from tasks.RealmRaid.script_task import ScriptTask as RealmRaidScriptTask
@@ -144,9 +145,13 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd('Exploration')
 
-    def reward_click_actions(self):
-        # 探索结算禁用 reward_1（异常区域）；左侧区域不符合人类点击习惯，同样禁用。
-        return [self.C_REWARD_3]
+    def reward_forbidden(self) -> tuple:
+        """探索结算界面的常驻禁点区域（顶左条 + 顶右条 + 左下角）。
+
+        取代原先「禁用 reward_1、只点右侧」的覆盖：现在落点是全屏挖掉
+        常驻禁点区域 + 检测出的奖励行，由检测保证不误点。
+        """
+        return FORBIDDEN_KEKKAI
 
     def _chapter_level_values(self) -> list[ExplorationLevel]:
         return [level for level in ExplorationLevel if level != ExplorationLevel.AUTO]

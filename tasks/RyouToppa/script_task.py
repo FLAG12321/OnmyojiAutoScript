@@ -8,6 +8,7 @@ import random
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.RyouToppa.assets import RyouToppaAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import FORBIDDEN_KEKKAI
 from tasks.Component.config_base import ConfigBase, Time
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_realm_raid, page_main, page_kekkai_toppa, page_shikigami_records
@@ -75,6 +76,10 @@ def random_delay(min_value: float = 1.0, max_value: float = 2.0, decimal: int = 
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
     medal_grid: ImageGrid = None
+
+    def reward_forbidden(self) -> tuple:
+        """寮突破结算界面的常驻禁点区域（顶左条 + 顶右条 + 左下角）。"""
+        return FORBIDDEN_KEKKAI
 
     def run(self):
         """

@@ -1,11 +1,11 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-import random
 from time import sleep, monotonic
 from datetime import time, datetime, timedelta
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import weighted_choice
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.GeneralBuff.general_buff import GeneralBuff
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
@@ -925,16 +925,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 重写
         self.device.stuck_record_add('BATTLE_STATUS_S')
         self.device.click_record_clear()
-        self.C_REWARD_1.name = 'C_REWARD'
-        self.C_REWARD_2.name = 'C_REWARD'
-        self.C_REWARD_3.name = 'C_REWARD'
         # 战斗过程 随机点击和滑动 防封
         logger.info("Start battle process")
         while 1:
             self.screenshot()
-            # 胜利画面固定右侧区域（上/左区域不符合人类点击习惯，已禁用）
-            action_click = self.C_WIN_3
-            if self.appear_then_click(self.I_WIN, action=action_click ,interval=0.8):
+            # 点击赢了/领奖励：全屏减去常驻禁点区域与检测出的奖励行（与基类同一套安全落点）；
+            # 结算场景按概率连点（双击/三击），见 settlement_click
+            action_click = weighted_choice(self.reward_click_actions())
+            if self.settlement_click(self.I_WIN, action_click, interval=0.8):
                 # 赢的那个鼓
                 continue
             if self.appear(self.I_GREED_GHOST):
@@ -947,11 +945,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     continue
                 while 1:
                     self.screenshot()
-                    # 奖励结算仅底部中央+右侧（左侧区域已禁用）
-                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_3])
+                    action_click = weighted_choice(self.reward_click_actions())
                     if not self.appear(self.I_GREED_GHOST):
                         break
-                    if self.click(action_click, interval=1.5):
+                    # 结算贪吃鬼场景按概率连点（双击/三击），见 settlement_gesture
+                    if self.appear(self.I_GREED_GHOST, interval=1.5):
+                        self.settlement_gesture(action_click, control_name=self.I_GREED_GHOST.name)
                         continue
                 return True
             if self.appear(self.I_REWARD)\
@@ -962,11 +961,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 logger.info('Win battle')
                 while 1:
                     self.screenshot()
-                    # 奖励结算仅底部中央+右侧（左侧区域已禁用）
-                    action_click = random.choice([self.C_REWARD_1, self.C_REWARD_3])
-                    if self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5):
+                    action_click = weighted_choice(self.reward_click_actions())
+                    # I_REWARD 失配时的兜底：只要还检测到奖励框就照样点安全区域
+                    if (self.settlement_click(self.I_REWARD, action_click, interval=1.5) or
+                            self.settlement_click_grid(action_click, interval=1.5)):
                         continue
-                    if not self.appear(self.I_REWARD):
+                    if not self.appear(self.I_REWARD) and not self.reward_grid_appear():
                         break
                 return True
 

@@ -19,6 +19,7 @@ from tasks.GameUi.assets import GameUiAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.ExperienceYoukai.assets import ExperienceYoukaiAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import weighted_choice, FORBIDDEN_KEKKAI
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.GameUi.page import page_main,page_team,page_exploration
 from module.base.timer import Timer
@@ -688,11 +689,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         return True
 
     from tasks.Component.GeneralBuff.config_buff import BuffClass
-    def reward_click_actions(self):
+    def reward_forbidden(self) -> tuple:
         if self._current_battle_type == 'exploration':
-            # Exploration 战斗结算禁用 reward_1（异常区域）；左侧区域不符合人类点击习惯，同样禁用。
-            return [self.C_REWARD_3]
-        return super().reward_click_actions()
+            # 探索战斗结算用探索的常驻禁点区域（顶左条 + 顶右条 + 左下角）
+            return FORBIDDEN_KEKKAI
+        return super().reward_forbidden()
 
     def _need_switch_shikigami(self) -> bool:
         """判断当前场景是否需要切换借用式神"""
@@ -884,9 +885,10 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 win = True
                 return win
             if win:
-                # 点击赢了：固定右侧区域（上/左区域不符合人类点击习惯，已禁用）
-                action_click = self.C_WIN_3
-                if self.appear_then_click(self.I_WIN, action=action_click, interval=0.5):
+                # 点击赢了：全屏减去常驻禁点区域（与奖励页共用安全区域）；
+                # 结算场景按概率连点（双击/三击），见 settlement_click
+                action_click = weighted_choice(self.reward_click_actions())
+                if self.settlement_click(self.I_WIN, action_click, interval=0.5):
                     continue
                 if not self.appear(self.I_WIN):
                     break
@@ -912,12 +914,18 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 or self.appear(self.I_CLICK_EYE_2,interval=1.5):
                 win = True
                 return win
-            action_click = random.choice(self.reward_click_actions())
-            if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
-                self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)
+            # 与 GeneralBattle.battle_wait 同步：落点按「面积×人类落点密度」加权挑选，
+            # 结算场景按概率连点（双击/三击），见 settlement_click
+            action_click = weighted_choice(self.reward_click_actions())
+            if (self.settlement_click(self.I_REWARD, action_click, interval=1.5) or
+                self.settlement_click(self.I_REWARD_GOLD, action_click, interval=1.5) or
+                # I_REWARD 系模板失配时的兜底：只要还检测到奖励框就照样点安全区域
+                self.settlement_click_grid(action_click, interval=1.5)
                 ):
                 continue
-            if (not self.appear(self.I_REWARD) and not self.appear(self.I_REWARD_GOLD)):
+            if (not self.appear(self.I_REWARD) and not self.appear(self.I_REWARD_GOLD)
+                    # 奖励框还在就不算结算结束（与上面的兜底点击同一判据）
+                    and not self.reward_grid_appear()):
                 break
 
         return win            

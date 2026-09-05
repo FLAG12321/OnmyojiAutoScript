@@ -8,6 +8,7 @@ from cached_property import cached_property
 
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import FORBIDDEN_KEKKAI
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_realm_raid, page_main, page_shikigami_records
 from tasks.RealmRaid.assets import RealmRaidAssets
@@ -22,6 +23,10 @@ from module.atom.click import RuleClick
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     medal_grid: ImageGrid = None
+
+    def reward_forbidden(self) -> tuple:
+        """结界突破结算界面的常驻禁点区域（顶左条 + 顶右条 + 左下角）。"""
+        return FORBIDDEN_KEKKAI
 
     def run(self):
         self.run_2()

@@ -3,11 +3,10 @@
 # github https://github.com/runhey
 from datetime import timedelta, datetime
 
-import random
-
 from module.server.i18n import I18n
 from tasks.BondlingFairyland.config import BondlingMode
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import weighted_choice
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.BondlingFairyland.config_battle import BattleConfig
 
@@ -107,9 +106,12 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
             logger.info("Catch failure")
         while 1:
             self.screenshot()
-            # 如果出现领奖励：仅底部中央+右侧（左侧区域已禁用）
-            action_click = random.choice([self.C_REWARD_1, self.C_REWARD_3])
-            if self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5):
+            # 如果出现领奖励：全屏减去常驻禁点区域与检测出的奖励行（与基类同一套安全落点）；
+            # 结算场景按概率连点（双击/三击），见 settlement_click
+            action_click = weighted_choice(self.reward_click_actions())
+            if (self.settlement_click(self.I_REWARD, action_click, interval=1.5) or
+                    # I_REWARD 失配时的兜底：只要还检测到奖励框就照样点安全区域
+                    self.settlement_click_grid(action_click, interval=1.5)):
                 continue
             if self.appear_then_click(self.I_WIN, threshold=0.6):
                 continue
@@ -119,7 +121,7 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
                 continue
             if self.appear_then_click(self.I_BATTLE_FAIL, threshold=0.6, interval=1):
                 continue
-            if not self.appear(self.I_REWARD):
+            if not self.appear(self.I_REWARD) and not self.reward_grid_appear():
                 break
         logger.info("Get reward")
         return win
