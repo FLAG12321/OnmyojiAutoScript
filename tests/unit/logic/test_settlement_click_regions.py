@@ -13,8 +13,11 @@
 
 结算点击（战斗结束胜利画面 + 领取奖励）的连点与落点参数由真人实采数据校准
 （1053 次点击 / 451 个簇 / 33.8 分钟，见 log/click_monitor 的采集与分析脚本）：
-- 连点次数按真人簇长直方图抽样（多点簇峰值 4 点、最长 11 点）；
-- 追加击间隔 150~220ms（真人簇内中位 181ms）；
+- 连点次数按真人簇长直方图抽样，**在 4 点封顶**：首击点掉奖励页后剩余追加击
+  会落到新界面上，长簇会误触；封顶保留 88.9% 的真人簇（含多点簇峰值 4 点），
+  最长暴露窗口 2.20s → 0.66s；
+- 追加击间隔 150~220ms（真人簇内中位 181ms），总时长受 MULTI_CLICK_MAX_S 预算
+  约束，超预算立即收尾而不补完剩余次数；
 - 追加击默认复用首击坐标（真人簇内 86% 落在同一像素），仅 14% 概率移动，
   移动量取真人非零位移量级而非持续微抖；
 - 同一场战斗内落点互相参考（奖励页参考胜利画面那一次）：真人场次内相邻
@@ -25,8 +28,8 @@ device.click 对追加击传 pace=False 绕过操作节奏 CD。
 
 本文件验证：
 - 实例级：默认 reward_click_actions() 恰好挖掉默认预设的两块禁区；
-- 行为级：连点概率分布、间隔范围、坐标复用比例、追加击绕过节奏、
-  场次内复用与 TTL 失效、被覆盖时的向下平移；
+- 行为级：连点概率分布、间隔范围、簇长封顶与时长预算、坐标复用比例、
+  追加击绕过节奏、场次内复用与 TTL 失效、被覆盖时的向下平移；
 - 源码契约级：各任务私有副本（battle_wait 复制体）不再出现旧的
   上/左随机列表与固定 C_WIN_3 落点，结算点全部走 settlement_click 连点入口。
 """
@@ -271,12 +274,15 @@ def test_reward_detect_cache_is_per_frame(monkeypatch):
 
 
 @pytest.mark.unit
-def test_multi_click_gesture_structure():
+def test_multi_click_gesture_structure(monkeypatch):
     """连点手势结构：首击走正常节奏（不带 pace=False），追加击才绕过节奏。"""
     import random as _random
-    from tasks.Component.GeneralBattle.reward_frame import FieldRuleClick, HOT_Y_BASE
+    import tasks.Component.GeneralBattle.general_battle as gb
+    from tasks.Component.GeneralBattle.reward_frame import (
+        FieldRuleClick, HOT_Y_BASE, MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS)
     b = object.__new__(GeneralBattle)
     clicks = []
+    _install_clock(monkeypatch, gb, clicks)     # 走假时钟，避免真睡拖慢测试
     b.device = SimpleNamespace(click=lambda x, y, **kw: clicks.append((x, y, kw)))
     rule = FieldRuleClick((100, 200, 300, 150), 'test', HOT_Y_BASE)
     _random.seed(1)
@@ -289,30 +295,67 @@ def test_multi_click_gesture_structure():
         # 其余全部是绕过节奏等待的追加击
         assert all(kw.get('pace') is False for _, _, kw in clicks[1:])
         extra_total += len(clicks) - 1
-    # 50 次手势全为单击的概率是 0.6^50 ≈ 8e-12，追加击必然出现过
+    # 单击概率 258/401≈64%，50 次全为单击的概率 0.64^50 ≈ 1e-10，追加击必然出现过
+    assert MULTI_CLICK_WEIGHTS[0] / sum(MULTI_CLICK_WEIGHTS) < 0.7
     assert extra_total > 0
 
 
+class _Clock:
+    """假时钟：sleep 与 device.click 都推进它，用来验证 wall clock 语义的节拍与预算。
+
+    真实时钟测不出这两件事——测试里 sleep 被打桩成不真睡，经过时间恒为 0，
+    「节拍补偿是否补对」和「预算是否按真实耗时计」都会假通过。
+    """
+
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def time(self):
+        return self.t
+
+    def advance(self, d):
+        self.t += d
+
+
+# device.click 自身的耗时（秒）：按下/移动/抬起 + 拟人化按压时长 + 轨迹。
+# QMUMU1/2/3 实测「相邻击间隔 334~381ms − 设定间隔 150~220ms」反推约 165ms。
+CLICK_COST_S = 0.165
+
+
+def _install_clock(monkeypatch, gb, clicks):
+    """给 general_battle 装上假时钟，返回 (clock, 假的 device)。"""
+    clock = _Clock()
+
+    def fake_click(x, y, **kw):
+        clicks.append((x, y, kw, clock.time()))    # 记录**发起**时刻
+        clock.advance(CLICK_COST_S)                # 点击动作本身要花时间
+
+    monkeypatch.setattr(gb, 'sleep', clock.advance)
+    monkeypatch.setattr(gb, 'time', SimpleNamespace(time=clock.time,
+                                                    sleep=clock.advance))
+    return clock, SimpleNamespace(click=fake_click)
+
+
 @pytest.mark.unit
-def test_multi_click_distribution_gap_and_clamp():
+def test_multi_click_distribution_gap_and_clamp(monkeypatch):
     """连点分布：追加击总量符合真人簇长期望；间隔在人类范围；落点以复用为主且钳回安全矩形。"""
     import random as _random
     import tasks.Component.GeneralBattle.general_battle as gb
     from tasks.Component.GeneralBattle.reward_frame import (
-        FieldRuleClick, HOT_Y_BASE, MULTI_CLICK_GAP_S,
+        FieldRuleClick, HOT_Y_BASE, MULTI_CLICK_GAP_S, MULTI_CLICK_MAX_S,
         MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS)
     b = object.__new__(GeneralBattle)
-    clicks, gaps = [], []
-    b.device = SimpleNamespace(click=lambda x, y, **kw: clicks.append((x, y, kw)))
+    clicks = []
+    clock, b.device = _install_clock(monkeypatch, gb, clicks)
     rule = FieldRuleClick((100, 200, 300, 150), 'test', HOT_Y_BASE)
     _random.seed(11)
-    old_sleep = gb.sleep
-    gb.sleep = gaps.append          # 捕获连点间隔（不真睡）
-    try:
-        for _ in range(3000):
-            b._settlement_extra_clicks(rule, 250, 275, 'I_REWARD')
-    finally:
-        gb.sleep = old_sleep
+    per_gesture = []                # 每次手势的 (追加击数, 追加击时刻列表, 起点)
+    for _ in range(3000):
+        n0 = len(clicks)
+        first_ts = clock.time()
+        clock.advance(CLICK_COST_S)             # 模拟首击自身的耗时
+        b._settlement_extra_clicks(rule, 250, 275, 'I_REWARD', first_ts)
+        per_gesture.append(([c[3] for c in clicks[n0:]], first_ts))
     # 期望追加击数 = 3000 × Σ(权重×(点数-1)) / Σ权重，权重即真人簇长直方图
     total_w = sum(MULTI_CLICK_WEIGHTS)
     exp = 3000 * sum(w * (n - 1) for n, w in
@@ -320,20 +363,63 @@ def test_multi_click_distribution_gap_and_clamp():
     assert exp * 0.9 < len(clicks) < exp * 1.1, \
         f'追加击总数 {len(clicks)} 偏离真人簇长期望 {exp:.0f}'
     # 追加击全部绕过节奏等待
-    assert all(kw.get('pace') is False for _, _, kw in clicks)
-    # 间隔全部落在人类连点间隔带内
-    assert gaps and all(MULTI_CLICK_GAP_S[0] <= g <= MULTI_CLICK_GAP_S[1] for g in gaps)
+    assert all(kw.get('pace') is False for _, _, kw, _ in clicks)
+    # 节拍补偿：相邻两击的**实际发起间隔**落在人类连点间隔带内。
+    # 若退回「无脑 sleep(gap)」，间隔会变成 gap + CLICK_COST_S（实测 334~381ms），
+    # 上界断言就会失败——这正是 QMUMU 日志暴露的缺陷。
+    gaps = [b_ - a for ts, _ in per_gesture for a, b_ in zip(ts, ts[1:])]
+    gaps += [ts[0] - st for ts, st in per_gesture if ts]   # 首个间隔以首击发起为基准
+    assert gaps, '未产生任何追加击'
+    lo = min(MULTI_CLICK_GAP_S[0], CLICK_COST_S)   # click 比 gap 还慢时追不上节拍
+    assert all(lo - 1e-9 <= g <= MULTI_CLICK_GAP_S[1] + 1e-9 for g in gaps), \
+        f'实际间隔 {min(gaps):.3f}~{max(gaps):.3f}s 超出人类连点间隔带 {MULTI_CLICK_GAP_S}'
+    # 时长预算：任何一次手势从首击到末击都在预算内（误触暴露窗口的硬上限）
+    spans = [ts[-1] - st for ts, st in per_gesture if ts]
+    assert max(spans) <= MULTI_CLICK_MAX_S, \
+        f'手势时长 {max(spans):.2f}s 超出预算 {MULTI_CLICK_MAX_S}s'
+    # 簇长封顶：首击点掉奖励页后追加击会落到新界面上，故不采用真人的长尾簇
+    assert max(len(ts) for ts, _ in per_gesture) <= max(MULTI_CLICK_SIZES) - 1
     # 落点全部钳回首击所在的安全矩形内
     rx, ry, rw, rh = rule.roi_front
-    assert all(rx <= x < rx + rw and ry <= y < ry + rh for x, y, _ in clicks)
+    assert all(rx <= x < rx + rw and ry <= y < ry + rh for x, y, _, _ in clicks)
     # 绝大多数追加击复用首击坐标（真人簇内 86% 落在同一像素），
     # 这是与「每次微抖 1~3px」的机器特征相区分的关键指标
-    same = sum(1 for x, y, _ in clicks if (x, y) == (250, 275))
+    same = sum(1 for x, y, _, _ in clicks if (x, y) == (250, 275))
     assert same / len(clicks) > 0.7, f'复用首击坐标的比例 {same / len(clicks):.2f} 过低'
     # 发生偏移时是一次真实移动而非微抖：非零位移应显著大于 3px
-    dist = [math.hypot(x - 250, y - 275) for x, y, _ in clicks]
+    dist = [math.hypot(x - 250, y - 275) for x, y, _, _ in clicks]
     moved = [d for d in dist if d > 0.5]
     assert moved and statistics.median(moved) > 3.0, '偏移量退化成了微抖量级'
+
+
+@pytest.mark.unit
+def test_multi_click_budget_truncates_long_cluster(monkeypatch):
+    """时长预算耗尽时立即收尾，不补完剩余次数——限制误触暴露窗口。
+
+    把间隔调大到「两次就用光预算」，验证预算真的会截断，而不是只在当前参数下
+    恰好不触发（当前 4 点最长 3×0.22=0.66s 本就在 0.7s 预算内）。
+    """
+    import random as _random
+    import tasks.Component.GeneralBattle.general_battle as gb
+    from tasks.Component.GeneralBattle.reward_frame import (
+        FieldRuleClick, HOT_Y_BASE, MULTI_CLICK_MAX_S)
+    b = object.__new__(GeneralBattle)
+    clicks = []
+    clock, b.device = _install_clock(monkeypatch, gb, clicks)
+    rule = FieldRuleClick((100, 200, 300, 150), 'test', HOT_Y_BASE)
+    # 间隔固定为预算的 0.4 倍：第 3 击落在 1.2 倍预算处，必被截断
+    gap = MULTI_CLICK_MAX_S * 0.4
+    monkeypatch.setattr(gb, 'MULTI_CLICK_GAP_S', (gap, gap))
+    monkeypatch.setattr(gb, 'MULTI_CLICK_SIZES', (4,))      # 恒抽 4 点（3 次追加击）
+    monkeypatch.setattr(gb, 'MULTI_CLICK_WEIGHTS', (1,))
+    _random.seed(7)
+    for _ in range(30):
+        clicks.clear()
+        first_ts = clock.time()
+        clock.advance(CLICK_COST_S)
+        b._settlement_extra_clicks(rule, 250, 275, 'I_REWARD', first_ts)
+        assert len(clicks) == 2, f'预算未截断，实际追加 {len(clicks)} 次'
+        assert clicks[-1][3] - first_ts <= MULTI_CLICK_MAX_S
 
 
 @pytest.mark.unit

@@ -18,7 +18,7 @@ from tasks.Component.GeneralBattle.reward_frame import (
     safe_click_rules, weighted_choice, FORBIDDEN_DEFAULT,
     get_detector, FrozenRowsDetector, locate_rule, shift_down_to_safe,
     MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS, MULTI_CLICK_GAP_S,
-    MULTI_CLICK_JITTER_PROB, MULTI_CLICK_JITTER_RANGE,
+    MULTI_CLICK_MAX_S, MULTI_CLICK_JITTER_PROB, MULTI_CLICK_JITTER_RANGE,
     SETTLEMENT_REUSE_PROB, SETTLEMENT_REUSE_EXACT,
     SETTLEMENT_REUSE_RADIUS, SETTLEMENT_REUSE_TTL_S)
 from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType, GeneralBattleConfig
@@ -282,8 +282,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         （奖励页参考胜利画面那一次），跨场次则回到自由取点。
         """
         x, y, rule = self._settlement_point(action)
+        first_ts = time.time()          # 首击发起时刻，作为连点节拍的起点
         self.device.click(x, y, control_name=control_name)
-        self._settlement_extra_clicks(rule, x, y, control_name)
+        self._settlement_extra_clicks(rule, x, y, control_name, first_ts)
 
     def _settlement_point(self, action):
         """算本次结算首击的落点，返回 (x, y, 该落点所在的安全区域)。
@@ -336,29 +337,57 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         # 微调后越界到禁区就放弃微调，退回原坐标（原坐标已确认安全）
         return (nx, ny, moved) if moved is not None else (x, y, rule)
 
-    def _settlement_extra_clicks(self, action, x, y, control_name) -> None:
+    def _settlement_extra_clicks(self, action, x, y, control_name,
+                                 first_ts: float = None) -> None:
         """按真人簇长分布在首击后追加快速连击，对齐真人结算行为。
 
         追加击的三个特征（MULTI_CLICK_* 常量在 reward_frame.py，取值由真人实采校准）：
-        - 次数按真人连击簇长直方图抽样（多点簇峰值 4 点、最长 11 点），
-          原实现最多只到三击；
-        - 间隔在人类连点间隔带内随机（150~220ms，真人中位 181ms），device.click
-          传 pace=False 绕过操作节奏 CD——否则节奏模型的兜底等待会把连点拖成秒级
-          间隔；节奏与同资源退避只在首击记账，整次手势视作一个意图；
+        - 次数按真人连击簇长直方图抽样，**在 4 点封顶**：首击点掉奖励页后，
+          剩余追加击会落到新出现的界面上（安全区域是按奖励页算的，在新界面
+          上那个坐标可能是「再来一局」之类的按钮），所以真人尾部 5~11 点的
+          长簇不采用，把最长暴露窗口从 2.20s 压到 0.66s；
+        - 间隔按**节拍补偿**对齐到目标值：device.click 自身要花约 165ms
+          （按下-移动-抬起 + 拟人化按压时长 + 轨迹），直接 sleep(gap) 会叠加
+          在它上面，实测相邻击间隔 334~381ms，是设定值 150~220ms 的两倍
+          （QMUMU1/2/3 日志实测）。这里改为「距上一击已过多久，只补足差额」，
+          实测间隔才真正等于真人的 150~220ms；
+        - device.click 传 pace=False 绕过操作节奏 CD——否则节奏模型的兜底
+          等待会把连点拖成秒级间隔；节奏与同资源退避只在首击记账，整次手势
+          视作一个意图；
+        - 追加击总时长受 MULTI_CLICK_MAX_S 预算约束，**按 wall clock 计**而非
+          累加自己 sleep 了多久——click 本身的耗时不进 sleep 的账，只记 sleep
+          会让预算形同虚设（4 点手势预算内 0.66s、实测 1.28s）。超预算立即
+          收尾、不补完剩余次数；
         - **落点默认复用首击坐标**（真人簇内 86% 的相邻点击落在同一像素），
           仅 MULTI_CLICK_JITTER_PROB 概率偏移，且偏移量取真人非零位移的量级
           （中位约 11px）而非 0~3px 的持续微抖——「每次都抖一点点」正是真人
           最罕见、脚本最典型的模式；偏移后钳回首击所在的安全矩形，
           绝不因微动越界点进禁点区域；
         - 按压时长、按压轨迹等拟人化维度不受影响，追加击走正常 backend 链路。
+
+        :param first_ts: 首击的发起时刻。节拍以「点击发起」为基准而非「点击返回」，
+            否则补偿不掉 click 自身的耗时——那正是实测间隔翻倍的原因。
+            缺省取当前时刻（首个间隔会偏长约一次 click 的耗时）。
         """
         n = random.choices(MULTI_CLICK_SIZES, weights=MULTI_CLICK_WEIGHTS)[0]
         if n == 1:
             return
         rx, ry, rw, rh = action.roi_front
         px, py = x, y
+        last = first_ts if first_ts is not None else time.time()   # 上一击的发起时刻
+        start = last                                               # 整次手势的起点
         for _ in range(n - 1):
-            sleep(random.uniform(*MULTI_CLICK_GAP_S))
+            gap = random.uniform(*MULTI_CLICK_GAP_S)
+            now = time.time()
+            # 下一击最早能发出的时刻：理想节拍点；若上一击本身就耗时超过 gap，
+            # 已经追不上节拍，就立刻发出（max 保证不往回等）
+            nxt = max(last + gap, now)
+            if nxt - start > MULTI_CLICK_MAX_S:
+                # 预算按 wall clock 判定，不够再点一击就立即收尾，缩短误触窗口
+                break
+            if nxt > now:
+                sleep(nxt - now)
+            last = time.time()          # 本击的发起时刻，作为下一次补偿的基准
             # 默认复用上一击坐标（真人手按住不动）；小概率发生一次真实移动，
             # 移动后作为新的落点继续连点，与真人「点着点着挪了一下」一致
             if random.random() < MULTI_CLICK_JITTER_PROB:
