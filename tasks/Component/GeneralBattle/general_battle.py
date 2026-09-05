@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import time
+import math
 import random
 from time import sleep
 
@@ -13,6 +14,13 @@ from tasks.base_task import BaseTask
 from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
 from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType, GeneralBattleConfig
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+from tasks.Component.GeneralBattle.reward_frame import (
+    safe_click_rules, weighted_choice, FORBIDDEN_DEFAULT,
+    get_detector, FrozenRowsDetector, locate_rule, shift_down_to_safe,
+    MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS, MULTI_CLICK_GAP_S,
+    MULTI_CLICK_JITTER_PROB, MULTI_CLICK_JITTER_RANGE,
+    SETTLEMENT_REUSE_PROB, SETTLEMENT_REUSE_EXACT,
+    SETTLEMENT_REUSE_RADIUS, SETTLEMENT_REUSE_TTL_S)
 from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType, GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.GeneralBuff.general_buff import GeneralBuff
@@ -158,10 +166,210 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         return True
 
+    def reward_forbidden(self) -> tuple:
+        """本任务的常驻禁止区域预设（720p），与奖励检测无关、永远不点的地方。
+
+        基类返回御魂本/活动本/其他本的默认预设；结界突破、寮突破、探索
+        这三类任务的界面布局不同，覆盖本方法换成 FORBIDDEN_KEKKAI。
+        """
+        return FORBIDDEN_DEFAULT
+
+    def screenshot(self):
+        """截图入口：每取到新的一帧就作废奖励检测缓存。
+
+        奖励框是结算动画里逐行出现的——上一帧算出的安全区域，到这一帧可能
+        已经压在新出现的那一行上。缓存只活一帧，保证「点击落点按当前页面算」；
+        同一帧内的多次调用（算落点 + 奖励框判据 + 退出条件）仍只检测一次。
+        """
+        image = super().screenshot()
+        self._reward_safe_rules = None
+        return image
+
     def reward_click_actions(self):
-        # 默认奖励结算随机点击安全区域：底部中央 + 右侧（左侧区域不符合人类点击习惯，已禁用），
-        # 具体任务可覆盖以排除特殊区域。
-        return [self.C_REWARD_1, self.C_REWARD_3]
+        """结算奖励与战斗胜利画面的落点：全屏候选挖掉常驻禁点区域与检测出的奖励行。
+
+        战斗胜利画面（I_WIN 出现时）没有奖励框，检测出的禁点行自然为空，
+        所以两个画面共用同一套安全区域即可；画面切换到奖励页后奖励行会被
+        检测出来并从落点里挖掉。
+
+        检测一次约 60~150ms。缓存粒度是「一帧」（截图入口作废，见 screenshot）：
+        同一帧内重复调用复用结果，换帧必重新检测——奖励框逐行出现，
+        用上一帧的禁区去点当前帧就可能正好点在刚出现的那一行上。
+        检测异常或安全区域被挖空时回退到 C_REWARD_1：它在奖励网格下方（y 623 > 网格底 554），
+        不依赖检测就一定安全。
+
+        同一帧只检测一次：检测出的奖励行既用来挖禁区，也作为「仍在奖励页」的
+        第二判据缓存下来（见 reward_grid_appear）。
+        """
+        if getattr(self, '_reward_safe_rules', None) is not None:
+            return self._reward_safe_rules
+
+        try:
+            rows = get_detector().detect(self.device.image)
+            rules = safe_click_rules(self.device.image,
+                                     forbidden_preset=self.reward_forbidden(),
+                                     detector=FrozenRowsDetector(rows))
+        except Exception as e:
+            # 模板缺失、截图异常等都不该让整个战斗任务挂掉，回退到恒安全的底部区域
+            logger.warning(f'Reward frame detect failed, fallback to C_REWARD_1: {e}')
+            rows, rules = [], []
+        if not rules:
+            rules = [self.C_REWARD_1]
+
+        self._reward_safe_rules = rules
+        self._reward_grid_found = bool(rows)
+        return rules
+
+    def reward_grid_appear(self, interval: float = None) -> bool:
+        """奖励框检测作为「仍在奖励页」的第二判据，与 I_REWARD 系模板并列。
+
+        I_REWARD / I_REWARD_GOLD 认的是奖励页上具体某个图案，遇到没收录过的
+        奖励底色或结算动画中间帧会失配——此时页面明明还停在奖励页，却既没人
+        点击也会被判成结算结束。奖励框检测认的是网格本身（6 种边框模板 × 3 行
+        相位锁定），只要页面上还有奖励框就成立，与奖励内容无关。
+
+        复用 reward_click_actions 的同一份检测结果（同帧只检测一次、换帧必重检，
+        见 screenshot），interval 语义与 appear() 一致。
+        """
+        name = 'REWARD_GRID'
+        if interval:
+            if name in self.interval_timer:
+                if self.interval_timer[name].limit != interval:
+                    self.interval_timer[name] = Timer(interval)
+            else:
+                self.interval_timer[name] = Timer(interval)
+            if not self.interval_timer[name].reached():
+                return False
+        # 顺带保证落点区域与本次判据出自同一份检测结果
+        self.reward_click_actions()
+        appear = bool(getattr(self, '_reward_grid_found', False))
+        if appear and interval:
+            self.interval_timer[name].reset()
+        return appear
+
+    def settlement_click_grid(self, action, interval: float = None) -> bool:
+        """检测到奖励框就点击：I_REWARD 系模板全部失配时的兜底触发。
+
+        落点仍是安全区域（已挖掉奖励行与常驻禁区），不点奖励框本身；
+        控件名单列 REWARD_GRID，与 I_REWARD 的连点计数/退避互不干扰。
+        """
+        if not self.reward_grid_appear(interval=interval):
+            return False
+        self.settlement_gesture(action, control_name='REWARD_GRID')
+        return True
+
+    def settlement_click(self, target, action, interval=None, threshold=None) -> bool:
+        """结算专用「出现即点击」：目标出现就在安全区域落点点击，并按概率连点。
+
+        appear_then_click 的结算限定版，两者语义一致（interval 计时器照常管理），
+        差别只在点击动作换成 settlement_gesture——按 60/35/5 概率追加双击/三击。
+        **连点只允许用在战斗结束（胜利画面）与领取奖励两个场景**，其余点击
+        一律继续走 appear_then_click，保持单击语义。
+        """
+        if not self.appear(target, interval=interval, threshold=threshold):
+            return False
+        self.settlement_gesture(action, control_name=target.name)
+        return True
+
+    def settlement_gesture(self, action, control_name='Reward') -> None:
+        """执行一次结算点击手势：首击走正常节奏，其后按概率追加快速连击。
+
+        首击与普通点击完全一致（节奏已在截图入口等满、按压时长/轨迹等拟人化
+        维度照常），追加击由 _settlement_extra_clicks 负责。结算循环里不方便
+        appear_then_click 的场景（如贪吃鬼连点）可直接调本方法。
+
+        首击落点由 _settlement_point 决定：同一场战斗内会参考上一次结算落点
+        （奖励页参考胜利画面那一次），跨场次则回到自由取点。
+        """
+        x, y, rule = self._settlement_point(action)
+        self.device.click(x, y, control_name=control_name)
+        self._settlement_extra_clicks(rule, x, y, control_name)
+
+    def _settlement_point(self, action):
+        """算本次结算首击的落点，返回 (x, y, 该落点所在的安全区域)。
+
+        同一场战斗内的落点互相参考：真人按场次切分后，场次内相邻点击事件有
+        31.4% 落在完全相同的坐标、43.8% 在 30px 内（中位 38.6px），而跨场次
+        （>10s）与重新自由取点不可区分（距离比 1.01）。故复用带 TTL，超时自动
+        失效，无需在战斗流程里显式重置。
+
+        胜利画面无奖励框、奖励页有，复用的坐标可能正好被新出现的奖励行覆盖：
+        此时保持 x 不变沿 y 向下挪到最近的安全区域（热区本就锚在禁区下方），
+        挪不动才回退自由取点。
+
+        只使用本帧已有的安全区域缓存，不额外触发奖励框检测——调用方在
+        weighted_choice 时已经算过，这里复用同一份结果。
+        """
+        rules = getattr(self, '_reward_safe_rules', None)
+        last = getattr(self, '_settlement_last', None)
+        if (rules and last is not None
+                and time.time() - last[2] <= SETTLEMENT_REUSE_TTL_S
+                and random.random() < SETTLEMENT_REUSE_PROB):
+            point = self._settlement_reuse(rules, last[0], last[1])
+            if point is not None:
+                x, y, rule = point
+                self._settlement_last = (x, y, time.time())
+                return x, y, rule
+        x, y = action.coord()
+        self._settlement_last = (x, y, time.time())
+        return x, y, action
+
+    def _settlement_reuse(self, rules, x, y):
+        """把上次落点适配到本帧，返回 (x, y, rule)；无法适配返回 None。"""
+        rule = locate_rule(rules, x, y)
+        if rule is None:
+            # 被新出现的奖励行盖住了：保持 x，沿 y 往下挪到最近的安全区域
+            shifted = shift_down_to_safe(rules, x, y)
+            if shifted is None:
+                return None
+            y, rule = shifted
+            logger.info(f'Settlement point shifted down to ({x}, {y}) by forbidden area')
+            return x, y, rule
+        # 仍然安全：多数情况用完全相同的坐标，其余在小半径内微调
+        if random.random() < SETTLEMENT_REUSE_EXACT:
+            return x, y, rule
+        d = random.uniform(1.0, SETTLEMENT_REUSE_RADIUS)
+        a = random.uniform(0, 2 * math.pi)
+        nx = x + int(round(d * math.cos(a)))
+        ny = y + int(round(d * math.sin(a)))
+        moved = locate_rule(rules, nx, ny)
+        # 微调后越界到禁区就放弃微调，退回原坐标（原坐标已确认安全）
+        return (nx, ny, moved) if moved is not None else (x, y, rule)
+
+    def _settlement_extra_clicks(self, action, x, y, control_name) -> None:
+        """按真人簇长分布在首击后追加快速连击，对齐真人结算行为。
+
+        追加击的三个特征（MULTI_CLICK_* 常量在 reward_frame.py，取值由真人实采校准）：
+        - 次数按真人连击簇长直方图抽样（多点簇峰值 4 点、最长 11 点），
+          原实现最多只到三击；
+        - 间隔在人类连点间隔带内随机（150~220ms，真人中位 181ms），device.click
+          传 pace=False 绕过操作节奏 CD——否则节奏模型的兜底等待会把连点拖成秒级
+          间隔；节奏与同资源退避只在首击记账，整次手势视作一个意图；
+        - **落点默认复用首击坐标**（真人簇内 86% 的相邻点击落在同一像素），
+          仅 MULTI_CLICK_JITTER_PROB 概率偏移，且偏移量取真人非零位移的量级
+          （中位约 11px）而非 0~3px 的持续微抖——「每次都抖一点点」正是真人
+          最罕见、脚本最典型的模式；偏移后钳回首击所在的安全矩形，
+          绝不因微动越界点进禁点区域；
+        - 按压时长、按压轨迹等拟人化维度不受影响，追加击走正常 backend 链路。
+        """
+        n = random.choices(MULTI_CLICK_SIZES, weights=MULTI_CLICK_WEIGHTS)[0]
+        if n == 1:
+            return
+        rx, ry, rw, rh = action.roi_front
+        px, py = x, y
+        for _ in range(n - 1):
+            sleep(random.uniform(*MULTI_CLICK_GAP_S))
+            # 默认复用上一击坐标（真人手按住不动）；小概率发生一次真实移动，
+            # 移动后作为新的落点继续连点，与真人「点着点着挪了一下」一致
+            if random.random() < MULTI_CLICK_JITTER_PROB:
+                d = random.uniform(*MULTI_CLICK_JITTER_RANGE)
+                a = random.uniform(0, 2 * math.pi)
+                px = px + int(round(d * math.cos(a)))
+                py = py + int(round(d * math.sin(a)))
+                # 贴块边时钳回安全矩形，保证偏移不会越界点进禁点区域
+                px = min(max(px, rx), rx + rw - 1)
+                py = min(max(py, ry), ry + rh - 1)
+            self.device.click(px, py, control_name=control_name, pace=False)
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
@@ -211,10 +419,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         while 1:
             self.screenshot()
             if win:
-                # 点击赢了：固定右侧区域（上/左区域不符合人类点击习惯，已禁用），
-                # 落点由拟人化层在区域内随机采样
-                action_click = self.C_WIN_3
-                if self.appear_then_click(self.I_WIN, action=action_click, interval=0.5):
+                # 点击赢了：全屏减去常驻禁点区域（胜利画面无奖励框，与奖励页共用安全区域），
+                # 落点按「面积×人类落点密度」加权挑选、区域内采样由拟人化层完成；
+                # 结算场景按概率连点（双击/三击），见 settlement_click
+                action_click = weighted_choice(self.reward_click_actions())
+                if self.settlement_click(self.I_WIN, action_click, interval=0.5):
                     continue
                 if not self.appear(self.I_WIN):
                     break
@@ -240,30 +449,36 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             if self.appear(GeneralInviteAssets.I_GI_SURE):
                 logger.info("Invite teammate dialog detected, exit reward loop")
                 break
-            # 如果出现领奖励
-            action_click = random.choice(self.reward_click_actions())
-            if (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
-                self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)  #  or
-                # self.appear_then_click(self.I_REWARD_STATISTICS, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_PURPLE_SNAKE_SKIN, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_GOLD_SNAKE_SKIN, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_EXP_SOUL_4, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_SOUL_5, action=action_click, interval=1.5) or
-                # self.appear_then_click(self.I_REWARD_SOUL_6, action=action_click, interval=1.5)
+            # 如果出现领奖励；落点按「面积×人类落点密度」加权挑选（热区更容易被选中），
+            # 结算场景按概率连点（双击/三击），见 settlement_click
+            action_click = weighted_choice(self.reward_click_actions())
+            if (self.settlement_click(self.I_REWARD, action_click, interval=1.5) or
+                self.settlement_click(self.I_REWARD_GOLD, action_click, interval=1.5) or
+                # I_REWARD 系模板失配时的兜底：只要还检测到奖励框就照样点安全区域
+                self.settlement_click_grid(action_click, interval=1.5)  #  or
+                # self.settlement_click(self.I_REWARD_STATISTICS, action_click, interval=1.5) or
+                # self.settlement_click(self.I_REWARD_PURPLE_SNAKE_SKIN, action_click, interval=1.5) or
+                # self.settlement_click(self.I_REWARD_GOLD_SNAKE_SKIN, action_click, interval=1.5) or
+                # self.settlement_click(self.I_REWARD_EXP_SOUL_4, action_click, interval=1.5) or
+                # self.settlement_click(self.I_REWARD_SOUL_5, action_click, interval=1.5) or
+                # self.settlement_click(self.I_REWARD_SOUL_6, action_click, interval=1.5)
                 ):
                 continue
-            if self.appear_then_click(self.I_EXTRA_INFO, action=action_click, interval=1.5):
+            if self.settlement_click(self.I_EXTRA_INFO, action_click, interval=1.5):
                 logger.info(f"Click self.I_EXTRA_INFO.name")
                 sleep(1.5)
                 continue
-            # 未知结算弹窗（皮肤碎片等）：点一下空白区域尝试跳过
-            if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD)and not self.appear(self.I_WIN) and not self.appear(GeneralInviteAssets.I_GI_SURE):
+            # 未知结算弹窗（皮肤碎片等）：点一下空白区域尝试跳过。
+            # 检测到奖励框说明还在奖励页（I_REWARD 只是失配），不能走这条盲点分支
+            if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD)and not self.appear(self.I_WIN) and not self.appear(GeneralInviteAssets.I_GI_SURE) and not self.reward_grid_appear():
                 self.click(self.C_RANDOM_CLICK)  #碎片
                 self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL) #整个皮肤
                 continue
             if (not self.appear(self.I_REWARD) and
                 not self.appear(self.I_REWARD_GOLD) and
-                not self.appear(self.I_EXTRA_INFO)#  and
+                not self.appear(self.I_EXTRA_INFO) and
+                # 奖励框还在就不算结算结束（与上面的兜底点击同一判据）
+                not self.reward_grid_appear()#  and
                 # not self.appear(self.I_REWARD_STATISTICS) and
                 # not self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) and
                 # not self.appear(self.I_REWARD_GOLD_SNAKE_SKIN) and
