@@ -5,7 +5,8 @@ from time import sleep, monotonic
 from datetime import time, datetime, timedelta
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
-from tasks.Component.GeneralBattle.reward_frame import weighted_choice
+from tasks.Component.GeneralBattle.reward_frame import (
+    weighted_choice, FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM2)
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.GeneralBuff.general_buff import GeneralBuff
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
@@ -32,6 +33,14 @@ from module.exception import TaskEnd
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets):
+
+    def reward_forbidden(self) -> tuple:
+        """御魂本组队时是两人，胜利画面上多出一块队友战绩框，额外禁点。
+
+        单人跑时那块区域没有战绩框、本可点击，一并禁掉是刻意取舍：省去判断
+        本场是否组队，代价只是少一个落点选择。
+        """
+        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM2
 
     def run(self) -> bool:
         config: Orochi = self.config.orochi

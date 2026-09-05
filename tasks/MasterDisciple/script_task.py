@@ -9,7 +9,8 @@ from time import sleep
 from datetime import datetime, timedelta, time as dtime
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
-from tasks.Component.GeneralBattle.reward_frame import weighted_choice
+from tasks.Component.GeneralBattle.reward_frame import (
+    weighted_choice, FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM2)
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite, RoomType
 from tasks.Component.GeneralInvite.config_invite import InviteConfig, InviteNumber, FindMode
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
@@ -55,6 +56,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     _account_switched: bool = False
     # 当前徒弟角色名（切号时记录）：探索完成截图存证用它命名文件；未切号时为 None，退化为配置实例名
     _current_disciple_name: str = None
+
+    def reward_forbidden(self) -> tuple:
+        """师徒是两人组队，胜利画面上多出一块队友战绩框，额外禁点。"""
+        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM2
+
     def run(self) -> bool:
         """
         师徒任务主入口

@@ -6,7 +6,8 @@ from datetime import timedelta, datetime
 from module.server.i18n import I18n
 from tasks.BondlingFairyland.config import BondlingMode
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
-from tasks.Component.GeneralBattle.reward_frame import weighted_choice
+from tasks.Component.GeneralBattle.reward_frame import (
+    weighted_choice, FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM2)
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.BondlingFairyland.config_battle import BattleConfig
 
@@ -16,6 +17,10 @@ from module.logger import logger
 
 
 class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
+
+    def reward_forbidden(self) -> tuple:
+        """契灵是两人组队，胜利画面上多出一块队友战绩框，额外禁点。"""
+        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM2
 
     def run_battle(self, battle_config: BattleConfig, limit_count: int = None) -> bool:
         """

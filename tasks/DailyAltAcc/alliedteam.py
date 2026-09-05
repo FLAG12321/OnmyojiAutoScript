@@ -12,6 +12,8 @@ from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.page import page_main, page_team, page_friends
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import (
+    FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM3)
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
@@ -27,6 +29,13 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     _help_shikigami_detect: bool = True
     # 连续多少秒不在战斗画面才确认上一场结束（防 I_BATTLE_INFO 单帧抖动误计场）
     BATTLE_END_CONFIRM_S = 3
+
+    def reward_forbidden(self) -> tuple:
+        """同心协力是三人战斗，胜利画面上多出两块队友战绩框，额外禁点。
+
+        右框覆盖热区核心的 86%，不禁掉结算连点会常态点在队友战绩上。
+        """
+        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM3
 
     def _restore_battle_count(self) -> int:
         """从进度文件恢复已完成场次到 current_count。
