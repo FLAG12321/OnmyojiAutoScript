@@ -165,13 +165,19 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
     #     )
     #     method(x, y)
 
-    def click(self, x: int, y: int, control_check=True, control_name='Click') -> None:
+    def click(self, x: int, y: int, control_check=True, control_name='Click',
+              pace: bool = True) -> None:
         """
 
         :param control_name:
         :param x:
         :param y:
         :param control_check:
+        :param pace: False 表示本点击属于连点手势的追加击——绕过节奏等待
+            （_pace_action_before 的兜底等待会让连点间隔远超人类范围）、不做
+            点击间空闲游移（连点时手指不离目标附近）、不记节奏账（整次手势
+            在首击处只记一次，追加击不污染节奏统计与同资源退避计数）。
+            仅结算连点（GeneralBattle.settlement_gesture）使用，默认 True 原行为不变。
         :return:
         """
         if control_check:
@@ -183,9 +189,11 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         # 维度 G 点击间空闲（Task 20）：选择具体 backend 之前，桌面指针语义
         # 且 humanizer 启用时先做空闲游移（plan_idle → move_desktop_plan）。
         # 返回 None（off / 未达阈值 / 光标未知 / 失败）则下方原 click 原样执行。
-        # 全操作共享 CD：执行前兜底（正常要求已由截图入口 pace_view 等满）
-        self._pace_action_before()
-        self._maybe_deliver_idle()
+        # 全操作共享 CD：执行前兜底（正常要求已由截图入口 pace_view 等满）。
+        # 连点追加击（pace=False）跳过等待与游移，仍刷新空闲计时基准
+        if pace:
+            self._pace_action_before()
+            self._maybe_deliver_idle()
         # 所有档位（含 off）都刷新空闲计时基准：off 跳过 plan_idle，不消费策略
         # RNG、不产生游移，但同样更新时间戳——保证开档的首次点击 since_last ≈ 0
         self._last_action_ts = time.time()
@@ -201,8 +209,10 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         else:
             method = self.click_methods.get(control_method, self.click_adb)
         method(x, y)
-        # 全操作共享 CD：操作结束打点（控件名优先判同一资源，坐标兜底）
-        self._pace_action_after((x, y), control_name)
+        # 全操作共享 CD：操作结束打点（控件名优先判同一资源，坐标兜底）。
+        # 连点追加击不打点：手势只在首击记一次节奏与退避
+        if pace:
+            self._pace_action_after((x, y), control_name)
 
 
     def multi_click(self, button, n, interval=(0.1, 0.2)):
