@@ -51,8 +51,14 @@ def _make_battle(monkeypatch, flags, after_reward_click=None):
             return True
         return False
 
+    # 结算连点入口（settlement_click）与 appear_then_click 同语义地打补丁：
+    # 本文件验证的是奖励循环状态机（出现/退出顺序），不测点击机制本身
+    def _settlement_click(target, action=None, *a, **kw):
+        return _appear_then_click(target, *a, **kw)
+
     monkeypatch.setattr(b, 'appear', _appear)
     monkeypatch.setattr(b, 'appear_then_click', _appear_then_click)
+    monkeypatch.setattr(b, 'settlement_click', _settlement_click)
     monkeypatch.setattr('tasks.Component.GeneralBattle.general_battle.sleep',
                         lambda *a, **k: None)
     return b, clicks, flags
@@ -115,7 +121,7 @@ def test_fix_guard_placed_before_extra_info_branch():
     src = open('tasks/Component/GeneralBattle/general_battle.py', encoding='utf-8').read()
     assert 'Invite teammate dialog detected, exit reward loop' in src
     guard = src.index('self.appear(GeneralInviteAssets.I_GI_SURE)')
-    extra_branch = src.index('self.appear_then_click(self.I_EXTRA_INFO, action=action_click, interval=1.5)')
+    extra_branch = src.index('self.settlement_click(self.I_EXTRA_INFO, action_click, interval=1.5)')
     assert guard < extra_branch
 
 
