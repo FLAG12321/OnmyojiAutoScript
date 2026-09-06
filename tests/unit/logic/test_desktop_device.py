@@ -2685,6 +2685,34 @@ def test_desktop_swipe_budget_scales_with_legacy_duration(monkeypatch):
         f'长滑动手势主体 sleep 总量 {sum(body):.3f}s 应超过旧固定 120ms 预算区间'
 
 
+def test_desktop_swipe_duration_overrides_distance_implicit_time(monkeypatch):
+    """duration 提供时桌面滑动总时长按其均摊到轨迹各点（时长与几何解耦），
+    不再走距离隐式时长（每点 10ms = 距离毫秒数）。强制 natural 尾段排除
+    H 替换干扰，手势主体 sleep 总量应显著大于 None 路径的距离隐式时长。"""
+    from module.device.humanize import HumanizerContext
+    orig_choose = HumanizerContext._choose
+
+    def forced_natural(self, d, allowed):
+        return 'natural' if d == 'swipe_tail' else orig_choose(self, d, allowed)
+    monkeypatch.setattr(HumanizerContext, '_choose', forced_natural)
+
+    w = _humanized_desktop('medium', seed=11)
+    w._desktop_cursor = (50, 50)
+    # 300px 滑动：None 路径距离隐式时长 ≈ 30 点×10ms + 3×80ms 收尾 ≈ 0.54s；
+    # duration=1.2 均摊 → 27 点×~40ms + 3×80ms ≈ 1.3s，必然显著更长
+    events = _record_desktop(
+        lambda: w.swipe_desktop_window_message([100, 100], [400, 100], duration=1.2),
+        monkeypatch,
+    )
+    down_i = next(i for i, e in enumerate(events)
+                  if len(e) >= 3 and e[2] == win32con.WM_LBUTTONDOWN)
+    up_i = next(i for i, e in enumerate(events)
+                if len(e) >= 3 and e[2] == win32con.WM_LBUTTONUP)
+    body = [e[1] for e in events[down_i:up_i] if e[0] == 'sleep']
+    assert sum(body) >= 1.0, \
+        f'duration=1.2 时手势主体 sleep 总量 {sum(body):.3f}s 应按均摊预算显著放大'
+
+
 def test_desktop_swipe_oob_fallback_restores_legacy_rng(monkeypatch):
     """桌面策略失败时预生成 delay 不得改变 legacy 的事件与随机时序。"""
     import random as _stdlib_random

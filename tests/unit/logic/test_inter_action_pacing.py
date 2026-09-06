@@ -85,7 +85,10 @@ class TestNextActionRequirement:
         # 已确认重复（count>=2）：下次要求并入退避（count+1 档）
         lo, hi = REPEAT_BACKOFF_JITTER
         r = rng()
-        for count, nominal in [(2, 3.0), (3, 4.0), (4, 10.0), (9, 16.0)]:
+        # 新序列 (1.5, 1.5, 2, 2, 4, 10, 16)：count=2 → backoff(3)=1.5、
+        # count=3 → backoff(4)=1.5、count=4 → backoff(5)=2、count=5 →
+        # backoff(6)=4、count=9 → backoff(10)=16
+        for count, nominal in [(2, 1.5), (3, 1.5), (4, 2.0), (5, 4.0), (9, 16.0)]:
             require, _ = next_action_requirement(r, [0.5] * 3, INTER_CLICK_MIN_S, count)
             assert nominal * lo <= require <= nominal * hi, f'count={count}'
 
@@ -116,10 +119,10 @@ class TestNextActionRequirement:
 
 class TestRepeatBackoff:
     def test_pure_function_sequence(self):
-        # 纯函数序列：count=2/3/4/5/6+ → 标称查表 (2,3,4,10,16) 末档封顶，区间内随机
+        # 纯函数序列：count=2..8+ → 标称查表 (1.5,1.5,2,2,4,10,16) 末档封顶，区间内随机
         r = rng()
         lo, hi = REPEAT_BACKOFF_JITTER
-        for count, nominal in [(2, 2.0), (3, 3.0), (4, 4.0), (5, 10.0), (6, 16.0), (9, 16.0)]:
+        for count, nominal in [(2, 1.5), (3, 1.5), (4, 2.0), (5, 2.0), (6, 4.0), (7, 10.0), (8, 16.0), (9, 16.0)]:
             v = repeat_backoff_seconds(r, count)
             assert nominal * lo <= v <= nominal * hi, f'count={count}'
 
@@ -287,13 +290,14 @@ class TestFacadeRepeatBackoff:
             moments.append(clock.now)
             ctx.record_action(target=(500, 300))  # 连续点同一坐标
         # 事件实际间隔（pace_view 等满）：第 2 次 = 常规量级（首击不预付退避），
-        # 第 3/4/5 次 = 退避查表 3/4/10s 量级（首击不预付 → count=2 挂 backoff(3)）
+        # 第 3/4 次 = 退避 1.5s、第 5 次 = 2s（新序列 1.5/1.5/2/2/4/10/16，
+        # 首击不预付 → count=2 挂 backoff(3)=1.5）
         gaps = [b - a for a, b in zip(moments, moments[1:])]
         lo, _ = REPEAT_BACKOFF_JITTER
         assert gaps[0] <= INTER_CLICK_MAX_S  # 第 2 次：常规
-        assert gaps[1] >= 3.0 * lo - 0.1     # 第 3 次：退避 3s
-        assert gaps[2] >= 4.0 * lo - 0.1     # 第 4 次：退避 4s
-        assert gaps[3] >= 10.0 * lo - 0.1    # 第 5 次：退避 10s
+        assert gaps[1] >= 1.5 * lo - 0.1     # 第 3 次：退避 1.5s
+        assert gaps[2] >= 1.5 * lo - 0.1     # 第 4 次：退避 1.5s
+        assert gaps[3] >= 2.0 * lo - 0.1     # 第 5 次：退避 2s
         assert ctx._repeat_count == 5
 
     def test_small_jitter_counts_same_target(self, clock):
@@ -323,9 +327,63 @@ class TestFacadeRepeatBackoff:
         # 首击：pending 只有常规量级（不预付退避，防换目标白等）
         ctx.record_action(target=(500, 300))
         assert ctx._pending_require <= INTER_CLICK_MAX_S
-        # 已确认重复（count=2）：pending 并入退避 3s 量级（backoff(3) 查表）
+        # 已确认重复（count=2）：pending 并入退避 1.5s 量级（backoff(3) 查表）
         ctx.record_action(target=(500, 300))
-        assert ctx._pending_require >= 3.0 * REPEAT_BACKOFF_JITTER[0]
+        assert ctx._pending_require >= 1.5 * REPEAT_BACKOFF_JITTER[0]
+
+    def test_same_name_same_roi_counts_repeat(self, clock):
+        ctx = make_context()
+        # 同名且 ROI 一致：同一资源（静态按钮重复点击等响应）→ 计数照常累积
+        ctx.record_action(target=(500, 300), name='C_CONFIRM', roi=(543, 199, 62, 54))
+        ctx.record_action(target=(510, 305), name='C_CONFIRM', roi=(543, 199, 62, 54))
+        assert ctx._repeat_count == 2
+
+    def test_same_name_different_roi_resets(self, clock):
+        ctx = make_context()
+        # 同名但 ROI 不同：任务复用同一 RuleClick 遍历列表（如 KekkaiUtilize
+        # 的 select_card 逐卡改写 roi_front）→ 判为新资源，计数重置不退避
+        ctx.record_action(target=(580, 438), name='select_card', roi=(543, 412, 62, 54))
+        ctx.record_action(target=(584, 556), name='select_card', roi=(543, 519, 62, 54))
+        assert ctx._repeat_count == 1
+        assert ctx._repeat_roi == (543, 519, 62, 54)
+
+    def test_roi_missing_one_side_degrades_to_name(self, clock):
+        ctx = make_context()
+        # 一方缺 ROI（直调 device.click / 匹配驱动路径）→ 退化为仅按名判重，
+        # 静态控件行为与旧逻辑一致
+        ctx.record_action(target=(500, 300), name='C_CONFIRM')
+        ctx.record_action(target=(520, 315), name='C_CONFIRM', roi=(543, 199, 62, 54))
+        assert ctx._repeat_count == 2
+        ctx.record_action(target=(500, 300), name='C_CONFIRM', roi=(543, 199, 62, 54))
+        assert ctx._repeat_count == 3
+
+    def test_roi_list_normalized_to_tuple(self, clock):
+        ctx = make_context()
+        # list 形式的 roi 规范化为 tuple 后参与比较：与相同值的 tuple 视为一致
+        ctx.record_action(target=(500, 300), name='C_CONFIRM', roi=[543, 199, 62, 54])
+        ctx.record_action(target=(510, 305), name='C_CONFIRM', roi=(543, 199, 62, 54))
+        assert ctx._repeat_count == 2
+
+    def test_swipe_resets_roi_state(self, clock):
+        ctx = make_context()
+        ctx.record_action(target=(500, 300), name='select_card', roi=(543, 199, 62, 54))
+        # swipe/drag 无落点：连同上次的 ROI 状态一起重置
+        ctx.record_action(target=None)
+        assert ctx._repeat_roi is None
+        assert ctx._repeat_name is None
+
+    def test_kekkai_like_traversal_never_backs_off(self, clock):
+        # KekkaiUtilize 探索模式仿真：同名 select_card 连续 8 次点击、每次
+        # 改写 ROI（对应 2026-09-07 日志里第 6/7 次点击吃 10s/16s 退避的
+        # 场景），修复后每张卡都判为新资源 → 计数恒 1，间隔要求保持常规量级
+        rows = [(543, 199, 62, 54), (543, 316, 62, 54), (543, 423, 62, 54),
+                (543, 530, 62, 54), (543, 209, 62, 54), (543, 327, 62, 54),
+                (543, 433, 62, 54), (543, 363, 62, 54)]
+        ctx = make_context()
+        for row in rows:
+            ctx.record_action(target=(580, row[1] + 27), name='select_card', roi=row)
+            assert ctx._repeat_count == 1
+            assert ctx._pending_require <= INTER_CLICK_MAX_S
 
 
 # ---------------------------------------------------------------- Control 接线
@@ -357,8 +415,8 @@ class _Recorder:
         self.executes.append(None)
         return 0.0
 
-    def record_action(self, target=None, name=None) -> None:
-        self.records.append((target, name))
+    def record_action(self, target=None, name=None, roi=None) -> None:
+        self.records.append((target, name, roi))
 
 
 class TestControlWiring:
@@ -368,7 +426,7 @@ class TestControlWiring:
         stub._pace_action_before()
         stub._pace_action_after((100, 200))
         assert rec.executes == [None]
-        assert rec.records == [((100, 200), None)]
+        assert rec.records == [((100, 200), None, None)]
 
     def test_disabled_humanizer_skipped(self):
         class _Off:

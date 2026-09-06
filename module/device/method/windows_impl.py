@@ -594,15 +594,18 @@ class Window(Handle):
             PostMessage(hwnd, WM_MOUSEMOVE, 0, lparam)
 
     # @timer
-    def swipe_window_message(self, startPos: list, endPos: list) -> None:
+    def swipe_window_message(self, startPos: list, endPos: list, duration=None) -> None:
         """
         后台滑动
         :param startPos:
         :param endPos:
+        :param duration: 手势总时长（秒）。提供时均摊到轨迹各点（轨迹几何仍由
+            interval 距离步长决定，时长与几何解耦）；None 保持默认每点 10ms，
+            时长随距离伸缩
         :return:
         """
         if getattr(self, 'is_desktop_window', False):
-            return self.swipe_desktop_window_message(startPos, endPos)
+            return self.swipe_desktop_window_message(startPos, endPos, duration=duration)
         # 生成的坐标点列表
         interval: int = 10  # 每次移动的间隔时间
         numberList: int = int(dist(startPos, endPos) / (1 * interval))  # 表示每毫秒移动1.5个像素点， 总的时间除以每个点10ms就得到总的点的个数
@@ -639,6 +642,12 @@ class Window(Handle):
         # 回退原逐点循环。维度 I：UP 前固定 sleep(0.05) 换成同均值抖动
         manual_control: int = 3  # 手动控制最后几个点的数量
         total_len: int = len(trace)
+        # 每点基础延迟（秒）：duration 提供时均摊到轨迹各点——轨迹几何仍由 interval
+        # 的距离步长决定，时长与几何解耦；None 保持默认每点 10ms（时长随距离伸缩）
+        if duration is not None and total_len > 0:
+            per_point_delay = duration / total_len
+        else:
+            per_point_delay = interval / 1000.0
         plan = None
         # off 档必须整体走旧循环：legacy_delays 的 random.randint 预消耗会让 fallback
         # 再消费一次全局 RNG（契约 #1 off 零回归），故门控加 humanizer.enabled
@@ -649,15 +658,17 @@ class Window(Handle):
             legacy_points = [tuple(p) for p in trace]
             legacy_delays = [
                 0.08 if manual_control >= total_len - index
-                else (interval + random.randint(-2, 2)) / 1000.0
+                else ((interval + random.randint(-2, 2)) / 1000.0 if duration is None
+                      else max(per_point_delay + random.uniform(-per_point_delay * 0.2,
+                                                                 per_point_delay * 0.2), 0.001))
                 for index, pos in enumerate(trace)
             ]
             plan = humanizer.plan_swipe(
                 tuple(startPos), tuple(endPos),
                 legacy_points=legacy_points, legacy_delays=legacy_delays,
-                # medium/heavy 预算 = legacy 总时长（window_message 无 duration 入参，
-                # 时长由 trackArray 点位数随距离伸缩）。不传时 facade 用固定 120ms，
-                # 长滑动会被压快。light 路径直接消费 legacy_delays，不读该参数
+                # medium/heavy 预算 = legacy 总时长（duration 提供时每点延迟已按其
+                # 均摊，预算随之缩放）。不传时 facade 用固定 120ms，长滑动会被压快。
+                # light 路径直接消费 legacy_delays，不读该参数
                 base_delay_s=sum(legacy_delays) / PROFILE_MAX_POINTS)
             if plan is None:
                 # 计划失败时完全回到原始循环，撤销仅为拟人化计划预消费的随机数，
@@ -706,8 +717,13 @@ class Window(Handle):
             PostMessage(handleNum, WM_MOUSEMOVE, MK_LBUTTON, lparam)
             if manual_control >= total_len - index:
                 time.sleep(0.08)
-            else:
+            elif duration is None:
+                # duration 缺省路径保持原表达式（off 零回归：RNG 消费序列不变）
                 time.sleep((interval + random.randint(-2, 2)) / 1000.0)
+            else:
+                # duration 提供时按均摊延迟走 ±20% 比例抖动，下限 1ms 防负 sleep
+                time.sleep(max(per_point_delay + random.uniform(-per_point_delay * 0.2,
+                                                                 per_point_delay * 0.2), 0.001))
 
         # 最后释放鼠标
         time.sleep(final_gap)
@@ -715,8 +731,12 @@ class Window(Handle):
         end_lparam = MAKELONG(ex, ey)
         PostMessage(handleNum, WM_LBUTTONUP, 0, end_lparam)
 
-    def swipe_desktop_window_message(self, startPos: list, endPos: list) -> None:
-        """桌面客户端后台滑动：贝塞尔轨迹 PostMessage，与模拟器路径同一套拟人参数。"""
+    def swipe_desktop_window_message(self, startPos: list, endPos: list, duration=None) -> None:
+        """桌面客户端后台滑动：贝塞尔轨迹 PostMessage，与模拟器路径同一套拟人参数。
+
+        duration 提供时为手势总时长（秒），均摊到轨迹各点——轨迹几何仍由
+        desktop_trace 的距离步长决定，时长与几何解耦；None 保持默认每点 10ms。
+        """
         # 最小化时后台滑动不可靠，先还原窗口
         self.desktop_window_restore_if_minimized()
         hwnd = self.root_handle_num
@@ -733,6 +753,12 @@ class Window(Handle):
         humanizer = self._humanizer
         manual_control: int = 3
         total_len: int = len(trace)
+        # 每点基础延迟（秒）：duration 提供时均摊到轨迹各点——轨迹几何仍由
+        # desktop_trace 的距离步长决定，时长与几何解耦；None 保持默认每点 10ms
+        if duration is not None and total_len > 0:
+            per_point_delay = duration / total_len
+        else:
+            per_point_delay = interval / 1000.0
         plan = None
         # off 档必须整体走旧循环：legacy_delays 的 random.randint 预消耗会让 fallback
         # 再消费一次全局 RNG（契约 #1 off 零回归），故门控加 humanizer.enabled
@@ -743,15 +769,18 @@ class Window(Handle):
             legacy_points = [tuple(p) for p in trace]
             legacy_delays = [
                 0.08 if manual_control >= total_len - index
-                else (interval + random.randint(-2, 2)) / 1000.0
+                else ((interval + random.randint(-2, 2)) / 1000.0 if duration is None
+                      else max(per_point_delay + random.uniform(-per_point_delay * 0.2,
+                                                                 per_point_delay * 0.2), 0.001))
                 for index, pos in enumerate(trace)
             ]
             plan = humanizer.plan_swipe(
                 tuple(startPos), tuple(endPos),
                 legacy_points=legacy_points, legacy_delays=legacy_delays,
-                # 同模拟器入口：medium/heavy 预算 = legacy 总时长（desktop_trace 点位
-                # 数随距离伸缩），light 不读该参数。桌面拖拽是鼠标语义，
-                # 回报率走鼠标区间（125~1000Hz，python_sleep 下被 clamp 到 200Hz）
+                # 同模拟器入口：medium/heavy 预算 = legacy 总时长（duration 提供时
+                # 每点延迟已按其均摊，预算随之缩放），light 不读该参数。桌面拖拽是
+                # 鼠标语义，回报率走鼠标区间（125~1000Hz，python_sleep 下被 clamp
+                # 到 200Hz）
                 base_delay_s=sum(legacy_delays) / PROFILE_MAX_POINTS,
                 mouse=True)
             if plan is None:
@@ -781,8 +810,13 @@ class Window(Handle):
             PostMessage(hwnd, WM_MOUSEMOVE, MK_LBUTTON, lparam)
             if manual_control >= total_len - index:
                 time.sleep(0.08)
-            else:
+            elif duration is None:
+                # duration 缺省路径保持原表达式（off 零回归：RNG 消费序列不变）
                 time.sleep((interval + random.randint(-2, 2)) / 1000.0)
+            else:
+                # duration 提供时按均摊延迟走 ±20% 比例抖动，下限 1ms 防负 sleep
+                time.sleep(max(per_point_delay + random.uniform(-per_point_delay * 0.2,
+                                                                 per_point_delay * 0.2), 0.001))
         time.sleep(final_gap)
         end_lparam = MAKELONG(*self.desktop_message_coord(endPos[0], endPos[1]))
         PostMessage(hwnd, WM_LBUTTONUP, 0, end_lparam)

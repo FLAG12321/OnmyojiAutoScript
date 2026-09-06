@@ -759,7 +759,7 @@ def test_control_enabled_dispatch_never_enters_public_retry(monkeypatch, entry, 
     device.config = SimpleNamespace(script=SimpleNamespace(device=SimpleNamespace(control_method='minitouch')))
     # 全操作共享 CD（2026-08-27）入口：本测试只关心分派拓扑，节奏入口 no-op
     device.humanizer = SimpleNamespace(
-        enabled=True, pace_execute=lambda: 0.0, record_action=lambda target=None, name=None: None)
+        enabled=True, pace_execute=lambda: 0.0, record_action=lambda target=None, name=None, roi=None: None)
     device.handle_control_check = lambda name: None
     public_retry = Mock(side_effect=AssertionError('公开 @retry 路径不得进入'))
     humanized_impl = Mock()
@@ -862,7 +862,7 @@ def _humanizer(level='light', plan=_PLAN_SWIPE, press=0.1, gap=0.052, liftoff=No
         # 全操作共享 CD（2026-08-27）入口：本文件测命令形状与恢复拓扑，
         # 节奏等待 no-op（返回 0 即不 sleep，不影响 events/send 断言）
         pace_execute=lambda: 0.0,
-        record_action=lambda target=None, name=None: None,
+        record_action=lambda target=None, name=None, roi=None: None,
     )
 
 

@@ -134,11 +134,20 @@ class HumanizerContext:
         # 自上次操作以来机制注入的等待总量：record 时从间隔里扣除得到
         # 「意图节奏」，防止控制器被自己制造的慢"欺骗"而压-松振荡
         self._mech_wait: float = 0.0
-        # 同一资源重复点击的指数退避状态：判定键优先用点击控件名（不同按钮
-        # 即便相邻也不会误判；同名模板即同一资源），无名点击退回坐标半径兜底
+        # 距离分档的上一个落点（2026-09-06）：record_action 用它与本次
+        # target 的距离查 dist_goal_interval——预付制下下一次的目标尚未
+        # 确定，本次距离是下一次的经验代理
+        self._last_record_point: 'tuple[int, int] | None' = None
+        # 同一资源重复点击的指数退避状态：判定键优先用点击控件名 + roi_front
+        # （不同按钮即便相邻也不会误判；同名且 ROI 一致才是同一资源——同名但
+        # ROI 变化是任务在复用同一 RuleClick 遍历列表，判为新资源），无名点击
+        # 退回坐标半径兜底
         self._repeat_point: 'tuple[int, int] | None' = None
         self._repeat_name: str | None = None
         self._repeat_count: int = 0
+        # 上次有名点击的 roi_front（已规范化为 tuple）：None 表示该路径拿不到
+        # 稳定 ROI（直调 device.click / 匹配结果驱动区域），判重退化为仅按名
+        self._repeat_roi: 'tuple[int, ...] | None' = None
 
     # ---------------------------------------------------------------- 构造
 
@@ -749,22 +758,27 @@ class HumanizerContext:
             0.0, self._pending_require - (elapsed + wait))
         return wait
 
-    def record_action(self, target=None, name=None) -> None:
+    def record_action(self, target=None, name=None, roi=None) -> None:
         """操作结束打点：更新节奏统计 + 同一资源重复判定 + 计算下次要求。
 
         由 Control 在每次输入操作（click/long_click/swipe/drag）完成后调用。
         - 意图间隔 = (本次操作时刻 - 上次操作结束时刻) - 期间机制等待：
           窗口只统计任务层的自然节奏，防止控制器被自己制造的慢"欺骗"；
         - 同一资源判定（优先级从高到低）：
-          ① name（点击控件名，如 GB_DE_WIN）：同名模板即同一资源——不同按钮
-            即便坐标相邻（结算画面的多个奖励区域）也不会误判；
+          ① name + roi（点击控件名与其 roi_front）：同名且 ROI 一致才是同一
+            资源——同名但 ROI 不同说明任务在复用同一 RuleClick 遍历列表
+            （如 KekkaiUtilize 逐个点结界卡），判为新资源重新计数；本次或
+            上次拿不到稳定 ROI（直调 device.click / 匹配结果驱动的区域）时
+            退化为仅按名判重，静态控件行为不变；
           ② target 坐标半径（REPEAT_BACKOFF_RADIUS_PX）：无名点击（直接
             device.click 未传控件名）的兜底；
           ③ 都没有（swipe/drag）：重置计数。
-          判定命中 → 连续计数 +1，下次要求并入指数退避（连续第 2/3/4/5+
-          次 2/4/8/16s 封顶）；换资源重新从 1 计；
+          判定命中 → 连续计数 +1，下次要求并入退避（连续第 2/3/4/5/6/7/8+
+          次 1.5/1.5/2/2/4/10/16s 封顶）；换资源重新从 1 计；
         - 下次要求由 timing.next_action_requirement 计算（动态平衡基准 +
-          右偏 lognormal 常规要求 + 退避取 max），挂起待 pace_view 消费。
+          常规要求 + 退避取 max），挂起待 pace_view 消费。常规要求的抽样
+          中心按本次与上次落点的距离分档（2026-09-06 用户实测：≤400px
+          300~600ms、>500px 700ms~1.5s）；距离不可得时走 base 自适应。
 
         off 档无副作用。
         """
@@ -778,14 +792,22 @@ class HumanizerContext:
             self._gap_window.append(intent)
         self._gap_last_ts = now
         self._mech_wait = 0.0
-        # 同一资源判定：控件名优先，坐标半径兜底，swipe/drag 重置
+        # 同一资源判定：控件名 + roi_front 判重（任一方缺 ROI 退化为仅按名），
+        # 坐标半径兜底，swipe/drag 重置
         if name is not None and name not in ('Click', 'LongClick', 'SWIPE', 'DRAG'):
-            # 有真实控件名的点击按名判重（泛称视同无名，走坐标兜底）
-            if self._repeat_name == name:
+            # 有真实控件名的点击按名+ROI 判重（泛称视同无名，走坐标兜底）：
+            # 同名且（任一方缺稳定 ROI 或两 ROI 相同）才累计——同名但 ROI
+            # 不同是任务在复用同一 RuleClick 遍历列表（每次改写 roi_front
+            # 点不同项，如 KekkaiUtilize 的 select_card 逐卡点击），判为新资源
+            roi_key = tuple(roi) if roi is not None else None
+            roi_same = (roi_key is None or self._repeat_roi is None
+                        or roi_key == self._repeat_roi)
+            if self._repeat_name == name and roi_same:
                 self._repeat_count += 1
             else:
                 self._repeat_count = 1
             self._repeat_name = name
+            self._repeat_roi = roi_key
             self._repeat_point = None  # 名称判定后坐标兜底不再参与
         elif target is not None:
             if (self._repeat_point is not None
@@ -797,12 +819,25 @@ class HumanizerContext:
                 self._repeat_count = 1
             self._repeat_point = (int(target[0]), int(target[1]))
             self._repeat_name = None
+            self._repeat_roi = None  # 坐标兜底路径不持有 ROI，清空避免跨路径比较
         else:
             self._repeat_count = 0
             self._repeat_name = None
             self._repeat_point = None
+            self._repeat_roi = None
+        # 距离分档（2026-09-06 实测）：本次落点与上一落点的距离作为下一次
+        # 间隔要求的经验代理（预付制下下一目标未知）；无名 swipe（target=None）
+        # 距离为 None 走常规抽样。本次有落点则更新基准供下一次使用。
+        dist = None
+        if target is not None and self._last_record_point is not None:
+            dist = math.hypot(target[0] - self._last_record_point[0],
+                              target[1] - self._last_record_point[1])
+        if target is not None:
+            self._last_record_point = (int(target[0]), int(target[1]))
+        else:
+            self._last_record_point = None
         self._pending_require, self._gap_base = timing.next_action_requirement(
-            self.rng, self._gap_window, self._gap_base, self._repeat_count)
+            self.rng, self._gap_window, self._gap_base, self._repeat_count, dist)
 
     def plan_idle(self, since_last_s: float, cursor: Point | None) -> MovePlan | None:
         """维度 G 点击间空闲。cursor 未知或未达阈值时返回 None（策略层语义）。"""

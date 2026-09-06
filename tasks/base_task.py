@@ -311,12 +311,15 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         elif appear and action:
             x, y = action.coord()
             if isinstance(action, RuleLongClick):
+                # action 的 roi_front 参与同一资源判别（点击区域与落点同源）
                 if duration is None:
-                    self.device.long_click(x, y, duration=action.duration / 1000, control_name=target.name)
+                    self.device.long_click(x, y, duration=action.duration / 1000,
+                                           control_name=target.name, control_roi=action.roi_front)
                 else:
-                    self.device.long_click(x, y, duration=duration / 1000, control_name=target.name)
+                    self.device.long_click(x, y, duration=duration / 1000,
+                                           control_name=target.name, control_roi=action.roi_front)
             elif isinstance(action, RuleClick):
-                self.device.click(x, y, control_name=target.name)
+                self.device.click(x, y, control_name=target.name, control_roi=action.roi_front)
 
         return appear
 
@@ -378,12 +381,15 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         elif appear and action:
             x, y = action.coord()
             if isinstance(action, RuleLongClick):
+                # action 的 roi_front 参与同一资源判别（点击区域与落点同源）
                 if duration is None:
-                    self.device.long_click(x, y, duration=action.duration / 1000, control_name=target.name)
+                    self.device.long_click(x, y, duration=action.duration / 1000,
+                                           control_name=target.name, control_roi=action.roi_front)
                 else:
-                    self.device.long_click(x, y, duration=duration / 1000, control_name=target.name)
+                    self.device.long_click(x, y, duration=duration / 1000,
+                                           control_name=target.name, control_roi=action.roi_front)
             elif isinstance(action, RuleClick):
-                self.device.click(x, y, control_name=target.name)
+                self.device.click(x, y, control_name=target.name, control_roi=action.roi_front)
 
         return appear
 
@@ -613,8 +619,14 @@ class BaseTask(GlobalGameAssets, CostumeBase):
 
         x, y = click.coord()
         if isinstance(click, RuleLongClick):
-            self.device.long_click(x=x, y=y, duration=click.duration / 1000, control_name=click.name)
-        elif isinstance(click, RuleClick) or isinstance(click, RuleImage) or isinstance(click, RuleOcr):
+            self.device.long_click(x=x, y=y, duration=click.duration / 1000,
+                                   control_name=click.name, control_roi=click.roi_front)
+        elif isinstance(click, RuleClick):
+            # RuleClick 的 roi_front 是意图层稳定区域（静态定义或任务显式改写），
+            # 传给 humanize 参与同一资源判别；RuleImage/RuleOcr 的区域来自匹配
+            # 结果（有抖动），不传、退化为按名判重
+            self.device.click(x=x, y=y, control_name=click.name, control_roi=click.roi_front)
+        elif isinstance(click, RuleImage) or isinstance(click, RuleOcr):
             self.device.click(x=x, y=y, control_name=click.name)
 
         # 执行后，如果有限制时间，则重置限制时间

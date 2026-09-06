@@ -11,6 +11,8 @@ from module.device.method.adb import Adb
 from module.device.method.scrcpy import Scrcpy
 from module.device.method.windows import Window
 from module.device.method.nemu_ipc import NemuIpc
+# 滑动时长距离推导（2026-09-06 实测）：duration=None 时按滑动距离取默认时长
+from module.device.humanize.timing import swipe_duration_by_dist as timing_swipe_duration_by_dist
 from module.logger import logger
 
 
@@ -67,15 +69,18 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         if self._humanizer_enabled():
             self.humanizer.pace_execute()
 
-    def _pace_action_after(self, target=None, name=None):
+    def _pace_action_after(self, target=None, name=None, roi=None):
         """全操作共享 CD 的收尾打点：操作完成后更新节奏统计与下次要求。
 
         name（点击控件名，如 GB_DE_WIN）传入时按名判同一资源（优先级高于
-        坐标半径）；target（点击坐标）作无名点击的兜底；swipe/drag 两者
-        皆无 → 重置重复计数。off 档无副作用。
+        坐标半径）；roi（点击时 Rule 的 roi_front，任务显式设置/静态定义的
+        稳定区域）参与同名判重——同名但 ROI 不同是任务在复用 RuleClick
+        遍历列表，判为新资源，任一方缺 ROI 时退化为仅按名判重；target
+        （点击坐标）作无名点击的兜底；swipe/drag 两者皆无 → 重置重复计数。
+        off 档无副作用。
         """
         if self._humanizer_enabled():
-            self.humanizer.record_action(target, name)
+            self.humanizer.record_action(target, name, roi)
 
     def _maybe_deliver_idle(self):
         """把点击间空闲计划投递为桌面指针移动；无计划或光标未知时静默跳过。
@@ -166,7 +171,7 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
     #     method(x, y)
 
     def click(self, x: int, y: int, control_check=True, control_name='Click',
-              pace: bool = True) -> None:
+              pace: bool = True, control_roi=None) -> None:
         """
 
         :param control_name:
@@ -178,6 +183,11 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
             点击间空闲游移（连点时手指不离目标附近）、不记节奏账（整次手势
             在首击处只记一次，追加击不污染节奏统计与同资源退避计数）。
             仅结算连点（GeneralBattle.settlement_gesture）使用，默认 True 原行为不变。
+        :param control_roi: 点击时 Rule 的 roi_front（意图层稳定区域：静态定义
+            或任务显式改写的点击区域），参与同名控件的同一资源判别——同名但
+            ROI 不同（复用 RuleClick 遍历列表）判为新资源；缺省 None 退化为
+            按名判重。仅 BaseTask 对 RuleClick/RuleLongClick 的点击传入，
+            匹配结果驱动的区域（RuleImage/RuleOcr）不传（有抖动）。
         :return:
         """
         if control_check:
@@ -209,10 +219,10 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         else:
             method = self.click_methods.get(control_method, self.click_adb)
         method(x, y)
-        # 全操作共享 CD：操作结束打点（控件名优先判同一资源，坐标兜底）。
-        # 连点追加击不打点：手势只在首击记一次节奏与退避
+        # 全操作共享 CD：操作结束打点（控件名+roi_front 优先判同一资源，
+        # 坐标兜底）。连点追加击不打点：手势只在首击记一次节奏与退避
         if pace:
-            self._pace_action_after((x, y), control_name)
+            self._pace_action_after((x, y), control_name, control_roi)
 
 
     def multi_click(self, button, n, interval=(0.1, 0.2)):
@@ -261,10 +271,13 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
     #     else:
     #         self.swipe_adb((x, y), (x, y), duration)
 
-    def long_click(self, x: int, y: int, duration=(0.5, 2), control_name='LongClick') -> None:
+    def long_click(self, x: int, y: int, duration=(0.5, 2), control_name='LongClick',
+                   control_roi=None) -> None:
         """
 
         :param control_name:
+        :param control_roi: 点击时 Rule 的 roi_front，与 click 同语义——参与
+            同名控件的同一资源判别，缺省 None 退化为按名判重
         :param x:
         :param y:
         :param duration: 单位是s
@@ -291,13 +304,18 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         else:
             method = self.long_click_methods.get(control_method, self.long_click_adb)
         method(x, y, duration)
-        # 操作结束打点（控件名优先判同一资源，坐标兜底）
-        self._pace_action_after((x, y), control_name)
+        # 操作结束打点（控件名+roi_front 优先判同一资源，坐标兜底）
+        self._pace_action_after((x, y), control_name, control_roi)
 
-    def swipe(self, p1, p2, duration=(1.0, 1.5), control_name='SWIPE', distance_check=True):
+    def swipe(self, p1, p2, duration=None, control_name='SWIPE', distance_check=True):
         # 滑动动作持续时间较长，不参与连续点击保护，避免合法的连续翻页被误判为卡死
+        # duration=None（含默认）走距离推导（2026-09-06 实测：100~300px→200~350ms、
+        # >500px→500~700ms，见 timing.swipe_duration_by_dist）；显式传参的任务保持原值。
         self.handle_swipe_control_check()
         p1, p2 = ensure_int(p1, p2)
+        if duration is None:
+            duration = timing_swipe_duration_by_dist(
+                float(np.hypot(p2[0] - p1[0], p2[1] - p1[1])))
         duration = ensure_time(duration)
         method = self.config.script.device.control_method
         if method == 'minitouch':
@@ -345,7 +363,9 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         if method == 'minitouch':
             self.swipe_minitouch(p1, p2, duration=duration)
         elif method == 'window_message':
-            self.swipe_window_message(p1, p2)
+            # window_message 同样接收 duration：手势总时长预算（几何不变，
+            # 均摊到轨迹各点），None 时保持每点 10ms 的距离隐式时长
+            self.swipe_window_message(p1, p2, duration=duration)
         elif method == 'uiautomator2':
             self.swipe_uiautomator2(p1, p2, duration=duration)
         elif method == 'nemu_ipc':

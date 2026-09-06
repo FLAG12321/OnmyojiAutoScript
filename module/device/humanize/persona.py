@@ -50,7 +50,7 @@ DEFAULT_WEIGHTS: dict[str, dict[str, float]] = {
 # 标量取值区间：generate() 的采样与 from_dict() 的校验共用这一张表（Plan 契约 13）。
 # 分成两处写会让 generate() 产出的人格通不过自己的 from_dict()
 SCALAR_RANGES: dict[str, tuple[float, float]] = {
-    'press_median': (70.0, 130.0),      # ms，Spec §5 B
+    'press_median': (60.0, 90.0),       # ms，2026-09-06 用户实测短按 60~90ms（原 70~130）
     'press_sigma': (0.25, 0.45),        # Spec §5 B
     'press_shape': (2.5, 5.0),          # Spec §5 B
     'dwell_mu': (50.0, 110.0),          # ms，Spec §5 E
