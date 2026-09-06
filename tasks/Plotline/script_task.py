@@ -678,7 +678,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     break
         elif self.appear_then_click(self.I_CLICK_REFUSE, interval=5):
             pass
-        elif self.appear(self.I_WIN, threshold=0.8) or self.appear(self.I_DE_WIN):
+        elif self.win_appear(threshold=0.8):
                 logger.info("Battle result is win")
         elif (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
             self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)
@@ -842,8 +842,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                         continue
                 if  self.appear_then_click(self.I_CLICK_SKILL, interval=1):
                     continue
-            # 如果出现赢 就点击, 第二个是针对封魔的图片
-            if self.appear(self.I_WIN, threshold=0.8) or self.appear(self.I_DE_WIN):
+            # 如果出现赢 就点击：I_WIN/I_WIN_2/I_DE_WIN 三模板共判（封魔走 I_DE_WIN）
+            if self.win_appear(threshold=0.8):
                 logger.info("Battle result is win")
                 win = True
                 break
@@ -888,9 +888,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 # 点击赢了：全屏减去常驻禁点区域（与奖励页共用安全区域）；
                 # 结算场景按概率连点（双击/三击），见 settlement_click
                 action_click = weighted_choice(self.reward_click_actions())
-                if self.settlement_click(self.I_WIN, action_click, interval=0.5):
+                if (self.settlement_click(self.I_WIN, action_click, interval=0.5) or
+                        self.settlement_click(self.I_WIN_2, action_click, interval=0.5) or
+                        self.settlement_click(self.I_DE_WIN, action_click, interval=0.5)):
                     continue
-                if not self.appear(self.I_WIN):
+                if not self.win_appear():
                     break
             else:
                 # 如果失败且 点击失败后

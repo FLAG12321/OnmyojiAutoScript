@@ -7,7 +7,7 @@ from module.server.i18n import I18n
 from tasks.BondlingFairyland.config import BondlingMode
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralBattle.reward_frame import (
-    weighted_choice, FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM2)
+    weighted_choice, AVOID_WIN_TEAM2)
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.BondlingFairyland.config_battle import BattleConfig
 
@@ -18,9 +18,9 @@ from module.logger import logger
 
 class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
 
-    def reward_forbidden(self) -> tuple:
-        """契灵是两人组队，胜利画面上多出一块队友战绩框，额外禁点。"""
-        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM2
+    def reward_avoid(self) -> tuple:
+        """契灵是两人组队，胜利画面上多出一块队友战绩框，落点回避它。"""
+        return AVOID_WIN_TEAM2
 
     def run_battle(self, battle_config: BattleConfig, limit_count: int = None) -> bool:
         """
@@ -94,7 +94,12 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
             # 如果领奖励
             if self.appear(self.I_REWARD, threshold=0.6):
                 break
-            if self.appear_then_click(self.I_WIN, threshold=0.6):
+            # 胜利画面：I_WIN/I_WIN_2 共判，点安全区域（热区+回避区+共享CD）；
+            # 契灵是两人组队，胜利画面有队友战绩框，旧式「点胜利横幅位置」改为安全落点
+            if self.win_appear(threshold=0.6):
+                action_click = weighted_choice(self.reward_click_actions())
+                self.settlement_click(self.I_WIN, action_click, threshold=0.6, interval=0.5) or \
+                    self.settlement_click(self.I_WIN_2, action_click, threshold=0.6, interval=0.5)
                 continue
             if self.appear_then_click(self.I_BATTLE_SUCCESS, threshold=0.6, interval=1):
                 continue
@@ -118,7 +123,10 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
                     # I_REWARD 失配时的兜底：只要还检测到奖励框就照样点安全区域
                     self.settlement_click_grid(action_click, interval=1.5)):
                 continue
-            if self.appear_then_click(self.I_WIN, threshold=0.6):
+            # 胜利画面兜底：I_WIN/I_WIN_2 共判，点安全区域
+            if self.win_appear(threshold=0.6):
+                self.settlement_click(self.I_WIN, action_click, threshold=0.6, interval=0.5) or \
+                    self.settlement_click(self.I_WIN_2, action_click, threshold=0.6, interval=0.5)
                 continue
             if self.appear_then_click(self.I_BATTLE_SUCCESS, threshold=0.6, interval=1):
                 continue

@@ -22,8 +22,9 @@
 - 追加击默认复用首击坐标（真人簇内 86% 落在同一像素），仅 14% 概率移动，
   移动量取真人非零位移量级而非持续微抖；
 - 同一场战斗内落点互相参考（奖励页参考胜利画面那一次）：真人场次内相邻
-  点击事件 31.4% 完全同坐标、43.8% 在 30px 内；跨场次（>10s）与自由取点
-  不可区分，故复用带 TTL 自动失效；
+  点击事件 31.4% 完全同坐标、43.8% 在 30px 内；现行参数刻意高于真人，
+  设计目标 40% 完全同坐标 + 20% 微调（合计复用 60%）；跨场次（>10s）与
+  自由取点不可区分，故复用带 TTL 自动失效，基准取末击时刻；
 - 复用坐标被新出现的奖励行覆盖时保持 x 沿 y 下移到安全区域。
 device.click 对追加击传 pace=False 绕过操作节奏 CD。
 
@@ -290,6 +291,7 @@ def test_multi_click_gesture_structure(monkeypatch):
     extra_total = 0
     for _ in range(50):
         clicks.clear()
+        b._settlement_click_ts = None        # 本用例测手势结构，清掉共享 CD 逐次独立
         b.settlement_gesture(rule, control_name='I_REWARD')
         # 首击不带 pace=False（默认 True，走正常节奏链路）
         assert clicks and clicks[0][2].get('pace', True) is True
@@ -344,7 +346,7 @@ def test_multi_click_distribution_gap_and_clamp(monkeypatch):
     import tasks.Component.GeneralBattle.general_battle as gb
     from tasks.Component.GeneralBattle.reward_frame import (
         FieldRuleClick, HOT_Y_BASE, MULTI_CLICK_GAP_S, MULTI_CLICK_MAX_S,
-        MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS)
+        MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS_BY_EVENT)
     b = object.__new__(GeneralBattle)
     clicks = []
     clock, b.device = _install_clock(monkeypatch, gb, clicks)
@@ -358,9 +360,11 @@ def test_multi_click_distribution_gap_and_clamp(monkeypatch):
         b._settlement_extra_clicks(rule, 250, 275, 'I_REWARD', first_ts)
         per_gesture.append(([c[3] for c in clicks[n0:]], first_ts))
     # 期望追加击数 = 3000 × Σ(权重×(点数-1)) / Σ权重，权重即真人簇长直方图
-    total_w = sum(MULTI_CLICK_WEIGHTS)
+    # （page_clicks=0 查表取第 1 行）
+    weights0 = MULTI_CLICK_WEIGHTS_BY_EVENT[0]
+    total_w = sum(weights0)
     exp = 3000 * sum(w * (n - 1) for n, w in
-                     zip(MULTI_CLICK_SIZES, MULTI_CLICK_WEIGHTS)) / total_w
+                     zip(MULTI_CLICK_SIZES, weights0)) / total_w
     assert exp * 0.9 < len(clicks) < exp * 1.1, \
         f'追加击总数 {len(clicks)} 偏离真人簇长期望 {exp:.0f}'
     # 追加击全部绕过节奏等待
@@ -412,7 +416,9 @@ def test_multi_click_budget_truncates_long_cluster(monkeypatch):
     gap = MULTI_CLICK_MAX_S * 0.4
     monkeypatch.setattr(gb, 'MULTI_CLICK_GAP_S', (gap, gap))
     monkeypatch.setattr(gb, 'MULTI_CLICK_SIZES', (4,))      # 恒抽 4 点（3 次追加击）
-    monkeypatch.setattr(gb, 'MULTI_CLICK_WEIGHTS', (1,))
+    # 查表打桩：恒 4 点手势（权重表第 0 行换成长度 1 的元组即可）
+    import tasks.Component.GeneralBattle.reward_frame as rf
+    monkeypatch.setattr(rf, 'MULTI_CLICK_WEIGHTS_BY_EVENT', ((1,),))
     _random.seed(7)
     for _ in range(30):
         clicks.clear()
@@ -453,8 +459,223 @@ def test_hot_anchor_moves_only_when_grid_reaches_hot_zone():
 
 
 @pytest.mark.unit
+def test_settlement_clicks_share_cd(monkeypatch):
+    """所有结算判据共享一个点击 CD：任一结算点击后 CD 秒内其他判据不再点击。
+
+    回归点（2026-09-06 08:44 事故）：GB_REWARD 点击 0.74s 后 GB_REWARD_GOLD
+    又点了一次（各自的 interval timer 互不知晓），奖励页其实已被第一次点击
+    关闭，第二次落到准备页面上造成误触、页面识别错乱卡死 60s。各判据的
+    interval 不必逐个调大——共享 CD 让有效间隔天然 ≥1s（2026-09-06 起
+    取 1.0s，仍覆盖事故里 0.74/0.75s 的并发间隔），新增判据自动生效。
+    """
+    import tasks.Component.GeneralBattle.general_battle as gb
+    from tasks.Component.GeneralBattle.reward_frame import (
+        FieldRuleClick, HOT_Y_BASE, SETTLEMENT_CLICK_CD_S)
+    b = object.__new__(GeneralBattle)
+    clicks = []
+    clock, b.device = _install_clock(monkeypatch, gb, clicks)
+    b.interval_timer = {}
+    rule = FieldRuleClick((100, 200, 300, 150), 'test', HOT_Y_BASE)
+    # 连点打掉，让每次手势恰好一次点击，断言按手势数计数
+    monkeypatch.setattr(b, '_settlement_extra_clicks', lambda *a, **kw: None)
+    # appear 恒真，模拟「奖励页上多个判据同时成立」
+    monkeypatch.setattr(b, 'appear', lambda *a, **kw: True)
+    monkeypatch.setattr(b, 'reward_grid_appear', lambda *a, **kw: True)
+
+    # 第 1 击（GB_REWARD）放行
+    assert b.settlement_click(SimpleNamespace(name='I_REWARD'), rule) is True
+    assert len(clicks) == 1
+    # 0.7s 后第 2 判据（GB_REWARD_GOLD）必须被 CD 挡住
+    clock.advance(SETTLEMENT_CLICK_CD_S * 0.47)
+    assert b.settlement_click(SimpleNamespace(name='I_REWARD_GOLD'), rule) is False
+    # 兜底判据（REWARD_GRID）与直连入口（贪吃鬼等显式 appear 后调用）走同一份 CD
+    assert b.settlement_click_grid(rule) is False
+    b.settlement_gesture(rule, control_name='I_GREED_GHOST')
+    assert len(clicks) == 1, 'CD 内直连入口也不得点击'
+    # CD 过期后恢复点击
+    clock.advance(SETTLEMENT_CLICK_CD_S)
+    assert b.settlement_click(SimpleNamespace(name='I_REWARD_GOLD'), rule) is True
+    assert len(clicks) == 2
+
+
+@pytest.mark.unit
+def test_multi_click_weights_decay_with_page_clicks():
+    """连点衰减（2026-09-06 起查表）：权重按本结算过程点击事件序号查表返回。
+
+    单击档位恒定（页面必须总能点掉）；第 1 次点击保持真人实采触发率
+    （35.7%），衰减只作用于判据反复命中的顽固页面——那里正是追加击跨越
+    画面切换点、误触新界面的风险累积处。查表内容为用户指定的非线性
+    簇长分布：第 3 次起 4 连击出局、第 4 次起仅 2 连击、第 8 次起永远单击。
+    """
+    from tasks.Component.GeneralBattle.reward_frame import (
+        MULTI_CLICK_WEIGHTS_BY_EVENT, multi_click_weights)
+
+    # 查表：按事件序号索引逐行返回，越界取末档
+    for n, row in enumerate(MULTI_CLICK_WEIGHTS_BY_EVENT):
+        assert multi_click_weights(n) == row, f'第 {n + 1} 次事件的查表行错误'
+    assert multi_click_weights(100) == MULTI_CLICK_WEIGHTS_BY_EVENT[-1], \
+        '越界必须取末档（第 8 次起等价于永远单击）'
+
+    # 单击档位恒定：每行第一项都是 258
+    assert all(row[0] == 258 for row in MULTI_CLICK_WEIGHTS_BY_EVENT)
+
+    # 触发率序列：单调下降，第 1 次为 143/401≈35.7%，末档为 0
+    rates = [sum(multi_click_weights(n)[1:]) / sum(multi_click_weights(n))
+             for n in range(len(MULTI_CLICK_WEIGHTS_BY_EVENT))]
+    assert abs(rates[0] - 143 / 401) < 1e-9
+    assert all(a > b_ for a, b_ in zip(rates, rates[1:]))
+    assert rates[-1] == 0.0
+
+    # 出局次序（0 起索引 = 事件序号-1）：4 连击第 3 次事件归零、3 连击第 4 次、2 连击第 8 次
+    assert multi_click_weights(1)[3] > 0
+    assert multi_click_weights(2)[3] == 0
+    assert multi_click_weights(2)[2] > 0
+    assert multi_click_weights(3)[2] == 0
+    assert multi_click_weights(6)[1] > 0
+    assert multi_click_weights(7)[1] == 0
+
+
+@pytest.mark.unit
+def test_settlement_page_clicks_count_events_not_strikes(monkeypatch):
+    """连点衰减从 get reward 之后开始计数，且按点击事件计（连点内部不重复计）。
+
+    胜利画面的点击（GB_WIN 系判据）：清零计数且自身不计——其追加击落在
+    随后的奖励页空白处，安全区域依然有效；奖励页的点击（I_REWARD 系 /
+    贪吃鬼）：每次手势 +1，一次手势内部连点几下都只计 1 个事件。
+    """
+    import random as _random
+    import tasks.Component.GeneralBattle.general_battle as gb
+    from tasks.Component.GeneralBattle.reward_frame import (
+        FieldRuleClick, HOT_Y_BASE, SETTLEMENT_CLICK_CD_S)
+    b = object.__new__(GeneralBattle)
+    clicks = []
+    clock, b.device = _install_clock(monkeypatch, gb, clicks)
+    rule = FieldRuleClick((100, 200, 300, 150), 'test', HOT_Y_BASE)
+    # 恒 4 击（首击 + 3 次追加击）：若把追加击也计进「点击次数」，
+    # 一次手势就会把衰减档位直接推到 3
+    monkeypatch.setattr(gb, 'MULTI_CLICK_SIZES', (4,))
+    # 查表打桩：恒 4 点手势（权重表第 0 行换成长度 1 的元组）
+    import tasks.Component.GeneralBattle.reward_frame as rf
+    monkeypatch.setattr(rf, 'MULTI_CLICK_WEIGHTS_BY_EVENT', ((1,),))
+    _random.seed(3)
+    # 胜利判据集合与 win_appear 的模板集一致（三模板资源名见 win_template_names）
+    assert set(b.win_template_names()) == {'GB_WIN', 'GB_WIN_2', 'GB_DE_WIN'}
+
+    # 胜利画面判据：自身不计数（顺带清零上一场残留，这里初始本就是 0）
+    b.settlement_gesture(rule, control_name='GB_WIN')
+    assert len(clicks) == 4, '恒 4 击的打桩未生效'
+    assert b._settlement_page_clicks == 0, '胜利画面的点击不得计入衰减'
+    clicks.clear()
+    clock.advance(SETTLEMENT_CLICK_CD_S + 0.1)
+
+    # 奖励页判据：get reward 后开始计数，一次 4 击手势只计 1 个事件
+    for expect in (1, 2, 3):
+        b.settlement_gesture(rule, control_name='I_REWARD')
+        assert len(clicks) == 4, '恒 4 击的打桩未生效'
+        assert b._settlement_page_clicks == expect, \
+            '连点内部不得重复计数（计数是事件级的）'
+        clicks.clear()
+        clock.advance(SETTLEMENT_CLICK_CD_S + 0.1)
+
+    # 新一场的胜利画面点击把计数清零，这一场奖励页从第 0 次重计
+    b.settlement_gesture(rule, control_name='GB_WIN_2')
+    assert b._settlement_page_clicks == 0, '新一场胜利画面未清零计数'
+    clicks.clear()
+    clock.advance(SETTLEMENT_CLICK_CD_S + 0.1)
+    b.settlement_gesture(rule, control_name='I_REWARD')
+    assert b._settlement_page_clicks == 1, '清零后奖励页应从第 0 次重新计起'
+
+
+@pytest.mark.unit
+def test_settlement_page_clicks_reset_across_battles(monkeypatch):
+    """跨场兜底：胜利画面失配直接出奖励页的流程，靠 TTL 清掉上一场的计数。
+
+    常规流程由胜利画面点击清零（见上一个用例）；胜利画面全部失配时
+    （I_WIN_2 共判后概率已极低，但仍需兜底），用与 _settlement_last 同一
+    TTL 判定场次边界，避免下一场奖励页的连点概率被上一场残留压低。
+    """
+    import random as _random
+    import tasks.Component.GeneralBattle.general_battle as gb
+    from tasks.Component.GeneralBattle.reward_frame import (
+        FieldRuleClick, HOT_Y_BASE, SETTLEMENT_CLICK_CD_S, SETTLEMENT_REUSE_TTL_S)
+    b = object.__new__(GeneralBattle)
+    clicks = []
+    clock, b.device = _install_clock(monkeypatch, gb, clicks)
+    rule = FieldRuleClick((100, 200, 300, 150), 'test', HOT_Y_BASE)
+    monkeypatch.setattr(b, '_settlement_extra_clicks', lambda *a, **kw: None)
+    _random.seed(5)
+
+    # 上一场奖励页点了两击（连点打掉，只验证计数）
+    b.settlement_gesture(rule, control_name='I_REWARD')
+    clock.advance(SETTLEMENT_CLICK_CD_S + 0.1)
+    b.settlement_gesture(rule, control_name='I_REWARD')
+    assert b._settlement_page_clicks == 2
+    # 一整场战斗过去（远超 TTL），这一场胜利画面失配、直接进奖励页
+    clock.advance(SETTLEMENT_REUSE_TTL_S + 1)
+    b.settlement_gesture(rule, control_name='I_REWARD')
+    assert b._settlement_page_clicks == 1, 'TTL 兜底未清掉上一场的残留计数'
+
+
+@pytest.mark.unit
+def test_win_appear_co_judges_templates(monkeypatch):
+    """win_appear：I_WIN / I_WIN_2 / I_DE_WIN 任一命中即视为胜利画面到来。
+
+    I_WIN_2 是增补的第二胜利标记（覆盖 I_WIN 部分画面状态下失配）；
+    单模板失配时不得误判「胜利画面已消失」而提前跳出结算等待。
+    """
+    b = object.__new__(GeneralBattle)
+    checked = []
+
+    def fake_appear(target, interval=None, threshold=None):
+        checked.append(target.name)
+        return target.name in current
+
+    monkeypatch.setattr(b, 'appear', fake_appear)
+    # 任一模板命中都判胜利画面（模板资源名 GB_WIN / GB_WIN_2 / GB_DE_WIN）
+    for current in ({'GB_WIN'}, {'GB_WIN_2'}, {'GB_DE_WIN'}):
+        assert b.win_appear() is True, f'{current} 应判定为胜利画面'
+    # 全部失配才是「不在胜利画面」，且三个模板都被检查过（短路只发生在命中后）
+    current = set()
+    checked.clear()
+    assert b.win_appear() is False
+    assert checked == ['GB_WIN', 'GB_WIN_2', 'GB_DE_WIN']
+
+
+@pytest.mark.unit
+def test_win_click_chains_cover_all_judged_templates():
+    """胜利画面的点击链必须覆盖 win_appear 的全部模板集。
+
+    「判定还在的画面」必须有对应模板可点，否则退出条件（not win_appear）
+    永远为假而点击链永远不触发，结算等待空转。基类与各任务副本的
+    复确认循环里，I_WIN/I_WIN_2/I_DE_WIN 三模板都要在 settlement_click 链上。
+    """
+    # 检查「复确认循环」形态的文件：点击链三模板 + 退出走 win_appear
+    confirm_files = ['tasks/Component/GeneralBattle/general_battle.py',
+                     'tasks/FallenSun/script_task.py',
+                     'tasks/Plotline/script_task.py']
+    for path in confirm_files:
+        src = _src(path)
+        assert 'settlement_click(self.I_WIN_2, action_click' in src, \
+            f'{path} 胜利点击链缺 I_WIN_2'
+        assert 'settlement_click(self.I_DE_WIN, action_click' in src, \
+            f'{path} 胜利点击链缺 I_DE_WIN'
+        assert 'if not self.win_appear():' in src, \
+            f'{path} 复确认退出条件未走 win_appear 共判'
+    # 其余副本至少接入 I_WIN_2 共判（判定或点击链任一形态）
+    for path in MULTI_CLICK_FILES:
+        src = _src(path)
+        assert 'win_appear(' in src or 'I_WIN_2' in src, \
+            f'{path} 胜利画面未接入 I_WIN_2 共判'
+
+
+@pytest.mark.unit
 def test_settlement_point_reuses_last_within_battle():
-    """同一场战斗内的落点复用：多数复用上次坐标，跨 TTL 后回到自由取点。"""
+    """同一场战斗内的落点复用：多数复用上次坐标，跨 TTL 后回到自由取点。
+
+    _settlement_point 只取点不写历史——_settlement_last 由 settlement_gesture
+    在整次手势（含连点）结束后统一写入，时间戳基准是末击。测试里手动模拟
+    这一步（直接把返回值写回），等价于驱动真实入口。
+    """
     import random as _random
     import time as _time
     from tasks.Component.GeneralBattle.reward_frame import (
@@ -462,25 +683,74 @@ def test_settlement_point_reuses_last_within_battle():
     b = object.__new__(GeneralBattle)
     rule = FieldRuleClick((100, 200, 600, 400), 'safe', HOT_Y_BASE)
     b._reward_safe_rules = [rule]          # 本帧安全区域缓存（复用的前提）
-    _random.seed(3)
 
+    def pick():
+        x, y, r = b._settlement_point(rule)
+        b._settlement_last = (x, y, _time.time())    # 模拟 settlement_gesture 的回写
+        return x, y
+
+    _random.seed(3)
     # 首次调用没有历史，必然自由取点并记下落点
-    x0, y0, _ = b._settlement_point(rule)
+    x0, y0 = pick()
     assert b._settlement_last[:2] == (x0, y0)
 
-    # 场次内连续取点：显著一部分应落在上次坐标附近（真人 ≤30px 占 43.8%）
+    # 场次内连续取点：多数应落在上次坐标附近。现行参数设计复用 60%
+    # （40% 同坐标 + 20% 微调，均 ≤30px）+ 自由取点偶入 30px 内的零头
     near = 0
     for _ in range(400):
         prev = b._settlement_last[:2]
-        x, y, _ = b._settlement_point(rule)
+        x, y = pick()
         if math.hypot(x - prev[0], y - prev[1]) <= 30:
             near += 1
-    assert near / 400 > 0.30, f'场次内复用比例 {near / 400:.2f} 过低'
+    assert near / 400 > 0.50, f'场次内复用比例 {near / 400:.2f} 过低'
 
     # 上次落点超过 TTL（换了一场战斗）后不再复用：伪造一个久远的时间戳
     b._settlement_last = (400, 500, _time.time() - SETTLEMENT_REUSE_TTL_S - 1)
-    fresh = [b._settlement_point(rule)[:2] for _ in range(30)]
+    fresh = [pick() for _ in range(30)]
     assert all(p != (400, 500) for p in fresh), 'TTL 过期后仍在复用旧落点'
+
+
+@pytest.mark.unit
+def test_settlement_last_ttl_uses_last_click(monkeypatch):
+    """TTL 基准是末击的发起时刻，不是首击：连点期间不消耗 TTL。
+
+    场景：结算动画慢，下一场取点距首击 10.5s（>TTL），但距末击只 10.0s
+    （<TTL）。若以首击为基准会误判成换场、不复用；以末击为基准则照常复用。
+    """
+    from tasks.Component.GeneralBattle.reward_frame import (
+        FieldRuleClick, HOT_Y_BASE, MULTI_CLICK_MAX_S,
+        SETTLEMENT_REUSE_PROB, SETTLEMENT_REUSE_TTL_S)
+    from tasks.Component.GeneralBattle import general_battle as gb
+    b = object.__new__(GeneralBattle)
+    clicks = []
+    clock, b.device = _install_clock(monkeypatch, gb, clicks)
+    rule = FieldRuleClick((100, 200, 600, 400), 'safe', HOT_Y_BASE)
+    b._reward_safe_rules = [rule]
+    # 手势时长拉到接近预算上限（3 击 = 2 个满间隔），末击显著晚于首击
+    monkeypatch.setattr(gb, 'MULTI_CLICK_GAP_S', (MULTI_CLICK_MAX_S / 2.5,) * 2)
+    monkeypatch.setattr(gb, 'MULTI_CLICK_SIZES', (3,))
+    # 查表打桩：恒 3 点手势（权重表第 0 行换成长度 1 的元组）
+    import tasks.Component.GeneralBattle.reward_frame as rf
+    monkeypatch.setattr(rf, 'MULTI_CLICK_WEIGHTS_BY_EVENT', ((1,),))
+
+    # 第一次手势：正常执行（_settlement_point 自由取点），记下首末时刻
+    gesture_first = clock.time()
+    b.settlement_gesture(rule, control_name='T')
+    first_ts = gesture_first                      # settlement_gesture 进入时的首击时刻
+    gesture_last = clock.time()                   # 手势结束后（假时钟此刻=末击+CLICK_COST）
+    x1, y1 = clicks[0][0], clicks[0][1]
+    span = gesture_last - gesture_first
+    assert span > 0.4, f'前置：3 击手势应显著长于单击（实际 {span:.2f}s）'
+
+    # TTL 从末击起算仍有效的窗口内取点：距首击已超 TTL，距末击未超
+    clock.t = gesture_last + SETTLEMENT_REUSE_TTL_S - span * 0.4
+    assert clock.time() - first_ts > SETTLEMENT_REUSE_TTL_S, '前置：距首击必须已超 TTL'
+    assert clock.time() - gesture_last <= SETTLEMENT_REUSE_TTL_S, '前置：距末击必须未超'
+    # 复用判定必须为真：把概率与精确复用都抬到 1（monkeypatch，测试后自动恢复）
+    monkeypatch.setattr(gb, 'SETTLEMENT_REUSE_PROB', 1.0)
+    monkeypatch.setattr(gb, 'SETTLEMENT_REUSE_EXACT', 1.0)
+    x, y, _ = b._settlement_point(rule)
+    assert (x, y) == (x1, y1), 'TTL 应从未击起算，此时仍可复用'
 
 
 @pytest.mark.unit

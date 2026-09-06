@@ -318,9 +318,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         while 1:
             self.screenshot()
             # 点击赢了/领奖励：全屏减去常驻禁点区域与检测出的奖励行（与基类同一套安全落点）；
-            # 结算场景按概率连点（双击/三击），见 settlement_click
+            # 结算场景按概率连点（双击/三击），见 settlement_click；
+            # 胜利画面 I_WIN/I_WIN_2 共判
             action_click = weighted_choice(self.reward_click_actions())
-            if self.settlement_click(self.I_WIN, action_click, interval=0.8):
+            if (self.settlement_click(self.I_WIN, action_click, interval=0.8) or
+                    self.settlement_click(self.I_WIN_2, action_click, interval=0.8)):
                 # 赢的那个鼓
                 continue
             if self.appear(self.I_GREED_GHOST):
@@ -379,8 +381,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         win: bool = False
         while 1:
             self.screenshot()
-            # 如果出现赢 就点击, 第二个是针对封魔的图片
-            if self.appear(self.I_WIN, threshold=0.8) or self.appear(self.I_DE_WIN):
+            # 如果出现赢 就点击：I_WIN/I_WIN_2/I_DE_WIN 三模板共判（封魔走 I_DE_WIN）
+            if self.win_appear(threshold=0.8):
                 logger.info("Battle result is win")
                 if self.appear(self.I_DE_WIN):
                     self.ui_click_until_disappear(self.I_DE_WIN)
@@ -415,11 +417,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.screenshot()
             if win:
                 # 点击赢了：全屏减去常驻禁点区域（与奖励页共用安全区域）；
-                # 结算场景按概率连点（双击/三击），见 settlement_click
+                # 结算场景按概率连点（双击/三击），见 settlement_click。
+                # 点击链与 win_appear 的模板集一致，保证「判定还在的画面」永远可点
                 action_click = weighted_choice(self.reward_click_actions())
-                if self.settlement_click(self.I_WIN, action_click, interval=0.5):
+                if (self.settlement_click(self.I_WIN, action_click, interval=0.5) or
+                        self.settlement_click(self.I_WIN_2, action_click, interval=0.5) or
+                        self.settlement_click(self.I_DE_WIN, action_click, interval=0.5)):
                     continue
-                if not self.appear(self.I_WIN):
+                if not self.win_appear():
                     break
             else:
                 # 如果失败且 点击失败后

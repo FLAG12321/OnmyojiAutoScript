@@ -137,6 +137,8 @@ class GeneralBattleAssets:
 	I_BATTLE_INFO = RuleImage(roi_front=(230,12,37,39), roi_back=(210,1,147,72), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_battle_info.png")
 	# description 
 	I_EXTRA_INFO = RuleImage(roi_front=(58,43,47,51), roi_back=(13,17,136,146), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBattle/gb/extra_info.png")
+	# 胜利页面标志2 
+	I_WIN_2 = RuleImage(roi_front=(464,276,31,20), roi_back=(226,221,918,169), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_win_2.png")
 
 
 	# Image Rule Assets

@@ -199,6 +199,6 @@ class DokanAssets:
 
 	# Swipe Rule Assets
 	# 道馆选择界面 右侧侧边栏 手指向上滑动 
-	S_DOKAN_LIST_UP = RuleSwipe(roi_front=(1100,520,30,10), roi_back=(1100,90,30,10), mode="default", name="dokan_list_up")
+	S_DOKAN_LIST_UP = RuleSwipe(roi_front=(1099,493,30,9), roi_back=(1096,126,30,9), mode="default", name="dokan_list_up")
 
 

@@ -409,12 +409,14 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             logger.error(f"请求发生错误: {e}")
             self.push_notify(title="请求发生错误", content=f"{e}")
             return ""
-    def swipe(self, swipe: RuleSwipe, interval: float = None, duration: float = 0.1) -> None:
+    def swipe(self, swipe: RuleSwipe, interval: float = None, duration: float = None) -> None:
         """
 
         :param interval:
         :param swipe:
-        :param  duration
+        :param  duration: 手势总时长（秒）。None（默认）不传给 device.swipe，
+            由 Control.swipe 按滑动距离推导时长；显式传入时以
+            (duration, duration+0.1) 区间抽样
         :param  wait_up_time
         :return:
         """
@@ -434,7 +436,11 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 return
 
         x1, y1, x2, y2 = swipe.coord()
-        self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name, duration=(duration, duration + 0.1))
+        # duration 未指定时透传 None：Control.swipe 按滑动距离推导时长
+        if duration is not None:
+            self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name, duration=(duration, duration + 0.1))
+        else:
+            self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name)
 
         # 执行后，如果有限制时间，则重置限制时间
         if interval:
@@ -1026,6 +1032,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             self.I_RIGHTPAD_POINT_BOUNTY.roi_back = backup['i_point_bounty']
             self.I_CENTER_POINT_PEOPLE_NUMBER.roi_back = backup['i_point_people_num']
 
+        # 当前屏最底部条目的寮名称（find_challengeable 写出，主循环做滑动末端检测）
+        current_bottom_name: str = ''
+
         def find_challengeable(ignore_score=False):
             """
                 查找当前列表状态(一般为4个)中符合条件的道馆,并点击使其显示挑战按钮
@@ -1036,6 +1045,7 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
             @return:
             @rtype:
             """
+            nonlocal current_bottom_name
             restore_roi()
             self.screenshot()
             # 获取所有匹配结果并直接转换为所需格式
@@ -1046,8 +1056,16 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                 key=lambda item: item[1]  # 按y坐标排序
             )
             logger.info(f'find elements list:{bounty_list}')
-            if len(bounty_list) < 4:
-                self.save_image(task_name='搜索到的道馆少于4个', image_type=True, wait_time=0, push_flag=True, content='搜索到的道馆少于4个')
+            # 写出当屏最底部条目的寮名称，供主循环做「与上一屏相同即到底」的末端
+            # 检测——金币图标每个条目都有，且坐标会因回弹/引擎物理轻微偏移，位置
+            # 比对会漏判到底；寮名称是条目身份标识，不受像素级偏移影响
+            if bounty_list:
+                bottom_item = bounty_list[-1]
+                self.O_DOKAN_RIGHTPAD_NAME.roi = self.position_offset(
+                    (bottom_item[0], bottom_item[1], 150, 30), (-37, 29, 0, 0))
+                current_bottom_name = self.O_DOKAN_RIGHTPAD_NAME.ocr(self.device.image)
+            else:
+                current_bottom_name = ''
             # 默认最小分数
             min_score = 10
             idx_selected = -1
@@ -1181,7 +1199,13 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
 
         logger.hr("开始寻找合适的道馆", 2)
         while num_fresh < con.fresh_num:
-            for i in range(3):
+            # 上一屏最底部条目的寮名称：None 表示本刷新轮第一屏（不参与到底比对）
+            last_bottom_name = None
+            # 逐个滑动查找：由「最底部条目寮名称与上一屏相同」的末端检测收敛——
+            # 滑动向上滚时新内容只能从底部进入视野，底部条目身份不变即到底；
+            # 滑动上限 4 次仅是滑动偶发不生效或名称识别抖动时的死滑兜底
+            swipe_count = 0
+            while True:
                 sleep(3)
                 if find_challengeable():
                     while 1:
@@ -1195,19 +1219,21 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
                     # 恢复初始位置信息,防止下次使用出错
                     restore_roi()
                     return True
-                # 滑动道馆列表 最后一次不需要滑动直接刷新
-                if i < 2:
-                    # 第二次滑动(i==1)起点再往下 50px, 增大滑动距离, 覆盖两次滑动之间的盲区
-                    if i == 1:
-                        fx, fy, fw, fh = self.S_DOKAN_LIST_UP.roi_front
-                        swipe_more = RuleSwipe(
-                            roi_front=(fx, fy + 50, fw, fh),
-                            roi_back=self.S_DOKAN_LIST_UP.roi_back,
-                            mode=self.S_DOKAN_LIST_UP.mode,
-                            name=self.S_DOKAN_LIST_UP.name)
-                        self.swipe(swipe_more, duration=1, interval=1)
-                    else:
-                        self.swipe(self.S_DOKAN_LIST_UP, duration=1, interval=1)
+                # 末端检测：最底部条目的寮名称与上一屏相同 → 没有新内容进入视野，
+                # 列表已滚到底；两屏皆空同样视为到底（无目标可找，滑无意义）
+                if last_bottom_name is not None:
+                    both_empty = not current_bottom_name and not last_bottom_name
+                    bottom_same = (current_bottom_name and last_bottom_name
+                                   and current_bottom_name == last_bottom_name)
+                    if both_empty or bottom_same:
+                        logger.info(f'已滑到列表末端（最底部条目: {current_bottom_name or "空"}），停止滑动')
+                        break
+                # 滑动次数达到上限仍未到底，直接进入刷新
+                if swipe_count >= 4:
+                    break
+                last_bottom_name = current_bottom_name
+                self.swipe(self.S_DOKAN_LIST_UP, interval=1)
+                swipe_count += 1
             # 恢复初始位置信息,防止下次使用出错
             restore_roi()
             num_fresh += 1

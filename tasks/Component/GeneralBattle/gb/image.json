@@ -307,11 +307,20 @@
   },
   {
     "itemName": "extra_info",
+    "imageName": "extra_info.png",
     "roiFront": "58,43,47,51",
     "roiBack": "13,17,136,146",
-    "description": "description",
-    "imageName": "extra_info.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
+  },
+  {
+    "itemName": "win_2",
+    "imageName": "gb_win_2.png",
+    "roiFront": "464,276,31,20",
+    "roiBack": "226,221,918,169",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "胜利页面标志2"
   }
 ]

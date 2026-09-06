@@ -6,7 +6,7 @@ from datetime import time, datetime, timedelta
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralBattle.reward_frame import (
-    weighted_choice, FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM2)
+    weighted_choice, AVOID_WIN_TEAM2)
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.GeneralBuff.general_buff import GeneralBuff
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
@@ -34,13 +34,13 @@ from module.exception import TaskEnd
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets):
 
-    def reward_forbidden(self) -> tuple:
-        """御魂本组队时是两人，胜利画面上多出一块队友战绩框，额外禁点。
+    def reward_avoid(self) -> tuple:
+        """御魂本组队时是两人，胜利画面上多出一块队友战绩框，落点回避它。
 
-        单人跑时那块区域没有战绩框、本可点击，一并禁掉是刻意取舍：省去判断
-        本场是否组队，代价只是少一个落点选择。
+        单人跑时那块区域没有战绩框、本可点击，一并回避是刻意取舍：省去判断
+        本场是否组队，而回避区不改变热区几何，代价只是那一小块概率被摊到周围。
         """
-        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM2
+        return AVOID_WIN_TEAM2
 
     def run(self) -> bool:
         config: Orochi = self.config.orochi
@@ -939,9 +939,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         while 1:
             self.screenshot()
             # 点击赢了/领奖励：全屏减去常驻禁点区域与检测出的奖励行（与基类同一套安全落点）；
-            # 结算场景按概率连点（双击/三击），见 settlement_click
+            # 结算场景按概率连点（双击/三击），见 settlement_click；
+            # 胜利画面 I_WIN/I_WIN_2 共判
             action_click = weighted_choice(self.reward_click_actions())
-            if self.settlement_click(self.I_WIN, action_click, interval=0.8):
+            if (self.settlement_click(self.I_WIN, action_click, interval=0.8) or
+                    self.settlement_click(self.I_WIN_2, action_click, interval=0.8)):
                 # 赢的那个鼓
                 continue
             if self.appear(self.I_GREED_GHOST):

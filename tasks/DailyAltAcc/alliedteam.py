@@ -12,8 +12,7 @@ from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.page import page_main, page_team, page_friends
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
-from tasks.Component.GeneralBattle.reward_frame import (
-    FORBIDDEN_DEFAULT, FORBIDDEN_WIN_TEAM3)
+from tasks.Component.GeneralBattle.reward_frame import AVOID_WIN_TEAM3
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
@@ -25,17 +24,25 @@ from tasks.MasterDisciple.assets import MasterDiscipleAssets
 class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     # 仅 alliedteam_limit_count==13 的账号启用「准备界面切换援助式神」战斗准备流程
     _need_switch_help_shikigami: bool = False
-    # 援助式神切换标记，仅首场战斗切换一次，切换后置 False（后续场次直接点准备）
+    # 援助式神切换标记：确认援助式神上场后置 False（后续场次直接点准备）。
+    # 未确认上场前保持 True，下一场继续尝试——一次切换失败不再葬送全天场次
     _help_shikigami_detect: bool = True
+    # 同一场战斗内援助式神锚点（N/15 标签）连续识别失败次数，每场战斗重置
+    _help_anchor_miss: int = 0
+    # 锚点识别失败的重试上限：一轮约 1.3s（OCR 0.3s + sleep 1s），3 次约 4s；
+    # 超限后本场放弃切换直接开打（保持原有降级语义，不会卡死在准备界面）
+    HELP_ANCHOR_RETRY_LIMIT: int = 3
     # 连续多少秒不在战斗画面才确认上一场结束（防 I_BATTLE_INFO 单帧抖动误计场）
     BATTLE_END_CONFIRM_S = 3
 
-    def reward_forbidden(self) -> tuple:
-        """同心协力是三人战斗，胜利画面上多出两块队友战绩框，额外禁点。
+    def reward_avoid(self) -> tuple:
+        """同心协力是三人战斗，胜利画面上多出两块队友战绩框，落点回避它们。
 
-        右框覆盖热区核心的 86%，不禁掉结算连点会常态点在队友战绩上。
+        用回避区而非禁区：两块框横跨 x 449~1280 几乎铺满热区宽度，并入禁区会
+        把安全块切成屏幕最底一条 114px，落点全压到底部（实测核心区命中率
+        19% vs 两人为主实例的 60%）。回避区只做落点重取，热区形状不变。
         """
-        return FORBIDDEN_DEFAULT + FORBIDDEN_WIN_TEAM3
+        return AVOID_WIN_TEAM3
 
     def _restore_battle_count(self) -> int:
         """从进度文件恢复已完成场次到 current_count。
@@ -363,6 +370,33 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                     self._persist_battle_count()
                     break
 
+    def _locate_help_shikigami(self) -> list:
+        """OCR 定位援助式神卡上的协战次数标签（N/15），返回其屏幕 roi。
+
+        原 O_FIND_SHIKIGAMI_HELP（keyword="15"，师徒场景找 15 级援助式神的锚点）
+        在同心准备界面上并不存在 "15" 整串文本，实际一直靠 FULL 模式的
+        「keyword 任一单字命中」降级匹配到式神卡旁的 "N/15" 标签——位置碰巧
+        正确所以平时能用。但候选列表里没有该标签时（09-01 js52、09-06 js44
+        两次事故），单字降级会误中 "9999991" 等垃圾串，锚点偏移 500+px，
+        从错误位置滑动导致援助式神未上场、全天 13 场好友协战 0 计数。
+        这里改为直接遍历 OCR 候选，严格按 \\d+/15 匹配协战标签（坐标换算
+        与 Full.ocr_full 保持一致），匹配不到返回 [0,0,0,0] 交给调用方
+        按锚点丢失处理，不再有降级误匹配面。
+        """
+        ocr_obj = MasterDiscipleAssets.O_FIND_SHIKIGAMI_HELP
+        try:
+            boxed_results = ocr_obj.detect_and_ocr(self.device.image)
+        except Exception:
+            logger.exception('同心援助式神锚点 OCR 失败，按未识别处理')
+            return [0, 0, 0, 0]
+        for result in boxed_results:
+            if re.search(r'\d+/15', result.ocr_text):
+                # detect_and_ocr 的 box 坐标相对 roi 裁剪图，需加回 roi 偏移
+                box = result.box
+                return [box[0][0] + ocr_obj.roi[0], box[0][1] + ocr_obj.roi[1],
+                        box[1][0] - box[0][0], box[2][1] - box[0][1]]
+        return [0, 0, 0, 0]
+
     def battle_before(self, buff: BuffClass | list[BuffClass], config: GeneralBattleConfig, timeout: float = 5) -> bool:
         """战斗前设置
         次数为 13 的账号走「切换援助式神 → 准备」流程（参照 MasterDisciple 的
@@ -375,6 +409,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
 
         # 13 账号：在准备界面切换援助式神后再点准备（不锁定阵容，仅首场切换）
         timeout_timer = Timer(timeout).start()
+        # 每场战斗重置锚点丢失计数：重试上限只约束本场，超限降级后下一场从头计
+        self._help_anchor_miss = 0
         while not timeout_timer.reached():
             self.screenshot()
             if self.is_in_real_battle(False):  # 已进入战斗阶段
@@ -392,26 +428,43 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                         self.click(PlotlineAssets.C_CLICK_CHANGE)
                         sleep(2)
                         continue
-                    else:
-                        # 已展开助战列表，OCR 定位助战位并确保援助式神上场
-                        self.screenshot()
-                        roi = list(MasterDiscipleAssets.O_FIND_SHIKIGAMI_HELP.ocr(self.device.image))
-                        if not roi == [0, 0, 0, 0]:
-                            PlotlineAssets.I_FLAG_ON_FIELD.roi_back = (
-                                roi[0] + roi[2] - 81, roi[1] + roi[3] - 160, 130, 160
-                            )
-                            logger.info(f"I_FLAG_ON_FIELD.roi_back ={PlotlineAssets.I_FLAG_ON_FIELD.roi_back}")
-                            if not self.appear(PlotlineAssets.I_FLAG_ON_FIELD):
-                                # 援助式神未上场，滑动将其拖入出战位
-                                PlotlineAssets.S_SWIPE_SHIKIGAMI.roi_front = (
-                                    roi[0], roi[1], roi[2], roi[3]
-                                )
-                                self.swipe(PlotlineAssets.S_SWIPE_SHIKIGAMI, 4)
-                                sleep(2)
+                    # 已展开助战列表，OCR 定位助战位并确保援助式神上场
+                    self.screenshot()
+                    roi = self._locate_help_shikigami()
+                    if roi == [0, 0, 0, 0]:
+                        # 锚点丢失：先复验上场旗标——滑动后标签可能消失但式神已上场
+                        if self.appear(PlotlineAssets.I_FLAG_ON_FIELD):
+                            self._help_shikigami_detect = False
+                        else:
+                            # 告警 + 场内重试；超限后本场放弃切换直接开打（标记
+                            # 保持 True，下一场继续尝试，一次失败不葬送全天场次）
+                            self._help_anchor_miss += 1
+                            logger.warning(f'同心援助式神锚点(N/15标签)未识别到，'
+                                           f'第 {self._help_anchor_miss} 次')
+                            if self._help_anchor_miss < self.HELP_ANCHOR_RETRY_LIMIT:
+                                sleep(1)
                                 continue
-                # 点击准备，切换完成后置标记为 False（后续场次不再切换）
+                            logger.warning(f'连续 {self._help_anchor_miss} 次未识别到锚点，'
+                                           f'本场放弃切换直接开打（本场可能不计好友协战），下一场将重试')
+                            # 不 continue，落到下方点准备，避免在准备界面死循环
+                    else:
+                        self._help_anchor_miss = 0
+                        PlotlineAssets.I_FLAG_ON_FIELD.roi_back = (
+                            roi[0] + roi[2] - 81, roi[1] + roi[3] - 160, 130, 160
+                        )
+                        logger.info(f"I_FLAG_ON_FIELD.roi_back ={PlotlineAssets.I_FLAG_ON_FIELD.roi_back}")
+                        if not self.appear(PlotlineAssets.I_FLAG_ON_FIELD):
+                            # 援助式神未上场，滑动将其拖入出战位
+                            PlotlineAssets.S_SWIPE_SHIKIGAMI.roi_front = (
+                                roi[0], roi[1], roi[2], roi[3]
+                            )
+                            self.swipe(PlotlineAssets.S_SWIPE_SHIKIGAMI, 4)
+                            sleep(2)
+                            continue
+                        # 援助式神确认在场：清除切换标记，后续场次直接点准备
+                        self._help_shikigami_detect = False
+                # 点击准备
                 if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
-                    self._help_shikigami_detect = False
                     continue
                 continue
             logger.info('Wait for preparation page')

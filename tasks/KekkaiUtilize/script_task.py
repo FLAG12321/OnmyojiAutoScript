@@ -18,7 +18,6 @@ from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 from tasks.KekkaiUtilize.utils import CardClass
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild
-from module.base.utils import point2str
 import random
 from tasks.Pets.script_task import ScriptTask as Pets
 """ 结界蹭卡 """
@@ -1384,17 +1383,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
     def perform_swipe_action(self):
         """统一滑动操作"""
-        # 缩短手势时长并保留约半行重叠，兼顾速度与列表覆盖完整性
-        duration = 1.0
+        # 保留约半行重叠，兼顾速度与列表覆盖完整性
         safe_pos_x = random.randint(340, 600)
         safe_pos_y = random.randint(500, 565)
         p1 = (safe_pos_x, safe_pos_y)
-        p2 = (safe_pos_x, safe_pos_y - 300)
-        logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
-        self.device.swipe_adb(p1, p2, duration=duration)
+        p2 = (safe_pos_x, safe_pos_y - 200)
+        # 不传 duration，走 Control.swipe 的距离推导默认时长
+        # （100~300px→200~350ms，200px 列表上滑落在该档）
+        self.device.swipe(p1, p2)
 
         # self.swipe(self.S_U_UP, duration=1, wait_up_time=1)
-        self.device.click_record_clear()
         time.sleep(2)
 
     def check_card_num(self) -> tuple[str, int]:
