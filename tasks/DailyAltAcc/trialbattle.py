@@ -18,6 +18,8 @@ class Trialbattle(DailyAltAccBase):
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_summon)
+        # 任务运行内 I_TO_TRIALBATTLE 首次识别需画面稳定确认，点击过后置位不再等待
+        self._trial_to_stable_clicked = False
         start_time = time.time()
         while time.time()-start_time < 5:
             self.screenshot()
@@ -27,7 +29,10 @@ class Trialbattle(DailyAltAccBase):
             if self.appear_then_click(self.I_TO_TRIALBATTLE_2,interval=1):
                 start_time = time.time()
                 continue
-            if self.appear_then_click(self.I_TO_TRIALBATTLE,action=self.C_TO_TRIALBATTLE,interval=1):
+            if self.appear(self.I_TO_TRIALBATTLE, interval=1) and self._trial_to_stable_wait():
+                # 首次点击前已确认连续三帧可见，排除过渡页闪现误触；点击后重置超时锚点
+                self.appear_then_click(self.I_TO_TRIALBATTLE, action=self.C_TO_TRIALBATTLE)
+                self._trial_to_stable_clicked = True
                 start_time = time.time()
                 continue
             if self.appear_then_click(self.I_TRIALBATTLE_START_2,action=self.C_TRIALBATTLE_START_2,interval=1):
@@ -55,10 +60,13 @@ class Trialbattle(DailyAltAccBase):
             if self.appear_then_click(self.I_TO_TRIALBATTLE_2,interval=1):
                 start_time = time.time()
                 continue
-            if self.appear_then_click(self.I_TO_TRIALBATTLE,action=self.C_TO_TRIALBATTLE,interval=1):
+            if self.appear(self.I_TO_TRIALBATTLE, interval=1) and self._trial_to_stable_wait():
+                # 首次点击前已确认连续三帧可见，排除过渡页闪现误触；点击后重置超时锚点
+                self.appear_then_click(self.I_TO_TRIALBATTLE, action=self.C_TO_TRIALBATTLE)
+                self._trial_to_stable_clicked = True
                 start_time = time.time()
                 continue
-            
+
         while time.time()-start_time < 3:
             self.screenshot() 
             if self.appear_then_click(PlotlineAssets.I_PAGE_CLICK_ANY, interval=1):
@@ -73,6 +81,29 @@ class Trialbattle(DailyAltAccBase):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
+
+    def _trial_to_stable_wait(self) -> bool:
+        """
+        I_TO_TRIALBATTLE 首次识别的画面稳定确认：以约 1 秒间隔连截 3 帧，
+        全部连续可见才放行点击。点击已发生过一次（_trial_to_stable_clicked）后
+        直接放行，不再等待——误触只发生在任务内第一次经过过渡页时。
+        """
+        # 已点击过一次，后续识别直接放行
+        if self._trial_to_stable_clicked:
+            return True
+        stable_count = 0
+        while stable_count < 3:
+            # 每次截图前等待约 1 秒，观察页面是否停留
+            time.sleep(1)
+            self.screenshot()
+            if self.appear(self.I_TO_TRIALBATTLE):
+                stable_count += 1
+            else:
+                # 中途消失说明是过渡页闪现，判为不稳定
+                logger.info('试炼战斗: I_TO_TRIALBATTLE 稳定确认失败，疑似过渡页')
+                return False
+        logger.info('试炼战斗: I_TO_TRIALBATTLE 连续三帧可见，画面稳定')
+        return True
 
     def trial_fire(self):
         """开战逻辑"""
