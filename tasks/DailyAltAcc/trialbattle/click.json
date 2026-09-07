@@ -10,5 +10,11 @@
     "roiFront": "933,245,71,55",
     "roiBack": "932,244,74,58",
     "description": "description"
+  },
+  {
+    "itemName": "trialbattle_start_2",
+    "roiFront": "357,161,41,61",
+    "roiBack": "357,161,41,61",
+    "description": "传家宝与集结进入特殊路径"
   }
 ]

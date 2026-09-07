@@ -30,6 +30,10 @@ class Trialbattle(DailyAltAccBase):
             if self.appear_then_click(self.I_TO_TRIALBATTLE,action=self.C_TO_TRIALBATTLE,interval=1):
                 start_time = time.time()
                 continue
+            if self.appear_then_click(self.I_TRIALBATTLE_START_2,action=self.C_TRIALBATTLE_START_2,interval=1):
+                            start_time = time.time()
+                            logger.info('试炼战斗: 前往集结')
+                            continue
             if self.appear_then_click(self.I_TRIALBATTLE_START,action=self.C_TRIALBATTLE_START,interval=1):
                 start_time = time.time()
                 logger.info('试炼战斗: 前往集结')
@@ -125,7 +129,7 @@ class Trialbattle(DailyAltAccBase):
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas3')
+    c = Config('oas2')
     d = Device(c)
     self = Trialbattle(c, d)
     self.screenshot()

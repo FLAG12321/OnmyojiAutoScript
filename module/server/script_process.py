@@ -52,7 +52,11 @@ class ScriptProcess(ScriptWSManager):
         self.config_event_queue = multiprocessing.Queue()  # 主进程→子进程配置变更提示
         # 子进程完成 generation 校验后向父进程发送一次性 ready/failed 握手。
         self.ready_queue = multiprocessing.Queue()
-        self._spawn_handshake_timeout = 5.0
+        # 握手超时窗口（秒）：子进程要完成全量 import（script.py 依赖链）+
+        # Script 构造后才上报 ready，冷启动实测 3s 上下、叠加 Windows spawn
+        # bootstrap 后压在 5s 线附近抖动（2026-09-07 远端实测两次超时一次
+        # 过线），放宽到 10s 消除边缘失败
+        self._spawn_handshake_timeout = 10.0
         self._spawn_attempt_nonce = None
         # 独立线程锁只串行化进程句柄及其耦合状态的短提交，不覆盖任何阻塞操作。
         self._process_state_lock = threading.Lock()

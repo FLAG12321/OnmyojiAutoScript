@@ -361,6 +361,8 @@ class DailyAltAccAssets:
 	C_TRIALBATTLE_START = RuleClick(roi_front=(224,496,41,61), roi_back=(223,495,43,63), name="trialbattle_start")
 	# description 
 	C_TO_TRIALBATTLE = RuleClick(roi_front=(933,245,71,55), roi_back=(932,244,74,58), name="to_trialbattle")
+	# 传家宝与集结进入特殊路径 
+	C_TRIALBATTLE_START_2 = RuleClick(roi_front=(357,161,41,61), roi_back=(357,161,41,61), name="trialbattle_start_2")
 
 
 	# Image Rule Assets
@@ -378,6 +380,8 @@ class DailyAltAccAssets:
 	I_TO_TRIALBATTLE_2 = RuleImage(roi_front=(1005,434,100,26), roi_back=(905,403,298,103), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/to_trialbattle_2.png")
 	# description 
 	I_TRIALBATTLE_BACK_RED = RuleImage(roi_front=(1036,220,41,39), roi_back=(975,185,130,123), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/trialbattle_back_red.png")
+	# 集结和传家宝共存特殊资源 
+	I_TRIALBATTLE_START_2 = RuleImage(roi_front=(399,132,33,22), roi_back=(303,99,153,162), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/trialbattle/trialbattle_trialbattle_start_2.png")
 
 
 	# Ocr Rule Assets
