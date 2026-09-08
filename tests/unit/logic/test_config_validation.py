@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from module.config.config_model import ConfigModel
 from module.config.config_validation import (
+    DEFAULT_CONFIG_PROFILE,
     ConfigValidationError,
     DynamicFieldSet,
     DynamicPathSet,
@@ -209,6 +210,41 @@ def test_legacy_alias_runs_before_unknown_rejection():
     assert migrated["master_exp_exit_after_prepare"] is False
 
 
+def test_nested_unknown_subtree_is_stripped_with_defaults_backfilled():
+    """2026-09-08 事故复现：嵌套子模型拍平后磁盘残留嵌套键（auto_battle_config 形态）。
+
+    整个子树键剔除并记入 repaired_paths；拍平后的顶层新字段按默认值出现在 canonical
+    （缺失字段由 model_validate 补默认值），配置不再被隔离。
+    用 DEFAULT_CONFIG_PROFILE（完整动态 registry），理由同上。
+    """
+    profile = copy.copy(DEFAULT_CONFIG_PROFILE)
+    profile.repaired_paths = []
+    raw = canonical_template()
+    # 模拟旧嵌套模型代码保存的残留键：任何 task 组下都可能出现
+    raw["orochi"]["general_battle_config"]["auto_battle_config"] = {
+        "auto_battle_enable": False,
+        "auto_segment_count": 2,
+        "auto_total_count": 4,
+    }
+    model, canonical = validate_persisted_config(raw, "oas-test", profile)
+    gb = canonical["orochi"]["general_battle_config"]
+    assert "auto_battle_config" not in gb
+    # 新拍平的顶层字段补默认值
+    assert gb["auto_battle_enable"] is False
+    assert gb["auto_segment_count"] == 2
+    assert gb["auto_total_count"] == 4
+    assert ("orochi", "general_battle_config", "auto_battle_config") in profile.repaired_paths
+
+
+def test_no_unknown_keeps_repaired_paths_empty():
+    """无残留键时 repaired_paths 不被填充（剔除零发生）。"""
+    profile = copy.copy(DEFAULT_CONFIG_PROFILE)
+    profile.repaired_paths = []
+    raw = canonical_template()
+    _, canonical = validate_persisted_config(raw, "oas-test", profile)
+    assert profile.repaired_paths == []
+
+
 def test_legacy_alias_preserves_existing_new_fields():
     raw = canonical_template()
     group = raw["master_disciple"]["master_disciple_config"]
@@ -336,11 +372,20 @@ def test_strict_validation_rejects_huge_count_without_materializing_range():
         validate_persisted_config(raw, "oas-test")
 
 
-def test_strict_validation_rejects_unknown_under_extra_allow_model():
+def test_unknown_under_extra_allow_model_is_stripped_and_reported():
+    """unknown field 语义反转（2026-09-08 起）：结构演化残留键被剔除并记入
+    repaired_paths，不再 fail closed 隔离整份配置。
+
+    注意用 DEFAULT_CONFIG_PROFILE 的完整动态 registry：空 registry 会把
+    动态扁平键（invite_info_list_1 等）也当 unknown 剔掉，测不到目标语义。
+    """
+    profile = copy.copy(DEFAULT_CONFIG_PROFILE)
+    profile.repaired_paths = []
     raw = canonical_template()
     raw["find_jade"]["find_jade_config"]["typo_field"] = 1
-    with pytest.raises(ConfigValidationError):
-        validate_persisted_config(raw, "oas-test")
+    model, canonical = validate_persisted_config(raw, "oas-test", profile)
+    assert "typo_field" not in canonical["find_jade"]["find_jade_config"]
+    assert ("find_jade", "find_jade_config", "typo_field") in profile.repaired_paths
 
 
 def test_strict_validation_rejects_invalid_dynamic_member_payload():
@@ -354,34 +399,55 @@ def test_strict_validation_rejects_invalid_dynamic_member_payload():
             validate_persisted_config(raw, "oas-test")
 
 
-def test_strict_validation_rejects_unknown_in_optional_nested_models():
+def test_unknown_in_optional_nested_models_is_stripped():
+    """嵌套/列表 item 里的未知键同样剔除（语义反转）。"""
     profile = ValidationProfile(OptionalConfig, (), ())
+    profile.repaired_paths = []
     for raw in (
         {"child": {"known": 1, "typo": 2}},
         {"children": [{"known": 1, "typo": 2}]},
     ):
-        with pytest.raises(ConfigValidationError):
-            validate_persisted_config(raw, "optional", profile)
+        profile.repaired_paths.clear()
+        _, canonical = validate_persisted_config(raw, "optional", profile)
+        assert profile.repaired_paths == [("child", "typo") if "child" in raw else ("children", "0", "typo")]
+        if "child" in raw:
+            assert "typo" not in canonical["child"]
+        else:
+            assert all("typo" not in item for item in canonical.get("children", [{"known": 1}]))
 
 
-def test_union_candidate_must_accept_value_before_unknown_check():
+def test_union_unknown_on_unselected_branch_is_stripped():
+    """Union 选支后未知键剔除（语义反转），canonical 不含未知键。"""
     profile = ValidationProfile(UnionConfig, (), ())
+    profile.repaired_paths = []
     raw = {"choice": {"value": {"known": 1, "typo": 2}}}
-    with pytest.raises(ConfigValidationError):
-        validate_persisted_config(raw, "union", profile)
+    _, canonical = validate_persisted_config(raw, "union", profile)
+    assert ("choice", "value", "typo") in profile.repaired_paths
+    assert "typo" not in canonical["choice"]["value"]
 
 
-def test_dynamic_payload_is_rejected_before_parent_validator_runs():
-    PARENT_VALIDATOR_CALLS.clear()
+def test_dynamic_payload_unknown_is_stripped_before_parent_validator_runs():
+    """动态成员 payload 内未知键剔除（语义反转）。
+
+    GuardedRoot 无扁平化 serializer、完整 canonical 链路本就不通（无 typo 时同样
+    报 must use flattened members），旧用例只测到早退抛错；这里直接断言
+    _validate_dynamic_payloads 阶段 payload 已被剔除并记入 repaired_paths。
+    损坏 payload（类型错）依旧在父 validator 前抛错，由
+    test_strict_validation_rejects_invalid_dynamic_member_payload 覆盖。
+    """
     profile = ValidationProfile(
         GuardedRoot,
         (),
         (DynamicPathSet("guarded.items", ("parent", "items"), mode="contiguous"),),
     )
+    profile.repaired_paths = []
     raw = {"parent": {"items_1": {"value": 1, "typo": 2}}}
-    with pytest.raises(ConfigValidationError):
-        validate_persisted_config(raw, "guarded", profile)
-    assert PARENT_VALIDATOR_CALLS == []
+    from module.config.config_validation import _validate_dynamic_payloads
+
+    expected = _validate_dynamic_payloads(raw, profile)
+    # payload 中的 typo 已剔除；剔除结果同时记入 profile.repaired_paths
+    assert expected["guarded.items"]["items_1"] == {"value": 1}
+    assert ("parent", "items_1", "typo") in profile.repaired_paths
 
 
 def test_dynamic_semantic_validation_rejects_non_default_invalid_payloads():
@@ -442,11 +508,14 @@ def test_single_default_contiguous_placeholder_is_allowed():
     assert "disciple_account_list_2" not in canonical["master_disciple"]
 
 
-def test_left_to_right_list_union_rejects_unknown_on_selected_branch():
+def test_left_to_right_list_union_strips_unknown_on_selected_branch():
+    """list Union 选中分支外的未知键剔除（语义反转）。"""
     profile = ValidationProfile(LeftToRightListConfig, (), ())
+    profile.repaired_paths = []
     raw = {"choices": [{"value": 1, "right_only": 2}]}
-    with pytest.raises(ConfigValidationError, match="right_only"):
-        validate_persisted_config(raw, "left-to-right", profile)
+    _, canonical = validate_persisted_config(raw, "left-to-right", profile)
+    assert ("choices", "0", "right_only") in profile.repaired_paths
+    assert "right_only" not in canonical["choices"][0]
 
 
 def test_invalid_parent_shape_is_wrapped():
@@ -495,9 +564,12 @@ def test_selected_branch_matches_full_model_validate_after_parent_normalization(
     # 分支选择一致：父 validator 归一化后 Pydantic 实际选择的类型与预选类型相同
     assert selected is type(full.choice)
     assert selected is DivergentScalarBranch
-    # 未知字段按所选分支拒绝（strict 比 runtime 更保守，fail closed）
-    with pytest.raises(ConfigValidationError, match="extra_field"):
-        validate_persisted_config(raw, "divergent", profile)
+    # 未知字段按所选分支剔除（语义反转：不再 fail closed），canonical 无未知键
+    profile = ValidationProfile(DivergentNormalizingGroup, (), ())
+    profile.repaired_paths = []
+    _, canonical = validate_persisted_config(raw, "divergent", profile)
+    assert ("choice", "extra_field") in profile.repaired_paths
+    assert "extra_field" not in canonical["choice"]
 
 
 def test_default_model_dump_is_accepted_by_strict_validation():
@@ -552,6 +624,7 @@ def test_dynamic_field_set_preserves_declared_shape_without_runtime_discovery():
     (("config_not_hex", True), ("config_0123456789abcdef", 1)),
 )
 def test_dynamic_field_set_rejects_invalid_key_or_value(key, value):
+    """key 不匹配 pattern → 剔除（语义反转）；匹配 pattern 但 value 类型错 → 仍抛错。"""
     profile = ValidationProfile(
         model_type=SyntheticConfigModel,
         dynamic_field_sets=(
@@ -562,11 +635,18 @@ def test_dynamic_field_set_rejects_invalid_key_or_value(key, value):
             ),
         ),
     )
+    profile.repaired_paths = []
     raw = synthetic_config()
     raw["synthetic"]["task"][key] = value
 
-    with pytest.raises(ConfigValidationError):
+    if key == "config_not_hex":
+        # key 不匹配动态字段 pattern：视为结构演化残留，剔除
         validate_persisted_config(raw, "synthetic", profile)
+        assert ("synthetic", "task", key) in profile.repaired_paths
+    else:
+        # key 合法但 value 类型错（应为 bool 却给 int）：真实数据损坏，仍抛错
+        with pytest.raises(ConfigValidationError):
+            validate_persisted_config(raw, "synthetic", profile)
 
 
 def test_synthetic_profile_is_injectable():

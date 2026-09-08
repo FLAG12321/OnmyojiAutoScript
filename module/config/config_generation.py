@@ -25,6 +25,8 @@ from module.config.config_validation import (
     validate_persisted_config,
 )
 from module.config.utils import _read_file_unlocked, _write_file_unlocked
+# 延迟导入 logger 会打断备份告警的就近性，这里直接顶部导入（config 模块自身无循环依赖）
+from module.logger import logger
 
 # --- fault points 常量（测试与生产共用同一命名，见计划 Step 2） ---
 MIGRATION_FAULT_POINTS = (
@@ -413,7 +415,10 @@ class GenerationManager:
         return self._read_sidecar(name)
 
     def load_canonical(self, name: str) -> Optional[dict]:
-        """返回 active 身份的严格 canonical；tombstone/缺失返回 None，身份损坏抛错。"""
+        """返回 active 身份的严格 canonical；tombstone/缺失返回 None，身份损坏抛错。
+
+        磁盘残留的失效字段（结构演化遗留）会先备份原字节再剔除，不隔离该身份。
+        """
         record = self._read_sidecar(name)
         if record is None or record.state != "active":
             return None
@@ -423,7 +428,28 @@ class GenerationManager:
         raw = self._read_raw_json(name)
         if raw.get("config_name") != name:
             raise ConfigGenerationError(f"{name}: config_name mismatch with sidecar name")
-        _model, canonical = validate_persisted_config(raw, name, self.profile)
+        canonical = self._validate_with_repair(name, raw)
+        return canonical
+
+    def _validate_with_repair(self, name: str, raw: dict) -> dict:
+        """带自动修复的严格校验：unknown field 剔除前先备份磁盘原字节并告警。
+
+        修复只发生在内存（validate_persisted_config 深拷贝后再剔）；canonical
+        落盘与否由调用方的现有写盘机制决定。其它校验失败仍原样抛出（fail closed）。
+        """
+        repaired_paths: list = []
+        profile = copy.copy(self.profile)
+        profile.repaired_paths = repaired_paths
+        _model, canonical = validate_persisted_config(raw, name, profile)
+        if repaired_paths:
+            # 备份磁盘原字节（含失效字段的完整文件）：复用迁移备份目录，
+            # 同名已有备份不覆盖——每份配置的首次备份永远是原字节
+            backup_path = self._write_backup(name, self._config_path(name).read_bytes())
+            for path in repaired_paths:
+                logger.warning(
+                    f"[{name}] unknown field stripped: {'/'.join(path)}; "
+                    f"原字节备份: {backup_path}"
+                )
         return canonical
 
     def _read_raw_json(self, name: str) -> dict:
@@ -490,7 +516,11 @@ class GenerationManager:
         self.fault_injector.hit("migration.after_active_sidecar")
 
     def _normalize_for_migration(self, name: str, raw_bytes: bytes) -> dict:
-        """legacy 归一化 + strict 校验，返回可落盘 canonical；内容非法抛内容级异常。"""
+        """legacy 归一化 + strict 校验，返回可落盘 canonical；内容非法抛内容级异常。
+
+        unknown field 走自动修复（原字节备份已在调用方 _migrate_one 落盘前完成，
+        剔除仅发生在内存副本）。
+        """
         try:
             raw = json.loads(raw_bytes.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -500,7 +530,7 @@ class GenerationManager:
         # 必须先 legacy normalize（含 alias 迁移），再 strict validate
         normalized = normalize_legacy_config(raw, name, self.profile)
         _normalize_dynamic_lists(normalized, self.profile)
-        _model, canonical = validate_persisted_config(normalized, name, self.profile)
+        canonical = self._validate_with_repair(name, normalized)
         return canonical
 
     def _write_backup(self, name: str, raw_bytes: bytes) -> Path:
@@ -704,7 +734,7 @@ class GenerationManager:
             with self._lifecycle_lock(name):
                 if self._logically_exists(name):
                     raise ConfigIdentityConflictError(f"{name} already exists")
-                _model, canonical = validate_persisted_config(raw, name, self.profile)
+                canonical = self._validate_with_repair(name, raw)
                 config_bytes = _config_bytes(canonical)
                 digest = hashlib.sha256(config_bytes).hexdigest()
                 generation = str(uuid.uuid4())
@@ -772,11 +802,11 @@ class GenerationManager:
                     src_raw = self._read_raw_json(source)
                     if src_raw.get("config_name") != source:
                         raise ConfigGenerationError(f"{source}: config_name mismatch")
-                    _src_model, src_canonical = validate_persisted_config(src_raw, source, self.profile)
+                    src_canonical = self._validate_with_repair(source, src_raw)
                     # 计算目标 digest 与 strict 校验前先深拷贝源 canonical 并设置目标 config_name
                     tgt_raw = copy.deepcopy(src_canonical)
                     tgt_raw["config_name"] = destination
-                    _tgt_model, tgt_canonical = validate_persisted_config(tgt_raw, destination, self.profile)
+                    tgt_canonical = self._validate_with_repair(destination, tgt_raw)
                     tgt_bytes = _config_bytes(tgt_canonical)
                     tgt_digest = hashlib.sha256(tgt_bytes).hexdigest()
                     src_digest = hashlib.sha256(self._config_path(source).read_bytes()).hexdigest()

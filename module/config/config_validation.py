@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # 配置严格持久化校验：
 # - ValidationProfile 允许测试注入任意 Pydantic model，不写死 ConfigModel
-# - validate_persisted_config 顺序：legacy -> 动态预检/排序 -> unknown -> strict model -> canonical 不变量
+# - validate_persisted_config 顺序：legacy -> 动态预检/排序 -> unknown 剔除(记入 repaired_paths) -> strict model -> canonical 不变量
 # - STRICT_CONFIG_VALIDATION 上下文变量关闭 ConfigBase 的 range 降级回退
 import contextvars
 import copy
@@ -46,12 +46,16 @@ class DynamicFieldSet:
     value_type: type
 
 
-@dataclass(frozen=True)
+@dataclass
 class ValidationProfile:
     model_type: type[BaseModel]
     legacy_migrations: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = ()
     dynamic_path_sets: Sequence[DynamicPathSet] = ()
     dynamic_field_sets: Sequence[DynamicFieldSet] = ()
+    # 自动修复回收站：调用方可传入空列表，校验过程中被剔除的未知键路径会填充进来
+    # （结构演化后磁盘残留的失效字段自动对齐；None 表示调用方不关心，剔除照常发生）
+    # 注意 dataclass 由 frozen 改为可变，仅为挂这个运行期回收字段，无 hash 依赖
+    repaired_paths: list | None = None
 
 
 def _migrate_master_battle_mode(raw: dict) -> None:
@@ -377,15 +381,20 @@ def _reject_unknown_keys(
     model_type: type[BaseModel],
     profile: ValidationProfile,
     path: tuple[str, ...] = (),
-) -> None:
-    """递归拒绝除显式 alias 与动态 registry 之外的未知字段。
+) -> list[tuple[str, ...]]:
+    """递归剔除除显式 alias 与动态 registry 之外的未知字段，返回被剔除的键路径。
 
-    Pydantic `extra='allow'` 仅服务运行期兼容，不能放宽持久化边界。
+    结构演化（删字段/改结构）后磁盘残留旧键是可预期演化：就地从 data 删除并
+    收集路径，由调用方决定备份与告警；类型/形状错误仍然抛错。
+    模型均为 pydantic 默认 extra='ignore'，未知键进不了 model，但显式剔除保证
+    上游（父任务 before-validator 等）消费的 normalized 数据与模型一致。
     """
+    removed: list[tuple[str, ...]] = []
     if not isinstance(data, dict):
-        return
+        return removed
     fields = model_type.model_fields
-    for key, value in data.items():
+    for key in list(data.keys()):
+        value = data[key]
         full = path + (key,)
         if key == "config_name" and not path:
             continue
@@ -401,10 +410,13 @@ def _reject_unknown_keys(
                 item_model = _list_item_model(fields[entry.member_path[-1]].annotation)
                 if item_model is None:
                     raise ConfigValidationError(f"invalid dynamic registry {'/'.join(full)}")
-                _reject_unknown_keys(value, item_model, profile, full)
+                removed.extend(_reject_unknown_keys(value, item_model, profile, full))
                 continue
             if field_set is None:
-                raise ConfigValidationError(f"unknown field {'/'.join(full)}")
+                # 未知键：结构演化残留，剔除整个子树（值可以是任意形状）
+                del data[key]
+                removed.append(full)
+                continue
             continue
         annotation = fields[key].annotation
         if isinstance(value, list) and _list_item_models(annotation):
@@ -412,11 +424,14 @@ def _reject_unknown_keys(
             if len(candidates) == 1:
                 for index, item in enumerate(value):
                     if isinstance(item, dict):
-                        _reject_unknown_keys(item, candidates[0], profile, full + (str(index),))
+                        removed.extend(
+                            _reject_unknown_keys(item, candidates[0], profile, full + (str(index),))
+                        )
         elif isinstance(value, dict):
             model_candidates = _model_types(annotation)
             if len(model_candidates) == 1:
-                _reject_unknown_keys(value, model_candidates[0], profile, full)
+                removed.extend(_reject_unknown_keys(value, model_candidates[0], profile, full))
+    return removed
 
 
 def _reject_unknown_by_instance(
@@ -424,12 +439,19 @@ def _reject_unknown_by_instance(
     instance: Any,
     profile: ValidationProfile,
     path: tuple[str, ...] = (),
-) -> None:
-    """按正式 model_validate 产生的实例类型检查 Union 最终分支 unknown。"""
+) -> list[tuple[str, ...]]:
+    """按正式 model_validate 产生的实例类型检查 Union 最终分支 unknown，剔除并返回路径。
+
+    模型均为 pydantic 默认 extra='ignore'，canonical 不含未知键；本层是防御性
+    二次检查（Union 实际选支），剔除只影响 normalized 数据与 repaired_paths 记录，
+    无需重跑 model_validate。
+    """
+    removed: list[tuple[str, ...]] = []
     if not isinstance(data, dict) or not isinstance(instance, BaseModel):
-        return
+        return removed
     fields = type(instance).model_fields
-    for key, value in data.items():
+    for key in list(data.keys()):
+        value = data[key]
         full = path + (key,)
         if key == "config_name" and not path:
             continue
@@ -439,14 +461,20 @@ def _reject_unknown_by_instance(
             entry = _dynamic_entry_for_key(path, key, profile)
             if entry is not None:
                 continue
-            raise ConfigValidationError(f"unknown field {'/'.join(full)}")
+            # Union 分支下的未知键：同样是结构演化残留，剔除
+            del data[key]
+            removed.append(full)
+            continue
         child = getattr(instance, key, None)
         if isinstance(value, dict) and isinstance(child, BaseModel):
-            _reject_unknown_by_instance(value, child, profile, full)
+            removed.extend(_reject_unknown_by_instance(value, child, profile, full))
         elif isinstance(value, list) and isinstance(child, list):
             for index, item in enumerate(value):
                 if index < len(child) and isinstance(item, dict):
-                    _reject_unknown_by_instance(item, child[index], profile, full + (str(index),))
+                    removed.extend(
+                        _reject_unknown_by_instance(item, child[index], profile, full + (str(index),))
+                    )
+    return removed
 
 
 def _get_node(data: Any, path: tuple[str, ...]) -> Any:
@@ -568,8 +596,13 @@ def _validate_dynamic_payloads(
                 )
             member_path = parent + (key,)
             try:
-                # unknown 必须先于父任务 before-validator 拒绝，避免损坏字段被静默丢弃。
-                _reject_unknown_keys(payload, item_model, profile, member_path)
+                # unknown 剔除先于父任务 before-validator 消费 payload（语义反转：
+                # 残留键剔除，损坏字段仍靠下面 model_validate 抛错兜底）。
+                member_removed = _reject_unknown_keys(payload, item_model, profile, member_path)
+                if member_removed:
+                    if profile.repaired_paths is None:
+                        profile.repaired_paths = []
+                    profile.repaired_paths.extend(member_removed)
                 item = item_model.model_validate(copy.deepcopy(payload))
                 is_valid = getattr(item, "is_valid", None)
                 if callable(is_valid) and not is_valid():
@@ -624,7 +657,12 @@ def validate_persisted_config(
     config_name: str,
     profile: ValidationProfile = None,
 ) -> tuple[BaseModel, dict]:
-    """严格持久化校验：迁移 legacy -> dynamic cardinality/payload -> unknown -> model -> canonical。"""
+    """严格持久化校验：迁移 legacy -> dynamic cardinality/payload -> unknown 剔除 -> model -> canonical。
+
+    unknown field 不再 fail-closed：结构演化后磁盘残留的失效字段被就地剔除并
+    记入 profile.repaired_paths（调用方传入空列表即可收到），缺失字段由
+    model_validate 自动补默认值。其余失败（类型/cardinality/payload 损坏）仍抛错。
+    """
     profile = profile or DEFAULT_CONFIG_PROFILE
     normalized = normalize_legacy_config(raw, config_name, profile)
     token = STRICT_CONFIG_VALIDATION.set(True)
@@ -634,13 +672,18 @@ def validate_persisted_config(
         expected_dynamic = _validate_dynamic_payloads(normalized, profile)
         # 先稳定 key 顺序，再允许任何父任务 before-validator 消费扁平成员。
         _sort_dynamic_member_keys(normalized, profile)
-        _reject_unknown_keys(normalized, profile.model_type, profile)
+        removed = _reject_unknown_keys(normalized, profile.model_type, profile)
         model = profile.model_type.model_validate(normalized)
-        # Union 的真实分支只由这次正式校验决定；随后按实例类型精确拒绝 unknown，
+        # Union 的真实分支只由这次正式校验决定；随后按实例类型精确剔除 unknown，
         # 避免 TypeAdapter 预选导致 validator 提前或重复执行。
-        _reject_unknown_by_instance(normalized, model, profile)
+        removed.extend(_reject_unknown_by_instance(normalized, model, profile))
         canonical = model.model_dump(mode="json")
         _validate_canonical_dynamic_payloads(canonical, expected_dynamic, profile)
+        # 回收剔除结果给调用方（备份与告警由调用方决定；剔除本身无条件发生）
+        if removed:
+            if profile.repaired_paths is None:
+                profile.repaired_paths = []
+            profile.repaired_paths.extend(removed)
     except ConfigValidationError:
         raise
     except (ValidationError, TypeError, ValueError, AttributeError, KeyError, IndexError) as exc:

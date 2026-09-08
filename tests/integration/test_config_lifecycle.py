@@ -105,6 +105,10 @@ def test_one_invalid_config_does_not_block_store_initialize(tmp_path):
     原实现让 initialize() → validate_active_identities() 对任一内容级校验失败整体抛错，
     而它是 server on_startup 的第一条无保护语句：一个历史遗留字段就会让整个 Web 服务
     起不来（含完全健康的实例），且用户在 OASX 里无处可修。
+    2026-09-08 语义反转：unknown field（本用例的 legacy_removed_field）不再隔离，
+    走自动修复（备份原字节 → 剔除 → 枚举成功）；隔离路径改由下方
+    test_stale_unknown_field_is_auto_repaired 覆盖修复面，本用例保留
+    「不阻断其余实例」的原始动机验证。
     """
     root = tmp_path / "config"
     root.mkdir()
@@ -117,18 +121,60 @@ def test_one_invalid_config_does_not_block_store_initialize(tmp_path):
     store = ConfigStore(root)
     store.initialize()
 
-    # 坏配置被隔离并可上报原因，原字节一字不改
-    assert set(store.quarantined_identities) == {"oas-bad"}
-    assert "legacy_removed_field" in str(store.quarantined_identities["oas-bad"])
-    assert (root / "oas-bad.json").read_bytes() == bad_bytes
+    # unknown field 被自动修复：不再隔离，正常枚举。
+    # 迁移路径的归一化落盘（canonical != raw 时写盘补默认值）是既有机制：
+    # template 尚未含新增字段时磁盘会补齐默认值，原字节以备份为准。
+    assert store.quarantined_identities == {}
+    assert set(store.active_config_names()) == {"oas-bad", "oas-good"}
 
-    # 健康配置照常枚举与读写；坏配置自身仍 fail closed
-    assert store.active_config_names() == ["oas-good"]
+    # 修复发生时有原字节备份可回溯
+    backups = list((root / ".generations" / "backups").glob("oas-bad.*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == bad_bytes
+    # 磁盘上的残留键已被归一化清除
+    assert "legacy_removed_field" not in json.loads(
+        (root / "oas-bad.json").read_bytes())["orochi"]["orochi_config"]
+
+    # 健康配置照常读写
     assert store.load("oas-good").canonical["config_name"] == "oas-good"
-    with pytest.raises(ConfigValidationError):
-        store.load("oas-bad")
     store.patch_user_field("oas-good", ("running_task",), "ok")
     assert store.load("oas-good").canonical["running_task"] == "ok"
+
+
+def test_stale_unknown_field_is_auto_repaired(tmp_path):
+    """2026-09-08 事故复现（集成链路）：结构演化后磁盘残留嵌套键，
+    自动修复 = 原字节备份 + 内存剔除 + 缺省补齐，实例正常枚举不隔离。"""
+    root = tmp_path / "config"
+    root.mkdir()
+    stale = valid_canonical("oas-stale")
+    # 旧嵌套模型代码保存的残留键（GeneralBattleConfig 拍平事故形态）
+    stale["orochi"]["general_battle_config"]["auto_battle_config"] = {
+        "auto_battle_enable": False,
+        "auto_segment_count": 2,
+        "auto_total_count": 4,
+    }
+    write_config(root, "oas-stale", stale)
+    stale_bytes = (root / "oas-stale.json").read_bytes()
+
+    store = ConfigStore(root)
+    store.initialize()
+
+    # 不隔离、可枚举、可 load，canonical 已对齐新结构
+    assert store.quarantined_identities == {}
+    assert store.active_config_names() == ["oas-stale"]
+    loaded = store.load("oas-stale")
+    gb = loaded.canonical["orochi"]["general_battle_config"]
+    assert "auto_battle_config" not in gb
+    assert gb["auto_battle_enable"] is False
+    assert gb["auto_segment_count"] == 2
+    assert gb["auto_total_count"] == 4
+    # 原字节备份已生成（迁移归一化写盘前的原始内容）
+    backups = list((root / ".generations" / "backups").glob("oas-stale.*.json"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == stale_bytes
+    # 磁盘上的残留嵌套键已被归一化清除（template 未含新字段时会触发写盘补默认值）
+    on_disk = json.loads((root / "oas-stale.json").read_bytes())
+    assert "auto_battle_config" not in on_disk["orochi"]["general_battle_config"]
 
 
 def test_structural_identity_corruption_still_fails_closed(tmp_path):
