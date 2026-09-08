@@ -1741,10 +1741,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 进入真实战斗后先点击退出键，让界面停在退出确认框，等击杀数达标后立刻确认退出
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT, interval=1.5):
-                continue
+            # 先查退出确认弹窗再点返回：弹窗弹出后 I_EXIT 在背后仍可匹配，
+            # 单轮耗时>=interval 时旧顺序会每轮 continue 饿死 break（慢节奏死循环）
             if self.appear(self.I_EXIT_ENSURE):
                 break
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
         logger.info(f"Click {self.I_EXIT.name}")
 
         # 使用O_KILL_CNT识别经验妖怪战斗中的击杀数量，达到30后点击确认退出
@@ -1771,10 +1773,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.screenshot()
             if self.appear(self.I_CHECK_MAIN):
                 return True
-            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
-                continue
+            # 先查失败确认框再点返回确认：I_EXIT_ENSURE 弹出后 I_FALSE 在其后可同屏共存，
+            # 同理先 break 再点，避免慢节奏下饿死 break
             if self.appear(self.I_FALSE):
                 break
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
         logger.info(f"Click {self.I_EXIT_ENSURE.name}")
 
         # 点击失败确认
@@ -1802,10 +1806,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 点击返回
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT, interval=1.5):
-                continue
+            # 先查退出确认弹窗再点返回：弹窗弹出后 I_EXIT 在背后仍可匹配，
+            # 单轮耗时>=interval 时旧顺序会每轮 continue 饿死 break（慢节奏死循环）
             if self.appear(self.I_EXIT_ENSURE):
                 break
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
         logger.info(f"Click {self.I_EXIT.name}")
 
         # 点击返回确认
@@ -1813,10 +1819,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.screenshot()
             if self.appear(self.I_CHECK_MAIN):
                 return True
-            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
-                continue
+            # 先查失败确认框再点返回确认：I_EXIT_ENSURE 弹出后 I_FALSE 在其后可同屏共存，
+            # 同理先 break 再点，避免慢节奏下饿死 break
             if self.appear(self.I_FALSE):
                 break
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
         logger.info(f"Click {self.I_EXIT_ENSURE.name}")
 
         # 点击失败确认
@@ -1846,10 +1854,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 点击返回
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT, interval=1.5):
-                continue
+            # 先查退出确认弹窗再点返回：弹窗弹出后 I_EXIT 在背后仍可匹配，
+            # 单轮耗时>=interval 时旧顺序会每轮 continue 饿死 break（慢节奏死循环）
             if self.appear(self.I_EXIT_ENSURE):
                 break
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
         logger.info(f"Click {self.I_EXIT.name}")
 
         # 点击返回确认
@@ -1857,10 +1867,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.screenshot()
             if self.appear(self.I_CHECK_MAIN):
                 return True
-            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
-                continue
+            # 先查失败确认框再点返回确认：I_EXIT_ENSURE 弹出后 I_FALSE 在其后可同屏共存，
+            # 同理先 break 再点，避免慢节奏下饿死 break
             if self.appear(self.I_FALSE):
                 break
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
         logger.info(f"Click {self.I_EXIT_ENSURE.name}")
 
         # 点击失败确认

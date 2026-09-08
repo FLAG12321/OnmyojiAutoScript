@@ -109,29 +109,32 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         # 点击返回
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT, interval=1.5):
-                continue
             if self.appear(self.I_EXIT_ENSURE):
                 break
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
+            
         logger.info(f"Click {self.I_EXIT.name}")
 
         # 点击返回确认
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
-                continue
             if self.appear(self.I_FALSE):
                 break
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+                continue
+            
         logger.info(f"Click {self.I_EXIT_ENSURE.name}")
 
         # 点击失败确认
         self.wait_until_appear(self.I_FALSE)
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_FALSE, interval=1.5):
-                continue
             if not self.appear(self.I_FALSE):
                 break
+            if self.appear_then_click(self.I_FALSE, interval=1.5):
+                continue
+            
         logger.info(f"Click {self.I_FALSE.name}")
 
         return True
@@ -149,12 +152,14 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         # 点击返回
         logger.info(f"Click {self.I_EXIT.name}")
+        # 先查退出确认弹窗再点返回：弹窗弹出后 I_EXIT 在背后仍可匹配，
+        # 单轮耗时>=interval 时旧顺序会每轮 continue 饿死 break（慢节奏死循环）
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT, interval=1.5):
-                continue
             if self.appear(self.I_EXIT_ENSURE):
                 break
+            if self.appear_then_click(self.I_EXIT, interval=1.5):
+                continue
 
         # 点击返回确认
         while 1:
