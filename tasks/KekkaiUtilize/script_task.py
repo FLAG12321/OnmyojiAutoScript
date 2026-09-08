@@ -1387,9 +1387,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         safe_pos_x = random.randint(340, 600)
         safe_pos_y = random.randint(500, 565)
         p1 = (safe_pos_x, safe_pos_y)
-        p2 = (safe_pos_x, safe_pos_y - 200)
+        p2 = (safe_pos_x, safe_pos_y - 300)
         # 不传 duration，走 Control.swipe 的距离推导默认时长
-        # （100~300px→200~350ms，200px 列表上滑落在该档）
+        # （100~300px→200~350ms，300px 列表上滑落在该档）
         self.device.swipe(p1, p2)
 
         # self.swipe(self.S_U_UP, duration=1, wait_up_time=1)

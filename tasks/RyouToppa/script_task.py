@@ -44,6 +44,12 @@ def random_delay(min_value: float = 1.0, max_value: float = 2.0, decimal: int = 
 class ScriptTask(RealmRaidScriptTask, GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
     _current_cells: list = None  # 本轮识别的格子结果，attack_area 取点击区用
 
+    # MRO 资产遮蔽修正：RealmRaidScriptTask 的 RealmRaidAssets 排在 RyouToppaAssets 之前，
+    # 两者唯一的同名资产 O_NUMBER 会解析到个人突破版（右上角 1143,13 突破卷数量），
+    # 而寮突的进攻机会 OCR 在左下角 (271,560)——被遮蔽后 has_ticket 永远读空、
+    # 误判 no ticket 直接结束任务。显式重绑回寮突自己的实例。
+    O_NUMBER = RyouToppaAssets.O_NUMBER
+
     def reward_forbidden(self) -> tuple:
         """寮突破结算界面的常驻禁点区域（顶左条 + 顶右条 + 左下角）。"""
         return FORBIDDEN_KEKKAI
@@ -53,12 +59,14 @@ class ScriptTask(RealmRaidScriptTask, GeneralBattle, GameUi, SwitchSoul, RyouTop
 
         列锚点/行距与个人突破略有差异（列距 337 vs 332），按实测值传参。
         滚动截断后可能只返回 3 行甚至更少——识别到几行处理几行，不补齐。
+        寮突不消费等级，read_level=False 跳过逐格等级 OCR。
         """
         return self.detect_cells(screenshot=screenshot,
                                  rows_expected=RYOU_ROWS_EXPECTED,
                                  cols_expected=RYOU_COLS_EXPECTED,
                                  fallback_x=RYOU_FALLBACK_SLOT_X,
-                                 fallback_y=RYOU_FALLBACK_SLOT_Y)
+                                 fallback_y=RYOU_FALLBACK_SLOT_Y,
+                                 read_level=False)
 
     def _infer_hidden_failed(self, cells: list) -> list:
         """按列表有序性补判被遮挡的失败结界。

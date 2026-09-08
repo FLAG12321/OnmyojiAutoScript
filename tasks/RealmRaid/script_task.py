@@ -133,6 +133,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         last_battle = True  # 记录上一次战斗的结果
         exit_all = False
         exit_four_enable = con.raid_config.exit_four  # 可被等级策略临时关掉，不写回配置
+        # 等级策略（全退降级 / 禁退四升级）只服务于 auto_exit_all 选项：
+        # 没开就完全不识别等级、不做策略判定，退四保持 exit_four 配置的打九退四原语义
+        auto_exit_all = con.raid_config.auto_exit_all
         # 更改循环顺序
         while 1:
             self.screenshot()
@@ -149,14 +152,16 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 logger.info(f'Current count {self.current_count}, max count {con.raid_config.number_attack}')
                 break
             # ----------------------------------------开始进攻
-            # 一次识别喂给策略判定与目标选择，避免同一帧重复跑模板匹配
-            cells = self.detect_cells(False)
-            # 按九格等级与总勋章数决定是否全退降级 / 是否禁用退四提升等级
-            new_exit_all, allow_exit_four = self.decide_exit_strategy(cells)
-            if new_exit_all is not None:
-                exit_all = new_exit_all
-            if allow_exit_four is not None:
-                exit_four_enable = allow_exit_four and con.raid_config.exit_four
+            # 一次识别喂给策略判定与目标选择，避免同一帧重复跑模板匹配；
+            # 没开 auto_exit_all 时连逐格等级 OCR 一起跳过
+            cells = self.detect_cells(False, read_level=auto_exit_all)
+            # 按九格等级与总勋章数决定是否全退降级 / 是否禁用退四提升等级（仅 auto_exit_all 开启时）
+            if auto_exit_all:
+                new_exit_all, allow_exit_four = self.decide_exit_strategy(cells)
+                if new_exit_all is not None:
+                    exit_all = new_exit_all
+                if allow_exit_four is not None:
+                    exit_four_enable = allow_exit_four and con.raid_config.exit_four
             medal, index = self.find_one(False, cells=cells)
             
             if not medal and not index:
@@ -178,9 +183,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                         self.appear_then_click(self.I_FRESH_ENSURE, interval=2)
                     success = False
                     break
-            # 判断是不是右下角第九个（难度最高的结界，退四降级后再打）
+            # 判断是不是右下角第九个（难度最高的结界，退四降级后再打）。
+            # exit_all 只在 auto_exit_all 开启时才可能为 True，此处无需再判一次
             lock_before = con.general_battle_config.lock_team_enable
-            if index == EXIT_FOUR_INDEX and not (exit_all and con.raid_config.auto_exit_all):
+            if index == EXIT_FOUR_INDEX and not exit_all:
                 logger.info('Now is the hardest one')
                 if exit_four_enable:
                     logger.info('Exit four enable')
@@ -198,7 +204,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
                 con.general_battle_config.lock_team_enable = False
             self.fire(index)
-            if exit_all and con.raid_config.auto_exit_all:
+            # 全退模式（auto_exit_all 判定等级过高）：进战斗立即退出，逐格清场降级
+            if exit_all:
                 logger.info('Exit all')
                 self.run_general_battle_back(con.general_battle_config, exit_four=True)
                 last_battle = False
@@ -412,13 +419,16 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
 
     def detect_cells(self, screenshot: bool=True, rows_expected: int=GRID_ROWS,
                      cols_expected: int=GRID_COLS,
-                     fallback_x: tuple=FALLBACK_SLOT_X, fallback_y: tuple=FALLBACK_SLOT_Y) -> list:
+                     fallback_x: tuple=FALLBACK_SLOT_X, fallback_y: tuple=FALLBACK_SLOT_Y,
+                     read_level: bool=True) -> list:
         """逐格判定网格状态、统计勋章数并读取结界等级。
 
         状态优先级：已攻破 > 攻打失败 > 可正常攻打。已攻破的格子勋章数没有意义，
         不做统计（印章还会遮掉第 5 槽，统计出来也是残缺的）。
         网格形状由参数决定：个人突破 3×3、寮突破 4×2（捕获截图实测同一套勋章模板可用）；
         滚动截断时行数可能少于期望，识别到几行就返回几行。
+        read_level=False 时跳过逐格等级 OCR（level 置 None）：等级只服务于
+        auto_exit_all 的全退/禁退四策略，不消费等级的调用方不该付这笔 OCR 成本。
         :return: 格子 dict 列表，含 index/slot/region/state/medal_count/no_medal_count/level/click_roi
         """
         if screenshot:
@@ -461,7 +471,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 'state': state,
                 'medal_count': medal_count,
                 'no_medal_count': no_medal_count,
-                'level': self._read_level(image, slot_x, slot_y),
+                'level': self._read_level(image, slot_x, slot_y) if read_level else None,
                 'click_roi': click_roi,
             })
         return cells
@@ -525,9 +535,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         代价只有两次全图模板匹配，比点错目标便宜得多。
         name 沿用 partition_N，保持 device 层连点判重与日志 key 与改造前一致。
         """
+        # 只消费 click_roi，跳过逐格等级 OCR
         return [RuleClick(roi_front=cell['click_roi'], roi_back=cell['click_roi'],
                           name=f'partition_{cell["index"]}')
-                for cell in self.detect_cells()]
+                for cell in self.detect_cells(read_level=False)]
 
     def find_one(self, screenshot: bool=True, cells: list=None) -> tuple:
         """
