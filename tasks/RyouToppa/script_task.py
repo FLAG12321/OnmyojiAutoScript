@@ -13,58 +13,25 @@ from tasks.Component.config_base import ConfigBase, Time
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_realm_raid, page_main, page_kekkai_toppa, page_shikigami_records
 from tasks.RealmRaid.assets import RealmRaidAssets
+from tasks.RealmRaid.script_task import ScriptTask as RealmRaidScriptTask
 
 from module.logger import logger
 from module.exception import TaskEnd
-from module.atom.image_grid import ImageGrid
+from module.atom.click import RuleClick
 from module.base.utils import point2str
 from module.base.timer import Timer
 from module.exception import GamePageUnknownError
 
-
-
-area_map = (
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_1_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_1_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_1,
-        "finished_sign": (RyouToppaAssets.I_AREA_1_FINISHED, RyouToppaAssets.I_AREA_1_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_2_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_2_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_2,
-        "finished_sign": (RyouToppaAssets.I_AREA_2_FINISHED, RyouToppaAssets.I_AREA_2_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_3_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_3_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_3,
-        "finished_sign": (RyouToppaAssets.I_AREA_3_FINISHED, RyouToppaAssets.I_AREA_3_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_4_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_4_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_4,
-        "finished_sign": (RyouToppaAssets.I_AREA_4_FINISHED, RyouToppaAssets.I_AREA_4_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_5_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_5_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_5,
-        "finished_sign": (RyouToppaAssets.I_AREA_5_FINISHED, RyouToppaAssets.I_AREA_5_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_6_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_6_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_6,
-        "finished_sign": (RyouToppaAssets.I_AREA_6_FINISHED, RyouToppaAssets.I_AREA_6_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_7_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_7_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_7,
-        "finished_sign": (RyouToppaAssets.I_AREA_7_FINISHED, RyouToppaAssets.I_AREA_7_FINISHED_NEW)
-    },
-    {
-        "fail_sign": (RyouToppaAssets.I_AREA_8_IS_FAILURE_NEW, RyouToppaAssets.I_AREA_8_IS_FAILURE),
-        "rule_click": RyouToppaAssets.C_AREA_8,
-        "finished_sign": (RyouToppaAssets.I_AREA_8_FINISHED, RyouToppaAssets.I_AREA_8_FINISHED_NEW)
-    }
-)
+# 寮突破复用个人突破的四态识别：同一套勋章模板（I_MEDAL / I_NO_MEDAL）在两个界面都可命中，
+# 网格形状 4 排 2 列（个人突破是 3×3），由 RealmRaidScriptTask.detect_cells 的参数区分。
+RYOU_ROWS_EXPECTED = 4
+RYOU_COLS_EXPECTED = 2
+# 屏幕可见失败结界达到该数量就上划刷新，去找没失败的区域
+RYOU_FLUSH_FAILED_COUNT = 6
+# 寮突破网格的回退锚点（首槽左上角），取自实测截图 capture_1788805078387：
+# 行 y=199/334/459/594（行距 135）、列 x=518/855（列距 337）
+RYOU_FALLBACK_SLOT_X = (518, 855)
+RYOU_FALLBACK_SLOT_Y = (199, 334, 459, 594)
 
 
 def random_delay(min_value: float = 1.0, max_value: float = 2.0, decimal: int = 1):
@@ -74,12 +41,80 @@ def random_delay(min_value: float = 1.0, max_value: float = 2.0, decimal: int = 
     random_float_in_range = random.uniform(min_value, max_value)
     return (round(random_float_in_range, decimal))
 
-class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
-    medal_grid: ImageGrid = None
+class ScriptTask(RealmRaidScriptTask, GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
+    _current_cells: list = None  # 本轮识别的格子结果，attack_area 取点击区用
 
     def reward_forbidden(self) -> tuple:
         """寮突破结算界面的常驻禁点区域（顶左条 + 顶右条 + 左下角）。"""
         return FORBIDDEN_KEKKAI
+
+    def detect_ryou_cells(self, screenshot: bool=True) -> list:
+        """寮突破 4×2 网格的四态识别，复用个人突破的勋章反推识别链。
+
+        列锚点/行距与个人突破略有差异（列距 337 vs 332），按实测值传参。
+        滚动截断后可能只返回 3 行甚至更少——识别到几行处理几行，不补齐。
+        """
+        return self.detect_cells(screenshot=screenshot,
+                                 rows_expected=RYOU_ROWS_EXPECTED,
+                                 cols_expected=RYOU_COLS_EXPECTED,
+                                 fallback_x=RYOU_FALLBACK_SLOT_X,
+                                 fallback_y=RYOU_FALLBACK_SLOT_Y)
+
+    def _infer_hidden_failed(self, cells: list) -> list:
+        """按列表有序性补判被遮挡的失败结界。
+
+        寮突列表从上到下固定为 失败区 → 正常区 → 攻破区：失败结界只会在正常结界上面，
+        正常结界打胜沉到攻破区尾部、打败浮到失败区尾部。因此任何一个可见的失败格，
+        其上方的所有格必然也是失败——包括被上划截断、失败标志识别不到的格子。
+        攻破格不受此规则影响（它在失败区下面），跳过不覆盖。
+        """
+        result = [dict(c) for c in cells]
+        for i, cell in enumerate(result):
+            if cell['state'] != 'FAILED':
+                continue
+            for j in range(i):
+                if result[j]['state'] == 'ATTACKABLE':
+                    logger.info(f'Cell {result[j]["index"]} inferred FAILED '
+                                f'(above failed cell {cell["index"]})')
+                    result[j]['state'] = 'FAILED'
+                    result[j]['inferred'] = True
+        return result
+
+    def decide_ryou_flush(self, cells: list) -> bool:
+        """可见失败结界（含反推补判）达到阈值就上划，找没失败的区域。"""
+        failed = [c for c in cells if c['state'] == 'FAILED']
+        if len(failed) >= RYOU_FLUSH_FAILED_COUNT:
+            logger.info(f'{len(failed)} failed realms on screen >= {RYOU_FLUSH_FAILED_COUNT}, flush area cache')
+            return True
+        return False
+
+    def find_ryou_attack_start(self, cells: list) -> int:
+        """定位进攻起点：最后一个失败格的下一格。
+
+        列表有序保证失败区是连续块，最后一个失败格之后必然全是正常结界。
+        :return: 进攻起点 index（1-based）；None 表示没有可打的正常结界（失败区
+                 直接衔接攻破区或全屏攻破），任务应结束
+        """
+        last_failed = None
+        for cell in cells:
+            if cell['state'] == 'FAILED':
+                last_failed = cell
+        if last_failed is None:
+            # 屏幕上没有失败格：要么全是正常结界（从头打），要么全是攻破
+            if any(c['state'] == 'ATTACKABLE' for c in cells):
+                return cells[0]['index']
+            logger.info('No attackable realm on screen, ryou toppa is done')
+            return None
+        # 最后一个失败格的下一格（按屏幕线性序）：是攻破 → 失败区已衔接攻破区
+        next_cell = next((c for c in cells if c['index'] > last_failed['index']), None)
+        if next_cell is None:
+            logger.info('Failed realm is the last visible cell, flush to check the next row')
+            return None
+        if next_cell['state'] == 'FINISHED':
+            logger.info(f'Cell {next_cell["index"]} after last failed cell {last_failed["index"]} '
+                        f'is FINISHED, no normal realm left')
+            return None
+        return next_cell['index']
 
     def run(self):
         """
@@ -89,8 +124,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         ryou_config = self.config.ryou_toppa
         time_limit: Time = ryou_config.raid_config.limit_time
         time_delta = timedelta(hours=time_limit.hour, minutes=time_limit.minute, seconds=time_limit.second)
-        self.medal_grid = ImageGrid([RealmRaidAssets.I_MEDAL_5, RealmRaidAssets.I_MEDAL_4, RealmRaidAssets.I_MEDAL_3,
-                                     RealmRaidAssets.I_MEDAL_2, RealmRaidAssets.I_MEDAL_1, RealmRaidAssets.I_MEDAL_0])
 
         if ryou_config.switch_soul_config.enable:
             self.ui_get_current_page()
@@ -159,9 +192,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             logger.info("Unlock team.")
             self.ui_click(self.I_TOPPA_LOCK_TEAM, self.I_TOPPA_UNLOCK_TEAM)
         # --------------------------------------------------------------------------------------------------------------
-        # 开始突破
+        # 开始突破：识别 → 上划判定 → 定位起点 → 按序进攻
         # --------------------------------------------------------------------------------------------------------------
-        area_index = 0
         success = True
         while 1:
             # 设置长任务标志,用来寻找寮突可进攻的目标
@@ -176,15 +208,23 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             if datetime.now() >= self.start_time + time_delta:
                 logger.warning("We have attacked the limit time.")
                 break
-            # 进攻
-            res = self.attack_area(area_index)
-            # 如果战斗失败或区域不可用，则弹出当前区域索引，开始进攻下一个
+
+            # 每次战斗前重新识别整屏：列表会重排，上一轮的格子位置不可复用
+            cells = self._infer_hidden_failed(self.detect_ryou_cells())
+            self._current_cells = cells  # attack_area 取本轮回退落的点击区
+            # 失败结界过多：上划刷新，把没失败的区域滚上来
+            if self.decide_ryou_flush(cells):
+                self.flush_area_cache()
+                continue
+            # 定位进攻起点：最后一个失败格的下一格；没有正常结界则整个寮突结束
+            start = self.find_ryou_attack_start(cells)
+            if start is None:
+                logger.info('No normal realm left to attack, finish ryou toppa')
+                break
+            # 从起点开始按屏幕顺序进攻，打完一个重新识别（列表重排会把后面的正常结界顶上来）
+            res = self.attack_area(start)
             if not res:
-                area_index += 1
-                if area_index >= len(area_map):
-                    logger.warning('All areas are not available, it will flush the area cache')
-                    area_index = 0
-                    self.flush_area_cache()
+                # 区域不可用或战斗失败：回到循环顶部重新识别定位，而不是盲目 +1 跳格
                 continue
 
 
@@ -253,26 +293,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             return False
         return True
 
-    def check_area(self, index: int) -> bool:
-        """
-        检查该区域是否攻略失败
-        :return:
-        """
-        f1, f2 = area_map[index].get("fail_sign")
-        f3, f4 = area_map[index].get("finished_sign")
-        self.screenshot()
-        # 如果该区域已经被攻破则退出
-        # Ps: 这时候能打过的都打过了，没有能攻打的结界了, 代表任务已经完成，set_next_run time=1d
-        if self.appear(f3, threshold=0.8) or self.appear(f4, threshold=0.8):
-            logger.info('RyouToppa has tried to attack')
-            self.plan_tomorrow_ryoutoppa()
-            raise TaskEnd('RyouToppa')
-        # 如果该区域攻略失败返回 False
-        if self.appear(f1, threshold=0.8) or self.appear(f2, threshold=0.8):
-            logger.info('Area [%s] is futile attack, skip.' % str(index + 1))
-            return False
-        return True
-
     def flush_area_cache(self):
         time.sleep(2)
         duration = 0.352
@@ -288,66 +308,26 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             logger.info('Swipe %s -> %s, %s ' % (point2str(*p1), point2str(*p2), duration))
             self.device.swipe_adb(p1, p2, duration=duration)
             time.sleep(2)
-    """  def run_general_battle_back(self, config: any = None, exit_four: bool = False) -> bool:
-        # 如果没有锁定队伍那么在点击准备后才退出的,退四的话就直接退出
-        if not config.lock_team_enable and not exit_four:
-            # 点击准备按钮
-            self.wait_until_appear(self.I_PREPARE_HIGHLIGHT)
-            while 1:
-                self.screenshot()
-                if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1.5):
-                    continue
-                if not (self.appear(self.I_PRESET) or self.appear(self.I_PRESET_WIT_NUMBER)):
-                    break
-            logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
-        logger.info(f"Click self.I_EXIT.name302")
-        # 点击返回
-        while 1:
-            self.screenshot()
-            logger.info(f"Click self.I_EXIT.name306")
-            if self.appear_then_click(self.I_TOPPA_BATTLE_EXIT, interval=1.5, threshold=0.6):
-                logger.info(f"Click self.I_EXIT.name")
-            if self.appear(self.I_TOPPA_EXIT_ENSURE):
-                break
-        logger.info(f"Click {self.I_TOPPA_BATTLE_EXIT.name}")
 
-        # 点击返回确认
-        while 1:
-            self.screenshot()
-            if self.appear_then_click(self.I_TOPPA_EXIT_ENSURE, interval=1.5):
-                continue
-            if self.appear(self.I_FALSE):
-                break
-        logger.info(f"Click {self.I_TOPPA_EXIT_ENSURE.name}")
-
-        # 点击失败确认
-        self.wait_until_appear(self.I_FALSE)
-        while 1:
-            self.screenshot()
-            if self.appear_then_click(self.I_FALSE, interval=1.5):
-                continue
-            if not self.appear(self.I_FALSE):
-                break
-        logger.info(f"Click {self.I_FALSE.name}")
-
-        return True """
     def attack_area(self, index: int):
         """
+        进攻指定屏幕位置（1-based，来自本轮 detect_ryou_cells 的识别结果）。
+        区域状态已在主循环里判定过，这里只负责点击与战斗流程。
         :return: 战斗成功(True) or 战斗失败(False) or 区域不可用（False） or 没有进攻机会（设定下次运行并退出）
         """
-        # 每次进攻前检查区域可用性
-        if not self.check_area(index):
-            return False
-
         # 正式进攻会设定 2s - 10s 的随机延迟，避免攻击间隔及其相近被检测为脚本。
         if self.config.ryou_toppa.raid_config.random_delay:
             delay = random_delay()
             time.sleep(delay)
 
 
-        rcl = area_map[index].get("rule_click")
-        # # 点击攻击区域，等待攻击按钮出现。
-        # self.ui_click(rcl, stop=RealmRaidAssets.I_FIRE, interval=2)
+        # 点击区复用识别结果里勋章反推出的落点（避开头像与首槽），不再用写死的 C_AREA_x
+        cells = self._current_cells
+        cell = next((c for c in cells if c['index'] == index), None)
+        if cell is None:
+            logger.warning(f'Attack area {index} not in current cells, skip')
+            return False
+        rcl = RuleClick(roi_front=cell['click_roi'], roi_back=cell['click_roi'], name=f'area_{index}')
         # 塔塔开！
         click_failure_count = 0
         exit_count = self.config.ryou_toppa.raid_config.exit_count
