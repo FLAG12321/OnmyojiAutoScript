@@ -374,11 +374,16 @@ class AssetsExtractor:
         result = ''
         for file in self.all_json_file():
             data = self.read_file(file)
+            # 解析失败跳过；list.json（RuleList）是 dict，必须先于「空 list 跳过」分派，
+            # 否则会被 isinstance 检查误杀
             if not data:
                 continue
 
             if self.is_list_file(data):
                 result += ListExtractor(file, data).result
+                continue
+            # 空的条目数组（如清理条目后的资源 json）跳过，后续 data[0] 会越界
+            if not isinstance(data, list) or not data:
                 continue
             if self.is_image_file(data):
                 result += ImageExtractor(file, data).result
