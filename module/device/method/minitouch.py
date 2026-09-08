@@ -163,6 +163,9 @@ MINITOUCH_RECOVERY_WS_READY_TIMEOUT_S = 1.0
 MINITOUCH_RECOVERY_WS_CLOSE_TIMEOUT_S = 1.0
 MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S = 3.0
 MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S = 1.0
+# B0 首连握手 EOF 后经 atx-agent 拉起 minitouch 服务的整体预算
+# （临时 forward 创建 + 状态查询 + POST 启动 + running 轮询）
+MINITOUCH_SERVICE_ENSURE_TIMEOUT_S = 5.0
 # 单批 WebSocket 投递的墙钟上限，避免 send() 阻塞时永远无法进入 B1 接管。
 MINITOUCH_WS_SEND_TIMEOUT_S = 1.0
 
@@ -1035,20 +1038,46 @@ class Minitouch(Connection):
                     'tcp-forward-create',
                 )
         _recovery_remaining(deadline)
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            client.settimeout(min(MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S, _recovery_remaining(deadline)))
-            client.connect(('127.0.0.1', port))
-            stream = client.makefile()
-            version = self._read_humanized_minitouch_line(stream, client, deadline, 'version')
-            capability = self._read_humanized_minitouch_line(stream, client, deadline, 'capability')
-            pid_line = self._read_humanized_minitouch_line(stream, client, deadline, 'pid')
-            max_x, max_y, new_pid = self._validate_humanized_minitouch_handshake(
-                version, capability, pid_line, old_pid
-            )
-        except Exception:
-            client.close()
-            raise
+
+        def connect_and_handshake():
+            # 单次「建 TCP 连接 → 严格三行握手」；失败时关闭 socket 并抛出，
+            # 由首连重试逻辑决定是否拉起 minitouch 服务后重试
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                client.settimeout(min(MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S, _recovery_remaining(deadline)))
+                client.connect(('127.0.0.1', port))
+                stream = client.makefile()
+                version = self._read_humanized_minitouch_line(stream, client, deadline, 'version')
+                capability = self._read_humanized_minitouch_line(stream, client, deadline, 'capability')
+                pid_line = self._read_humanized_minitouch_line(stream, client, deadline, 'pid')
+                max_x, max_y, new_pid = self._validate_humanized_minitouch_handshake(
+                    version, capability, pid_line, old_pid
+                )
+                return client, max_x, max_y, new_pid
+            except Exception:
+                client.close()
+                raise
+
+        if old_pid is None:
+            # 首次开档：先试一次握手；EOF（连接立即关闭）说明设备侧 minitouch
+            # 没在监听（u2 3.x 不再负责拉起它），经 atx-agent 服务接口拉起后重试
+            try:
+                client, max_x, max_y, new_pid = connect_and_handshake()
+            except _MinitouchRecoveryFailed as exc:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                logger.info(
+                    'Minitouch first connection handshake failed, '
+                    f'ensuring device-side minitouch service: {exc}'
+                )
+                ensure_deadline = time.monotonic() + min(
+                    MINITOUCH_SERVICE_ENSURE_TIMEOUT_S, remaining)
+                self._ensure_humanized_minitouch_service_started(ensure_deadline)
+                # 服务拉起后 socket 才真正监听，重新走一次完整握手
+                client, max_x, max_y, new_pid = connect_and_handshake()
+        else:
+            client, max_x, max_y, new_pid = connect_and_handshake()
 
         self._minitouch_port = port
         self._minitouch_client = client
@@ -1056,6 +1085,58 @@ class Minitouch(Connection):
         self.max_y = max_y
         self._minitouch_pid = new_pid
         self.__dict__['minitouch_builder'] = CommandBuilder(self)
+
+    def _ensure_humanized_minitouch_service_started(self, deadline):
+        """B0 首连握手 EOF 时，经 atx-agent 的 /services/minitouch 拉起设备侧进程。
+
+        背景（2026-09-08 实测，MuMu12 / Android 12）：uiautomator2 3.x 的
+        check_install() 只检查 atx-agent 与测试 APK，不检查 minitouch 二进制，
+        也没有人把它作为进程拉起（legacy 注释「minitouch already started by
+        uiautomator2」来自旧版 u2，已不成立）。adb shell 的后台进程
+        （& / nohup / setsid）会被会话收割，唯一可靠的拉起方式是 atx-agent
+        以守护者身份通过 service 接口启动（父进程为 atx-agent，不随 adb 会话
+        退出）。HTTP 模式（_recover_humanized_minitouch_http）同款接口已在用。
+        """
+        # 临时 forward 到 atx-agent（7912），复用恢复命令通道，全部有超时上界
+        atx_port = random_port(self.config.FORWARD_PORT_RANGE)
+        _run_adb_recovery_command(
+            self,
+            ['forward', f'tcp:{atx_port}', 'tcp:7912'],
+            deadline,
+            'tcp-atx-forward-create',
+        )
+        try:
+            service = U2Service(
+                'minitouch', service_url=f'http://127.0.0.1:{atx_port}/services/minitouch')
+            # 查询当前状态：已在跑则无需重复启动
+            try:
+                response = self._humanized_service_request(service, 'get', deadline)
+                running = False
+                try:
+                    running = response.json().get('running') is True
+                except (AttributeError, ValueError):
+                    pass
+                if running:
+                    logger.info('minitouch service already running via atx-agent')
+                    return
+            except _MinitouchRecoveryFailed:
+                # 查询失败（服务接口未就绪等）不致命，直接尝试 POST 启动
+                pass
+            # POST 启动服务；_raise_for_status 已校验 HTTP 状态
+            self._humanized_service_request(service, 'post', deadline)
+            # 有限轮询到 running，作为「服务真正就绪」的证据
+            self._wait_humanized_service_state(service, True, deadline)
+        finally:
+            # 清理临时 forward，不留悬挂端口；失败不掩盖原异常
+            try:
+                _run_adb_recovery_command(
+                    self,
+                    ['forward', '--remove', f'tcp:{atx_port}'],
+                    deadline,
+                    'tcp-atx-forward-remove',
+                )
+            except _MinitouchRecoveryFailed:
+                pass
 
     def _humanized_service_request(self, service, method, deadline):
         # 每个 HTTP 请求显式传二元 timeout（connect, read）与 retry=False：

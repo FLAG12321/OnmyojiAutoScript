@@ -1028,6 +1028,89 @@ def test_tcp_first_connect_does_not_restart_atx(monkeypatch):
     assert device._minitouch_client is fake_socket
 
 
+def test_tcp_first_connect_eof_starts_service_and_retries(monkeypatch):
+    """首连握手 EOF（设备侧 minitouch 未监听）→ 经 atx-agent 拉起服务后重试握手成功。
+
+    背景：u2 3.x 不再拉起 minitouch 进程，首连 EOF 直接接管是误判（2026-09-08
+    MuMu12 实测）。修复后应调用 _ensure_humanized_minitouch_service_started
+    拉起服务，再完成一次新的握手，且不重启 atx-agent。
+    """
+    clock = _Clock()
+    device = _TcpRecoveryDevice('v 1\n^ 2 1280 720 50\n$ 202\n')
+    # 第一次握手 EOF（空行），拉起服务后第二次握手成功
+    sockets = [
+        _FakeSocket(''),  # EOF：连接被 adb 立即关闭
+        _FakeSocket('v 1\n^ 2 1280 720 50\n$ 202\n'),
+    ]
+    monkeypatch.setattr(minitouch_module.time, 'monotonic', clock.monotonic)
+    monkeypatch.setattr(
+        minitouch_module.socket, 'socket',
+        lambda *a, **kw: sockets.pop(0) if sockets else _FakeSocket(''))
+    monkeypatch.setattr(minitouch_module, 'random_port', lambda port_range: 4321)
+
+    def run_adb(command, **kwargs):
+        device.events.append(('adb', tuple(command), kwargs['timeout']))
+        if command[-2:] == ['forward', '--list']:
+            return SimpleNamespace(
+                stdout='emulator-5554 tcp:1234 localabstract:minitouch\n'
+            )
+        return SimpleNamespace(stdout='')
+
+    monkeypatch.setattr(minitouch_module.subprocess, 'run', run_adb)
+
+    ensured = []
+    device._ensure_humanized_minitouch_service_started = (
+        lambda deadline: ensured.append(deadline))
+
+    device._recover_humanized_minitouch_tcp(
+        old_pid=None,
+        deadline=clock.monotonic() + 10.0,
+        restart_atx=False,
+    )
+
+    # 服务拉起被调用一次，之后握手成功拿到新 PID
+    assert len(ensured) == 1
+    assert device._minitouch_pid == '202'
+    assert device._minitouch_client is not None
+    # 两次握手各消耗一个 socket（EOF 一次 + 成功一次）
+    assert sockets == []
+    # 不重启 atx-agent
+    adb_commands = [event[1] for event in device.events if isinstance(event, tuple)]
+    assert not any('/data/local/tmp/atx-agent' in command for command in adb_commands)
+
+
+def test_tcp_first_connect_eof_service_start_fails_takes_over(monkeypatch):
+    """首连 EOF 且服务拉起也失败 → 维持既有接管语义（_MinitouchRecoveryFailed 上抛）。"""
+    clock = _Clock()
+    device = _TcpRecoveryDevice('v 1\n^ 2 1280 720 50\n$ 202\n')
+    monkeypatch.setattr(minitouch_module.time, 'monotonic', clock.monotonic)
+    monkeypatch.setattr(
+        minitouch_module.socket, 'socket', lambda *a, **kw: _FakeSocket(''))
+    monkeypatch.setattr(minitouch_module, 'random_port', lambda port_range: 4321)
+
+    def run_adb(command, **kwargs):
+        device.events.append(('adb', tuple(command), kwargs['timeout']))
+        if command[-2:] == ['forward', '--list']:
+            return SimpleNamespace(
+                stdout='emulator-5554 tcp:1234 localabstract:minitouch\n'
+            )
+        return SimpleNamespace(stdout='')
+
+    monkeypatch.setattr(minitouch_module.subprocess, 'run', run_adb)
+
+    def fail_ensure(deadline):
+        raise _MinitouchRecoveryFailed('minitouch service start failed')
+    device._ensure_humanized_minitouch_service_started = fail_ensure
+
+    with pytest.raises(_MinitouchRecoveryFailed, match='minitouch service start failed'):
+        device._recover_humanized_minitouch_tcp(
+            old_pid=None,
+            deadline=clock.monotonic() + 10.0,
+            restart_atx=False,
+        )
+
+
+
 def test_tcp_recovery_full_handshake_new_pid(monkeypatch):
     clock = _Clock()
     device = _TcpRecoveryDevice('v 1\n^ 2 1280 720 50\n$ 202\n')
