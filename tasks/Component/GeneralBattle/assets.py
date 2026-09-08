@@ -64,6 +64,8 @@ class GeneralBattleAssets:
 	C_GREEN_MARK_AREA = RuleClick(roi_front=(0,0,1280,720), roi_back=(0,0,1280,720), name="green_mark_area")
 	# 战斗的时候有一定的概率随机点击 
 	C_RANDOM_CLICK = RuleClick(roi_front=(104,79,1050,507), roi_back=(255,65,100,100), name="random_click")
+	# 点击自动游戏 
+	C_PAPER_TOSTART = RuleClick(roi_front=(59,555,24,51), roi_back=(194,235,465,110), name="paper_tostart")
 
 
 	# Image Rule Assets
@@ -139,6 +141,8 @@ class GeneralBattleAssets:
 	I_EXTRA_INFO = RuleImage(roi_front=(58,43,47,51), roi_back=(13,17,136,146), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBattle/gb/extra_info.png")
 	# 胜利页面标志2 
 	I_WIN_2 = RuleImage(roi_front=(464,276,31,20), roi_back=(226,221,918,169), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_win_2.png")
+	# 点击开始自动战斗(战斗过程界面) 
+	I_PAPER_TOSTART = RuleImage(roi_front=(49,550,40,60), roi_back=(9,531,172,96), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_paper_tostart.png")
 
 
 	# Image Rule Assets
@@ -161,6 +165,8 @@ class GeneralBattleAssets:
 	O_PRESET_FULL = RuleOcr(roi=(20,620,60,80), area=(20,620,60,80), mode="Single", method="Default", keyword="预设", name="preset_full")
 	# 已标记 
 	O_BOSS_MARK = RuleOcr(roi=(379,44,50,21), area=(379,44,50,21), mode="Single", method="Default", keyword="已标记", name="boss_mark")
+	# 纸人是否运行×2 X2 x2都视为没有运行 其他纯数字0-200视为正在运行 
+	O_POINT_OR_SPEED = RuleOcr(roi=(106,598,42,33), area=(1122,546,92,51), mode="Single", method="Default", keyword="", name="point_or_speed")
 
 
 	# Swipe Rule Assets

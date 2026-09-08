@@ -322,5 +322,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "胜利页面标志2"
+  },
+  {
+    "itemName": "paper_tostart",
+    "imageName": "gb_paper_tostart.png",
+    "roiFront": "49,550,40,60",
+    "roiBack": "9,531,172,96",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "点击开始自动战斗(战斗过程界面)"
   }
 ]

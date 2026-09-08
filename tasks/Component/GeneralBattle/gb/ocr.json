@@ -34,5 +34,14 @@
     "method": "Default",
     "keyword": "已标记",
     "description": "已标记"
+  },
+  {
+    "itemName": "point_or_speed",
+    "roiFront": "106,598,42,33",
+    "roiBack": "1122,546,92,51",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "纸人是否运行×2 X2 x2都视为没有运行 其他纯数字0-200视为正在运行"
   }
 ]

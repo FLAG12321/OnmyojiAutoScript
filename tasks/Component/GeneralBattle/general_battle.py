@@ -4,6 +4,7 @@
 import time
 import math
 import random
+import re
 from time import sleep
 
 import cv2
@@ -30,14 +31,32 @@ from tasks.Component.GeneralBuff.general_buff import GeneralBuff
 from module.logger import logger
 
 
+def auto_ocr_running(text) -> bool:
+    """O_POINT_OR_SPEED 的 OCR 文本是否表示自动战斗运行中。
+
+    资产注释约定语义：'×2'/'X2'/'x2' 等倍速字样视为未运行，
+    纯数字 0-200 视为正在运行；空白/误读同样视为未运行。
+    """
+    if not text:
+        return False
+    t = str(text).strip()
+    if not re.fullmatch(r'\d{1,3}', t):
+        return False
+    return 0 <= int(t) <= 200
+
+
 class GeneralBattle(GeneralBuff, GeneralBattleAssets):
     """
     使用这个通用的战斗必须要求这个任务的config有config_general_battle
     """
 
-    def run_general_battle(self, config: GeneralBattleConfig = None, buff: BuffClass or list[BuffClass] = None) -> bool:
+    def run_general_battle(self, config: GeneralBattleConfig = None,
+                           buff: BuffClass or list[BuffClass] = None,
+                           remaining_count: int = None) -> bool:
         """
         运行脚本
+        :param remaining_count: 任务层传入的剩余战斗次数（含本场），自动段规划用；
+            不传则自动段功能静默跳过（存量调用方零改动）
         :return:
         """
         logger.hr("General battle start", 2)
@@ -47,11 +66,22 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         # 战斗统计
         self.current_count += 1
         logger.info(f"Current count: {self.current_count}")
+        # 自动段规划（spec 4.2）：配置开启且任务层传入剩余场次时生效
+        self.auto_battle_plan(config, remaining_count)
         # 战前设置
         self.battle_before(buff, config)
         # 绿标
         if self.is_in_battle(False):
             self.green_mark(config.green_enable, config.green_mark)
+        # 到达自动段起点：整段（开自动→M 场→取消）在函数内完成后，battle_wait 接管第 M+1 场手动流程。
+        # 时序：battle_before/绿标完成后、battle_wait 之前执行段，段返回时页面处于
+        # 第 M+1 场的战斗过程界面，battle_wait 正常接管。
+        # 注意必须放在 run_general_battle 而非 battle_wait：Orochi 等任务重写了 battle_wait，
+        # 插在基类 battle_wait 开头的分支对重写方不可达（审查发现的静默失效缺陷）
+        if self._auto_seg_reached():
+            # 段内零输入且此处尚未进入 battle_wait（stuck 未挂），先挂长战斗计时作段内兜底
+            self.device.stuck_record_add('BATTLE_STATUS_S')
+            self.auto_battle_run()
         # 战中设置
         win = self.battle_wait(config.random_click_swipt_enable)
         if win:
@@ -879,6 +909,245 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             return True
         else:
             return False
+
+    def is_auto_battle_page(self) -> bool:
+        """自动战斗页判定（spec 4.4 真机修订）：OR 语义——按钮消失（模板失配）
+        或 OCR 运行数字，任一成立即视为自动中。
+
+        真机验证发现：战斗打完进结算页的渐入瞬间，OCR 会短暂读空
+        （No text detected），原 AND 语义（OCR 数字且按钮消失）在此时
+        连续 3 帧失配即误判中断，导致段退出后脚本在游戏仍自动的状态下
+        开始点结算。按钮消失是"开启后即消失"的强模板证据，作为主判据；
+        OCR 只在按钮仍在时复核（按钮在 + OCR 非运行数字 = 确认手动）。
+        """
+        if self.appear(self.I_PAPER_TOSTART):
+            # 按钮还在：OCR 读到运行数字仍视为自动（OCR 直接证据优先），
+            # 否则是手动页
+            return auto_ocr_running(self.O_POINT_OR_SPEED.ocr(self.device.image))
+        # 按钮不在 = 自动中（主判据，无需 OCR——段内监测也不再有 OCR 刷屏）
+        return True
+
+    def _seg_state(self) -> dict:
+        """自动段状态载体（spec 4.1），惰性初始化。
+
+        直接调 battle_wait 的路径（如 DemonRetreat）不会先跑规划，
+        getattr 兜底保证其行为不变。
+        """
+        seg = getattr(self, '_auto_seg', None)
+        if seg is None:
+            seg = {'enabled': False, 'total_left': 0, 'planned': False,
+                   'start_offset': -1, 'seg_len': 0}
+            self._auto_seg = seg
+        return seg
+
+    def auto_battle_plan(self, config: GeneralBattleConfig, remaining_count: int) -> None:
+        """自动段规划（spec 4.2）：随机起点 + 固定段长，每场战斗序言调用一次。
+
+        双保险之一：配置未开或任务层未传剩余场次，整段功能静默跳过。
+        """
+        seg = self._seg_state()
+        # 配置字段已拍平在 GeneralBattleConfig 上（无嵌套子模型）
+        if not config.auto_battle_enable or remaining_count is None:
+            # 配置未开或任务层未传剩余场次：整段功能静默跳过（双保险之一）
+            return
+        if not seg['enabled']:
+            seg['enabled'] = True
+            seg['total_left'] = config.auto_total_count
+        if not seg['planned']:
+            # 规划新一段：要求打完段还剩至少一场手动取消场（remaining >= M+1）
+            m = config.auto_segment_count
+            if seg['total_left'] > 0 and remaining_count >= m + 1:
+                seg['planned'] = True
+                # 随机起点：[0, remaining-M] 均匀抽（0 = 本场就是起点）
+                seg['start_offset'] = random.randint(0, remaining_count - m)
+                # 实际段长受三重约束：配置 M、总剩余 T、剩余场数留一场取消
+                seg['seg_len'] = min(m, seg['total_left'], remaining_count - 1)
+        elif seg['start_offset'] > 0:
+            # 已在等起点：又打了一场手动场，离起点近一步
+            seg['start_offset'] -= 1
+
+    def _auto_seg_reached(self) -> bool:
+        """本场是否为自动段起点（battle_wait 开头查询一次）。"""
+        seg = getattr(self, '_auto_seg', None)
+        if seg is None or not seg['enabled'] or not seg['planned']:
+            return False
+        return seg['start_offset'] == 0 and seg['total_left'] > 0
+
+    def auto_battle_count_step(self) -> None:
+        """段内跨一次场次边界的单点计数同步（spec 4.5.2）。
+
+        第 1 场的计数由 run_general_battle 序言完成，这里只补第 2~M 场；
+        任务层口径（五倍券/组队进度）经钩子同步，保证三处计数一致。
+        """
+        self.current_count += 1
+        self._auto_seg['total_left'] -= 1
+        # 段内零输入：stuck 检测靠页面翻转续命，每跨一场重挂长战斗计时
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        # 任务层钩子：Orochi 在此同步五倍券补次/组队心跳
+        self.auto_battle_count_hook()
+
+    def auto_battle_count_hook(self) -> None:
+        """段内每完成一场的计数钩子：基类空实现，任务层覆盖以同步自己的口径。"""
+
+    def auto_battle_remaining_now(self):
+        """段内截断用的剩余次数口径：基类返回 None（无任务限制信息则不截断）。"""
+        return None
+
+    def _auto_start(self, retry: int = 2) -> bool:
+        """开启自动战斗（spec 4.5.1）：识别开启按钮→点击→确认进入自动页。
+
+        已处于自动页（上次残留）直接视为成功，不重复点击。
+        """
+        for _ in range(retry + 1):
+            self.screenshot()
+            if self.is_auto_battle_page():
+                return True
+            if self.appear(self.I_PAPER_TOSTART):
+                self.click(self.C_PAPER_TOSTART)
+                # 等页面切换，节奏拟人
+                sleep(random.uniform(0.5, 1.0))
+            else:
+                # 按钮还没出现（还在进场动画），稍等再试
+                sleep(0.3)
+        logger.warning('Auto battle start failed, fallback to manual battle')
+        return False
+
+    def _auto_cancel(self, retry: int = 2) -> bool:
+        """取消自动战斗（spec 4.5.3）：确认自动页→点击→确认按钮回归。"""
+        for _ in range(retry + 1):
+            self.screenshot()
+            if not self.is_auto_battle_page():
+                logger.info('Auto battle canceled (already manual)')
+                return True
+            self.click(self.C_PAPER_TOSTART)
+            sleep(random.uniform(0.5, 1.0))
+            # appear 基于 device.image（上一次截图的旧帧）：点击后必须重新截图刷新，
+            # 否则查的是点击前的旧帧，按钮明明已回归却查不到，白白多试一轮
+            self.screenshot()
+            if self.appear(self.I_PAPER_TOSTART):
+                logger.info('Auto battle canceled')
+                return True
+        logger.warning('Auto battle cancel failed, continue manual flow')
+        return False
+
+    def _auto_wait_battle_ui(self, timeout: float = 10.0) -> bool:
+        """等待回到战斗过程界面：取消自动必须在战斗界面上点按钮，准备页/结算页上
+        按钮不可见，直接判定会假成功。超时返回 False 由调用方告警兜底。"""
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            if self.is_in_real_battle(False):
+                return True
+            sleep(0.3)
+        return False
+
+    def auto_battle_run(self) -> None:
+        """自动段主体（spec 4.5）：点开自动→游戏连打 M 场（脚本零输入）→点回手动。
+
+        返回时页面处于第 M+1 场的战斗过程界面（或准备页），battle_wait 继续
+        手动流程。游戏自动战斗会自己完成结算与下一场挑战（fire），段内脚本
+        除开/关自动两次点击外零输入，只截图识别、记次、计数同步。
+        """
+        seg = self._seg_state()
+        # 本段已领取：无论成败，本场 battle_wait 只进段一次
+        seg['planned'] = False
+        m = seg['seg_len']
+
+        def _settle_appear() -> bool:
+            """结算页系模板共判 + 奖励框检测兜底（两处边界判定复用）。
+
+            模板认的是具体图案（胜利鼓/失败/领奖图标），活动副本的奖励底色
+            或结算动画中间帧可能全部失配——失配时段内看不到"结算页出现"，
+            游戏自动翻进下一场后不会记次，段会卡死在等待结算。奖励框检测认
+            网格本身（reward_grid_appear，与 settlement_click_grid 同一判据），
+            与奖励内容无关，作为第二判据兜底。
+            """
+            return (self.win_appear(threshold=0.8)
+                    or self.appear(self.I_FALSE, threshold=0.8)
+                    or self.appear(self.I_REWARD, threshold=0.6)
+                    or self.appear(self.I_REWARD_GOLD, threshold=0.8)
+                    or self.reward_grid_appear())
+
+        # ---- 1. 开启自动 ----
+        if not self._auto_start():
+            # 开启失败回退手动，本场照常打，不消耗 T
+            return
+        # 第 1 场的 T 消耗（其 current_count 已由 run_general_battle 序言计入）
+        seg['total_left'] -= 1
+        seg_done = 1
+        waiting_settle = False   # 是否已见到本场的结算页
+        fail_frames = 0          # 自动状态失配的连续帧数
+        fail_since = None        # 失配起始时刻（累计时长防抖用）
+        unknown_frames = 0       # 结算后连续未知页面帧数（既非战斗/准备也非结算）
+        # ---- 2. 段内循环：零输入，只识别记次 ----
+        while seg_done < m:
+            self.screenshot()
+            if not waiting_settle:
+                # 中断监测只在战斗过程界面帧做：结算页帧 OCR 天然读不到数字，
+                # 等结算期间不判定（实现修正，避免结算动画被误判为中断）
+                if self.is_auto_battle_page():
+                    fail_frames = 0
+                    fail_since = None
+                else:
+                    fail_frames += 1
+                    if fail_since is None:
+                        fail_since = time.time()
+                    if fail_frames >= 3 or time.time() - fail_since >= 1.5:
+                        logger.warning(f'Auto battle interrupted at {seg_done}/{m}')
+                        return
+                # 场次边界第一步：结算页出现
+                if _settle_appear():
+                    waiting_settle = True
+                    # 结算页帧不累计战斗界面失配：结算动画动辄数秒，fail_since 若
+                    # 残留到结算后，回到战斗界面第 1 帧失配即满足时长分支，
+                    # 1~2 帧失配就误判中断——进入结算时同步清零防抖
+                    fail_frames = 0
+                    fail_since = None
+                    # 页面翻转即"未卡死"的证据，重挂一次长战斗计时
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
+            else:
+                # 场次边界第二步：结算页过后回到战斗/准备界面 = 跨过一场
+                if self.is_in_real_battle(False) or self.is_in_prepare(False):
+                    unknown_frames = 0
+                    self.auto_battle_count_step()
+                    seg_done += 1
+                    waiting_settle = False
+                    # 计数偏差截断（spec 4.5.2）：剩余场数不够"段剩余+1 场取消"
+                    remaining_now = self.auto_battle_remaining_now()
+                    if remaining_now is not None and remaining_now <= m - seg_done:
+                        logger.warning(f'Auto battle segment truncated at {seg_done}/{m}')
+                        break
+                elif _settle_appear():
+                    # 结算页系模板还在（动画/翻页中）属于正常等待，不算未知界面
+                    unknown_frames = 0
+                else:
+                    # 页面流失去未知界面（异常弹窗/跳转）：没有退出条件会段内死循环，
+                    # 连续超过 30 帧告警退出，交 battle_wait/stuck 兜底
+                    unknown_frames += 1
+                    if unknown_frames > 30:
+                        logger.warning(f'Auto battle lost in unknown ui at {seg_done}/{m}')
+                        return
+        # ---- 3. 段尾取消（按钮只在战斗过程界面出现，先等界面再取消） ----
+        if self._auto_wait_battle_ui():
+            self._auto_cancel()
+        else:
+            logger.warning('Auto battle cancel skipped: not in battle ui')
+
+    def auto_battle_finish_sweep(self) -> None:
+        """任务收尾兜底（spec 6.3 真机修订）：仅在战斗过程界面上判定与取消。
+
+        is_auto_battle_page 是 OR 语义（按钮不在即自动中），主界面/准备页等
+        非战斗页按钮天然不在，会被误判"自动中"并误点——真机验证发现任务
+        收尾时页面几乎总是已回到主界面，在庭院坐标上连点三次 paper_tostart。
+        必须先确认战斗界面（I_BATTLE_INFO）再做判定与取消。
+        """
+        self.screenshot()
+        if not self.is_in_real_battle(False):
+            # 非战斗界面：OR 判定不可信，也不存在可点的自动按钮
+            return
+        if self.is_auto_battle_page():
+            logger.warning('Auto battle still on at task end, try cancel once')
+            self._auto_cancel()
 
     def check_take_over_battle(self, is_screenshot: bool, config: GeneralBattleConfig) -> bool or None:
         """

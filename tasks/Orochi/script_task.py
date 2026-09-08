@@ -96,6 +96,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                         logger.error('Unknown user status')
                         success = False
 
+        # 任务收尾兜底：仍处于自动战斗状态时补一次取消，避免把自动状态带出任务
+        self.auto_battle_finish_sweep()
+
         # 只有本次流程确认需要开启加成时才关闭，配对失败不会误操作加成开关。
         if self._soul_buff_should_close:
             self._set_soul_buff(False)
@@ -534,27 +537,19 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         else:
             logger.info("Orochi task completed, RealmRaid chain disabled")
 
-    def run_general_battle(self, config=None, buff=None) -> bool:
-        """
-        重写通用战斗：支持五倍消耗
-        父类 run_general_battle 内部会执行 self.current_count += 1（一次战斗计 1 次）。
-        当开启五倍消耗且仍有券时，本次战斗视为 5 次：
-        父类已计 1 次，这里再补 4 次，并扣减一张五倍券后立即回写 config，
-        保证下次运行读取到的是真实剩余券数。
-        能进入本方法说明尚未达到目标次数（否则外层循环已退出），
-        因此只要有券就用券，允许略微超过目标次数（例如目标 99、每战 +5 时最终为 100）。
-        :param config: 通用战斗配置
-        :param buff: 战斗加成
-        :return: 是否胜利
+    def _battle_count_settle(self) -> None:
+        """一场战斗结束后的计数收尾：五倍券补次 + 组队进度/心跳。
+
+        从原 run_general_battle 重写抽出，供手动场（run_general_battle）与
+        自动段（auto_battle_count_hook）共用，保证两处口径一致。
+        五倍券判断收在内部：进段前有券即可用，允许超额（原语义不变）。
         """
         orochi_config = self.config.orochi.orochi_config
-        # 判断本次战斗是否使用五倍券：已开启且仍有券即可，允许超额
+        # 判断本场是否使用五倍券：已开启且仍有券即可，允许超额
         use_ticket = (orochi_config.five_times_enable
                       and orochi_config.five_times_ticket > 0)
-        # 调用父类通用战斗，父类内部已经执行 current_count += 1
-        result = super().run_general_battle(config=config, buff=buff)
         if use_ticket:
-            # 五倍券生效：父类已计 1 次，这里再补 4 次，凑成一次战斗抵 5 次
+            # 五倍券生效：本场已计 1 次，这里再补 4 次凑成一场抵 5 次
             self.current_count += 4
             # 扣减一张券并立即回写，保证下次运行读到真实剩余
             orochi_config.five_times_ticket -= 1
@@ -573,6 +568,43 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     self._team_last_heartbeat = monotonic()
             except StaleSessionError as exc:
                 logger.warning(f'战斗完成时组队场次已失效: {exc}')
+
+    def auto_battle_count_hook(self) -> None:
+        """自动段内每完成一场的计数钩子：走与手动场同一份收尾口径（spec 4.5.2）。"""
+        self._battle_count_settle()
+
+    def auto_battle_remaining_now(self) -> int:
+        """自动段截断口径：本地限制 - 当前计数（五倍券 +4 已计入，偏保守）。"""
+        return self.limit_count - self.current_count
+
+    def run_general_battle(self, config=None, buff=None) -> bool:
+        """
+        重写通用战斗：支持五倍消耗
+        父类 run_general_battle 内部会执行 self.current_count += 1（一次战斗计 1 次）。
+        当开启五倍消耗且仍有券时，本次战斗视为 5 次：
+        父类已计 1 次，这里再补 4 次，并扣减一张五倍券后立即回写 config，
+        保证下次运行读取到的是真实剩余券数。
+        能进入本方法说明尚未达到目标次数（否则外层循环已退出），
+        因此只要有券就用券，允许略微超过目标次数（例如目标 99、每战 +5 时最终为 100）。
+        :param config: 通用战斗配置
+        :param buff: 战斗加成
+        :return: 是否胜利
+        """
+        # 五倍券的计数口径是"一场抵 5 次"（current_count 每场 +5），与自动段的"真实场数"
+        # 单位错配会导致超额多打；有券期间 fail-closed 禁用自动段（不传 remaining），
+        # 券用完后自动恢复。告警只在首次触发时打一次，避免每场刷屏
+        orochi_config = self.config.orochi.orochi_config
+        if orochi_config.five_times_enable and orochi_config.five_times_ticket > 0:
+            if not getattr(self, '_auto_seg_ticket_blocked', False):
+                logger.warning('五倍券启用期间禁用自动战斗段（次数/场数口径错配），券用完后自动恢复')
+                self._auto_seg_ticket_blocked = True
+            remaining = None
+        else:
+            # 自动段规划口径：调用前的剩余次数（含本场，与序言计数时序对齐）
+            remaining = self.limit_count - self.current_count
+        result = super().run_general_battle(config=config, buff=buff,
+                                            remaining_count=remaining)
+        self._battle_count_settle()
         return result
 
     def orochi_enter(self) -> bool:
@@ -1017,7 +1049,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('oas3')
+    c = Config('oas2')
     d = Device(c)
     t = ScriptTask(c, d)
 
