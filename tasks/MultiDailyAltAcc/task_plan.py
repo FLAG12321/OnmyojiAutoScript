@@ -21,6 +21,22 @@ TASK_KEYS = (
     "alliedteam_ap",
     "kekkaiActivation",
     "KekkaiUtilize",
+    # 周奖励/神秘商店：早晚轮勾选决定哪个轮次负责领取，星期列表决定哪天开
+    "weekaward",
+    "mysteryshop",
+)
+# 回礼轮专属键：回礼时是否顺带翻勾协与神秘商店（只做发现，不做完整子任务流程）
+RETURNGIFT_KEYS = (
+    "cooperation",
+    "mysteryshop",
+)
+# 单用途阶段开关键：控制回礼/同心战斗这两个阶段本身是否开启。
+# 与普通任务不同，这两个的 total_* 是轮次身份判定开关（next_run 靠它分流
+# 下一阶段），不能被排程物化改写——plan 勾选只在运行时过滤（合成账号配置
+# 时 AND 进去），关了就整轮空跑，轮转照常走到下个阶段。
+SINGLE_PURPOSE_KEYS = (
+    "returngift",
+    "alliedteam_battle",
 )
 
 DEFAULT_TASK_PLAN = {
@@ -28,24 +44,51 @@ DEFAULT_TASK_PLAN = {
         "morning_time": "06:05",
         "afternoon_time": "18:05",
         "random_delay_minutes": 30,
+        # 星期几开启周奖励/神秘商店（0=周一 … 6=周日）；空列表=不做。
+        # 统一为执行日语义：列表=任务实际翻找的日子（早晚轮直接比对当日，
+        # 回礼轮由前一晚排程判断次日）
+        "weekaward_weekdays": [0],
+        "mysteryshop_weekdays": [2, 5],
     },
     "morning": {
         "courtyard": False,
         "mail": True,
         "cooperation": True,
-        "donatejade": True,
+        # 捐勾/挂卡/蹭卡默认关：由用户按需在 plan 勾选
+        "donatejade": False,
         "alliedteam_ap": True,
-        "kekkaiActivation": True,
-        "KekkaiUtilize": True,
+        "kekkaiActivation": False,
+        "KekkaiUtilize": False,
+        # 周奖励由早轮领取（星期门控：schedule.weekaward_weekdays）
+        "weekaward": True,
+        # 神秘商店早轮也翻（星期门控：schedule.mysteryshop_weekdays）
+        "mysteryshop": True,
     },
     "afternoon": {
         "courtyard": True,
-        "mail": True,
+        "mail": False,
         "cooperation": True,
-        "donatejade": True,
+        # 捐勾/挂卡/蹭卡默认关：由用户按需在 plan 勾选
+        "donatejade": False,
         "alliedteam_ap": False,
-        "kekkaiActivation": True,
-        "KekkaiUtilize": True,
+        "kekkaiActivation": False,
+        "KekkaiUtilize": False,
+        # 下午轮默认不领（避免与早轮重复领取）
+        "weekaward": False,
+        "mysteryshop": False,
+    },
+    # 回礼轮专属阶段：cooperation / mysteryshop 两键（见 RETURNGIFT_KEYS）。
+    # mysteryshop 需再 AND schedule.mysteryshop_weekdays（执行日语义：列表=
+    # 实际翻找日，回礼轮决策由前一晚排程判断次日是否命中）
+    "returngift": {
+        "cooperation": False,
+        "mysteryshop": False,
+    },
+    # 单用途阶段本身是否开启（见 SINGLE_PURPOSE_KEYS）：默认全开；关闭则该
+    # 阶段空跑（轮次照常启动、正常完成、照常排下一阶段），轮转链不受影响
+    "single_purpose": {
+        "returngift": True,
+        "alliedteam_battle": True,
     },
 }
 
@@ -68,14 +111,31 @@ class TaskPlan:
     random_delay_minutes: int
     morning: Mapping[str, bool]
     afternoon: Mapping[str, bool]
+    # 回礼轮专属阶段：cooperation / mysteryshop 两键（见 RETURNGIFT_KEYS）
+    returngift: Mapping[str, bool]
+    # 单用途阶段开关：returngift / alliedteam_battle（见 SINGLE_PURPOSE_KEYS）
+    single_purpose: Mapping[str, bool]
+    # 星期几开启周奖励/神秘商店（0=周一 … 6=周日）；空列表=不做
+    weekaward_weekdays: tuple = ()
+    mysteryshop_weekdays: tuple = ()
 
     def enabled(self, phase: str, task: str) -> bool:
-        if task not in TASK_KEYS:
-            raise KeyError(f"Unknown MultiDaily task-plan key: {task}")
         if phase == "morning":
+            if task not in TASK_KEYS:
+                raise KeyError(f"Unknown MultiDaily task-plan key: {task}")
             return self.morning[task]
         if phase == "afternoon":
+            if task not in TASK_KEYS:
+                raise KeyError(f"Unknown MultiDaily task-plan key: {task}")
             return self.afternoon[task]
+        if phase == "returngift":
+            if task not in RETURNGIFT_KEYS:
+                raise KeyError(f"Unknown MultiDaily returngift-phase key: {task}")
+            return self.returngift[task]
+        if phase == "single_purpose":
+            if task not in SINGLE_PURPOSE_KEYS:
+                raise KeyError(f"Unknown MultiDaily single_purpose-phase key: {task}")
+            return self.single_purpose[task]
         raise ValueError(f"Unknown MultiDaily task-plan phase: {phase}")
 
     def schedule_target(self, phase: str, start_time: datetime) -> ScheduledTarget:
@@ -109,11 +169,12 @@ def _parse_time(value: object, field: str) -> time:
         raise TaskPlanError(f"{field} is not a valid 24-hour time: {value!r}") from exc
 
 
-def _parse_phase(raw: object, phase: str) -> dict[str, bool]:
+def _parse_phase(raw: object, phase: str, keys: tuple = TASK_KEYS) -> dict[str, bool]:
+    """校验阶段表：键集合必须与 keys 完全一致，值全为布尔。"""
     if not isinstance(raw, dict):
         raise TaskPlanError(f"{phase} must be an object")
     actual = set(raw)
-    expected = set(TASK_KEYS)
+    expected = set(keys)
     if actual != expected:
         missing = sorted(expected - actual)
         unknown = sorted(actual - expected)
@@ -123,9 +184,19 @@ def _parse_phase(raw: object, phase: str) -> dict[str, bool]:
         if unknown:
             details.append(f"unknown={unknown}")
         raise TaskPlanError(f"{phase} task keys invalid ({', '.join(details)})")
-    if any(type(raw[key]) is not bool for key in TASK_KEYS):
+    if any(type(raw[key]) is not bool for key in keys):
         raise TaskPlanError(f"{phase} task values must all be boolean")
-    return {key: raw[key] for key in TASK_KEYS}
+    return {key: raw[key] for key in keys}
+
+
+def _parse_weekdays(raw: object, field: str) -> tuple:
+    """校验星期列表：int 0-6（0=周一），去重排序；非列表或越界即报错。"""
+    if not isinstance(raw, list):
+        raise TaskPlanError(f"{field} must be a list of integers (0=Monday .. 6=Sunday)")
+    for value in raw:
+        if type(value) is not int or not 0 <= value <= 6:
+            raise TaskPlanError(f"{field} contains invalid weekday: {value!r} (0=Monday .. 6=Sunday)")
+    return tuple(sorted(set(raw)))
 
 
 def _validate_schedule(morning_time: time, afternoon_time: time, delay_minutes: int) -> None:
@@ -144,25 +215,49 @@ def _validate_schedule(morning_time: time, afternoon_time: time, delay_minutes: 
 def parse_task_plan(raw: object) -> TaskPlan:
     if not isinstance(raw, dict):
         raise TaskPlanError("task_plan root must be an object")
+    # returngift / single_purpose 阶段可选：旧版文件缺省时按默认值补齐
+    # （兼容用户已有 plan 文件，不写回）
     expected = {"schedule", "morning", "afternoon"}
+    for optional in ("returngift", "single_purpose"):
+        if optional in raw:
+            expected = expected | {optional}
     if set(raw) != expected:
-        raise TaskPlanError("task_plan must contain only schedule, morning, and afternoon")
+        raise TaskPlanError(
+            "task_plan must contain only schedule, morning, afternoon, "
+            "and optionally returngift and single_purpose")
     schedule = raw["schedule"]
     required_schedule = {"morning_time", "afternoon_time", "random_delay_minutes"}
-    if not isinstance(schedule, dict) or set(schedule) != required_schedule:
-        raise TaskPlanError("schedule must contain only morning_time, afternoon_time, and random_delay_minutes")
+    if not isinstance(schedule, dict) or not required_schedule.issubset(schedule):
+        raise TaskPlanError("schedule must contain morning_time, afternoon_time, and random_delay_minutes")
+    unexpected = set(schedule) - required_schedule - {"weekaward_weekdays", "mysteryshop_weekdays"}
+    if unexpected:
+        raise TaskPlanError(f"schedule contains unknown keys: {sorted(unexpected)}")
     morning_time = _parse_time(schedule["morning_time"], "schedule.morning_time")
     afternoon_time = _parse_time(schedule["afternoon_time"], "schedule.afternoon_time")
     delay_minutes = schedule["random_delay_minutes"]
     if type(delay_minutes) is not int or delay_minutes < 0:
         raise TaskPlanError("schedule.random_delay_minutes must be a non-negative integer")
     _validate_schedule(morning_time, afternoon_time, delay_minutes)
+    # 缺省 returngift / single_purpose 时用默认值（不写回文件：已有文件永远只读）
+    returngift_raw = raw.get("returngift", DEFAULT_TASK_PLAN["returngift"])
+    single_purpose_raw = raw.get("single_purpose", DEFAULT_TASK_PLAN["single_purpose"])
+    # 星期列表缺省时用默认值（旧文件兼容，不写回）
+    weekaward_weekdays = _parse_weekdays(
+        schedule.get("weekaward_weekdays", DEFAULT_TASK_PLAN["schedule"]["weekaward_weekdays"]),
+        "schedule.weekaward_weekdays")
+    mysteryshop_weekdays = _parse_weekdays(
+        schedule.get("mysteryshop_weekdays", DEFAULT_TASK_PLAN["schedule"]["mysteryshop_weekdays"]),
+        "schedule.mysteryshop_weekdays")
     return TaskPlan(
         morning_time=morning_time,
         afternoon_time=afternoon_time,
         random_delay_minutes=delay_minutes,
         morning=_parse_phase(raw["morning"], "morning"),
         afternoon=_parse_phase(raw["afternoon"], "afternoon"),
+        returngift=_parse_phase(returngift_raw, "returngift", RETURNGIFT_KEYS),
+        single_purpose=_parse_phase(single_purpose_raw, "single_purpose", SINGLE_PURPOSE_KEYS),
+        weekaward_weekdays=weekaward_weekdays,
+        mysteryshop_weekdays=mysteryshop_weekdays,
     )
 
 

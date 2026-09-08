@@ -74,6 +74,12 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             base_config = self.daily_conf.multi_daily_alt_acc_config
             self._task_plan = load_task_plan()
             self._normal_plan_phase = self._current_normal_plan_phase(base_config)
+            # 单用途轮运行前过滤：回礼/同心轮只做本任务，屏蔽用户手动勾选的其他
+            # 一切任务。屏蔽值随收尾落盘（与物化同哲学），且保证接续重试时
+            # phase_flags 快照稳定。回礼轮例外放行 plan.returngift 控制的
+            # 勾协/神秘商店翻找。
+            self._apply_single_purpose_filter(base_config)
+            base_config = self.daily_conf.multi_daily_alt_acc_config
             returngift_enable = base_config.total_returngift_enable
             # 更新进度文件中的returngift_enable状态
             self._update_task_returngift_enable(config_name, returngift_enable)
@@ -445,26 +451,35 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     def _create_account_config(self, account_info):
         """创建针对特定账号的配置"""
         config = ExtendedAccountInfo()
-        
+
         # 全局配置
         base_config = self.daily_conf.multi_daily_alt_acc_config
-        phase = getattr(self, "_normal_plan_phase", None)
+
+        # 运行时只看 total AND account：plan 的阶段勾选已在排程时刻物化进 total_*
+        # 落盘，运行时不再过滤。用户在轮次间隙手动开 total_*（如捐勾）就会带着
+        # 跑一轮，下一次排程物化重新接管——与试炼战斗等一次性任务同款行为。
+        # 普通轮的 7 个 plan 键不再需要 enabled() 闭包。
+        # 例外：同心战斗/回礼是轮次身份开关（total 决定 next_run 分流到哪个
+        # 阶段），不能物化——它们的 plan 勾选（single_purpose 段）只能在运行时
+        # AND：关了就整轮空跑（所有账号 skip，轮次正常完成、照常排下一阶段）。
         plan = self._get_task_plan()
+        single_purpose_on = lambda key: plan.enabled("single_purpose", key)
 
-        def enabled(task: str, total: bool, account: bool) -> bool:
-            return total and account and (phase is None or plan.enabled(phase, task))
-
-        config.alliedteam_battle_enable = base_config.total_alliedteam_battle_enable and account_info.alliedteam_battle_enable
-        config.alliedteam_ap_enable = enabled("alliedteam_ap", base_config.total_alliedteam_ap_enable, account_info.alliedteam_ap_enable)
-        config.mail_enable = enabled("mail", base_config.total_mail_enable, account_info.mail_enable)
-        config.donatejade_enable = enabled("donatejade", base_config.total_donatejade_enable, account_info.donatejade_enable)
-        config.courtyard_enable = enabled("courtyard", base_config.total_courtyard_enable, account_info.courtyard_enable)
-        config.cooperation_enable = enabled("cooperation", base_config.total_cooperation_enable, account_info.cooperation_enable)
-        config.returngift_enable = base_config.total_returngift_enable and account_info.returngift_enable
+        config.alliedteam_battle_enable = (base_config.total_alliedteam_battle_enable
+                                           and single_purpose_on("alliedteam_battle")
+                                           and account_info.alliedteam_battle_enable)
+        config.alliedteam_ap_enable = base_config.total_alliedteam_ap_enable and account_info.alliedteam_ap_enable
+        config.mail_enable = base_config.total_mail_enable and account_info.mail_enable
+        config.donatejade_enable = base_config.total_donatejade_enable and account_info.donatejade_enable
+        config.courtyard_enable = base_config.total_courtyard_enable and account_info.courtyard_enable
+        config.cooperation_enable = base_config.total_cooperation_enable and account_info.cooperation_enable
+        config.returngift_enable = (base_config.total_returngift_enable
+                                    and single_purpose_on("returngift")
+                                    and account_info.returngift_enable)
         config.weekaward_enable = base_config.total_weekaward_enable and account_info.weekaward_enable
         config.mysteryshop_enable = base_config.total_mysteryshop_enable and account_info.mysteryshop_enable
-        config.kekkaiActivation_enable = enabled("kekkaiActivation", base_config.total_kekkaiActivation_enable, account_info.kekkaiActivation_enable)
-        config.KekkaiUtilize_enable = enabled("KekkaiUtilize", base_config.total_KekkaiUtilize_enable, account_info.KekkaiUtilize_enable)
+        config.kekkaiActivation_enable = base_config.total_kekkaiActivation_enable and account_info.kekkaiActivation_enable
+        config.KekkaiUtilize_enable = base_config.total_KekkaiUtilize_enable and account_info.KekkaiUtilize_enable
         config.tree_planting_enable = min(base_config.total_tree_planting_enable, account_info.tree_planting_enable)
         config.trialbattle_enable = base_config.total_trialbattle_enable and account_info.trialbattle_enable
         config.summon_up_enable = base_config.total_summon_up_enable and account_info.summon_up_enable
@@ -485,7 +500,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         return plan
 
     def _current_normal_plan_phase(self, base_config) -> str | None:
-        """仅普通轮交给 plan；回礼/同心轮必须完整保留原有效开关。"""
+        """仅普通轮进入 plan 语义（排程物化时用）；回礼/同心轮返回 None。
+
+        phase 现只喂 phase_flags_of 做进度重建分组，不再参与运行时任务过滤
+        （过滤已在排程物化时完成）。"""
         if base_config.total_returngift_enable or base_config.total_alliedteam_battle_enable:
             return None
         if 5 <= self.start_time.hour < 18:
@@ -493,6 +511,92 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         if 18 <= self.start_time.hour <= 23:
             return "afternoon"
         return None
+
+    # 单用途轮的保留任务：回礼轮放行回礼本身 + plan.returngift 勾选的勾协/商店；
+    # 同心战斗轮放行同心战斗（AP 属于普通轮任务，单用途轮不开）。
+    _RETURNGIFT_ALLOW = (
+        ("total_returngift_enable", None),
+        # 勾协/神秘商店均为排程决策类：晚轮排回礼轮时已按 plan.returngift
+        # 勾选（商店另带星期门控）写好 total_*，运行前过滤照单执行，
+        # 不做二次判定——这里放行的是"排程已决策为开"的值
+        ("total_cooperation_enable", True),
+        ("total_mysteryshop_enable", True),
+    )
+    _ALLIEDTEAM_ALLOW = ("total_alliedteam_battle_enable",)
+
+    # 可屏蔽的全部任务开关（种树是 0/1/2 三值，屏蔽值用 0 而非 False）
+    _MASKABLE_TOTAL_KEYS = (
+        ("total_alliedteam_battle_enable", False),
+        ("total_alliedteam_ap_enable", False),
+        ("total_mail_enable", False),
+        ("total_donatejade_enable", False),
+        ("total_courtyard_enable", False),
+        ("total_cooperation_enable", False),
+        ("total_returngift_enable", False),
+        ("total_weekaward_enable", False),
+        ("total_mysteryshop_enable", False),
+        ("total_kekkaiActivation_enable", False),
+        ("total_KekkaiUtilize_enable", False),
+        ("total_tree_planting_enable", 0),
+        ("total_trialbattle_enable", False),
+        ("total_summon_up_enable", False),
+        ("total_publish_sr_enable", False),
+    )
+
+    def _apply_single_purpose_filter(self, base_config) -> None:
+        """单用途轮（回礼/同心战斗）运行前过滤：只保留本任务开关，其余全关。
+
+        用户在轮次间隙手动勾选的任务（如捐勾）不会泄漏进单用途轮；屏蔽值随
+        daily_conf 在收尾 save_config() 落盘（与排程物化同哲学：磁盘=本轮实际
+        执行内容）。手动勾选本就是一次性行为，被单用途轮屏蔽即消费完毕。
+        回礼轮的勾协/神秘商店是排程决策类：晚轮（_schedule_evening）已按
+        plan.returngift 勾选（商店另带星期门控）写好 total_*，过滤照单执行。
+        """
+        if base_config.total_returngift_enable:
+            # 勾协/商店放行值固定 True：total 本身就是排程决策结果
+            allowed = {total for total, plan_key in self._RETURNGIFT_ALLOW
+                       if plan_key is None or plan_key is True}
+            purpose = "returngift"
+        elif base_config.total_alliedteam_battle_enable:
+            allowed = set(self._ALLIEDTEAM_ALLOW)
+            purpose = "alliedteam"
+        else:
+            return  # 普通轮：任务内容已由排程物化决定，不需要过滤
+
+        masked = [key for key, false_value in self._MASKABLE_TOTAL_KEYS
+                  if key not in allowed and getattr(base_config, key, False)]
+        if not masked:
+            return
+        for key, false_value in self._MASKABLE_TOTAL_KEYS:
+            if key not in allowed and getattr(base_config, key, False):
+                setattr(base_config, key, false_value)
+        logger.info("[%s轮] 运行前过滤：屏蔽非本任务开关（含手动勾选）: %s",
+                    purpose, ", ".join(masked))
+        # daily_conf 与 config.model 同源，屏蔽值会随收尾 save_config() 落盘
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+
+    # plan 9 键 → total_* 开关的映射：排程时物化 plan 阶段勾选的唯一事实源。
+    # 排程落盘的开关就是下一轮的执行内容。周奖励/神秘商店两键需再 AND 星期
+    # 列表（schedule.*_weekdays），由 _schedule_plan_phase 的 weekday 逻辑处理。
+    _PLAN_TASK_TOTAL = (
+        ("courtyard", "total_courtyard_enable"),
+        ("mail", "total_mail_enable"),
+        ("cooperation", "total_cooperation_enable"),
+        ("donatejade", "total_donatejade_enable"),
+        ("alliedteam_ap", "total_alliedteam_ap_enable"),
+        ("kekkaiActivation", "total_kekkaiActivation_enable"),
+        ("KekkaiUtilize", "total_KekkaiUtilize_enable"),
+        ("weekaward", "total_weekaward_enable"),
+        ("mysteryshop", "total_mysteryshop_enable"),
+    )
+
+    # 周奖励/神秘商店的星期门控：物化到这两键时需再判断排程参考日的星期
+    # 是否命中 plan 的 schedule.*_weekdays。统一为执行日语义——列表=任务实际
+    # 翻找的日子；早/晚轮参考日即执行日，回礼轮决策在前一晚判断次日。
+    _WEEKDAY_GATED = (
+        ("weekaward", "weekaward_weekdays"),
+        ("mysteryshop", "mysteryshop_weekdays"),
+    )
 
     def _schedule_plan_phase(self, phase: str, start_time: datetime) -> None:
         scheduled = self._get_task_plan().schedule_target(phase, start_time)
@@ -504,6 +608,23 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             scheduled.target,
         )
         self.set_next_run("MultiDailyAltAcc", target=scheduled.target, persist=False)
+        # 物化：plan 对本阶段的勾选直接写进 total_* 开关落盘。排程没勾的任务
+        # 下一轮真的不跑（total=False 短路），用户不再需要手动开 total——
+        # plan 就是普通轮的执行清单。注意这必须发生在 set_next_run 之后，
+        # 因为 task_delay 会先从磁盘重载模型再改写。
+        self.daily_conf = self.config.model.multi_daily_alt_acc
+        plan = self._get_task_plan()
+        weekday_gated = dict(self._WEEKDAY_GATED)
+        for plan_key, total_key in self._PLAN_TASK_TOTAL:
+            value = plan.enabled(phase, plan_key)
+            if value and plan_key in weekday_gated:
+                # 周奖励/神秘商店：早晚轮勾选 AND 排程参考日星期命中才开
+                value = start_time.weekday() in getattr(plan, weekday_gated[plan_key])
+            setattr(
+                self.daily_conf.multi_daily_alt_acc_config,
+                total_key,
+                value,
+            )
 
     @staticmethod
     def _enabled_task_keys(config):
@@ -863,24 +984,14 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     def _build_plain_items(self) -> list[str]:
         """列出本轮实际启用的项目中文名。
 
-        与 _create_account_config 的开关判定同源：total_* 全局开关决定做不做，
-        7 个 plan 键（庭院/邮件/协作/捐勾/同心体力/挂卡/蹭卡）普通早晚轮再按
-        task_plan 阶段过滤；回礼轮/同心轮（phase 为 None）不过滤。
+        与 _create_account_config 的开关判定同源：total_* 决定做不做——plan 的
+        阶段勾选已在排程时刻物化进 total_*，这里不需要（也不能）再过滤。
         种树是 0/1/2 三值开关，分别显示为买花/买花捐树。
-        读不到 plan（异常）时退化为不过滤，宁可多列不漏列。
         """
         try:
             cfg = self.daily_conf.multi_daily_alt_acc_config
         except Exception:
             return []
-        phase = getattr(self, '_normal_plan_phase', None)
-        plan = None
-        if phase is not None:
-            try:
-                plan = self._get_task_plan()
-            except Exception:
-                logger.exception('读取 task_plan 失败，普通完成推送不过滤阶段项')
-                plan = None
         items = []
         for flag_name, label, plan_key in self._PLAIN_PUSH_TASKS:
             value = getattr(cfg, flag_name, None)
@@ -892,9 +1003,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                     items.append('买花捐树')
                 continue
             if not value:
-                continue
-            # 普通轮且该任务受 plan 管控：阶段计划关闭则本轮不做
-            if plan is not None and plan_key is not None and not plan.enabled(phase, plan_key):
                 continue
             items.append(label)
         return items
@@ -1101,12 +1209,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = False
 
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
-        # normal 阶段的 AP 是否运行由 task_plan + 原总开关 + 账号开关共同决定。
-        self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = True
+        # normal 阶段各任务开关由 _schedule_plan_phase 物化 plan 的 afternoon 勾选
         self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = False
-        self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = True
-        self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
-        self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
         self.save_config()
@@ -1124,17 +1228,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         # 如果开启了同心战斗，则调整设置
         if self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
             self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
-            self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = True
-            # 早晨庭院是否执行由 task_plan + 原总开关 + 账号开关共同决定。
-            self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = True
-            self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = True
-            self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = True
-            # 周一开启周奖励、周三/周六开启神秘商店：由早晨 6:05 那趟领取
-            # （start_time 是同日 00:23 同心战斗，星期几与 6:05 趟一致）
-            if start_time.weekday() == 0:
-                self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = True
-            if start_time.weekday() == 2 or start_time.weekday() == 5:
-                self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = True
+            # 早轮 plan 键开关（含周奖励/神秘商店的早晚轮+星期门控）已由
+            # _schedule_plan_phase 物化 plan 的 morning 勾选；同心战斗转 AP 走
+            # plan 的 alliedteam_ap 表达（默认早轮开）。
             self._reset_one_shot_flags()
         # 普通凌晨与同心战斗分支都必须提交内存中的 next_run；两者共用一次原子保存。
         self.config.model.multi_daily_alt_acc = self.daily_conf
@@ -1149,23 +1245,41 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
+        # 单用途轮（phase=None 不走 plan 过滤）必须显式关掉捐勾/挂卡/蹭卡，
+        # 否则承接上一普通轮的 True 会在回礼轮误跑。
+        self.daily_conf.multi_daily_alt_acc_config.total_donatejade_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_kekkaiActivation_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_KekkaiUtilize_enable = False
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
         self.save_config()
 
     def _schedule_evening(self, start_time: datetime):
-        """安排晚上的运行时间"""
+        """安排晚上的运行时间（排次日 00:20 回礼轮）"""
         self.set_next_run("MultiDailyAltAcc", target=start_time.replace(hour=0, minute=20) + timedelta(days=1),
                           persist=False)
         self.daily_conf = self.config.model.multi_daily_alt_acc
         self.daily_conf.multi_daily_alt_acc_config.total_weekaward_enable = False
-        self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = False
+        # 回礼轮附加任务（勾协/神秘商店）的决策时刻都提前一晚：晚轮完成排程时
+        # 按 plan.returngift 勾选写好开关，回礼轮运行前过滤照单执行。
+        # 神秘商店星期为执行日语义：列表=实际翻找日，这里判断次日（回礼轮执行日）
+        # 是否命中 plan 的 schedule.mysteryshop_weekdays。
+        # 周奖励仍由早轮物化领取。
+        plan = self._get_task_plan()
+        mysteryshop = (plan.enabled("returngift", "mysteryshop")
+                       and (start_time.weekday() + 1) % 7 in plan.mysteryshop_weekdays)
+        self.daily_conf.multi_daily_alt_acc_config.total_mysteryshop_enable = mysteryshop
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_ap_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable = True
         self.daily_conf.multi_daily_alt_acc_config.total_courtyard_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_mail_enable = False
-        self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_cooperation_enable = \
+            plan.enabled("returngift", "cooperation")
+        # 同 _schedule_alliedteam_after_returngift：单用途轮显式关闭，防承接误跑。
+        self.daily_conf.multi_daily_alt_acc_config.total_donatejade_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_kekkaiActivation_enable = False
+        self.daily_conf.multi_daily_alt_acc_config.total_KekkaiUtilize_enable = False
         self._reset_one_shot_flags()
         self.config.model.multi_daily_alt_acc = self.daily_conf
         self.save_config()

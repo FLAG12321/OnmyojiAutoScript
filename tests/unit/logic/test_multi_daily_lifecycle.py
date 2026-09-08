@@ -29,6 +29,10 @@ def _phase_config(**overrides):
         "total_courtyard_enable": False,
         "total_mail_enable": False,
         "total_cooperation_enable": False,
+        # 捐勾/挂卡/蹭卡：调度器在普通轮写 True、单用途轮写 False（与庭院同策）
+        "total_donatejade_enable": False,
+        "total_kekkaiActivation_enable": False,
+        "total_KekkaiUtilize_enable": False,
         "total_tree_planting_enable": 1,
         "total_trialbattle_enable": True,
         "total_summon_up_enable": True,
@@ -71,27 +75,41 @@ class _ReloadingConfig:
         (
             "_schedule_normal_day",
             {},
-            {"total_courtyard_enable": True, "total_returngift_enable": False},
+            # plan.afternoon 物化（默认表）：庭院✓邮件✓协作✓捐勾✗AP✗挂蹭✗
+            {"total_courtyard_enable": True, "total_returngift_enable": False,
+             "total_alliedteam_ap_enable": False, "total_donatejade_enable": False,
+             "total_kekkaiActivation_enable": False, "total_KekkaiUtilize_enable": False},
         ),
         (
             "_schedule_evening",
             {},
-            {"total_courtyard_enable": False, "total_returngift_enable": True},
+            {"total_courtyard_enable": False, "total_returngift_enable": True,
+             "total_donatejade_enable": False, "total_kekkaiActivation_enable": False,
+             "total_KekkaiUtilize_enable": False},
         ),
         (
             "_schedule_after_midnight",
             {},
-            {"total_alliedteam_battle_enable": False, "total_returngift_enable": False},
+            # 普通凌晨分支：plan.morning 物化照常（AP✓捐勾✗挂蹭✗；周一∉[2,5] 商店✗）
+            {"total_alliedteam_battle_enable": False, "total_returngift_enable": False,
+             "total_alliedteam_ap_enable": True, "total_donatejade_enable": False,
+             "total_kekkaiActivation_enable": False},
         ),
         (
             "_schedule_after_midnight",
             {"total_alliedteam_battle_enable": True},
-            {"total_alliedteam_battle_enable": False, "total_alliedteam_ap_enable": True},
+            # 同心分支：plan.morning 物化接管（默认表 AP✓；周一 ∈weekaward_days → 周奖励✓）
+            {"total_alliedteam_battle_enable": False, "total_alliedteam_ap_enable": True,
+             "total_kekkaiActivation_enable": False, "total_KekkaiUtilize_enable": False,
+             "total_weekaward_enable": True, "total_mysteryshop_enable": False},
         ),
         (
             "_schedule_alliedteam_after_returngift",
-            {"total_returngift_enable": True},
-            {"total_returngift_enable": False, "total_alliedteam_battle_enable": True},
+            {"total_returngift_enable": True, "total_donatejade_enable": True,
+             "total_kekkaiActivation_enable": True, "total_KekkaiUtilize_enable": True},
+            {"total_returngift_enable": False, "total_alliedteam_battle_enable": True,
+             "total_donatejade_enable": False, "total_kekkaiActivation_enable": False,
+             "total_KekkaiUtilize_enable": False},
         ),
     ),
 )
@@ -101,6 +119,9 @@ def test_phase_schedule_changes_survive_task_delay_reload(method, initial, expec
     task.config = config
     task.daily_conf = config.model.multi_daily_alt_acc
     task.start_time = datetime(2026, 8, 17, 0, 23)
+    # _schedule_plan_phase 物化 plan 勾选需要真实 TaskPlan
+    from tasks.MultiDailyAltAcc.task_plan import DEFAULT_TASK_PLAN, parse_task_plan
+    task._task_plan = parse_task_plan(DEFAULT_TASK_PLAN)
 
     if method == "_schedule_alliedteam_after_returngift":
         getattr(task, method)()

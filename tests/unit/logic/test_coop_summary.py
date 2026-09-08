@@ -1039,24 +1039,22 @@ def test_plain_push_respects_alliedteam_round(tmp_path):
 
 
 @pytest.mark.unit
-def test_plain_push_morning_plan_filters_items(tmp_path):
-    """普通早轮：7 个 plan 键按 task_plan 阶段过滤（默认早晨 courtyard 关）。"""
+def test_plain_push_items_follow_total_switches(tmp_path):
+    """普通轮推送：plan 过滤已拆除，total 开什么列什么（排程物化已表达 plan 意志）。"""
     task = _plain_task(tmp_path, total_courtyard_enable=True, total_mail_enable=True,
                        total_kekkaiActivation_enable=True, total_KekkaiUtilize_enable=True,
                        total_donatejade_enable=True)
     task._normal_plan_phase = 'morning'
-    # 未预载 plan 时 _get_task_plan 会 load 默认文件，早晨 courtyard=False
     task._notify_daily_completion()
     content = task.config.notifier.pushes[0]['content']
-    assert '庭院事务' not in content
-    for label in ('邮件', '捐勾', '挂卡', '蹭卡'):
+    for label in ('庭院事务', '邮件', '捐勾', '挂卡', '蹭卡'):
         assert label in content
 
 
 @pytest.mark.unit
-def test_plain_push_afternoon_plan_filters_items(tmp_path):
-    """普通下午轮：默认 afternoon 同心体力关，不列入。"""
-    task = _plain_task(tmp_path, total_alliedteam_ap_enable=True, total_mail_enable=True)
+def test_plain_push_total_off_not_listed(tmp_path):
+    """total 关闭的任务不列入推送项（同心体力默认下午轮关）。"""
+    task = _plain_task(tmp_path, total_alliedteam_ap_enable=False, total_mail_enable=True)
     task._normal_plan_phase = 'afternoon'
     task._notify_daily_completion()
     content = task.config.notifier.pushes[0]['content']
