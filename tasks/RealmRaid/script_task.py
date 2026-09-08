@@ -110,23 +110,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         self.ui_get_current_page()
         self.ui_goto(page_realm_raid)
 
-        # 有呱太活动的时候第一次进入还会 出现一个弹窗
-        self.screenshot()
-        if self.appear(self.I_FROG_RAID):
-            logger.info(f'Click {self.I_FROG_RAID.name}')
-            while 1:
-                self.screenshot()
-                if not self.appear(self.I_FROG_RAID):
-                    break
-                if self.appear_then_click(self.I_FROG_RAID, interval=1):
-                    continue
         # 判断是不是锁定阵容
         self.ensure_lock(con.general_battle_config.lock_team_enable)
-        # 判断是否是呱太活动
-        frog = self.is_frog(True)
-        if frog:
-            logger.info(f'Frog raid')
-
 
         # 开始循环
         success = True
@@ -162,9 +147,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     exit_all = new_exit_all
                 if allow_exit_four is not None:
                     exit_four_enable = allow_exit_four and con.raid_config.exit_four
-            medal, index = self.find_one(False, cells=cells)
-            
-            if not medal and not index:
+            index = self.find_one(False, cells=cells)
+            if not index:
                 # 已经没有可以挑战的了，只能刷新
                 if con.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
                     logger.info('No one can attack and then refresh')
@@ -185,7 +169,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     break
             # 判断是不是右下角第九个（难度最高的结界，退四降级后再打）。
             # exit_all 只在 auto_exit_all 开启时才可能为 True，此处无需再判一次
-            lock_before = con.general_battle_config.lock_team_enable
             if index == EXIT_FOUR_INDEX and not exit_all:
                 logger.info('Now is the hardest one')
                 if exit_four_enable:
@@ -198,11 +181,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     self.run_general_battle_back(con.general_battle_config, exit_four=True)
                     self.fire(index)
                     self.run_general_battle_back(con.general_battle_config, exit_four=True)
-            # 呱太判定独立于退四分支：格 9 同时落在退四区间与呱太区间（7/8/9），
-            # 若挂在 elif 上，退四命中格 9 时会跳过呱太的锁队解除
-            if self.check_medal_is_frog(frog, medal, index):
-                # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
-                con.general_battle_config.lock_team_enable = False
             self.fire(index)
             # 全退模式（auto_exit_all 判定等级过高）：进战斗立即退出，逐格清场降级
             if exit_all:
@@ -211,8 +189,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 last_battle = False
             else:
                 last_battle = self.run_general_battle(con.general_battle_config)
-            if lock_before:
-                con.general_battle_config.lock_team_enable = lock_before
             # 检查是否每三次领一个奖励
             if self.reward_detect_click(False):
                 logger.info('Rewards of three wins')
@@ -271,10 +247,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 self.screenshot()
                 if self.appear_then_click(self.I_UNLOCK, interval=1):
                     continue
-                if self.appear_then_click(self.I_UNLOCK_2, interval=1):
-                    continue
-                if self.appear(self.I_LOCK_2):
-                    break
                 if self.appear(self.I_LOCK):
                     break
             logger.info(f'Click {self.I_UNLOCK.name}')
@@ -283,24 +255,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 self.screenshot()
                 if self.appear_then_click(self.I_LOCK, interval=1):
                     continue
-                if self.appear_then_click(self.I_LOCK_2, interval=1):
-                    continue
-                if self.appear(self.I_UNLOCK_2):
-                    break
                 if self.appear(self.I_UNLOCK):
                     break
             logger.info(f'Click {self.I_LOCK.name}')
-
-    def is_frog(self, screenshot: bool=True) -> bool:
-        """
-        判断是不是呱太活动
-        :return:
-        """
-        if screenshot:
-            self.screenshot()
-        if self.appear(self.I_FROG_MEDAL):
-            return True
-        return False
 
     def check_ticket(self, base: int=0) -> bool:
         """
@@ -336,8 +293,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     def attack_order(self) -> list:
         """解析 order_attack 配置，返回进攻优先的勋章数（星级）列表。
 
-        实心勋章数等于结界星级，所以原先「按 I_MEDAL_5 → I_MEDAL_0 顺序全图找」的
-        星级优先语义，改成按勋章数排序后完全等价。
+        实心勋章数等于结界星级，按勋章数排序即星级优先。
         """
         order_attack = self.config.realm_raid.raid_config.order_attack
         support_number = [0, 1, 2, 3, 4, 5]
@@ -348,22 +304,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             logger.warning(f'Invalid order_attack [{order_attack}], fallback to 5>4>3>2>1>0')
             order = [5, 4, 3, 2, 1, 0]
         return order
-
-    def _medal_asset(self, count: int) -> RuleImage:
-        """把实心勋章数映射回 I_MEDAL_0~5 的原实例。
-
-        必须返回类属性的同一实例：check_medal_is_frog 用 `!=` 做身份比较，
-        返回新构造的对象会让呱太判定永久失效。
-        """
-        match = {
-            0: self.I_MEDAL_0,
-            1: self.I_MEDAL_1,
-            2: self.I_MEDAL_2,
-            3: self.I_MEDAL_3,
-            4: self.I_MEDAL_4,
-            5: self.I_MEDAL_5,
-        }
-        return match.get(count, self.I_MEDAL_0)
 
     @staticmethod
     def _match_in_region(rule: RuleImage, image, region: tuple, threshold: float=None) -> bool:
@@ -540,9 +480,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                           name=f'partition_{cell["index"]}')
                 for cell in self.detect_cells(read_level=False)]
 
-    def find_one(self, screenshot: bool=True, cells: list=None) -> tuple:
+    def find_one(self, screenshot: bool=True, cells: list=None) -> int:
         """
-        找到一个可以打的，并且检查一下是不是这一个的是第几个的
+        找到一个可以打的格子，返回格号
         我们约定次序是：从左到右 上到下
         1 2 3
         4 5 6
@@ -550,8 +490,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         已攻破与攻打失败的格子都跳过（是否重打失败格不再按 when_attack_fail 分支区分，
         统一跳过；该配置仍决定「没有可打目标之后」是刷新还是退出）。
         :param cells: 已识别好的九宫格结果，传入可避免同一帧重复识别
-        :return: 返回的第一个参数是一个RuleImage, 第二个参数是位置信息
-        如果没有找到，返回None, None
+        :return: 可攻打格子的格号（1~9），没有找到返回 None
         """
         if cells is None:
             cells = self.detect_cells(screenshot)
@@ -560,7 +499,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 logger.info(f'Position {cell["index"]} is {cell["state"].lower()}, skip')
         candidates = [c for c in cells if c['state'] == CELL_ATTACKABLE]
         if not candidates:
-            return None, None
+            return None
         if self.attack_by_position:
             # 按格号顺序进攻：格 1 → 格 9，从简单打到难
             target_cell = candidates[0]
@@ -575,46 +514,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 if target_cell:
                     break
             if not target_cell:
-                return None, None
-        target = self._medal_asset(target_cell['medal_count'])
+                return None
         total = target_cell['medal_count'] + target_cell['no_medal_count']
-        logger.info(f'Find one medal [{target}], order is {target_cell["index"]}, '
-                    f'medal {target_cell["medal_count"]}/{total}')
-        return target, target_cell['index']
-
-    def check_medal_is_frog(self, is_activity: False, target: RuleImage, order: int) -> bool:
-        """
-        检查这个是不是呱太，为此之前你还需要判断是不是 处于呱太活动的
-        :param target:
-        :param is_activity: 如果不是呱太活动，那么就不需要检查了
-        :param order:
-        :return:
-        """
-        if not is_activity:
-            return False
-        # 好像呱太的位置是只有 789这三个
-        if order < 7:
-            return False
-        # 有时候四星可能和五星的混一起
-        if target != self.I_MEDAL_5 and target != self.I_MEDAL_4:
-            return False
-        match_ocr = {
-            1: self.O_FROG_1,
-            2: self.O_FROG_2,
-            3: self.O_FROG_3,
-            4: self.O_FROG_4,
-            5: self.O_FROG_5,
-            6: self.O_FROG_6,
-            7: self.O_FROG_7,
-            8: self.O_FROG_8,
-            9: self.O_FROG_9,
-        }
-        target_ocr = match_ocr[order]
-        self.screenshot()
-        if target_ocr.ocr(self.device.image) == 20:
-            logger.info(f'Find frog medal [{target}]')
-            return True
-        return False
+        logger.info(f'Find one medal {target_cell["medal_count"]}/{total}, '
+                    f'order is {target_cell["index"]}')
+        return target_cell['index']
 
     def reward_detect_click(self, screenshot: bool=True) -> bool:
         """

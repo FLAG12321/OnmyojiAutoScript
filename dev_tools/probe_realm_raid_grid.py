@@ -78,8 +78,8 @@ def probe(path: str, order_attack: str = '5 > 4 > 3 > 2 > 1 > 0') -> None:
               f"{cell['state']:10s} M={cell['medal_count']} N={cell['no_medal_count']} "
               f"tot={total} consistent={total == expect} click={cell['click_roi']}")
 
-    medal, index = task.find_one(screenshot=False)
-    print(f'  -> find_one = ({medal}, {index})')
+    index = task.find_one(screenshot=False)
+    print(f'  -> find_one = {index}')
     print()
 
 

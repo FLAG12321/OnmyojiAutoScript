@@ -13,18 +13,6 @@ class RealmRaidAssets:
 	# Image Rule Assets
 	# 点击结界突破的图片 
 	I_REALM_RAID = RuleImage(roi_front=(261,638,44,40), roi_back=(246,628,63,64), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/realm_raid.png")
-	# 五个勋章 
-	I_MEDAL_5 = RuleImage(roi_front=(238,205,212,53), roi_back=(216,187,919,364), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_5.png")
-	# description 
-	I_MEDAL_4 = RuleImage(roi_front=(241,483,193,46), roi_back=(228,178,899,362), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_4.png")
-	# description 
-	I_MEDAL_3 = RuleImage(roi_front=(240,210,194,41), roi_back=(229,189,894,345), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3.png")
-	# description 
-	I_MEDAL_2 = RuleImage(roi_front=(572,478,198,48), roi_back=(217,193,923,354), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_2.png")
-	# description 
-	I_MEDAL_1 = RuleImage(roi_front=(570,206,199,52), roi_back=(237,198,892,336), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_1.png")
-	# 没有勋章的 
-	I_MEDAL_0 = RuleImage(roi_front=(536,336,176,51), roi_back=(231,200,898,336), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_0.png")
 	# 右上角红色的关闭 
 	I_BACK_RED = RuleImage(roi_front=(1178,101,57,64), roi_back=(1178,101,57,64), threshold=0.7, method="Template matching", file="./tasks/RealmRaid/res/res_back_red.png")
 	# 没有锁的状态图标 
@@ -39,10 +27,6 @@ class RealmRaidAssets:
 	I_SOUL_RAID = RuleImage(roi_front=(577,502,100,100), roi_back=(577,502,100,100), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_soul_raid.png")
 	# 刷新确认 
 	I_FRESH_ENSURE = RuleImage(roi_front=(672,403,173,59), roi_back=(672,403,173,59), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fresh_ensure.png")
-	# 没有锁图片，适配呱太入侵 
-	I_UNLOCK_2 = RuleImage(roi_front=(1002,643,30,41), roi_back=(1002,643,30,41), threshold=0.9, method="Template matching", file="./tasks/RealmRaid/res/res_unlock_2.png")
-	# 以锁图片，适配呱太 
-	I_LOCK_2 = RuleImage(roi_front=(1002,645,34,38), roi_back=(1002,645,34,38), threshold=0.9, method="Template matching", file="./tasks/RealmRaid/res/res_lock_2.png")
 	# 勋章 
 	I_MEDAL = RuleImage(roi_front=(907,221,31,31), roi_back=(131,130,1021,437), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal.png")
 	# 空勋章 
@@ -54,12 +38,8 @@ class RealmRaidAssets:
 
 
 	# Image Rule Assets
-	# 出现呱太勋章 
-	I_FROG_MEDAL = RuleImage(roi_front=(912,12,32,35), roi_back=(912,12,32,35), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_frog_medal.png")
 	# 已经进攻三次了 
 	I_RR_THREE = RuleImage(roi_front=(346,584,42,44), roi_back=(346,584,42,44), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_rr_three.png")
-	# 呱太入侵， 第一次进入结界时候出现 
-	I_FROG_RAID = RuleImage(roi_front=(511,301,282,100), roi_back=(511,301,282,100), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_frog_raid.png")
 	# 个人 
 	I_RR_PERSON = RuleImage(roi_front=(1203,236,56,100), roi_back=(1203,236,56,155), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_rr_person.png")
 
@@ -67,24 +47,6 @@ class RealmRaidAssets:
 	# Ocr Rule Assets
 	# 右上角 突破卷的数量 
 	O_NUMBER = RuleOcr(roi=(1143,13,80,39), area=(0,0,100,100), mode="DigitCounter", method="Default", keyword="", name="number")
-	# Ocr-description 
-	O_FROG_1 = RuleOcr(roi=(158,168,42,33), area=(158,168,42,33), mode="Digit", method="Default", keyword="", name="frog_1")
-	# Ocr-description 
-	O_FROG_2 = RuleOcr(roi=(491,170,34,32), area=(491,170,34,32), mode="Digit", method="Default", keyword="", name="frog_2")
-	# Ocr-description 
-	O_FROG_3 = RuleOcr(roi=(824,170,34,32), area=(824,170,34,32), mode="Digit", method="Default", keyword="", name="frog_3")
-	# Ocr-description 
-	O_FROG_4 = RuleOcr(roi=(158,303,38,35), area=(158,303,38,35), mode="Digit", method="Default", keyword="", name="frog_4")
-	# Ocr-description 
-	O_FROG_5 = RuleOcr(roi=(489,304,35,35), area=(489,304,35,35), mode="Digit", method="Default", keyword="", name="frog_5")
-	# Ocr-description 
-	O_FROG_6 = RuleOcr(roi=(824,305,35,33), area=(824,305,35,33), mode="Digit", method="Default", keyword="", name="frog_6")
-	# Ocr-description 
-	O_FROG_7 = RuleOcr(roi=(160,439,31,33), area=(160,439,31,33), mode="Digit", method="Default", keyword="", name="frog_7")
-	# Ocr-description 
-	O_FROG_8 = RuleOcr(roi=(494,441,31,31), area=(494,441,31,31), mode="Digit", method="Default", keyword="", name="frog_8")
-	# Ocr-description 
-	O_FROG_9 = RuleOcr(roi=(825,440,33,33), area=(825,440,33,33), mode="Digit", method="Default", keyword="", name="frog_9")
 	# text 
 	O_TEXT = RuleOcr(roi=(1143,13,80,39), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="text")
 
