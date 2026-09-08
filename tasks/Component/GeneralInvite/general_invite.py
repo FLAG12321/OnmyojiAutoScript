@@ -35,7 +35,11 @@ class RoomType(str, Enum):
     NORMAL_5 = 'normal_5'
 
 
-class GeneralInvite(BaseTask, GeneralInviteAssets, GameUiAssets):
+class GeneralInvite(BaseTask, GeneralInviteAssets):
+    # 注意：不要把 GameUiAssets 加进基类。宿主若同时继承含 GeneralBuff 的组件
+    # （如 Secret 的 ScriptTask），GameUiAssets 会与 GeneralBuffAssets 的 MRO 顺序
+    # 冲突，导致宿主类定义时 TypeError（WantedQuests 曾因此无法导入）。
+    # 需要页面检测资产时直接用 GameUiAssets.I_XXX 类属性引用。
     timer_invite = None
     timer_wait = None
     timer_emoji = None  # 等待期间如果没有操作的话，可能会导致长时间无响应报错
@@ -596,7 +600,8 @@ class GeneralInvite(BaseTask, GeneralInviteAssets, GameUiAssets):
             self.screenshot()
 
             # 如果自己在探索界面或者是庭院，那就是房间已经被销毁了
-            if self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_EXPLORATION):
+            # （直接类属性引用，不经继承获取 GameUi 资产，见类定义处的 MRO 注释）
+            if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(GameUiAssets.I_CHECK_EXPLORATION):
                 logger.warning('Room destroyed')
                 success = False
                 break
