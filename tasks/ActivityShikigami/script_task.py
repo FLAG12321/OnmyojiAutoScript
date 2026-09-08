@@ -145,7 +145,11 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
     """
     更新前请先看 ./README.md
     """
-    
+    # 随机自动战斗段接入的爬塔类型：门票缓存与场次限制齐全。ap20 每个 entry 独立
+    # 20 次计数，段跨 entry 时主循环的切入口逻辑在段内（零输入）不可控；
+    # pass_monopoly/season_boss 玩法特殊——这三类 remaining 传 None 静默跳过
+    AUTO_SEG_CLIMB_TYPES = ('pass', 'ap', 'boss')
+
     def __init__(self, config, device):
         super().__init__(config, device)
         # check_tickets_enough 缓存: 避免每次循环都 OCR 剩余门票
@@ -178,6 +182,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 # 切换下一个爬塔类型
                 self.switch_next()
 
+        # 自动段收尾兜底：仍在战斗界面且自动未关时补一次取消（非战斗界面直接返回）
+        self.auto_battle_finish_sweep()
         # 返回庭院
         logger.hr("Exit Shikigami", 2)
         self.ui_get_current_page(False)
@@ -676,14 +682,82 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
     def get_general_battle_conf(self) -> tasks.Component.GeneralBattle.config_general_battle.GeneralBattleConfig:
         from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig as gbc
         self.conf.validate_switch_preset()
-        enable_preset = getattr(self.conf.general_battle, f'enable_{self.climb_type}_preset', False)
+        gb_conf = self.conf.general_battle
+        enable_preset = getattr(gb_conf, f'enable_{self.climb_type}_preset', False)
         group, team = getattr(self.conf.switch_soul_config, f'{self.climb_type}_group_team').split(',')
         return gbc(lock_team_enable=not enable_preset,
                    preset_enable=enable_preset,
                    preset_group=group if enable_preset else 1,
                    preset_team=team if enable_preset else 1,
-                   random_click_swipt_enable=getattr(self.conf.general_battle, f'enable_{self.climb_type}_anti_detect',
-                                                     False), )
+                   random_click_swipt_enable=getattr(gb_conf, f'enable_{self.climb_type}_anti_detect',
+                                                     False),
+                   # 自动段配置透传：爬塔自己的 GeneralBattleConfig 只是配置存储，
+                   # 组件 gbc 持有同名字段，不透传则组件侧永远是默认关闭
+                   auto_battle_enable=gb_conf.auto_battle_enable,
+                   auto_segment_count=gb_conf.auto_segment_count,
+                   auto_total_count=gb_conf.auto_total_count, )
+
+    # ---------------------------------------------------------------- 随机自动战斗段
+    def _auto_seg_remaining(self):
+        """自动段规划口径（含本场）：min(场次上限剩余, 门票缓存剩余)。
+
+        - 配置未开或类型不接：None（组件层静默跳过，双保险之一）
+        - 五倍消耗期间（一场抵 5 张门票）：场次与门票口径错配会导致超额多打，
+          fail-closed 禁用（与 Orochi 五倍券同策略），五倍关闭后自动恢复
+        - 场次口径对齐序言计数时序：调用发生在父类序言 current_count += 1 之前，
+          limit - current_count 即"本场 + 未来"剩余场数
+        :return: 剩余场次 or None（不启用）
+        """
+        gb_conf = self.conf.general_battle
+        if not gb_conf.auto_battle_enable:
+            return None
+        if self.climb_type not in self.AUTO_SEG_CLIMB_TYPES:
+            return None
+        # 五倍消耗 fail-closed：告警只在首次触发时打一次，避免每场刷屏
+        if self._x5_active:
+            if not getattr(self, '_auto_seg_x5_blocked', False):
+                logger.warning('五倍消耗期间禁用自动战斗段（场次/门票口径错配），五倍关闭后自动恢复')
+                self._auto_seg_x5_blocked = True
+            return None
+        # 场次上限：limit<=0 表示该类型未启用（与 put_status 的 get_limit 同语义）
+        limit = getattr(self.conf.general_climb, f'{self.climb_type}_limit', 0)
+        if limit <= 0:
+            return None
+        remaining = limit - self.current_count
+        # 门票缓存（pass/ap/boss 由 check_tickets_enough 维护，三类都参与缓存）。
+        # 缓存为 0 时取 0——规划要求 remaining >= M+1，不会开新段。
+        # 缓存语义与场次口径一致（均为"本场 + 未来"可用量），段内递减由 count_hook 同步
+        ticket = self._ticket_cache.get(self.climb_type)
+        if ticket is not None:
+            remaining = min(remaining, ticket)
+        return remaining
+
+    def run_general_battle(self, config=None, buff=None) -> bool:
+        """重写通用战斗：为自动段提供剩余场次口径。
+
+        父类内部按 序言计数 → auto_battle_plan → battle_before → 段分支 → battle_wait
+        执行，本重写只注入 remaining，爬塔无御魂式的场后结算（五倍门票扣减走
+        check_tickets_enough 的缓存预估，段内由 auto_battle_count_hook 同步递减）。
+        """
+        remaining = self._auto_seg_remaining()
+        return super().run_general_battle(config=config, buff=buff,
+                                          remaining_count=remaining)
+
+    def auto_battle_count_hook(self) -> None:
+        """段内每完成一场：同步递减门票缓存。
+
+        主循环 check_tickets_enough 的预估递减只发生在"脚本点 fire 前"，
+        段内 fire 由游戏自己点，不递减会让缓存虚高、门票耗尽误判有票。
+        段被启用时五倍必关（_auto_seg_remaining 已 fail-closed），步长恒 1。
+        """
+        climb = self.climb_type
+        if climb in self._ticket_cache:
+            self._ticket_cache[climb] = max(0, self._ticket_cache[climb] - 1)
+
+    def auto_battle_remaining_now(self):
+        """段内截断口径：复用规划口径实时计算（段运行期间配置必开、五倍必关，
+        与规划时的约束一致）。"""
+        return self._auto_seg_remaining()
 
     def random_reward_click(self, exclude_click: list = None, click_now: bool = True) -> RuleClick:
         """
