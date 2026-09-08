@@ -18,6 +18,9 @@ from module.logger import logger
 
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+# 结算落点：奖励页安全区域加权挑选（与基类 battle_wait 同一套落点）
+from tasks.Component.GeneralBattle.reward_frame import (
+    weighted_choice, FORBIDDEN_ACTIVITY)
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.ActivityShikigami.config import SwitchSoulConfig, GeneralBattleConfig, ActivityShikigami
 from tasks.Component.BaseActivity.base_activity import BaseActivity
@@ -440,30 +443,23 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 logger.warning("Battle failed")
                 self.ui_click_until_smt_disappear(self.random_reward_click(click_now=False), self.I_FALSE, interval=1.5)
                 return False
-            # 战斗成功
-            if self.appear_then_click(self.I_WIN, interval=2):
+            # 战斗成功：点赢的画面走安全区域落点 + 结算连点（I_WIN/I_WIN_2 共判），
+            # 落点与基类 battle_wait 同一套（全屏挖掉禁点区域与奖励行）
+            action_click = weighted_choice(self.reward_click_actions())
+            if (self.settlement_click(self.I_WIN, action_click, interval=0.8) or
+                    self.settlement_click(self.I_WIN_2, action_click, interval=0.8)):
                 continue
-            #  出现 "魂" 紫蛇皮 金币
-            if self.appear(self.I_REWARD)  \
-                or self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) \
-                or self.appear(self.I_PURPLE_SNAKE_SKIN) \
-                or self.appear(self.I_AS_REWARD_GOLD):
+            #  出现 "魂" 紫蛇皮 金币：统一点安全区域并按概率连点（与基类同一套落点）；
+            #  原先皮肤/金币页随机点 C_RANDOM_TOP/BOTTOM，现由各模板触发 + 奖励框兜底
+            if (self.settlement_click(self.I_REWARD, action_click, interval=0.9)
+                    or self.settlement_click(self.I_REWARD_PURPLE_SNAKE_SKIN, action_click, interval=1.5)
+                    or self.settlement_click(self.I_PURPLE_SNAKE_SKIN, action_click, interval=1.5)
+                    or self.settlement_click(self.I_AS_REWARD_GOLD, action_click, interval=1.5)
+                    # I_REWARD 系模板全部失配时的兜底：只要还检测到奖励框就照样点安全区域
+                    or self.settlement_click_grid(action_click, interval=1.5)):
                 logger.info('Win battle')
-                appear_reward_skin = self.appear(self.I_REWARD_PURPLE_SNAKE_SKIN) \
-                    or self.appear(self.I_PURPLE_SNAKE_SKIN) \
-                    or self.appear(self.I_AS_REWARD_GOLD)
-                appear_reward = self.appear(self.I_REWARD)
-                if appear_reward:
-                    self.click(self.I_REWARD, interval=0.9)
-                    ok_cnt += 1
-                    continue
-                logger.info('appear_reward_skin: %d', appear_reward_skin)
-                if appear_reward_skin:
-                    reward_click = random.choice(
-                        [self.C_RANDOM_TOP, self.C_RANDOM_BOTTOM])
-                    self.click(reward_click, interval=1.8)
-                    ok_cnt += 1
-                    continue
+                ok_cnt += 1
+                continue
             # 已经不在战斗中了, 且奖励也识别过了, 则随机点击
             # if ok_cnt > 0 and not self.is_in_battle(False):
             #     self.random_reward_click(exclude_click=[self.C_RANDOM_BOTTOM])
@@ -507,8 +503,10 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 return False
             if self.ui_reward_appear_click():
                 continue
-            # 战斗成功
-            if self.appear_then_click(self.I_WIN, interval=2):
+            # 战斗成功：点赢的画面走安全区域落点 + 结算连点（I_WIN/I_WIN_2 共判）
+            action_click = weighted_choice(self.reward_click_actions())
+            if (self.settlement_click(self.I_WIN, action_click, interval=0.8) or
+                    self.settlement_click(self.I_WIN_2, action_click, interval=0.8)):
                 return True
             # 已经不在战斗中了, 且奖励也识别过了, 则随机点击
             # if ok_cnt > 0 and not self.is_in_battle(False):
@@ -519,6 +517,15 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             if ok_cnt == 0 and random_click_swipt_enable:
                 self.random_click_swipt()
         return True
+
+    def reward_forbidden(self) -> tuple:
+        """活动爬塔结算的常驻禁点区域（默认预设 + 本期活动的奖励卷轴面板）。
+
+        2026-09-09 这期活动结算页有居中的奖励卷轴面板 (272,118,740,438)，
+        面板本体是物品与按钮区，结算点击只能落在面板四周与下方；
+        活动轮换后面板位置变化时需同步更新 reward_frame.FORBIDDEN_ACTIVITY。
+        """
+        return FORBIDDEN_ACTIVITY
 
     def switch_soul(self):
         conf = self.conf.switch_soul_config

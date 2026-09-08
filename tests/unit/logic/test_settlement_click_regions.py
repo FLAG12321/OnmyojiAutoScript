@@ -49,6 +49,7 @@ WIN_FILES = [
     'tasks/FallenSun/script_task.py',
     'tasks/MasterDisciple/script_task.py',
     'tasks/Plotline/script_task.py',
+    'tasks/ActivityShikigami/script_task.py',
 ]
 
 # 旧的奖励页随机列表不得包含左侧区域（C_REWARD_2）
@@ -57,6 +58,7 @@ REWARD_FILES = [
     'tasks/Orochi/script_task.py',
     'tasks/FallenSun/script_task.py',
     'tasks/BondlingFairyland/battle.py',
+    'tasks/ActivityShikigami/script_task.py',
 ]
 
 # 覆盖 reward_forbidden 的任务必须返回突破预设（顶左条 + 顶右条 + 左下角）
@@ -65,6 +67,11 @@ KEKKAI_PRESET_FILES = [
     'tasks/RyouToppa/script_task.py',
     'tasks/Exploration/base.py',
     'tasks/Plotline/script_task.py',
+]
+
+# 活动爬塔必须返回活动预设（默认禁区 + 本期活动的奖励卷轴面板）
+ACTIVITY_PRESET_FILES = [
+    'tasks/ActivityShikigami/script_task.py',
 ]
 
 # 结算连点接线文件：胜利画面 + 领取奖励的结算点都走 settlement_click/gesture
@@ -116,6 +123,14 @@ def test_kekkai_tasks_use_kekkai_preset():
     for path in KEKKAI_PRESET_FILES:
         assert 'FORBIDDEN_KEKKAI' in _src(path), \
             f'{path} 未使用 FORBIDDEN_KEKKAI 预设'
+
+
+@pytest.mark.unit
+def test_activity_uses_activity_preset():
+    """活动爬塔结算使用活动预设（默认禁区 + 本期活动的奖励卷轴面板）。"""
+    for path in ACTIVITY_PRESET_FILES:
+        assert 'FORBIDDEN_ACTIVITY' in _src(path), \
+            f'{path} 未使用 FORBIDDEN_ACTIVITY 预设'
 
 
 @pytest.mark.unit
@@ -242,6 +257,10 @@ def test_reward_grid_wired_as_fallback_trigger():
         if path == 'tasks/MasterDisciple/script_task.py':
             continue      # 奖励阶段走 ui_click_until_smt_disappear，不在本契约内
         assert 'settlement_click_grid(' in src, f'{path} 奖励循环缺少奖励框兜底触发'
+        if path == 'tasks/ActivityShikigami/script_task.py':
+            # 爬塔的 battle_wait 是单循环结构：退出判据是挑战按钮重现（已回到
+            # 战斗主页），不存在按模板消失退出的分支，无「提前退出」风险可防
+            continue
         assert 'not self.reward_grid_appear()' in src, \
             f'{path} 退出条件未认奖励框判据（奖励框还在就会提前退出）'
 
