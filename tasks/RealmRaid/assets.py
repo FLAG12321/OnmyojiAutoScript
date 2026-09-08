@@ -18,7 +18,7 @@ class RealmRaidAssets:
 	# description 
 	I_MEDAL_4 = RuleImage(roi_front=(241,483,193,46), roi_back=(228,178,899,362), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_4.png")
 	# description 
-	I_MEDAL_3 = RuleImage(roi_front=(240,210,193,41), roi_back=(229,189,894,345), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3.png")
+	I_MEDAL_3 = RuleImage(roi_front=(240,210,194,41), roi_back=(229,189,894,345), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3.png")
 	# description 
 	I_MEDAL_2 = RuleImage(roi_front=(572,478,198,48), roi_back=(217,193,923,354), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_2.png")
 	# description 
@@ -33,8 +33,6 @@ class RealmRaidAssets:
 	I_LOCK = RuleImage(roi_front=(820,581,27,38), roi_back=(808,572,60,77), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/lock.png")
 	# 刷新按钮 
 	I_FRESH = RuleImage(roi_front=(1006,581,80,36), roi_back=(957,564,182,66), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fresh.png")
-	# 点击的式神录 
-	I_SHIKIGAMI = RuleImage(roi_front=(1206,608,54,51), roi_back=(1206,608,54,51), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_shikigami.png")
 	# 进攻 
 	I_FIRE = RuleImage(roi_front=(982,494,136,63), roi_back=(140,129,1024,584), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fire.png")
 	# 打完个后出现的领取奖励 
@@ -45,14 +43,14 @@ class RealmRaidAssets:
 	I_UNLOCK_2 = RuleImage(roi_front=(1002,643,30,41), roi_back=(1002,643,30,41), threshold=0.9, method="Template matching", file="./tasks/RealmRaid/res/res_unlock_2.png")
 	# 以锁图片，适配呱太 
 	I_LOCK_2 = RuleImage(roi_front=(1002,645,34,38), roi_back=(1002,645,34,38), threshold=0.9, method="Template matching", file="./tasks/RealmRaid/res/res_lock_2.png")
-	# description 
-	I_MEDAL_5_FROG = RuleImage(roi_front=(903,479,201,49), roi_back=(189,182,967,376), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_5_frog.png")
-	# 3徽章新图2号 
-	I_MEDAL_3_2 = RuleImage(roi_front=(575,489,188,32), roi_back=(575,489,188,32), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3_2.png")
-	# description 
-	I_MEDAL_3_3 = RuleImage(roi_front=(902,479,201,50), roi_back=(902,479,201,50), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal_3_3.png")
-	# description 
-	I_FIRE_COUNT_0 = RuleImage(roi_front=(289,602,53,16), roi_back=(287,599,57,20), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_fire_count_0.png")
+	# 勋章 
+	I_MEDAL = RuleImage(roi_front=(907,221,31,31), roi_back=(131,130,1021,437), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_medal.png")
+	# 空勋章 
+	I_NO_MEDAL = RuleImage(roi_front=(1024,211,33,47), roi_back=(131,130,1021,437), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_no_medal.png")
+	# 攻破的标志 
+	I_FINISH_SIGN = RuleImage(roi_front=(406,168,48,52), roi_back=(147,136,995,408), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_finish_sign.png")
+	# 失败的标志 
+	I_FAILURE_SIGN = RuleImage(roi_front=(1057,146,76,48), roi_back=(137,136,1006,415), threshold=0.8, method="Template matching", file="./tasks/RealmRaid/res/res_failure_sign.png")
 
 
 	# Image Rule Assets
@@ -67,8 +65,6 @@ class RealmRaidAssets:
 
 
 	# Ocr Rule Assets
-	# 刷新的时间 
-	O_FRESH_TIME = RuleOcr(roi=(1042,582,85,36), area=(0,0,100,100), mode="Duration", method="Default", keyword="", name="fresh_time")
 	# 右上角 突破卷的数量 
 	O_NUMBER = RuleOcr(roi=(1143,13,80,39), area=(0,0,100,100), mode="DigitCounter", method="Default", keyword="", name="number")
 	# Ocr-description 
@@ -91,28 +87,5 @@ class RealmRaidAssets:
 	O_FROG_9 = RuleOcr(roi=(825,440,33,33), area=(825,440,33,33), mode="Digit", method="Default", keyword="", name="frog_9")
 	# text 
 	O_TEXT = RuleOcr(roi=(1143,13,80,39), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="text")
-	# Ocr-description 
-	O_FIRE_COUNT = RuleOcr(roi=(213,599,29,32), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="fire_count")
-
-
-	# Click Rule Assets
-	# 用来分割不同的挑战位置 
-	C_PARTITION_1 = RuleClick(roi_front=(233,147,229,120), roi_back=(233,147,229,120), name="partition_1")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_2 = RuleClick(roi_front=(566,148,237,115), roi_back=(566,148,237,115), name="partition_2")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_3 = RuleClick(roi_front=(900,147,222,116), roi_back=(900,147,222,116), name="partition_3")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_4 = RuleClick(roi_front=(236,283,229,124), roi_back=(236,283,229,124), name="partition_4")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_5 = RuleClick(roi_front=(564,280,237,120), roi_back=(564,280,237,120), name="partition_5")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_6 = RuleClick(roi_front=(900,282,222,120), roi_back=(900,282,222,120), name="partition_6")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_7 = RuleClick(roi_front=(233,416,236,121), roi_back=(233,416,236,121), name="partition_7")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_8 = RuleClick(roi_front=(567,413,230,124), roi_back=(567,413,230,124), name="partition_8")
-	# 用来分割不同的挑战位置 
-	C_PARTITION_9 = RuleClick(roi_front=(900,418,222,116), roi_back=(900,418,222,116), name="partition_9")
 
 

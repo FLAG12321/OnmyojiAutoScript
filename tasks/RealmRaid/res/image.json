@@ -29,7 +29,7 @@
   {
     "itemName": "medal_3",
     "imageName": "res_medal_3.png",
-    "roiFront": "240,210,193,41",
+    "roiFront": "240,210,194,41",
     "roiBack": "229,189,894,345",
     "method": "Template matching",
     "threshold": 0.8,
@@ -99,15 +99,6 @@
     "description": "刷新按钮"
   },
   {
-    "itemName": "shikigami",
-    "imageName": "res_shikigami.png",
-    "roiFront": "1206,608,54,51",
-    "roiBack": "1206,608,54,51",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "点击的式神录"
-  },
-  {
     "itemName": "fire",
     "imageName": "res_fire.png",
     "roiFront": "982,494,136,63",
@@ -153,39 +144,39 @@
     "description": "以锁图片，适配呱太"
   },
   {
-    "itemName": "medal_5_frog",
-    "imageName": "res_medal_5_frog.png",
-    "roiFront": "903,479,201,49",
-    "roiBack": "189,182,967,376",
+    "itemName": "medal",
+    "imageName": "res_medal.png",
+    "roiFront": "907,221,31,31",
+    "roiBack": "131,130,1021,437",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "description"
+    "description": "勋章"
   },
   {
-    "itemName": "medal_3_2",
-    "imageName": "res_medal_3_2.png",
-    "roiFront": "575,489,188,32",
-    "roiBack": "575,489,188,32",
+    "itemName": "no_medal",
+    "imageName": "res_no_medal.png",
+    "roiFront": "1024,211,33,47",
+    "roiBack": "131,130,1021,437",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "3徽章新图2号"
+    "description": "空勋章"
   },
   {
-    "itemName": "medal_3_3",
-    "imageName": "res_medal_3_3.png",
-    "roiFront": "902,479,201,50",
-    "roiBack": "902,479,201,50",
+    "itemName": "finish_sign",
+    "imageName": "res_finish_sign.png",
+    "roiFront": "406,168,48,52",
+    "roiBack": "147,136,995,408",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "description"
+    "description": "攻破的标志"
   },
   {
-    "itemName": "fire_count_0",
-    "imageName": "res_fire_count_0.png",
-    "roiFront": "289,602,53,16",
-    "roiBack": "287,599,57,20",
+    "itemName": "failure_sign",
+    "imageName": "res_failure_sign.png",
+    "roiFront": "1057,146,76,48",
+    "roiBack": "137,136,1006,415",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "description"
+    "description": "失败的标志"
   }
 ]
