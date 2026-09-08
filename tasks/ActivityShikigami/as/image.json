@@ -5,7 +5,7 @@
     "roiFront": "825,657,28,25",
     "roiBack": "739,613,276,85",
     "method": "Template matching",
-    "threshold": 0.5,
+    "threshold": 0.6,
     "description": "上锁图标"
   },
   {
@@ -20,7 +20,7 @@
   {
     "itemName": "climb_mode_pass",
     "imageName": "climb_mode_pass.png",
-    "roiFront": "1140,542,30,27",
+    "roiFront": "1140,542,25,27",
     "roiBack": "1122,529,70,52",
     "method": "Template matching",
     "threshold": 0.8,

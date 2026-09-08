@@ -192,7 +192,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type PASS', 1)
-        self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
+        self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_TO_BATTLE_MAIN_2, interval=1)
+        self.ui_click(self.I_TO_BATTLE_MAIN_2, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_climb_mode_in_game('pass')
         # 进入 pass 模式, 重置五倍状态, 由首次 check_tickets_enough 的 OCR 重新判断
         self._x5_active = False
@@ -230,8 +231,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             更新前请先看 ./README.md
         """
         logger.hr(f'Start run climb type AP')
-        self.ui_clicks([self.I_TO_BATTLE_MAIN],
-                       stop=self.I_CHECK_BATTLE_MAIN, interval=1)
+        self.ui_click(self.I_TO_BATTLE_MAIN, stop=self.I_TO_BATTLE_MAIN_2, interval=1)
+        self.ui_click(self.I_TO_BATTLE_MAIN_2, stop=self.I_CHECK_BATTLE_MAIN, interval=1)
         self.switch_climb_mode_in_game('ap')
         # 进入 ap 模式, 重置五倍状态, 由首次 check_tickets_enough 的 OCR 重新判断
         self._x5_active = False
@@ -603,7 +604,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         判断当前爬塔门票是否足够
         :return: True 可以运行 or False
 
-        缓存策略 (ap100 除外, 仍每次都OCR):
+        缓存策略:
         - pass/ap: 剩余 < 50 时每次都 OCR; >= 50 时 10 分钟 OCR 一次
         - boss:    剩余 < 10 时每次都 OCR; >= 10 时 10 分钟 OCR 一次
         缓存命中时预估递减 1 (一场战斗 1 张门票)
@@ -620,28 +621,27 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         # 五倍生效时门票消耗快 5 倍, OCR 间隔相应缩短为原来的五分之一
         ocr_interval = timedelta(minutes=2) if self._x5_active else timedelta(minutes=10)
 
-        # 缓存判断 (ap100 不参与缓存)
-        if climb != 'ap100':
-            threshold = {'pass': 50, 'ap': 50, 'boss': 10}.get(climb, 0)
-            cached = self._ticket_cache.get(climb)
-            last_ocr = self._ticket_last_ocr.get(climb)
-            now = datetime.now()
-            need_ocr = (
-                cached is None
-                or cached < threshold
-                or last_ocr is None
-                or (now - last_ocr) >= ocr_interval
-                # 五倍生效且预估剩余不足一次五倍, 需重新 OCR 以关闭五倍打零头
-                or (self._x5_active and cached < 5)
+        # 缓存判断
+        threshold = {'pass': 50, 'ap': 50, 'boss': 10}.get(climb, 0)
+        cached = self._ticket_cache.get(climb)
+        last_ocr = self._ticket_last_ocr.get(climb)
+        now = datetime.now()
+        need_ocr = (
+            cached is None
+            or cached < threshold
+            or last_ocr is None
+            or (now - last_ocr) >= ocr_interval
+            # 五倍生效且预估剩余不足一次五倍, 需重新 OCR 以关闭五倍打零头
+            or (self._x5_active and cached < 5)
+        )
+        if not need_ocr:
+            self._ticket_cache[climb] = max(0, cached - step)
+            elapsed = int((now - last_ocr).total_seconds())
+            logger.info(
+                f'Skip OCR for {climb} tickets, cached={self._ticket_cache[climb]} '
+                f'(last OCR {elapsed}s ago, step={step})'
             )
-            if not need_ocr:
-                self._ticket_cache[climb] = max(0, cached - step)
-                elapsed = int((now - last_ocr).total_seconds())
-                logger.info(
-                    f'Skip OCR for {climb} tickets, cached={self._ticket_cache[climb]} '
-                    f'(last OCR {elapsed}s ago, step={step})'
-                )
-                return self._ticket_cache[climb] > 0
+            return self._ticket_cache[climb] > 0
 
         logger.hr(f'Check {climb} tickets')
 
@@ -663,13 +663,9 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 _prepare_image_for_ocr(self.device.image, asset=self.O_REMAIN_AP))
         if climb == 'boss':
             _, remain_times, _ = self.O_REMAIN_BOSS.ocr_digit_counter(self.device.image)
-        if climb == 'ap100':
-            remain_times = self.O_REMAIN_AP100.ocr_digit(
-                _prepare_image_for_ocr(self.device.image, asset=self.O_REMAIN_AP100))
 
-        if climb != 'ap100':
-            self._ticket_cache[climb] = remain_times
-            self._ticket_last_ocr[climb] = datetime.now()
+        self._ticket_cache[climb] = remain_times
+        self._ticket_last_ocr[climb] = datetime.now()
 
         # pass/ap 且门票充足时, 按真实剩余门票同步游戏内五倍开关状态
         if climb in ('pass', 'ap') and remain_times > 0:

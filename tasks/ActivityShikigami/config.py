@@ -4,7 +4,7 @@
 from pydantic import BaseModel, Field, model_validator
 
 from tasks.Component.config_scheduler import Scheduler
-from tasks.Component.config_base import ConfigBase, TimeDelta
+from tasks.Component.config_base import ConfigBase, TimeDelta, dynamic_hide
 from tasks.Component.BaseActivity.config_activity import GeneralClimb
 from tasks.ActivityShikigami.season_boss.config import SeasonBossConfig
 
@@ -33,14 +33,16 @@ class SwitchSoulConfig(BaseModel):
     enable_switch_boss: bool = Field(default=False, description='是否切换boss爬塔御魂')
     boss_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
 
-    enable_switch_ap100: bool = Field(default=False, description='是否切换100体爬塔御魂')
-    ap100_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
-
     enable_switch_ap20: bool = Field(default=False, description='是否切换ap20御魂')
     ap20_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
 
     enable_switch_pass_monopoly: bool = Field(default=False, description='是否切换大富翁御魂')
     pass_monopoly_group_team: str = Field(default='-1,-1', description='组1-7,队伍1-4 中间用英文,分隔')
+
+    # ap20/大富翁 当前活动不存在对应入口，配置在前端隐藏（功能与字段保留，
+    # 活动切换回来后去掉本行即可恢复显示）
+    hide_fields = dynamic_hide('enable_switch_ap20', 'ap20_group_team',
+                               'enable_switch_pass_monopoly', 'pass_monopoly_group_team')
 
     # @model_validator(mode='after')
     def validate_switch_soul(self):
@@ -65,14 +67,25 @@ class GeneralBattleConfig(BaseModel):
     enable_boss_preset: bool = Field(default=False, description='是否切换boss爬塔预设, 仅数字切换御魂可用')
     enable_boss_anti_detect: bool = Field(default=False, description='boss爬塔战斗过程是否随机点击或滑动')
 
-    enable_ap100_preset: bool = Field(default=False, description='是否切换100体爬塔预设, 仅数字切换御魂可用')
-    enable_ap100_anti_detect: bool = Field(default=False, description='100体爬塔战斗过程是否随机点击或滑动')
-
     enable_ap20_preset: bool = Field(default=False, description='是否切换ap20爬塔预设, 仅数字切换御魂可用')
     enable_ap20_anti_detect: bool = Field(default=False, description='ap20爬塔战斗过程是否随机点击或滑动')
 
     enable_pass_monopoly_preset: bool = Field(default=False, description='是否切换大富翁预设, 仅数字切换御魂可用')
     enable_pass_monopoly_anti_detect: bool = Field(default=False, description='大富翁战斗过程是否随机点击或滑动')
+
+    # ap20/大富翁 当前活动不存在对应入口，配置在前端隐藏（功能与字段保留，
+    # 活动切换回来后去掉本行即可恢复显示）
+    hide_fields = dynamic_hide('enable_ap20_preset', 'enable_ap20_anti_detect',
+                               'enable_pass_monopoly_preset', 'enable_pass_monopoly_anti_detect')
+
+    # 随机自动战斗段（与御魂 Orochi 同功能）：战斗过程随机插入若干场自动战斗（点开→游戏连打→点回手动）
+    # 字段平铺一层，不嵌套子模型（script_task 的 merge_value 与 OASX 前端只支持一层 group）
+    # 总开关：默认关闭；仅对 门票/体力/boss/100体 爬塔生效，ap20/大富翁/修行合训不接
+    auto_battle_enable: bool = Field(default=False, description='是否启用随机自动战斗段')
+    # 单段连续自动战斗场数 M（进入自动后连续 M 场由游戏自动完成，脚本零输入）
+    auto_segment_count: int = Field(default=2, ge=1, le=10, description='单段连续自动战斗场数')
+    # 本次任务运行内自动战斗总场数上限 T（不持久化，任务重启重新规划）
+    auto_total_count: int = Field(default=4, ge=1, le=50, description='自动战斗总场数上限')
 
 
 class ActivityShikigami(ConfigBase):

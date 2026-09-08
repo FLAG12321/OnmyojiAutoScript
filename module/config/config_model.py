@@ -321,7 +321,21 @@ class ConfigModel(ConfigBase):
 
         self._inject_desktop_handle_options(result)
         self._filter_orochi_team_fields(task_name, result)
+        self._filter_activity_shikigami_fields(task_name, result)
         return result
+
+    def _filter_activity_shikigami_fields(self, task_name: str, result: dict) -> None:
+        """爬塔任务当前不存在的玩法模式：整组从界面摘掉。
+
+        纯展示层过滤：只从返回给界面的字典里摘掉条目，不动 pydantic 模型也不改
+        任何落盘值。修行合训（season_boss）当前活动无入口，配置组整体隐藏；
+        ap20/大富翁的字段级隐藏走 GeneralClimb/SwitchSoulConfig/GeneralBattleConfig
+        上的 dynamic_hide（隐藏字段不会出现在 result 里）。活动切换回来后删掉本
+        调用与各组 hide_fields 即可恢复显示。
+        """
+        if task_name != 'activity_shikigami':
+            return
+        result.pop('season_boss', None)
 
     def _filter_orochi_team_fields(self, task_name: str, result: dict) -> None:
         """按御魂组队模式与身份裁剪界面字段，只留下该模式真正需要填的项。

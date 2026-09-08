@@ -7,7 +7,7 @@ from enum import Enum
 
 from module.logger import logger
 
-from tasks.Component.config_base import ConfigBase, TimeDelta, Time
+from tasks.Component.config_base import ConfigBase, TimeDelta, Time, dynamic_hide
 from typing import Optional
 
 
@@ -22,12 +22,13 @@ class GeneralClimb(ConfigBase):
     pass_limit: int = Field(default=50, description='门票爬塔的最大次数')
     ap_limit: int = Field(default=300, description='体力爬塔的最大次数')
     boss_limit: int = Field(default=20, description='boss战爬塔的最大次数')
-    ap100_limit: int = Field(default=20, description='100体爬塔的最大次数')
     ap20_limit: int = Field(default=140, description='ap20爬塔的最大次数(7入口×20次)')
     pass_monopoly_limit: int = Field(default=50, description='大富翁模式爬塔的最大次数')
     season_boss_limit: int = Field(default=0, description='修行合训(season_boss)玩法的最大搜寻次数, 0表示不启用(不写进run_sequence即休眠)')
-    run_sequence: str = Field(default='pass,ap100,boss,ap,ap20,pass_monopoly',
-                              description='运行爬塔顺序(pass:门票,ap100:100体,boss:boss战,ap:体力,ap20:20体,pass_monopoly:大富翁)\n英文逗号分隔,从左到右运行,可自定义执行顺序\n例如:pass,ap100,boss,ap就是门票->100体->boss战->体力->20体->大富翁')
+    # 默认序列只含当前活动存在的三种入口（ap100 已删除；ap20/大富翁入口当前活动
+    # 不存在，需要时自行加入 run_sequence）
+    run_sequence: str = Field(default='pass,boss,ap',
+                              description='运行爬塔顺序(pass:门票,boss:boss战,ap:体力,ap20:20体,pass_monopoly:大富翁)\n英文逗号分隔,从左到右运行,可自定义执行顺序\n例如:pass,boss,ap就是门票->boss战->体力')
     # # 门票爬塔buff
     # pass_buff: str = Field(default='buff_4,buff_5', description='门票爬塔加成,buff1-5,加成页从左往右顺序,清空则不切换加成')
     # # 体力爬塔buff
@@ -40,6 +41,10 @@ class GeneralClimb(ConfigBase):
     random_sleep: bool = Field(default=False, description='是否启用在点击战斗前随机休息')
     # 是否开启五倍消耗（仅 pass/ap 生效，五倍券由脚本读屏并共用于 pass/ap）
     five_times_enable: bool = Field(default=False, description='five_times_enable_help')
+
+    # ap20/大富翁/修行合训 当前活动不存在对应入口，次数上限在前端隐藏
+    # （功能与字段保留，活动切换回来后去掉本行即可恢复显示）
+    hide_fields = dynamic_hide('ap20_limit', 'pass_monopoly_limit', 'season_boss_limit')
 
     @property
     def limit_time_v(self) -> timedelta:
