@@ -1,10 +1,11 @@
 # This Python file uses the following encoding: utf-8
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
-from tasks.DailyAltAcc.utils import DailyAltAccBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase, guild_popup_guard
 
 
 class Returngift(DailyAltAccBase):
+    @guild_popup_guard
     def run_returngift(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:

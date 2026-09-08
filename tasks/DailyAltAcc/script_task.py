@@ -353,10 +353,12 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         if con.daily_alt_acc_config.weekaward_enable and not self._should_skip("weekaward"):
             def run_weekaward():
                 """执行寮商店、寮商城和分享领取，作为 weekaward 统计单元。"""
-                xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
-                self.execute_guild(xzconfig)
-                self.execute_mall()
-                self._share_collect()
+                # 寮商店导航经寮主界面（点击神社/寮商店入口），全程启用突发弹窗跳过
+                with self.guild_popup_scope():
+                    xzconfig= GuildStore(enable=True,mystery_amulet=True,black_daruma_scrap=False,skin_ticket=0)
+                    self.execute_guild(xzconfig)
+                    self.execute_mall()
+                    self._share_collect()
             self._run_with_stat("weekaward", run_weekaward)
         if con.daily_alt_acc_config.mysteryshop_enable and not self._should_skip("mysteryshop"):
             self._run_with_stat("mysteryshop", self.run_mysteryshop)

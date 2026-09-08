@@ -18,6 +18,7 @@ from module.atom.ocr import RuleOcr
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_guild , page_team,page_mall
 from tasks.GameUi.assets import GameUiAssets
+from tasks.DailyAltAcc.utils import GuildPopupMixin
 from tasks.ReturnGift.assets import ReturnGiftAssets
 from tasks.ReturnGift.config import ReturnGiftConfig
 import random
@@ -59,7 +60,10 @@ def sort_sr_matches(matches: list[SrMatch]) -> list[SrMatch]:
     return sorted(matches, key=lambda item: (item[2], item[1]))
 
 
-class ScriptTask(GameUi,ReturnGiftAssets):
+class ScriptTask(GuildPopupMixin, GameUi,ReturnGiftAssets):
+    # 整个任务（送礼长循环/碎片统计导航）都在寮页面体系，突发弹窗跳过常开：
+    # 寮友捐赠触发的「已收到碎片」/「感谢」模态弹窗在 screenshot() 入口统一关闭
+    _guild_popup_active = True
 
     def run(self):
         con = self.config.return_gift.return_gift_config

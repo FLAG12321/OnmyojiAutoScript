@@ -2,10 +2,11 @@
 import time
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
-from tasks.DailyAltAcc.utils import DailyAltAccBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase, guild_popup_guard
 
 
 class Tree(DailyAltAccBase):
+    @guild_popup_guard
     def run_tree_planting(self):
         def buy_flower():
             logger.info("买花") 

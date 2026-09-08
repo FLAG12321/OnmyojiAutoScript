@@ -1,10 +1,11 @@
 # This Python file uses the following encoding: utf-8
 from tasks.GameUi.page import page_main, page_guild
-from tasks.DailyAltAcc.utils import DailyAltAccBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase, guild_popup_guard
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 
 
 class Donatejade(DailyAltAccBase):
+    @guild_popup_guard
     def run_donatejade(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:

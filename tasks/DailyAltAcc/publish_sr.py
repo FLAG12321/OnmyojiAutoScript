@@ -8,7 +8,7 @@ from filelock import FileLock
 
 from module.base.utils import point2str, save_image
 from module.logger import logger
-from tasks.DailyAltAcc.utils import DailyAltAccBase
+from tasks.DailyAltAcc.utils import DailyAltAccBase, guild_popup_guard
 from tasks.ReturnGift.assets import ReturnGiftAssets
 from tasks.ReturnGift.script_task import ScriptTask as ReturnGiftScriptTask
 
@@ -32,6 +32,7 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
     # 阶段1为找回目标最多滑动的次数
     ENTER_PUBLISH_SWIPE_LIMIT = 2
 
+    @guild_popup_guard
     def run_publish_sr(self):
         """发布SR碎片入口：已有队列则续做，否则从统计文件构建"""
         if self.SR_CNT_FILE.exists():
