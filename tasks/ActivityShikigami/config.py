@@ -82,10 +82,11 @@ class GeneralBattleConfig(BaseModel):
     # 字段平铺一层，不嵌套子模型（script_task 的 merge_value 与 OASX 前端只支持一层 group）
     # 总开关：默认关闭；仅对 门票/体力/boss/100体 爬塔生效，ap20/大富翁/修行合训不接
     auto_battle_enable: bool = Field(default=False, description='是否启用随机自动战斗段')
-    # 单段连续自动战斗场数 M（进入自动后连续 M 场由游戏自动完成，脚本零输入）
-    auto_segment_count: int = Field(default=2, ge=1, le=10, description='单段连续自动战斗场数')
+    # 单段连续自动战斗场数 M（进入自动后连续 M 场由游戏自动完成，脚本零输入）。
+    # 上限与 T 对齐 50（原 10 为初版保守值，2026-09-09 放宽：爬塔用户需要长段）
+    auto_segment_count: int = Field(default=2, ge=1, le=50, description='单段连续自动战斗场数')
     # 本次任务运行内自动战斗总场数上限 T（不持久化，任务重启重新规划）
-    auto_total_count: int = Field(default=4, ge=1, le=50, description='自动战斗总场数上限')
+    auto_total_count: int = Field(default=4, ge=1, le=200, description='自动战斗总场数上限')
 
 
 class ActivityShikigami(ConfigBase):

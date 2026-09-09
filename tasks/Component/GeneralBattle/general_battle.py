@@ -109,9 +109,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                         self.switch_preset_team(config.preset_enable, config.preset_group, config.preset_team)
                         self.check_and_open_buff(buff)
                         confed = True
-                # 点击准备(锁定阵容自动点准备,不锁定阵容前面也已经配置完毕需要点准备)
-                if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
-                    continue
+                # 点击准备(仅非锁定阵容：锁定状态下游戏会自动准备，按钮出现
+                # 的窗口期点击属于多余操作，容易暴露脚本特征，故不点)
+                if not getattr(config, 'lock_team_enable', False):
+                    if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=0.8):
+                        continue
                 continue
             # 未知界面, 既不是准备界面也不是战斗界面
             # logger.info('Wait for preparation page')  # 这玩意刷屏
@@ -203,6 +205,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         return True
 
+    # 结算奖励框检测开关（类属性，任务可覆盖）：True（默认）启用检测，检测出的
+    # 奖励行挖出禁区并作为「仍在奖励页」的第二判据。结算页没有标准三行奖励
+    # 网格的任务（如本期活动的卷轴面板结算）应覆盖为 False——检测恒为空，
+    # 白白消耗每帧 60~150ms，且兜底判据恒 False 无意义；此时禁区只剩常驻预设。
+    REWARD_GRID_DETECT = True
+
+    def reward_hot(self):
+        """本任务的热区形状覆盖（None = 通用校准值，真人实采反推，见 reward_frame）。
+
+        结算落点密度场的 x 范围 / 两侧 σ / y 峰值比例可按任务界面特点整体
+        覆盖（返回 reward_frame.HotShape）；y 锚点仍由奖励禁区动态决定，
+        不在覆盖范围内。需要专属热区的任务覆盖本方法。
+        """
+        return None
+
     def reward_forbidden(self) -> tuple:
         """本任务的常驻禁止区域预设（720p），与奖励检测无关、永远不点的地方。
 
@@ -248,16 +265,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         不依赖检测就一定安全。
 
         同一帧只检测一次：检测出的奖励行既用来挖禁区，也作为「仍在奖励页」的
-        第二判据缓存下来（见 reward_grid_appear）。
+        第二判据缓存下来（见 reward_grid_appear）。任务覆盖 REWARD_GRID_DETECT
+        为 False 时跳过检测（无标准奖励网格的结算页），本方法退化为纯静态分区。
         """
         if getattr(self, '_reward_safe_rules', None) is not None:
             return self._reward_safe_rules
 
         try:
-            rows = get_detector().detect(self.device.image)
+            # 任务级开关（REWARD_GRID_DETECT）：False 时跳过奖励框检测，禁区只剩
+            # 常驻预设（见该属性注释）——本期活动结算页无标准奖励网格的任务用
+            rows = (get_detector().detect(self.device.image)
+                    if self.REWARD_GRID_DETECT else [])
             rules = safe_click_rules(self.device.image,
                                      forbidden_preset=self.reward_forbidden(),
-                                     detector=FrozenRowsDetector(rows))
+                                     detector=FrozenRowsDetector(rows),
+                                     hot=self.reward_hot())
         except Exception as e:
             # 模板缺失、截图异常等都不该让整个战斗任务挂掉，回退到恒安全的底部区域
             logger.warning(f'Reward frame detect failed, fallback to C_REWARD_1: {e}')

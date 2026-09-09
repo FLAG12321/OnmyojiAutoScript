@@ -79,6 +79,8 @@ class ActivityShikigamiAssets:
 	I_PURPLE_SNAKE_SKIN = RuleImage(roi_front=(619,296,53,50), roi_back=(122,59,1004,436), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_purple_snake_skin.png")
 	# 金币识别 
 	I_AS_REWARD_GOLD = RuleImage(roi_front=(422,283,64,53), roi_back=(122,59,1004,436), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_as_reward_gold.png")
+	# 999奖励标识 
+	I_A_REWARD = RuleImage(roi_front=(484,138,143,47), roi_back=(394,109,306,136), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/as_a_reward.png")
 
 
 	# Image Rule Assets

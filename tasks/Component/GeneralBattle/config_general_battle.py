@@ -52,9 +52,10 @@ class GeneralBattleConfig(BaseModel):
     # merge_value 与 OASX 前端都只支持一层 group，嵌套 BaseModel 会 KeyError。
     # 总开关：部分战斗不存在自动战斗按钮，默认关闭
     auto_battle_enable: bool = Field(default=False, description='auto_battle_enable_help')
-    # 单段连续自动战斗场数 M（进入自动后连续 M 场由游戏自动完成，脚本零输入）
-    auto_segment_count: int = Field(default=2, ge=1, le=10, description='auto_segment_count_help')
+    # 单段连续自动战斗场数 M（进入自动后连续 M 场由游戏自动完成，脚本零输入）。
+    # 上限与 T 对齐 50（原 10 为初版保守值，2026-09-09 放宽：爬塔用户需要长段）
+    auto_segment_count: int = Field(default=2, ge=1, le=50, description='auto_segment_count_help')
     # 本次任务运行内自动战斗总场数上限 T（不持久化，任务重启重新规划）
-    auto_total_count: int = Field(default=4, ge=1, le=50, description='auto_total_count_help')
+    auto_total_count: int = Field(default=4, ge=1, le=200, description='auto_total_count_help')
 
 

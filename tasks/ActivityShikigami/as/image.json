@@ -79,5 +79,14 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "金币识别"
+  },
+  {
+    "itemName": "a_reward",
+    "imageName": "as_a_reward.png",
+    "roiFront": "484,138,143,47",
+    "roiBack": "394,109,306,136",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "999奖励标识"
   }
 ]

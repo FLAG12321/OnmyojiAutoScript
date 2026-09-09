@@ -259,7 +259,9 @@ def test_reward_grid_wired_as_fallback_trigger():
         assert 'settlement_click_grid(' in src, f'{path} 奖励循环缺少奖励框兜底触发'
         if path == 'tasks/ActivityShikigami/script_task.py':
             # 爬塔的 battle_wait 是单循环结构：退出判据是挑战按钮重现（已回到
-            # 战斗主页），不存在按模板消失退出的分支，无「提前退出」风险可防
+            # 战斗主页），不存在按模板消失退出的分支，无「提前退出」风险可防。
+            # 另：本期活动结算无标准奖励网格，REWARD_GRID_DETECT 已关闭（见
+            # test_reward_grid_detect_switch），兜底判据运行时恒 False，代码保留
             continue
         assert 'not self.reward_grid_appear()' in src, \
             f'{path} 退出条件未认奖励框判据（奖励框还在就会提前退出）'
@@ -292,6 +294,70 @@ def test_reward_detect_cache_is_per_frame(monkeypatch):
     assert getattr(b, '_reward_safe_rules', 'unset') is None
     b.reward_click_actions()
     assert len(calls) == 2
+
+
+@pytest.mark.unit
+def test_reward_grid_detect_switch(monkeypatch):
+    """REWARD_GRID_DETECT 开关：False 时完全跳过奖励框检测。
+
+    本期活动（ActivityShikigami）结算页走卷轴面板而非标准三行奖励网格，
+    检测恒为空——每帧白跑 60~150ms。开关关闭后：不调 detect、
+    reward_grid_appear 恒 False（兜底判据与退出判据同步失效，代码保留）、
+    落点退化为纯静态分区（仍挖掉常驻预设禁区）。
+    """
+    b = object.__new__(GeneralBattle)
+    b.device = SimpleNamespace(image=None)
+    b.interval_timer = {}
+    calls = []
+    monkeypatch.setattr('tasks.Component.GeneralBattle.general_battle.get_detector',
+                        lambda: SimpleNamespace(detect=lambda image: calls.append(1) or []))
+
+    # 默认开：正常走检测
+    assert b.REWARD_GRID_DETECT is True
+    b.reward_click_actions()
+    assert len(calls) == 1
+
+    # 关闭：换帧后不再检测，判据恒 False，落点只剩默认预设分区
+    b.REWARD_GRID_DETECT = False
+    b._reward_safe_rules = None          # 模拟换帧：截图入口作废缓存
+    rules = b.reward_click_actions()
+    assert len(calls) == 1, '开关关闭后不得再调用奖励框检测'
+    assert b.reward_grid_appear() is False, '检测关闭时奖励框判据必须恒 False'
+    assert b.settlement_click_grid(object()) is False
+    assert [r.roi_front for r in rules] == [(112, 171, 1168, 549), (0, 171, 112, 344)]
+
+
+@pytest.mark.unit
+def test_task_hot_shape_override():
+    """HotShape 任务级覆盖：默认 None 用通用校准值；活动形状峰值右移下移。
+
+    通用热区参数由真人实采校准，活动爬塔的调整（2026-09-09 右收下移）
+    走 reward_hot 任务级覆盖，其他任务的落点分布不受影响。
+    """
+    from tasks.Component.GeneralBattle.reward_frame import (
+        HotShape, HOT_DEFAULT, field_density, HOT_X, SIGMA_LEFT, SIGMA_RIGHT,
+        HOT_Y_PEAK_RATIO, HOT_Y_BASE, HOT_H)
+    # 默认形状 = 通用常量取值；hot=None 等价于 HOT_DEFAULT
+    assert HOT_DEFAULT == HotShape(HOT_X, SIGMA_LEFT, SIGMA_RIGHT, HOT_Y_PEAK_RATIO)
+    # 通用场：峰值在通用中心（x/y 可分离，各轴峰值处乘积为 1）
+    cx = HOT_X[0] + HOT_X[1] / 2
+    strip = min(HOT_H, 720 - HOT_Y_BASE)
+    cy = HOT_Y_BASE + HOT_Y_PEAK_RATIO * strip
+    assert field_density(cx, cy) == 1.0
+
+    # 活动覆盖：峰值右移下移，通用峰值处密度显著下降
+    act = HotShape(hot_x=(850, 380), sigma_left=62, sigma_right=86, peak_ratio=0.70)
+    acx = act.hot_x[0] + act.hot_x[1] / 2
+    acy = HOT_Y_BASE + act.peak_ratio * strip
+    assert field_density(acx, acy, hot=act) == 1.0
+    assert field_density(cx, cy, hot=act) < 0.5 * field_density(cx, cy)
+
+    # 任务接线：活动覆盖 reward_hot 返回形状，基类默认 None（其他任务不受影响）
+    from tasks.ActivityShikigami.script_task import ScriptTask
+    t = object.__new__(ScriptTask)
+    assert t.reward_hot() == act
+    b = object.__new__(GeneralBattle)
+    assert b.reward_hot() is None
 
 
 @pytest.mark.unit

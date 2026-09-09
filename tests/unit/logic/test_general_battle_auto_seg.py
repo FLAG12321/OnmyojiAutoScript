@@ -29,11 +29,11 @@ def test_auto_battle_config_validation():
     with pytest.raises(Exception):
         GeneralBattleConfig(auto_segment_count=0)   # M 下界 1
     with pytest.raises(Exception):
-        GeneralBattleConfig(auto_segment_count=11)  # M 上界 10
+        GeneralBattleConfig(auto_segment_count=51)  # M 上界 50（与 T 对齐，原 10）
     with pytest.raises(Exception):
         GeneralBattleConfig(auto_total_count=0)     # T 下界 1
     with pytest.raises(Exception):
-        GeneralBattleConfig(auto_total_count=51)    # T 上界 50
+        GeneralBattleConfig(auto_total_count=201)   # T 上界 200（2026-09-09 放宽，原 50）
 
 
 @pytest.mark.unit

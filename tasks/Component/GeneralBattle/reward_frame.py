@@ -25,6 +25,7 @@
 import bisect
 import math
 import random
+from typing import NamedTuple
 
 import cv2
 import numpy as np
@@ -169,6 +170,24 @@ HOT_H = 217                         # 热区高度：锚点向下 217px 为一�
 HOT_Y_PEAK_RATIO = 0.38             # 峰值中心位于可用高度的 38% 处（真人 y 中位 509）
 HOT_Y_UP_RATIO = 0.16               # 上侧衰减 σ = 可用高度的 16%（0.16×217≈35）
 HOT_Y_DOWN_RATIO = 0.24             # 下侧衰减 σ = 可用高度的 24%（0.24×217≈52）
+
+
+class HotShape(NamedTuple):
+    """热区形状参数组：任务级覆盖用（GeneralBattle.reward_hot 返回），缺省取通用校准值。
+
+    只收 4 个可覆盖的形状参数（x 范围 / 两侧 σ / y 峰值比例）；y 锚点
+    （hot_y0）由奖励禁区动态决定，HOT_H 与上下 σ 比例保持全局一致。
+    通用校准值由真人实采反推，任务覆盖属于主观调整（如活动爬塔
+    2026-09-09 的右收下移），不影响其他任务。
+    """
+    hot_x: tuple = HOT_X
+    sigma_left: float = SIGMA_LEFT
+    sigma_right: float = SIGMA_RIGHT
+    peak_ratio: float = HOT_Y_PEAK_RATIO
+
+
+# 通用默认形状（四个字段 = 上方通用常量的取值），hot=None 时取它
+HOT_DEFAULT = HotShape()
 # 块边渐缩：安全块边界上密度强制归零，向内按 smoothstep 恢复全值，
 # 渐缩宽度按块尺寸百分比取值。没有它，块边处密度是场在边界的残值，
 # 落点会沿块边聚成直线、几条直线拼出块的矩形轮廓 —— 明显的机器特征。
@@ -593,11 +612,12 @@ def subtract_rects(rect, blockers, min_w=MIN_SAFE_W, min_h=MIN_SAFE_H) -> list:
 
 
 def safe_click_rules(image, forbidden_preset=(), detector: RewardFrameDetector = None,
-                     candidates=CLICK_CANDIDATES) -> list:
+                     candidates=CLICK_CANDIDATES, hot: HotShape = None) -> list:
     """算出本帧可用的安全落点区域，包成 RuleClick 返回（面积大的在前）。
 
     落点在区域内的具体采样仍交给 RuleClick.coord()，以保留拟人化层的行为。
 
+    :param hot: 任务级热区形状覆盖（GeneralBattle.reward_hot）；None 用通用校准值
     :return: list[RuleClick]，全部为空时返回空列表，由调用方决定兜底
     """
     blockers = forbidden_rects(image, forbidden_preset, detector)
@@ -624,17 +644,18 @@ def safe_click_rules(image, forbidden_preset=(), detector: RewardFrameDetector =
                 rule_name = name
             else:
                 rule_name = '%s_safe%d' % (name, i + 1)
-            rule = FieldRuleClick(roi, rule_name, hot_y0)
+            rule = FieldRuleClick(roi, rule_name, hot_y0, hot)
             # 预计算本矩形的选择权重（面积×密度），weighted_choice 直接取用，
             # 不必在每次点击时重算密度场，也保证热区锚点与检测画面一致
-            rule.human_weight = w * h * human_rect_weight(x, y, w, h, hot_y0)
+            rule.human_weight = w * h * human_rect_weight(x, y, w, h, hot_y0, hot)
             # 本帧生效的热区锚点：采样只用到闭包里的它，挂出来供日志与单测观察
             rule.hot_y0 = hot_y0
             rules.append(rule)
     if not rules:
         logger.warning('Reward safe click: 所有候选区域都被禁止区域覆盖')
     else:
-        logger.info('Reward safe click: %d 个安全区域 热区y0=%s %s' % (
+        # 每帧结算循环都会重算一次，INFO 级别刷屏——降 debug，排查时再开
+        logger.debug('Reward safe click: %d 个安全区域 热区y0=%s %s' % (
             len(rules), hot_y0,
             ' '.join('%s%s(d%.2f)' % (r.name, r.roi_front,
                                       r.human_weight / (r.roi_front[2] * r.roi_front[3]))
@@ -642,15 +663,19 @@ def safe_click_rules(image, forbidden_preset=(), detector: RewardFrameDetector =
     return rules
 
 
-def _gauss_x(x: float) -> float:
-    """密度场 x 轴分量：以热区中心 x 为峰值，左侧 SIGMA_LEFT（快）、右侧 SIGMA_RIGHT（慢）。"""
-    cx = HOT_X[0] + HOT_X[1] / 2.0
+def _gauss_x(x: float, hot: HotShape = None) -> float:
+    """密度场 x 轴分量：以热区中心 x 为峰值，左侧 SIGMA_LEFT（快）、右侧 SIGMA_RIGHT（慢）。
+
+    :param hot: 任务级热区形状覆盖；None 用通用校准值（HOT_DEFAULT）
+    """
+    hot = hot or HOT_DEFAULT
+    cx = hot.hot_x[0] + hot.hot_x[1] / 2.0
     dx = x - cx
-    sigma = SIGMA_LEFT if dx < 0 else SIGMA_RIGHT
+    sigma = hot.sigma_left if dx < 0 else hot.sigma_right
     return math.exp(-dx * dx / (2.0 * sigma * sigma))
 
 
-def _gauss_y(y: float, hot_y0: float) -> float:
+def _gauss_y(y: float, hot_y0: float, hot: HotShape = None) -> float:
     """密度场 y 轴分量：峰值与两侧 σ 按「可用高度」百分比分配。
 
     可用高度 = min(HOT_H, 锚点到屏幕底)：热区是锚点向下 HOT_H 的一条带，
@@ -658,15 +683,18 @@ def _gauss_y(y: float, hot_y0: float) -> float:
     分布始终贴合剩余空间而不被截断。两侧 σ 依然上快下慢。
 
     :param hot_y0: 热区 y 锚点（奖励禁区底边）
+    :param hot: 任务级热区形状覆盖；None 用通用校准值（HOT_DEFAULT）
     """
+    hot = hot or HOT_DEFAULT
     strip = min(HOT_H, BASE_H - hot_y0)
-    cy = hot_y0 + HOT_Y_PEAK_RATIO * strip
+    cy = hot_y0 + hot.peak_ratio * strip
     dy = y - cy
     sigma = (HOT_Y_UP_RATIO if dy < 0 else HOT_Y_DOWN_RATIO) * strip
     return math.exp(-dy * dy / (2.0 * sigma * sigma))
 
 
-def field_density(x: float, y: float, hot_y0: float = None) -> float:
+def field_density(x: float, y: float, hot_y0: float = None,
+                  hot: HotShape = None) -> float:
     """人类落点密度场在 (x, y) 处的取值：以热区中心为峰值（1.0）的各向异性正态。
 
     每个轴是以峰值为中心、两侧 σ 不同的单峰正态（split-normal）：左边/上边
@@ -674,10 +702,11 @@ def field_density(x: float, y: float, hot_y0: float = None) -> float:
     （x/y 两轴独立相乘），可分离性被 FieldRuleClick 用于两轴独立加权采样。
 
     :param hot_y0: 热区 y 锚点（奖励禁区底边）；None 时用 HOT_Y_BASE 基准锚点
+    :param hot: 任务级热区形状覆盖；None 用通用校准值（HOT_DEFAULT）
     """
     if hot_y0 is None:
         hot_y0 = HOT_Y_BASE
-    return _gauss_x(x) * _gauss_y(y, hot_y0)
+    return _gauss_x(x, hot) * _gauss_y(y, hot_y0, hot)
 
 
 def _edge_taper(dist: float, margin: float) -> float:
@@ -695,13 +724,15 @@ def _edge_taper(dist: float, margin: float) -> float:
     return u * u * (3.0 - 2.0 * u)
 
 
-def human_rect_weight(x, y, w, h, hot_y0: float = None) -> float:
+def human_rect_weight(x, y, w, h, hot_y0: float = None,
+                      hot: HotShape = None) -> float:
     """矩形内人类落点密度均值（密度场 × 块边渐缩，网格采样近似面积分）。
 
     加权选择时再乘矩形面积，等价于「该矩形覆盖的期望点击量份额」。
     纯几何函数（无随机性），方便单测与调参。
 
     :param hot_y0: 热区 y 锚点（奖励禁区底边）；None 时用 HOT_Y_BASE 基准锚点
+    :param hot: 任务级热区形状覆盖；None 用通用校准值（HOT_DEFAULT）
     """
     nx = max(1, min(12, round(w / FIELD_GRID_STEP)))
     ny = max(1, min(8, round(h / FIELD_GRID_STEP)))
@@ -714,7 +745,7 @@ def human_rect_weight(x, y, w, h, hot_y0: float = None) -> float:
         for j in range(ny):
             py = y + (j + 0.5) * h / ny
             ty = _edge_taper(min(py - y, y + h - py), my)
-            total += field_density(px, py, hot_y0) * tx * ty
+            total += field_density(px, py, hot_y0, hot) * tx * ty
     return total / (nx * ny)
 
 
@@ -756,7 +787,7 @@ class FieldRuleClick(RuleClick):
     按压时长、轨迹形状、点击间隔等其余拟人化维度不受影响，仍走原链路。
     """
 
-    def __init__(self, roi, name, hot_y0: float):
+    def __init__(self, roi, name, hot_y0: float, hot: HotShape = None):
         super().__init__(roi_front=roi, roi_back=roi, name=name)
         x, y, w, h = roi
         # 两轴抽样表在构造期一次算好；权重 = 密度场分量 × 块边渐缩
@@ -764,10 +795,10 @@ class FieldRuleClick(RuleClick):
         mx, my = EDGE_TAPER_RATIO * w, EDGE_TAPER_RATIO * h
 
         def x_weight(px):
-            return _gauss_x(px) * _edge_taper(min(px - x, x + w - px), mx)
+            return _gauss_x(px, hot) * _edge_taper(min(px - x, x + w - px), mx)
 
         def y_weight(py):
-            return _gauss_y(py, hot_y0) * _edge_taper(min(py - y, y + h - py), my)
+            return _gauss_y(py, hot_y0, hot) * _edge_taper(min(py - y, y + h - py), my)
 
         self._x_table = _axis_sampler(x, w, x_weight)
         self._y_table = _axis_sampler(y, h, y_weight)

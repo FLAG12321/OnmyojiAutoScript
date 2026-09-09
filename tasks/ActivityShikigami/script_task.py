@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from time import sleep
+from time import sleep, time
 from datetime import datetime, timedelta
 import cv2
 import numpy as np
@@ -18,9 +18,11 @@ from module.logger import logger
 
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+# 通用组件的 OCR 运行数字判定（0-200 纯数字 = 自动中），自动段覆盖方法复用
+from tasks.Component.GeneralBattle.general_battle import auto_ocr_running
 # 结算落点：奖励页安全区域加权挑选（与基类 battle_wait 同一套落点）
 from tasks.Component.GeneralBattle.reward_frame import (
-    weighted_choice, FORBIDDEN_ACTIVITY)
+    weighted_choice, FORBIDDEN_ACTIVITY, HotShape)
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.ActivityShikigami.config import SwitchSoulConfig, GeneralBattleConfig, ActivityShikigami
 from tasks.Component.BaseActivity.base_activity import BaseActivity
@@ -32,6 +34,19 @@ from tasks.ActivityShikigami.pass_monopoly import PassMonopolyMixin
 from tasks.ActivityShikigami.season_boss.mixin import SeasonBossMixin
 import tasks.Component.GeneralBattle.config_general_battle
 import tasks.ActivityShikigami.page as game
+
+
+# 爬塔自动段专用参数（覆盖通用组件实现时使用，见 ScriptTask 内覆盖方法）：
+# 通用组件的自动段已按御魂节奏真机验证（2026-09-08 21:13 那轮全流程正常），
+# 不改通用代码；爬塔节奏（进场动画慢、单场 60s+）暴露的问题全部在本文件覆盖
+# 段内 stuck 续窗间隔（秒）：device 的 stuck 计时只被点击/滑动重置，段内
+# 零输入（硬约束：自动战斗过程中不能点），长窗到期必炸——改为纯状态续窗
+# （clear 重置计时器后立即补回长战斗标记，不产生任何输入），每 120s 一次
+AUTO_BATTLE_STUCK_REFRESH_S = 120
+# 段内单场墙钟超时（秒）：从本场开始到见到结算页的最长等待，超过视为
+# 流转异常（游戏卡死/自动失效），退出段交 battle_wait 既有逻辑兜底。
+# 爬塔自动模式的慢战斗（全屏技能动画）实测可达 60s+，3 分钟是宽松上限
+AUTO_BATTLE_BATTLE_TIMEOUT_S = 180
 
 
 def _prepare_image_for_ocr(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
@@ -152,6 +167,10 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
     # 20 次计数，段跨 entry 时主循环的切入口逻辑在段内（零输入）不可控；
     # pass_monopoly/season_boss 玩法特殊——这三类 remaining 传 None 静默跳过
     AUTO_SEG_CLIMB_TYPES = ('pass', 'ap', 'boss')
+    # 暂时关闭结算奖励框检测（2026-09-09）：本期活动结算走卷轴面板而非标准三行
+    # 奖励网格，检测恒为空（实测每帧白跑 60~150ms），禁区由 FORBIDDEN_ACTIVITY
+    # 的卷轴面板矩形静态兜住即可。活动切回带标准网格的版本时改回 True。
+    REWARD_GRID_DETECT = False
 
     def __init__(self, config, device):
         super().__init__(config, device)
@@ -455,6 +474,9 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                     or self.settlement_click(self.I_REWARD_PURPLE_SNAKE_SKIN, action_click, interval=1.5)
                     or self.settlement_click(self.I_PURPLE_SNAKE_SKIN, action_click, interval=1.5)
                     or self.settlement_click(self.I_AS_REWARD_GOLD, action_click, interval=1.5)
+                    # 卷轴结算页顶部"获得奖励"标题：本期活动结算的主判据
+                    # （无标准网格，I_REWARD 系可能全失配；页面点哪都能继续）
+                    or self.settlement_click(self.I_A_REWARD, action_click, interval=1.5)
                     # I_REWARD 系模板全部失配时的兜底：只要还检测到奖励框就照样点安全区域
                     or self.settlement_click_grid(action_click, interval=1.5)):
                 logger.info('Win battle')
@@ -517,6 +539,15 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             if ok_cnt == 0 and random_click_swipt_enable:
                 self.random_click_swipt()
         return True
+
+    def reward_hot(self):
+        """爬塔专属热区形状（2026-09-09 用户指示，观察散点图后调整）：
+        比通用校准值更窄更右、峰值更低——本期卷轴结算页的点击集中在
+        面板下方右缘。只覆盖本任务，通用热区与其他任务不受影响；
+        活动轮换后可回退为 None（用通用校准值）。
+        """
+        return HotShape(hot_x=(850, 380), sigma_left=62, sigma_right=86,
+                        peak_ratio=0.70)
 
     def reward_forbidden(self) -> tuple:
         """活动爬塔结算的常驻禁点区域（默认预设 + 本期活动的奖励卷轴面板）。
@@ -765,6 +796,188 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         """段内截断口径：复用规划口径实时计算（段运行期间配置必开、五倍必关，
         与规划时的约束一致）。"""
         return self._auto_seg_remaining()
+
+    # ------------------------------------------------ 随机自动战斗段（爬塔覆盖）
+    # 以下四个方法覆盖通用组件 GeneralBattle 的同名实现。通用版按御魂节奏
+    # 真机验证正常（2026-09-08），爬塔 2026-09-09 oas1 真机暴露三类问题，
+    # 全部由爬塔节奏差异导致，故在本文件覆盖而非改通用代码：
+    #   1. 虚开：进场动画期按钮未渲染，通用 OR 语义（按钮不在=自动中）假成功
+    #   2. 误判中断：虚开后段内每帧监测发现按钮+×2 反判中断（改为 AND+只认边界）
+    #   3. stuck 误杀：开启点击清空 BATTLE_STATUS_S 标志，首场 60s+ 慢战斗
+    #      等不到跨场续挂，60s 空窗被 stuck 检查撞上（改为 re-add+纯状态续窗）
+    def is_auto_battle_page(self) -> bool:
+        """自动战斗页判定（2026-09-09 爬塔真机定稿）：OCR 读到 0-200 纯数字
+        且 I_PAPER_TOSTART 消失，两者同时成立才视为自动中（AND）。
+
+        游戏内两态的稳定特征：手动时按钮在、速度控件显示 ×2/X2 倍速字样；
+        开启自动后按钮立即消失、控件变为纯数字（0-200）。任一单独成立都
+        不可信——按钮不在也可能是进场动画未渲染（虚开事故），OCR 数字也
+        可能是 ×2 被误读成 2，必须双证据。
+        """
+        if self.appear(self.I_PAPER_TOSTART):
+            # 按钮在 = 手动（开启后按钮即消失），OCR 数字属误读不作数
+            return False
+        return auto_ocr_running(self.O_POINT_OR_SPEED.ocr(self.device.image))
+
+    def _auto_start(self, retry: int = 5) -> bool:
+        """开启自动战斗（2026-09-09 爬塔真机定稿语义）：
+
+        - 前置：必须在战斗过程界面上（准备页/结算页/过渡动画上按钮与速度
+           控件都不可靠，点击有误触风险）
+        - 已开启 = OCR 读到 0-200 纯数字 且 按钮消失（AND，见 is_auto_battle_page）
+        - 手动（应点击 C_PAPER_TOSTART）= 按钮在，或 OCR 读到 ×2/X2 等
+           非运行内容——按钮没匹配到但 OCR 是手动字样时同样要点（进场动画
+           期按钮未渲染、模板失配都不能漏点）
+        - 两者都无证据（按钮不在 + OCR 读空）= 进场动画/页面过渡，等待重试
+        retry 放宽到 5 覆盖约 2s 的进场动画。
+        """
+        for _ in range(retry + 1):
+            self.screenshot()
+            if not self.is_in_real_battle(False):
+                # 不在战斗过程界面：等待，不点击
+                sleep(0.3)
+                continue
+            if self.is_auto_battle_page():
+                # 数字且按钮消失：上次残留的自动状态，视为已开启
+                return True
+            ocr_text = self.O_POINT_OR_SPEED.ocr(self.device.image)
+            if self.appear(self.I_PAPER_TOSTART) or ocr_text:
+                # 手动页：按钮在，或 OCR 读到 ×2 等内容（按钮没看到也要点）
+                self.click(self.C_PAPER_TOSTART)
+                # 等页面切换，节奏拟人
+                sleep(random.uniform(0.5, 1.0))
+            else:
+                # 按钮不在且 OCR 读空：进场动画期控件未渲染，稍等再试
+                sleep(0.3)
+        logger.warning('Auto battle start failed, fallback to manual battle')
+        return False
+
+    def _auto_cancel(self, retry: int = 2) -> bool:
+        """取消自动战斗：确认自动页→点击→确认按钮回归。
+
+        "已是手动"的判定看按钮回归（自动中按钮必不在）——is_auto_battle_page
+        是 AND 语义，OCR 读空时会假失败，不能反过来当手动证据。
+        """
+        for _ in range(retry + 1):
+            self.screenshot()
+            if self.appear(self.I_PAPER_TOSTART):
+                logger.info('Auto battle canceled (already manual)')
+                return True
+            self.click(self.C_PAPER_TOSTART)
+            sleep(random.uniform(0.5, 1.0))
+            # appear 基于 device.image（上一次截图的旧帧）：点击后必须重新截图刷新，
+            # 否则查的是点击前的旧帧，按钮明明已回归却查不到，白白多试一轮
+            self.screenshot()
+            if self.appear(self.I_PAPER_TOSTART):
+                logger.info('Auto battle canceled')
+                return True
+        logger.warning('Auto battle cancel failed, continue manual flow')
+        return False
+
+    def auto_battle_run(self) -> None:
+        """自动段主体（爬塔覆盖版）：点开自动→游戏连打 M 场（脚本零输入）→点回手动。
+
+        与通用版（御魂节奏）的差异：开启后 re-add 长战斗标志（开启点击会清空
+        它，首场慢战斗 60s 空窗会触发 stuck 误杀重启）、段内不识别自动状态
+        只认"结算页出现→回战斗界面"的场次边界、120s 纯状态续窗、单场 180s
+        墙钟兜底。返回时页面处于第 M+1 场的战斗过程界面（或准备页），
+        battle_wait 继续手动流程。
+        """
+        seg = self._seg_state()
+        # 本段已领取：无论成败，本场 battle_wait 只进段一次
+        seg['planned'] = False
+        m = seg['seg_len']
+
+        def _settle_appear() -> bool:
+            """结算页系模板共判 + 活动卷轴标识 + 奖励框检测兜底。
+
+            模板认的是具体图案（胜利鼓/失败/领奖图标），活动副本的奖励底色
+            或结算动画中间帧可能全部失配——失配时段内看不到"结算页出现"，
+            游戏自动翻进下一场后不会记次，段会卡死在等待结算。
+            本期活动结算走卷轴面板（无标准三行网格），且 REWARD_GRID_DETECT
+            已关闭、reward_grid_appear 恒 False——I_A_REWARD（卷轴顶部
+            "获得奖励"标题标识，2026-09-09 新增资产）补上这个判据缺口，
+            与奖励内容无关。
+            """
+            return (self.win_appear(threshold=0.8)
+                    or self.appear(self.I_FALSE, threshold=0.8)
+                    or self.appear(self.I_REWARD, threshold=0.6)
+                    or self.appear(self.I_REWARD_GOLD, threshold=0.8)
+                    or self.appear(self.I_A_REWARD)
+                    or self.reward_grid_appear())
+
+        # ---- 1. 开启自动 ----
+        if not self._auto_start():
+            # 开启失败回退手动，本场照常打，不消耗 T
+            return
+        # _auto_start 的点击会触发 stuck_record_clear（record 清空、计时重置），
+        # 此处必须 re-add：否则首个 60s 窗口内 detect_record 为空，stuck 检查
+        # 不按长战斗放行，单场超 60s 的慢战斗会被误杀重启（oas1 爬塔事故：
+        # 全屏技能动画打了 60s，GameStuckError 白重启了游戏）
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        # 第 1 场的 T 消耗（其 current_count 已由 run_general_battle 序言计入）
+        seg['total_left'] -= 1
+        seg_done = 1
+        waiting_settle = False   # 是否已见到本场的结算页
+        unknown_frames = 0       # 结算后连续未知页面帧数（既非战斗/准备也非结算）
+        stuck_refresh_ts = time()   # 上次 stuck 续窗时刻
+        battle_deadline = time() + AUTO_BATTLE_BATTLE_TIMEOUT_S  # 单场墙钟
+        # ---- 2. 段内循环：零输入，只识别场次边界 ----
+        # 不再每帧识别自动状态（POINT_OR_SPEED/按钮）——开启已在 _auto_start
+        # 确认，段内只认"结算页出现→回到战斗界面"的边界。中途被取消/虚开的
+        # 出口交给 unknown 超时：手动模式下结算页会停住等玩家点击，30 帧不
+        # 翻转即退出段，battle_wait 接管手动流程（含点结算）
+        while seg_done < m:
+            self.screenshot()
+            now = time()
+            if not waiting_settle:
+                # stuck 续窗：段内不能产生输入（零输入约束），改纯状态操作——
+                # clear 重置 60s/300s 计时器后立即补回长战斗标记。段内卡死
+                # 保护由 unknown 超时与单场墙钟负责，stuck 只防段外
+                if now - stuck_refresh_ts >= AUTO_BATTLE_STUCK_REFRESH_S:
+                    self.device.stuck_record_clear()
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
+                    stuck_refresh_ts = now
+                # 单场墙钟超时：等不到结算页视为流转异常（游戏卡死/自动失效），
+                # 退出段交 battle_wait 的既有卡死处理兜底
+                if now > battle_deadline:
+                    logger.warning(f'Auto battle no settle in '
+                                   f'{AUTO_BATTLE_BATTLE_TIMEOUT_S}s at {seg_done}/{m}')
+                    return
+                # 场次边界第一步：结算页出现
+                if _settle_appear():
+                    waiting_settle = True
+                    unknown_frames = 0
+            else:
+                # 场次边界第二步：结算页过后回到战斗/准备界面 = 跨过一场
+                if self.is_in_real_battle(False) or self.is_in_prepare(False):
+                    unknown_frames = 0
+                    self.auto_battle_count_step()
+                    seg_done += 1
+                    waiting_settle = False
+                    # 新一场开始：重置续窗与单场墙钟
+                    stuck_refresh_ts = now
+                    battle_deadline = now + AUTO_BATTLE_BATTLE_TIMEOUT_S
+                    # 计数偏差截断：剩余场数不够"段剩余+1 场取消"
+                    remaining_now = self.auto_battle_remaining_now()
+                    if remaining_now is not None and remaining_now <= m - seg_done:
+                        logger.warning(f'Auto battle segment truncated at {seg_done}/{m}')
+                        break
+                elif _settle_appear():
+                    # 结算页系模板还在（动画/翻页中）属于正常等待，不算未知界面
+                    unknown_frames = 0
+                else:
+                    # 页面流失去未知界面（异常弹窗/跳转/手动模式结算停住等点击）：
+                    # 没有退出条件会段内死循环，连续超过 30 帧告警退出
+                    unknown_frames += 1
+                    if unknown_frames > 30:
+                        logger.warning(f'Auto battle lost in unknown ui at {seg_done}/{m}')
+                        return
+        # ---- 3. 段尾取消（按钮只在战斗过程界面出现，先等界面再取消） ----
+        if self._auto_wait_battle_ui():
+            self._auto_cancel()
+        else:
+            logger.warning('Auto battle cancel skipped: not in battle ui')
 
     def random_reward_click(self, exclude_click: list = None, click_now: bool = True) -> RuleClick:
         """
