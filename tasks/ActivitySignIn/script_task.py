@@ -239,12 +239,12 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                         self.click(self.I_B_BACK_RED, interval=1.5)
                         start_time=time.time()
                         continue
-                    if not self.appear(self.I_B_ENSURE_2) and self.appear(self.I_B_FINISH):
+                    if not self.appear(self.I_B_ENSURE_2) and self.appear_rgb(self.I_B_FINISH):
                         time.sleep(2)
                         self.screenshot()
                         if self.appear(self.I_B_ENSURE_2):
                             self.click(self.I_B_ENSURE_2, interval=1.5)
-                        if self.appear(self.I_B_FINISH) :
+                        if self.appear_rgb(self.I_B_FINISH):
                             break
                         start_time=time.time()
                     if self.appear(self.I_B_PAGE_SUMMON):
