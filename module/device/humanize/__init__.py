@@ -758,7 +758,8 @@ class HumanizerContext:
             0.0, self._pending_require - (elapsed + wait))
         return wait
 
-    def record_action(self, target=None, name=None, roi=None) -> None:
+    def record_action(self, target=None, name=None, roi=None,
+                      repeat_exempt: bool = False) -> None:
         """操作结束打点：更新节奏统计 + 同一资源重复判定 + 计算下次要求。
 
         由 Control 在每次输入操作（click/long_click/swipe/drag）完成后调用。
@@ -775,6 +776,10 @@ class HumanizerContext:
           ③ 都没有（swipe/drag）：重置计数。
           判定命中 → 连续计数 +1，下次要求并入退避（连续第 2/3/4/5/6/7/8+
           次 1.5/1.5/2/2/4/10/16s 封顶）；换资源重新从 1 计；
+          repeat_exempt=True 的操作恒按首次点击计、不累计退避——供业务语义
+          就是「预期内连点」的资源在点击处显式声明豁免（每次点击都真实
+          生效、退避前提「点了没反应」不成立，如十连召唤的金按钮每出一抽
+          重现一次）；豁免点击仍更新判重基准，不影响其他控件的计数重置；
         - 下次要求由 timing.next_action_requirement 计算（动态平衡基准 +
           常规要求 + 退避取 max），挂起待 pace_view 消费。常规要求的抽样
           中心按本次与上次落点的距离分档（2026-09-06 用户实测：≤400px
@@ -802,7 +807,9 @@ class HumanizerContext:
             roi_key = tuple(roi) if roi is not None else None
             roi_same = (roi_key is None or self._repeat_roi is None
                         or roi_key == self._repeat_roi)
-            if self._repeat_name == name and roi_same:
+            # repeat_exempt：预期内连点的资源在点击处声明豁免，恒按首次
+            # 点击计、不累计退避——退避前提「点了没反应」对它们不成立
+            if not repeat_exempt and self._repeat_name == name and roi_same:
                 self._repeat_count += 1
             else:
                 self._repeat_count = 1
@@ -810,7 +817,8 @@ class HumanizerContext:
             self._repeat_roi = roi_key
             self._repeat_point = None  # 名称判定后坐标兜底不再参与
         elif target is not None:
-            if (self._repeat_point is not None
+            if (not repeat_exempt
+                    and self._repeat_point is not None
                     and math.hypot(target[0] - self._repeat_point[0],
                                    target[1] - self._repeat_point[1])
                     <= timing.REPEAT_BACKOFF_RADIUS_PX):

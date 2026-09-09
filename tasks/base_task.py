@@ -293,7 +293,8 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                           action: Union[RuleClick, RuleLongClick] = None,
                           interval: float = None,
                           threshold: float = None,
-                          duration: float = None):
+                          duration: float = None,
+                          repeat_exempt: bool = False):
         """
         出现了就点击，默认点击图片的位置，如果添加了click参数，就点击click的位置
         :param duration: 如果是长按，可以手动指定duration，不指定默认.单位是ms！！！！
@@ -301,12 +302,16 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :param target: 可以是RuleImage后续支持RuleOcr
         :param interval:
         :param threshold:
+        :param repeat_exempt: True 时本次点击豁免拟人化的同一资源连点退避——
+            供「预期内连点」的资源在调用处显式声明（如十连召唤金按钮每出一抽
+            重现一次，连点是流程的正常推进方式）；仅点击路径生效，长按不支持
         :return: True or False
         """
         appear = self.appear(target, interval=interval, threshold=threshold)
         if appear and not action:
             x, y = target.coord()
-            self.device.click(x, y, control_name=target.name)
+            self.device.click(x, y, control_name=target.name,
+                              repeat_exempt=repeat_exempt)
 
         elif appear and action:
             x, y = action.coord()
@@ -319,7 +324,8 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                     self.device.long_click(x, y, duration=duration / 1000,
                                            control_name=target.name, control_roi=action.roi_front)
             elif isinstance(action, RuleClick):
-                self.device.click(x, y, control_name=target.name, control_roi=action.roi_front)
+                self.device.click(x, y, control_name=target.name, control_roi=action.roi_front,
+                                  repeat_exempt=repeat_exempt)
 
         return appear
 

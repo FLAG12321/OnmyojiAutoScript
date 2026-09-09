@@ -69,7 +69,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         if self._humanizer_enabled():
             self.humanizer.pace_execute()
 
-    def _pace_action_after(self, target=None, name=None, roi=None):
+    def _pace_action_after(self, target=None, name=None, roi=None,
+                           repeat_exempt: bool = False):
         """全操作共享 CD 的收尾打点：操作完成后更新节奏统计与下次要求。
 
         name（点击控件名，如 GB_DE_WIN）传入时按名判同一资源（优先级高于
@@ -77,10 +78,12 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         稳定区域）参与同名判重——同名但 ROI 不同是任务在复用 RuleClick
         遍历列表，判为新资源，任一方缺 ROI 时退化为仅按名判重；target
         （点击坐标）作无名点击的兜底；swipe/drag 两者皆无 → 重置重复计数。
+        repeat_exempt（豁免同一资源连点退避，语义见 HumanizerContext.
+        record_action）原样透传给打点。
         off 档无副作用。
         """
         if self._humanizer_enabled():
-            self.humanizer.record_action(target, name, roi)
+            self.humanizer.record_action(target, name, roi, repeat_exempt)
 
     def _maybe_deliver_idle(self):
         """把点击间空闲计划投递为桌面指针移动；无计划或光标未知时静默跳过。
@@ -171,7 +174,8 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
     #     method(x, y)
 
     def click(self, x: int, y: int, control_check=True, control_name='Click',
-              pace: bool = True, control_roi=None) -> None:
+              pace: bool = True, control_roi=None,
+              repeat_exempt: bool = False) -> None:
         """
 
         :param control_name:
@@ -188,6 +192,10 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
             ROI 不同（复用 RuleClick 遍历列表）判为新资源；缺省 None 退化为
             按名判重。仅 BaseTask 对 RuleClick/RuleLongClick 的点击传入，
             匹配结果驱动的区域（RuleImage/RuleOcr）不传（有抖动）。
+        :param repeat_exempt: True 表示本次点击豁免拟人化的同一资源连点退避
+            （打点时恒按首次点击计，不累计 1.5/1.5/2/2/4/10/16s 退避）——供
+            业务语义就是「预期内连点」的资源在点击处显式声明，默认 False
+            原行为不变。
         :return:
         """
         if control_check:
@@ -222,7 +230,7 @@ class Control(Minitouch, Adb, Scrcpy, Window, NemuIpc):
         # 全操作共享 CD：操作结束打点（控件名+roi_front 优先判同一资源，
         # 坐标兜底）。连点追加击不打点：手势只在首击记一次节奏与退避
         if pace:
-            self._pace_action_after((x, y), control_name, control_roi)
+            self._pace_action_after((x, y), control_name, control_roi, repeat_exempt)
 
 
     def multi_click(self, button, n, interval=(0.1, 0.2)):
