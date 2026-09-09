@@ -1,4 +1,5 @@
 # This Python file uses the following encoding: utf-8
+import time
 from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
@@ -86,7 +87,179 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                 continue
         logger.warning('[ActivitySignIn] 进入式神奖励主页超时')
         return False
+    def _goto_reward_page_a(self, timeout: float = 30) -> bool:
+            """从庭院进入式神奖励主页。"""
+            timeout_timer = Timer(timeout).start()
+            while not timeout_timer.reached():
+                self.screenshot()
+                if self.appear(self.I_A_MAIN):
+                    return True
+                if self.appear(self.I_A_FINISH):
+                    return False
+                if self.appear(self.I_A_SKIP):
+                    self.click(self.I_A_SKIP, interval=1.5)
+                    continue
+                if self.appear(self.I_A_TO_MAIN):
+                    self.click(self.I_A_TO_MAIN, interval=1.5)
+                    continue
+                if self.appear_then_click(self.I_CHANGE_ITEM, interval=1):
+                    continue
+            logger.warning('[ActivitySignIn] 进入式神奖励主页超时')
+            return False
+    def _goto_reward_page_b(self, timeout: float = 30) -> bool:
+            """从庭院进入式神奖励主页。"""
+            timeout_timer = Timer(timeout).start()
+            while not timeout_timer.reached():
+                self.screenshot()
+                if self.appear(self.I_B_MAIN):
+                    return True
+                if self.appear(self.I_B_FINISH):
+                    return False
+                if self.appear(self.I_B_TO_MAIN):
+                    self.click(self.I_B_TO_MAIN, interval=1.5)
+                    continue
+                if self.appear(self.I_B_TO_MAIN_2):
+                    self.click(self.I_B_TO_MAIN_2, interval=1.5)
+                    continue
+                if self.appear(self.I_B_SELECT_POOL_2) and self.appear(self.I_B_ENSURE):
+                    self.click(self.I_B_ENSURE, interval=1.5)
+                    continue
+                if self.appear(self.I_B_SELECT_POOL):
+                    self.click(self.C_B_SELECT_POOL, interval=1.5)
+                    continue
+                if self.appear_then_click(self.I_CHANGE_ITEM, interval=1):
+                    continue
+            logger.warning('[ActivitySignIn] 进入式神奖励主页超时')
+            return False
 
+    def _run_sign_in_a(self) -> bool:
+            """
+            执行当前账号的签到。
+    
+            @return: True 表示已处理完毕（领取成功，或本就无可领/已领），
+                     False 表示导航失败等可重试问题
+            """
+            try:
+                self.screenshot()
+                if self.ui_get_current_page() != page_main and not self.ui_goto(page_main):
+                    logger.warning('[ActivitySignIn] 无法返回庭院主页面，放弃本次签到')
+                    return False
+                if not self._goto_reward_page_a():
+                    return False
+                from tasks.Plotline.assets import PlotlineAssets
+                start_time=time.time()
+                exit_flag=False
+                while time.time()-start_time<20:
+                    self.screenshot()
+                    if not self.appear(self.I_A_SKIP_3) and exit_flag==True:
+                        break
+                    if self.appear(self.I_A_FINISH):
+                        return True
+                    if self.appear(self.I_A_SKIP_2):
+                        self.click(self.I_A_SKIP_2, interval=1.5)
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_A_SKIP_3):
+                        self.click(self.I_A_SKIP_2, interval=1.5)
+                        exit_flag=True
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_A_MAIN):
+                        self.swipe(PlotlineAssets.S_SWIPE_SUMMON, interval=1.5)
+                        start_time=time.time()
+                        continue
+                    if not self.appear(self.I_A_MAIN):
+                        self.click(self.I_A_SKIP_2, interval=1.5)
+                        continue
+            finally:
+                # 无论领取结果如何都返回主页面：MultiTasks 复用本任务时，
+                # 下一账号的切号流程要求从稳定页面开始。
+                self.ui_get_current_page(skip_first_screenshot=False)
+                if not self.ui_goto(page_main, skip_first_screenshot=False):
+                    logger.warning('[ActivitySignIn] 结束后返回主页面失败')
+
+    def _run_sign_in_b(self) -> bool:
+            """
+            执行当前账号的签到。
+    
+            @return: True 表示已处理完毕（领取成功，或本就无可领/已领），
+                        False 表示导航失败等可重试问题
+            """
+            from tasks.Plotline.assets import PlotlineAssets
+            def _run_page_summon() -> bool:
+                start_time=time.time()
+                while time.time()-start_time<20:
+                    self.screenshot()
+                    if self.appear(self.I_B_MAIN) or  self.appear(self.I_B_ENSURE_2) or self.appear(self.I_B_SUMMON) :
+                        break
+                    if self.appear(self.I_B_FINISH):
+                        break
+                    if self.appear_then_click(self.I_B_BACK_RED, interval=1.5):
+                        start_time=time.time()
+                        continue
+                    if self.appear_then_click(self.I_B_SUMMON_GOLD, interval=1.5):
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_B_CANCEL):
+                        self.click(self.I_B_CANCEL, interval=1.5)
+                        start_time=time.time()
+                        continue
+                    if self.appear_then_click(self.I_B_SUMMON_CHIP_GET, interval=1.5):
+                        start_time=time.time()
+                        continue
+                    if self.appear_then_click(self.I_B_SUMMON_FLAG,action=self.C_B_SUMMON_FLAG, interval=1.5):
+                        start_time=time.time()
+                        continue
+                    if self.appear_then_click(self.I_B_SKIP, interval=1.5):
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_B_PAGE_SUMMON):
+                        self.swipe(PlotlineAssets.S_SWIPE_SUMMON, interval=1.5)
+                        start_time=time.time()
+                        continue
+
+
+            try:
+                self.screenshot()
+                if self.ui_get_current_page() != page_main and not self.ui_goto(page_main):
+                    logger.warning('[ActivitySignIn] 无法返回庭院主页面，放弃本次签到')
+                    return False
+                if not self._goto_reward_page_b():
+                    return False
+                start_time=time.time()
+                exit_flag=False
+                while time.time()-start_time<20:
+                    self.screenshot()
+                    if exit_flag==True and self.appear(self.I_B_MAIN) and not self.appear(self.I_B_ENSURE_2):
+                        break
+                    if self.appear(self.I_B_BACK_RED):
+                        self.click(self.I_B_BACK_RED, interval=1.5)
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_B_FINISH):
+                        break
+                    if self.appear(self.I_B_PAGE_SUMMON):
+                        _run_page_summon()
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_B_ENSURE_2):
+                        time.sleep(2)
+                        self.screenshot()
+                        if self.appear(self.I_B_ENSURE_2):
+                            self.click(self.I_B_ENSURE_2, interval=1.5)
+                            exit_flag=True
+                        start_time=time.time()
+                        continue
+                    if self.appear(self.I_B_SUMMON):
+                        self.click(self.I_B_SUMMON, interval=1.5)
+                        start_time=time.time()
+                        continue
+            finally:
+                # 无论领取结果如何都返回主页面：MultiTasks 复用本任务时，
+                # 下一账号的切号流程要求从稳定页面开始。
+                self.ui_get_current_page(skip_first_screenshot=False)
+                if not self.ui_goto(page_main, skip_first_screenshot=False):
+                    logger.warning('[ActivitySignIn] 结束后返回主页面失败')
     def _run_sign_in(self) -> bool:
         """
         执行当前账号的签到。
@@ -126,8 +299,9 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                 logger.warning('[ActivitySignIn] 结束后返回主页面失败')
 
     def run(self):
-        success = self._run_sign_in()
-        self.set_next_run('ActivitySignIn', finish=True, success=success, server=False)
+        self._run_sign_in_a()
+        self._run_sign_in_b()
+        self.set_next_run('ActivitySignIn', finish=True, success=True, server=False)
         raise TaskEnd('ActivitySignIn')
 
 

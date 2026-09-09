@@ -27,3 +27,57 @@ class ActivitySignInAssets:
 	I_ANIMATION_JUMP = RuleImage(roi_front=(1139,41,57,28), roi_back=(1114,33,125,52), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res/res_animation_jump.png")
 
 
+	# Click Rule Assets
+	#  
+	C_B_SUMMON_FLAG = RuleClick(roi_front=(569,622,112,44), roi_back=(569,622,112,44), name="b_summon_flag")
+	#  
+	C_B_SELECT_POOL = RuleClick(roi_front=(204,358,111,63), roi_back=(204,358,111,63), name="b_select_pool")
+
+
+	# Image Rule Assets
+	# 前往石长姬领取 
+	I_A_TO_MAIN = RuleImage(roi_front=(1189,221,38,41), roi_back=(1143,120,124,472), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_to_main.png")
+	# 前往十连十金领取 
+	I_B_TO_MAIN = RuleImage(roi_front=(1188,377,40,48), roi_back=(1143,120,124,472), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_to_main.png")
+	# 跳过对话 
+	I_A_SKIP = RuleImage(roi_front=(1154,35,64,26), roi_back=(1127,19,117,80), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_skip.png")
+	# 召唤界面 
+	I_A_MAIN = RuleImage(roi_front=(502,9,275,59), roi_back=(412,1,463,85), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_main.png")
+	# 跳过2 
+	I_A_SKIP_2 = RuleImage(roi_front=(1135,40,70,33), roi_back=(1101,12,150,87), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_skip_2.png")
+	# 跳过3 
+	I_A_SKIP_3 = RuleImage(roi_front=(1182,628,65,45), roi_back=(1121,609,150,87), threshold=0.8, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_skip_3.png")
+	#  
+	I_B_TO_MAIN_2 = RuleImage(roi_front=(706,505,103,118), roi_back=(665,458,181,210), threshold=0.65, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_to_main_2.png")
+	#  
+	I_B_SELECT_POOL = RuleImage(roi_front=(853,598,98,44), roi_back=(809,570,190,99), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_select_pool.png")
+	#  
+	I_B_SELECT_POOL_2 = RuleImage(roi_front=(299,602,100,39), roi_back=(255,572,190,99), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_select_pool_2.png")
+	#  
+	I_B_ENSURE = RuleImage(roi_front=(585,598,100,39), roi_back=(540,569,190,99), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_ensure.png")
+	#  
+	I_B_MAIN = RuleImage(roi_front=(148,14,131,47), roi_back=(102,2,216,86), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_main.png")
+	#  
+	I_B_SUMMON = RuleImage(roi_front=(609,570,90,71), roi_back=(552,558,190,99), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_summon.png")
+	#  
+	I_B_PAGE_SUMMON = RuleImage(roi_front=(358,79,78,87), roi_back=(330,52,170,145), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_page_summon.png")
+	#  
+	I_B_CANCEL = RuleImage(roi_front=(962,657,34,31), roi_back=(919,634,124,76), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_cancel.png")
+	#  
+	I_B_SKIP = RuleImage(roi_front=(1116,67,96,28), roi_back=(1091,39,152,83), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_skip.png")
+	#  
+	I_B_SUMMON_FLAG = RuleImage(roi_front=(1167,609,84,87), roi_back=(1125,543,155,177), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_summon_flag.png")
+	#  
+	I_B_SUMMON_GOLD = RuleImage(roi_front=(518,654,41,30), roi_back=(302,479,676,241), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_summon_gold.png")
+	#  
+	I_B_SUMMON_CHIP_GET = RuleImage(roi_front=(599,490,122,37), roi_back=(546,470,229,76), threshold=0.8, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_summon_chip_get.png")
+	#  
+	I_B_ENSURE_2 = RuleImage(roi_front=(599,407,92,46), roi_back=(526,377,243,98), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_ensure_2.png")
+	#  
+	I_B_BACK_RED = RuleImage(roi_front=(989,89,38,41), roi_back=(925,0,355,338), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_back_red.png")
+	#  
+	I_A_FINISH = RuleImage(roi_front=(33,46,124,469), roi_back=(1,0,250,681), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_finish.png")
+	#  
+	I_B_FINISH = RuleImage(roi_front=(592,637,94,38), roi_back=(541,600,220,107), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_finish.png")
+
+
