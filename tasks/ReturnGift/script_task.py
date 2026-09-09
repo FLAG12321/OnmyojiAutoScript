@@ -127,10 +127,14 @@ class ScriptTask(GuildPopupMixin, GameUi,ReturnGiftAssets):
                     timeout=receivetimeout
                 while 1:
                     self.screenshot()
-                    if self.appear_then_click(self.I_R_BACK_Y, interval=1):
-                        continue
-                    if self.appear(GameUiAssets.I_CHECK_GUILD):
+                    if self.appear(self.I_R_PAGE_GUILD):
                         break
+                    if self.appear_then_click(self.I_R_BACK_Y, interval=2):
+                        continue
+                    if self.ui_get_current_page() != page_guild:
+                        self.ui_goto(page_guild)
+                        continue
+                    
                 continue
             if self.appear_then_click(self.I_R_PAGE_GUILD,action=self.C_R_TOSEND_CLICK,interval=2):
                 self.device.click_record_clear()

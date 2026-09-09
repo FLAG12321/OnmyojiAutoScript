@@ -56,6 +56,10 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
     _progress_key: str = None
     # 当前账号的同心战斗上限，仅用于异常邮件里报告「已打 N/M 场」
     _alliedteam_limit: int = 0
+    # 回礼与子任务段起点之间的最小间隔秒数：沿用原 sleep(10-delay_time) 的语义。
+    # 回礼（进寮页面祈愿）需要距本账号任务开始至少这么久，前置任务实际耗时
+    # 不足时在回礼段前补足差额，已超过则零等待直接进
+    RETURNGIFT_MIN_INTERVAL = 10
 
     # 设备级异常：不属于某个子任务的问题，必须上抛给账号级重试/调度级恢复，
     # 不能被吞掉。GameStuckError / GameTooManyClickError / GameBugError 由
@@ -313,7 +317,10 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 if net_normal_flag:
                     break
                 continue
-        delay_time = 0
+        # 子任务段起点：回礼需要距本账号任务开始至少间隔 RETURNGIFT_MIN_INTERVAL
+        # （原 delay_time 静态估算语义），改用真实计时——前置任务实际跑多久就
+        # 吃掉多久等待，轮到回礼时只补足差额
+        phase_start = time.time()
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
@@ -336,19 +343,26 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 if self.ui_get_current_page() != page_main:
                     self.ui_goto(page_main)
                 
-            delay_time += 10
         if con.daily_alt_acc_config.mail_enable and not self._should_skip("mail"):
             self._run_with_stat("mail", self.run_mail)
-            delay_time += 5
         if con.daily_alt_acc_config.cooperation_enable and not self._should_skip("cooperation"):
             self._run_with_stat("cooperation", self.run_cooperation)
-            delay_time += 3
         if con.daily_alt_acc_config.donatejade_enable and not self._should_skip("donatejade"):
             self._run_with_stat("donatejade", self.run_donatejade)
-            delay_time += 10
+        # 神秘商店从回礼之后提前到此处：回礼轮里它和勾协是仅有的前置任务，
+        # 先跑商店再查计时，正好用真实耗时填补回礼前的等待窗口
+        if con.daily_alt_acc_config.mysteryshop_enable and not self._should_skip("mysteryshop"):
+            self._run_with_stat("mysteryshop", self.run_mysteryshop)
         if con.daily_alt_acc_config.returngift_enable and not self._should_skip("returngift"):
-            if delay_time < 10:
-                time.sleep(10-delay_time)
+            # 回礼最小间隔：距本账号子任务段开始至少 10 秒（沿用原 sleep(10-delay_time)
+            # 语义）。前置任务跑够就零等待直接进，不足才补睡差额
+            elapsed = time.time() - phase_start
+            if elapsed < self.RETURNGIFT_MIN_INTERVAL:
+                logger.info(
+                    f'回礼前等待补足: 已过 {elapsed:.1f}s / '
+                    f'{self.RETURNGIFT_MIN_INTERVAL}s'
+                )
+                time.sleep(self.RETURNGIFT_MIN_INTERVAL - elapsed)
             self._run_with_stat("returngift", self.run_returngift)
         if con.daily_alt_acc_config.weekaward_enable and not self._should_skip("weekaward"):
             def run_weekaward():
@@ -360,9 +374,6 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                     self.execute_mall()
                     self._share_collect()
             self._run_with_stat("weekaward", run_weekaward)
-        if con.daily_alt_acc_config.mysteryshop_enable and not self._should_skip("mysteryshop"):
-            self._run_with_stat("mysteryshop", self.run_mysteryshop)
-            # 执行挂卡（只执行核心逻辑，避免TaskEnd）
         if con.daily_alt_acc_config.tree_planting_enable > 0 and not self._should_skip("tree"):
             self._run_with_stat("tree", self.run_tree_planting)
         if con.daily_alt_acc_config.trialbattle_enable and not self._should_skip("trialbattle"):
