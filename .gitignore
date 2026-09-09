@@ -294,4 +294,7 @@ OASX-master/
 skills-lock.json
 tasks/ReturnGift/sr_count.json
 /tasks/MultiDailyAltAcc/task_plan.json
+# 测试目录已从版本库剥离：仅开发机本地资产，不提交、不随仓库分发。
+# 严禁 git clean -fdx（会把未跟踪的 tests/ 整个删掉）；克隆/换机后 tests/ 不随仓库恢复
+/tests/
 .*/
