@@ -83,7 +83,7 @@ class ScriptTask(GameUi, ActivitySignInAssets):
             if self.appear(self.I_TO_PAGE_SHI):
                 self.click(self.I_TO_PAGE_SHI, interval=1.5)
                 continue
-            if self.appear_then_click(self.I_CHANGE_ITEM, interval=1):
+            if self.appear_then_click(self.I_CHANGE_ITEM, interval=1, repeat_exempt=True):
                 continue
         logger.warning('[ActivitySignIn] 进入式神奖励主页超时')
         return False
@@ -102,7 +102,7 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                 if self.appear(self.I_A_TO_MAIN):
                     self.click(self.I_A_TO_MAIN, interval=1.5)
                     continue
-                if self.appear_then_click(self.I_CHANGE_ITEM, interval=1):
+                if self.appear_then_click(self.I_CHANGE_ITEM, interval=1, repeat_exempt=True):
                     continue
             logger.warning('[ActivitySignIn] 进入式神奖励主页超时')
             return False
@@ -127,7 +127,7 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                 if self.appear(self.I_B_SELECT_POOL):
                     self.click(self.C_B_SELECT_POOL, interval=1.5)
                     continue
-                if self.appear_then_click(self.I_CHANGE_ITEM, interval=1):
+                if self.appear_then_click(self.I_CHANGE_ITEM, interval=1, repeat_exempt=True):
                     continue
             logger.warning('[ActivitySignIn] 进入式神奖励主页超时')
             return False
@@ -197,7 +197,10 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                     if self.appear_then_click(self.I_B_BACK_RED, interval=1.5):
                         start_time=time.time()
                         continue
-                    if self.appear_then_click(self.I_B_SUMMON_GOLD, interval=1.5):
+                    # 十连召唤金按钮每出一抽结果重现一次，连点约 10 次是流程的正常
+                    # 推进方式；repeat_exempt 豁免拟人化同一资源连点退避，否则第 6 次
+                    # 起退避爬到 10/16s，十连会被拖成分钟级
+                    if self.appear_then_click(self.I_B_SUMMON_GOLD, interval=1.5, repeat_exempt=True):
                         start_time=time.time()
                         continue
                     if self.appear(self.I_B_CANCEL):
@@ -236,8 +239,14 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                         self.click(self.I_B_BACK_RED, interval=1.5)
                         start_time=time.time()
                         continue
-                    if self.appear(self.I_B_FINISH):
-                        break
+                    if not self.appear(self.I_B_ENSURE_2) and self.appear(self.I_B_FINISH):
+                        time.sleep(2)
+                        self.screenshot()
+                        if self.appear(self.I_B_ENSURE_2):
+                            self.click(self.I_B_ENSURE_2, interval=1.5)
+                        if self.appear(self.I_B_FINISH) :
+                            break
+                        start_time=time.time()
                     if self.appear(self.I_B_PAGE_SUMMON):
                         _run_page_summon()
                         start_time=time.time()
