@@ -31,8 +31,8 @@ def generate(qml: bool=False):
     content = ''
     with open("requirements.txt", "r", encoding="utf-8") as f:
         content = f.read()
-        content = content.replace('''--index-url https://pypi.tuna.tsinghua.edu.cn/simple
---trusted-host pypi.tuna.tsinghua.edu.cn''', '')
+        content = content.replace('''--index-url https://mirrors.cloud.tencent.com/pypi/simple
+--trusted-host mirrors.cloud.tencent.com''', '')
     with open("requirements.txt", "w", encoding="utf-8") as f:
         f.write(content)
     logger.info("requirements.txt generated")

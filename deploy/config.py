@@ -171,11 +171,13 @@ class DeployConfig(ConfigModel):
             creationflags=flags,
         )
         try:
-            proc.communicate(timeout=timeout)
+            # 捕获子进程输出：失败时回显尾部，pip/git 的真实报错不再被吞
+            out, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             # 超时视为失败。Windows 下 kill cmd 不会带走它派生的 git/ping 子进程，
             # 残留子进程仍持有 stdout 管道会让 communicate 继续阻塞，必须按进程树杀
             logger.info(f"[ timeout ]: {command[:80]}...")
+            out = ''
             if sys.platform.startswith('win'):
                 subprocess.Popen(
                     f'taskkill /F /T /PID {proc.pid}',
@@ -189,6 +191,14 @@ class DeployConfig(ConfigModel):
         else:
             error_code = proc.returncode
         if error_code:
+            # 失败时回显子进程输出尾部，让 pip/git 的真实报错可见。
+            # pip/git 输出可能含控制台编码（如 GBK）打不出的字符，先按输出流
+            # 编码净化成可打印字符，否则 logger 写日志时自己抛 UnicodeEncodeError
+            if out:
+                enc = (getattr(sys.stdout, 'encoding', None) or 'utf-8')
+                tail = '\n'.join(out.strip().splitlines()[-10:])
+                tail = tail.encode(enc, errors='replace').decode(enc, errors='replace')
+                logger.info(f'[ output tail ]\n{tail}')
             if allow_failure:
                 logger.info(f"[ allowed failure ], error_code: {error_code}")
                 return False

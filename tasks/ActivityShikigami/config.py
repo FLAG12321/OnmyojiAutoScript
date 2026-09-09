@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 from tasks.Component.config_scheduler import Scheduler
 from tasks.Component.config_base import ConfigBase, TimeDelta, dynamic_hide
@@ -82,11 +82,19 @@ class GeneralBattleConfig(BaseModel):
     # 字段平铺一层，不嵌套子模型（script_task 的 merge_value 与 OASX 前端只支持一层 group）
     # 总开关：默认关闭；仅对 门票/体力/boss/100体 爬塔生效，ap20/大富翁/修行合训不接
     auto_battle_enable: bool = Field(default=False, description='是否启用随机自动战斗段')
-    # 单段连续自动战斗场数 M（进入自动后连续 M 场由游戏自动完成，脚本零输入）。
-    # 上限与 T 对齐 50（原 10 为初版保守值，2026-09-09 放宽：爬塔用户需要长段）
-    auto_segment_count: int = Field(default=2, ge=1, le=50, description='单段连续自动战斗场数')
+    # 单段连续自动战斗场数（进入自动后连续 M 场由游戏自动完成，脚本零输入）。
+    # 2026-09-09 起支持区间随机："34" 表示每段在 [1,34] 随机取长，"1,34" 同义；
+    # 历史纯 int 值自动兼容（2 → [1,2]）。规划改为开局一次性生成全部段计划
+    auto_segment_count: str = Field(default='2', description='单段自动战斗场数区间, 如 1,34')
     # 本次任务运行内自动战斗总场数上限 T（不持久化，任务重启重新规划）
     auto_total_count: int = Field(default=4, ge=1, le=200, description='自动战斗总场数上限')
+
+    # 旧版字段为 int，同名 str 化兼容：归一化复用组件侧 segment_count_normalize
+    @field_validator('auto_segment_count', mode='before')
+    @classmethod
+    def _segment_count_compat(cls, v):
+        from tasks.Component.GeneralBattle.config_general_battle import segment_count_normalize
+        return segment_count_normalize(v)
 
 
 class ActivityShikigami(ConfigBase):

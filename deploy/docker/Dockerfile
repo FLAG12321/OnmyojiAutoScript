@@ -25,7 +25,7 @@ deb-src https://mirrors.cloud.tencent.com/debian/ bookworm-backports main non-fr
  && git config --global --add safe.directory '*' \
  && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
  && echo 'Asia/Shanghai' > /etc/timezone \
- && pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+ && pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simple \
  && pip install -r /tmp/requirements.txt \
  && pip uninstall -y opencv-python\
  && pip uninstall -y opencv-python-headless\

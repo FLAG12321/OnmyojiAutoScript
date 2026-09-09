@@ -192,7 +192,7 @@ class ScriptTask(GameUi, ActivitySignInAssets):
                     self.screenshot()
                     if self.appear(self.I_B_MAIN) or  self.appear(self.I_B_ENSURE_2) or self.appear(self.I_B_SUMMON) :
                         break
-                    if self.appear(self.I_B_FINISH):
+                    if not self.appear(self.I_B_ENSURE_2) and self.appear(self.I_B_FINISH):
                         break
                     if self.appear_then_click(self.I_B_BACK_RED, interval=1.5):
                         start_time=time.time()

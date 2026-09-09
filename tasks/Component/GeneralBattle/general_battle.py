@@ -13,7 +13,8 @@ from module.base.timer import Timer
 from module.base.utils import get_color, color_similar
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
-from tasks.Component.GeneralBattle.config_general_battle import GreenMarkType, GeneralBattleConfig
+from tasks.Component.GeneralBattle.config_general_battle import (
+    GreenMarkType, GeneralBattleConfig, parse_segment_range)
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.GeneralBattle.reward_frame import (
     safe_click_rules, weighted_choice, FORBIDDEN_DEFAULT,
@@ -81,7 +82,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         if self._auto_seg_reached():
             # 段内零输入且此处尚未进入 battle_wait（stuck 未挂），先挂长战斗计时作段内兜底
             self.device.stuck_record_add('BATTLE_STATUS_S')
+            # 段执行（含段内截断/中断处理）返回后推进计划索引，指向下一段
             self.auto_battle_run()
+            self._auto_seg_consume()
         # 战中设置
         win = self.battle_wait(config.random_click_swipt_enable)
         if win:
@@ -954,16 +957,73 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         直接调 battle_wait 的路径（如 DemonRetreat）不会先跑规划，
         getattr 兜底保证其行为不变。
+
+        2026-09-09 一次性分段规划改版：新增 plan（全段计划列表）、
+        plan_idx（当前执行索引）、base（规划时的场次基准：start 为从
+        规划场起数的序号，实际场次 = base + start）；
+        start_offset/seg_len 保留为兼容字段（不再由规划写入）。
         """
         seg = getattr(self, '_auto_seg', None)
         if seg is None:
             seg = {'enabled': False, 'total_left': 0, 'planned': False,
-                   'start_offset': -1, 'seg_len': 0}
+                   'start_offset': -1, 'seg_len': 0,
+                   'plan': [], 'plan_idx': 0, 'base': 0}
             self._auto_seg = seg
         return seg
 
+    @staticmethod
+    def _auto_plan_generate(r: int, t: int, seg_lo: int, seg_hi: int) -> list:
+        """开局一次性生成全部自动段计划（均等槽位 + 区间随机段长）。
+
+        算法（用户需求：数据随机、流程固定——只在开局随机一次，之后按序执行）：
+        1. 段数 K 按预算自适应：K = max(1, round(T / 段长中值))；
+        2. 把剩余场次轴 R 均分成 K 个槽（槽宽 W = R/K），每槽保证放一段——
+           无论段长/偏移怎么随机，相邻段起点间隔有硬下界，杜绝旧实现
+           "全段随机起点易挤到后半程"的分布不均；
+        3. 每段段长在 [lo,hi] 随机抽取，受剩余预算截断（最后一段吸收差额，
+           允许低于 lo）；
+        4. 每段起点在槽内随机偏移（随机空档）。
+
+        :param r: 剩余场次（含本场，首次收到的口径）
+        :param t: 自动战斗总场数上限
+        :param seg_lo/seg_hi: 段长区间
+        :return: [(start, len), ...] 按 start 升序
+        """
+        # 段数 K：按预算与段长中值推导，保证期望段长落在区间内
+        k = max(1, round(t / ((seg_lo + seg_hi) / 2)))
+        # 槽宽不足容纳下限段长时收缩段数：每槽至少要装得下一段
+        while k > 1 and r / k < seg_lo + 1:
+            k -= 1
+        w = r / k  # 槽宽（float：R 不被 K 整除时槽边界不取整对齐）
+        plan = []
+        budget = t
+        prev_start = -1
+        for i in range(k):
+            # 段长：区间随机，吸收剩余预算差额（最后一段允许低于 lo）
+            seg_len = random.randint(seg_lo, seg_hi)
+            if seg_len > budget:
+                seg_len = budget
+            # 槽内偏移：起点在 [槽首, 槽首 + 槽宽 - 段长] 随机（随机空档）；
+            # 段长超过槽宽时区间倒挂，钳到槽首；再钳严格递增，防止相邻段
+            # 起点重合导致后段被跳过（current 单调递增追不上重合的 start）
+            slot_lo = i * w
+            slot_hi = (i + 1) * w - seg_len
+            start = int(round(slot_lo + max(0.0, slot_hi - slot_lo) * random.random()))
+            start = max(start, prev_start + 1)
+            plan.append((start, seg_len))
+            prev_start = start
+            budget -= seg_len
+            if budget <= 0:
+                break
+        return plan
+
     def auto_battle_plan(self, config: GeneralBattleConfig, remaining_count: int) -> None:
-        """自动段规划（spec 4.2）：随机起点 + 固定段长，每场战斗序言调用一次。
+        """自动段规划（2026-09-09 一次性分段规划改版）：开局生成全计划，每场序言调用一次。
+
+        旧版为逐段规划（打完一段再随机下一段起点，全段均匀随机易挤到后半程，
+        前半程纯手动、后半程长时间挂自动）。新版开局一次性生成全部段的
+        (起点, 段长)，起点经均等槽位铺开、段长在区间内随机，之后按序消费，
+        不再逐段随机。
 
         双保险之一：配置未开或任务层未传剩余场次，整段功能静默跳过。
         """
@@ -976,24 +1036,54 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             seg['enabled'] = True
             seg['total_left'] = config.auto_total_count
         if not seg['planned']:
-            # 规划新一段：要求打完段还剩至少一场手动取消场（remaining >= M+1）
-            m = config.auto_segment_count
-            if seg['total_left'] > 0 and remaining_count >= m + 1:
+            # 开局一次性规划：解析段长区间，生成全段计划
+            lo, hi = parse_segment_range(config.auto_segment_count)
+            # 规划要求：剩余场数容纳得下 [下限段长 + 1 场取消]，与旧版 M+1 对齐
+            if seg['total_left'] > 0 and remaining_count >= lo + 1:
+                seg['base'] = self.current_count  # start 从下一场（序言计数前）起数
+                seg['plan'] = self._auto_plan_generate(
+                    remaining_count, seg['total_left'], lo, hi)
+                seg['plan_idx'] = 0
                 seg['planned'] = True
-                # 随机起点：[0, remaining-M] 均匀抽（0 = 本场就是起点）
-                seg['start_offset'] = random.randint(0, remaining_count - m)
-                # 实际段长受三重约束：配置 M、总剩余 T、剩余场数留一场取消
-                seg['seg_len'] = min(m, seg['total_left'], remaining_count - 1)
-        elif seg['start_offset'] > 0:
-            # 已在等起点：又打了一场手动场，离起点近一步
-            seg['start_offset'] -= 1
+                logger.info(f'Auto battle plan: {seg["plan"]}')
 
-    def _auto_seg_reached(self) -> bool:
-        """本场是否为自动段起点（battle_wait 开头查询一次）。"""
+    def _auto_seg_current(self):
+        """当前待执行段 (start, len)，无计划或已消费完返回 None。"""
         seg = getattr(self, '_auto_seg', None)
         if seg is None or not seg['enabled'] or not seg['planned']:
+            return None
+        if seg['plan_idx'] >= len(seg['plan']):
+            return None
+        return seg['plan'][seg['plan_idx']]
+
+    def _auto_seg_reached(self) -> bool:
+        """本场是否为自动段起点（run_general_battle 段分支查询一次）。
+
+        2026-09-09 改版：判定基于规划基准 base——实际场次轴上的第
+        base + start 场是起点（start 从 0 起数：0 = 规划后第一场即起点；
+        本场序言计数后的 current_count == base + start 即到达）。
+        """
+        cur = self._auto_seg_current()
+        if cur is None:
             return False
-        return seg['start_offset'] == 0 and seg['total_left'] > 0
+        start, seg_len = cur
+        seg = getattr(self, '_auto_seg', None)
+        if seg['total_left'] <= 0:
+            return False
+        return self.current_count == seg['base'] + start
+
+    def _auto_seg_consume(self) -> None:
+        """段执行完（auto_battle_run 返回）后推进计划索引。
+
+        total_left 在段内由 auto_battle_run/ auto_battle_count_step 递减；
+        此处只推进 plan_idx，不动计数——段未打满被中断时预算照扣（保守口径，
+        与旧版"领取段即消耗"一致）。
+        """
+        seg = getattr(self, '_auto_seg', None)
+        if seg is None:
+            return
+        seg['plan_idx'] += 1
+        seg['planned'] = seg['plan_idx'] < len(seg['plan'])
 
     def auto_battle_count_step(self) -> None:
         """段内跨一次场次边界的单点计数同步（spec 4.5.2）。
@@ -1071,9 +1161,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         除开/关自动两次点击外零输入，只截图识别、记次、计数同步。
         """
         seg = self._seg_state()
-        # 本段已领取：无论成败，本场 battle_wait 只进段一次
-        seg['planned'] = False
-        m = seg['seg_len']
+        # 旧版此处置 planned=False（领取段即消耗、逐段重新规划）；一次性计划版
+        # 由 _auto_seg_consume 统一推进 plan_idx 与 planned，此处不再动状态
+        # 段长取当前计划段（进入本函数前 _auto_seg_reached 已确认段有效）
+        cur = self._auto_seg_current()
+        m = cur[1] if cur is not None else seg['seg_len']
 
         def _settle_appear() -> bool:
             """结算页系模板共判 + 奖励框检测兜底（两处边界判定复用）。
