@@ -88,5 +88,41 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "用来判定是否点击的那个"
+  },
+  {
+    "itemName": "open_highlight_1",
+    "imageName": "gb_open_highlight_1.png",
+    "roiFront": "860,140,27,28",
+    "roiBack": "761,126,144,329",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "高亮旋转"
+  },
+  {
+    "itemName": "open_highlight_2",
+    "imageName": "gb_open_highlight_2.png",
+    "roiFront": "860,140,27,28",
+    "roiBack": "761,126,144,329",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "高亮2"
+  },
+  {
+    "itemName": "open_highlight_3",
+    "imageName": "gb_open_highlight_3.png",
+    "roiFront": "860,140,27,28",
+    "roiBack": "761,126,144,329",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "高亮3"
+  },
+  {
+    "itemName": "close_shadow",
+    "imageName": "gb_close_shadow.png",
+    "roiFront": "860,140,27,28",
+    "roiBack": "761,126,144,329",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "关闭"
   }
 ]

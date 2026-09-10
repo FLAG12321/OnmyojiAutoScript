@@ -31,6 +31,14 @@ class GeneralBuffAssets:
 	I_CLOSE_RED = RuleImage(roi_front=(773,365,12,20), roi_back=(764,134,38,369), threshold=0.6, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_close_red.png")
 	# 用来判定是否点击的那个 
 	I_CLOUD = RuleImage(roi_front=(357,505,65,38), roi_back=(313,484,158,75), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_cloud.png")
+	# 高亮旋转 
+	I_OPEN_HIGHLIGHT_1 = RuleImage(roi_front=(860,140,27,28), roi_back=(761,126,144,329), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_open_highlight_1.png")
+	# 高亮2 
+	I_OPEN_HIGHLIGHT_2 = RuleImage(roi_front=(860,140,27,28), roi_back=(761,126,144,329), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_open_highlight_2.png")
+	# 高亮3 
+	I_OPEN_HIGHLIGHT_3 = RuleImage(roi_front=(860,140,27,28), roi_back=(761,126,144,329), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_open_highlight_3.png")
+	# 关闭 
+	I_CLOSE_SHADOW = RuleImage(roi_front=(860,140,27,28), roi_back=(761,126,144,329), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBuff/gb/gb_close_shadow.png")
 
 
 	# Ocr Rule Assets
