@@ -140,7 +140,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 return PlotlineScene.PLOTLINE_SCENE_EXPLORATION
             elif self.appear(self.I_PAGE_PRIVILEGES, interval=1):
                 return PlotlineScene.PLOTLINE_SCENE_PRIVILEGES
-            elif self.appear_rgb(self.I_PAGE_SUMMON) or self.appear(self.I_PAGE_SUMMON_2):
+            elif self.appear_rgb(self.I_PAGE_SUMMON)or  self.appear_rgb(self.I_PAGE_SUMMON2)or self.appear(self.I_PAGE_SUMMON_2):
                 return PlotlineScene.PLOTLINE_SCENE_SUMMON
             elif self.click_dialogue_low():
                 start_time=time.time()
@@ -211,9 +211,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     break
                 if self.appear_then_click(self.I_MAIN_SELECT,interval=1):
                     continue
-                if self.appear_then_click(self.I_TO_MAIN_CHANGE,interval=1):
+                if self.appear(self.I_PAGE_MAIN_CHANGE) and self.appear(self.I_SWIPE_START):
+                    self.S_SWIPE_MAIN_CHANGE.roi_front=self.I_SWIPE_START.roi_front
+                    self.swipe(self.S_SWIPE_MAIN_CHANGE,interval=2)
                     continue
-                if self.appear_then_click(self.I_TO_MAIN_CHANGE,interval=1):
+                if not self.appear(self.I_PAGE_MAIN_CHANGE) and self.appear_then_click(self.I_TO_MAIN_CHANGE,interval=1):
                     continue
                 if self.appear_then_click(self.I_TO_COLLET_2,interval=1):
                     continue
@@ -234,7 +236,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     continue
         if self.appear(self.I_PLOTLINE_OLD_MAIN_CHECK):
             return True
-        if self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK) and (self.get_character_level_with_multiple_attempts() >= 7):
+        if (self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK) or self.appear(self.I_PLOTLINE_NEW_MAIN_CHECK_2)) and (self.get_character_level_with_multiple_attempts() >= 7):
             while 1:
                 self.screenshot()
                 if self.appear(self.I_TO_COLLET):
@@ -247,6 +249,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if self.ocr_appear_click(RestartAssets.O_LOGIN_COURTYARD, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
                     continue
                 if self.appear_then_click(RestartAssets.I_LOGIN_SCROOLL_CLOSE, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
+                    continue
+                if self.appear_then_click(self.I_P_LOGIN_SCROOLL_CLOSE, action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA,interval=2):
                     continue
         return False
         
@@ -344,7 +348,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 start_time = time.time()
                 self.page_main_timeout=0
                 continue
-            if self.appear(self.I_PAGE_MAIN) and self.appear_then_click(self.I_CLICK_DIALOGUE_1,interval=1):
+            if self.appear(self.I_PAGE_MAIN) and self.appear_then_click(self.I_CLICK_DIALOGUE_1,interval=1,repeat_exempt=True):
                 self.page_main_timeout=0
                 return 
             if self.appear_then_click(self.I_CLICK_TO_EXPLORATION, interval=1):
@@ -605,7 +609,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     def click_dialogue_low(self):  
         self.screenshot()
         self.device.click_record_clear()
-        if self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1):
+        if self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1,repeat_exempt=True):
             pass    
         elif self.appear_then_click(self.I_CLICK_LV,interval=1):    
             self.exploration_flag =True   
@@ -633,7 +637,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.C_CLICK_CURSOR.roi_back=(click_cursor[0][1]-5,click_cursor[0][2]-5,20,20)
                 self.C_CLICK_CURSOR.roi_front=(click_cursor[0][1]-5,click_cursor[0][2]-5,20,20)
                 self.click(self.C_CLICK_CURSOR)
-        elif self.appear_then_click(self.I_PAGE_CLICK_ANY2, interval=1):
+        elif self.appear_then_click(self.I_PAGE_CLICK_ANY2, interval=1) or self.appear_then_click(self.I_PAGE_CLICK_ANY3, interval=1):
             pass
         elif self.appear_then_click(ExperienceYoukaiAssets.I_EXP_WIN, interval=1):
             pass
@@ -650,7 +654,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             pass
         elif self.appear_then_click(self.I_CLICK_DIALOGUE_2,interval=1.5):
             pass
-        elif self.privileges_flag and not self.experience_youkai_battle and not self.mail_flag and self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1):
+        elif self.privileges_flag and not self.experience_youkai_battle and not self.mail_flag and self.appear_then_click(self.I_CLICK_DIALOGUE_1, interval=1,repeat_exempt=True):
             pass    
         elif self.privileges_flag and not self.experience_youkai_battle and not self.mail_flag and self.appear_then_click(self.I_CLICK_LV,interval=1):    
             self.exploration_flag =True 

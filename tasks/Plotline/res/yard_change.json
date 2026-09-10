@@ -52,5 +52,23 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": ""
+  },
+  {
+    "itemName": "swipe_start",
+    "imageName": "res_swipe_start.png",
+    "roiFront": "1169,269,44,46",
+    "roiBack": "1140,71,98,536",
+    "method": "Template matching",
+    "threshold": 0.65,
+    "description": ""
+  },
+  {
+    "itemName": "page_main_change",
+    "imageName": "res_page_main_change.png",
+    "roiFront": "328,100,155,39",
+    "roiBack": "301,45,323,118",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
   }
 ]

@@ -35,11 +35,11 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_JUMP = RuleImage(roi_front=(846,559,51,29), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/click_jump.png")
 	# description 
-	I_PAGE_CLICK_ANY = RuleImage(roi_front=(540,508,213,27), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_click_any.png")
+	I_PAGE_CLICK_ANY = RuleImage(roi_front=(374,211,541,28), roi_back=(0,0,1279,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_click_any.png")
 	# description 
 	I_CLICK_CURSOR = RuleImage(roi_front=(640,617,23,31), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_cursor.png")
 	# description 
-	I_PAGE_SUMMON = RuleImage(roi_front=(381,91,89,92), roi_back=(255,66,834,556), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_summon.png")
+	I_PAGE_SUMMON = RuleImage(roi_front=(381,89,77,85), roi_back=(255,66,834,556), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_summon.png")
 	# description 
 	I_CLICK_SUMMON = RuleImage(roi_front=(454,629,103,35), roi_back=(269,575,731,135), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_summon.png")
 	# description 
@@ -49,9 +49,9 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_DIALOGUE_2 = RuleImage(roi_front=(603,274,18,33), roi_back=(0,0,1280,720), threshold=0.85, method="Template matching", file="./tasks/Plotline/res/click_dialogue_2.png")
 	# description 
-	I_CLICK_SPEED_X2 = RuleImage(roi_front=(1143,39,50,39), roi_back=(925,13,325,111), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_speed_x2.png")
+	I_CLICK_SPEED_X2 = RuleImage(roi_front=(1193,41,41,34), roi_back=(925,13,325,111), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_speed_x2.png")
 	# description 
-	I_CLICK_SPEED_X1 = RuleImage(roi_front=(1146,34,45,49), roi_back=(997,11,257,128), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_speed_x1.png")
+	I_CLICK_SPEED_X1 = RuleImage(roi_front=(1194,41,38,35), roi_back=(997,11,257,127), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_speed_x1.png")
 	# description 
 	I_CLICK_TO_AUTO = RuleImage(roi_front=(37,646,27,31), roi_back=(9,620,100,81), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_to_auto.png")
 	# description 
@@ -126,6 +126,14 @@ class PlotlineAssets:
 	I_PAGE_COLLET = RuleImage(roi_front=(103,609,41,38), roi_back=(18,577,936,130), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_collet.png")
 	# 旧庭院判断 
 	I_PLOTLINE_OLD_MAIN_CHECK = RuleImage(roi_front=(839,176,73,51), roi_back=(204,68,1007,482), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_plotline_old_main_check.png")
+	#  
+	I_PAGE_SUMMON2 = RuleImage(roi_front=(381,89,77,85), roi_back=(255,66,834,556), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_summon2.png")
+	#  
+	I_PAGE_CLICK_ANY3 = RuleImage(roi_front=(562,666,152,30), roi_back=(242,604,771,111), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_page_click_any3.png")
+	#  
+	I_PLOTLINE_NEW_MAIN_CHECK_2 = RuleImage(roi_front=(846,151,66,39), roi_back=(270,133,817,66), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_plotline_new_main_check_2.png")
+	#  
+	I_P_LOGIN_SCROOLL_CLOSE = RuleImage(roi_front=(1172,628,72,51), roi_back=(1085,587,195,133), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_p_login_scrooll_close.png")
 
 
 	# Ocr Rule Assets
@@ -144,6 +152,8 @@ class PlotlineAssets:
 	S_SWIPE_BATTLE2 = RuleSwipe(roi_front=(1065,532,38,9), roi_back=(1137,531,45,9), mode="default", name="swipe_battle2")
 	# description 
 	S_SWIPE_FIND_FLAG = RuleSwipe(roi_front=(1067,618,141,47), roi_back=(104,616,178,52), mode="default", name="swipe_find_flag")
+	#  
+	S_SWIPE_MAIN_CHANGE = RuleSwipe(roi_front=(1173,271,37,42), roi_back=(1173,623,40,39), mode="default", name="swipe_main_change")
 
 
 	# Image Rule Assets
@@ -159,5 +169,9 @@ class PlotlineAssets:
 	I_FLAG_USED = RuleImage(roi_front=(958,611,132,37), roi_back=(729,52,470,635), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_flag_used.png")
 	#  
 	I_FLAG_NOT_USE = RuleImage(roi_front=(999,609,132,37), roi_back=(729,52,470,635), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_flag_not_use.png")
+	#  
+	I_SWIPE_START = RuleImage(roi_front=(1169,269,44,46), roi_back=(1140,71,98,536), threshold=0.65, method="Template matching", file="./tasks/Plotline/res/res_swipe_start.png")
+	#  
+	I_PAGE_MAIN_CHANGE = RuleImage(roi_front=(328,100,155,39), roi_back=(301,45,323,118), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_page_main_change.png")
 
 

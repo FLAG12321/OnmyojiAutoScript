@@ -20,8 +20,8 @@
   {
     "itemName": "page_click_any",
     "imageName": "page_click_any.png",
-    "roiFront": "540,508,213,27",
-    "roiBack": "0,0,1280,720",
+    "roiFront": "374,211,541,28",
+    "roiBack": "0,0,1279,720",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
@@ -38,7 +38,7 @@
   {
     "itemName": "page_summon",
     "imageName": "page_summon.png",
-    "roiFront": "381,91,89,92",
+    "roiFront": "381,89,77,85",
     "roiBack": "255,66,834,556",
     "method": "Template matching",
     "threshold": 0.8,
@@ -83,7 +83,7 @@
   {
     "itemName": "click_speed_x2",
     "imageName": "click_speed_x2.png",
-    "roiFront": "1143,39,50,39",
+    "roiFront": "1193,41,41,34",
     "roiBack": "925,13,325,111",
     "method": "Template matching",
     "threshold": 0.7,
@@ -92,8 +92,8 @@
   {
     "itemName": "click_speed_x1",
     "imageName": "click_speed_x1.png",
-    "roiFront": "1146,34,45,49",
-    "roiBack": "997,11,257,128",
+    "roiFront": "1194,41,38,35",
+    "roiBack": "997,11,257,127",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
@@ -430,5 +430,41 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "旧庭院判断"
+  },
+  {
+    "itemName": "page_summon2",
+    "imageName": "res_page_summon2.png",
+    "roiFront": "381,89,77,85",
+    "roiBack": "255,66,834,556",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "page_click_any3",
+    "imageName": "res_page_click_any3.png",
+    "roiFront": "562,666,152,30",
+    "roiBack": "242,604,771,111",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "plotline_new_main_check_2",
+    "imageName": "res_plotline_new_main_check_2.png",
+    "roiFront": "846,151,66,39",
+    "roiBack": "270,133,817,66",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "p_login_scrooll_close",
+    "imageName": "res_p_login_scrooll_close.png",
+    "roiFront": "1172,628,72,51",
+    "roiBack": "1085,587,195,133",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
   }
 ]
