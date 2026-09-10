@@ -1120,7 +1120,16 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         # 日志上看不到 GENERAL BATTLE START 分隔线，靠此行核对场次进度
         logger.info(f"Current count: {self.current_count}")
         self._auto_seg['total_left'] -= 1
-        # 段内零输入：stuck 检测靠页面翻转续命，每跨一场重挂长战斗计时
+        # 段内零输入：stuck 检测靠页面翻转续命，每跨一场重挂长战斗计时。
+        # 必须 clear 之后再 add，只 add 无效——stuck_record_add 只往
+        # detect_record 塞名字、不碰 stuck_timer/stuck_timer_long，而
+        # detect_record 是 set，重复 add 同一个标记是 no-op；BATTLE_STATUS_S
+        # 在 stuck_long_wait_list 里只把上限从 60s 放宽到 300s，不是无限豁免，
+        # 计时器照跑满 300s 就抛 GameStuckError。段内没有点击/滑动，
+        # handle_control_check 这条唯一的自动清零路径也不会走到，于是唯一一次
+        # clear 停在段起点 _auto_start 的那次点击上（2026-09-11 oas2 爬塔事故：
+        # 每 ~16.5s 稳定翻一场，仍在段起点点击后精确 300s 被误判卡死重启两次）
+        self.device.stuck_record_clear()
         self.device.stuck_record_add('BATTLE_STATUS_S')
         # 任务层钩子：Orochi 在此同步五倍券补次/组队心跳
         self.auto_battle_count_hook()
@@ -1244,7 +1253,10 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                     # 1~2 帧失配就误判中断——进入结算时同步清零防抖
                     fail_frames = 0
                     fail_since = None
-                    # 页面翻转即"未卡死"的证据，重挂一次长战斗计时
+                    # 页面翻转即"未卡死"的证据，重挂一次长战斗计时。
+                    # 同 auto_battle_count_step：必须 clear 再 add，只 add 不重置
+                    # 计时器（stuck_record_add 只写 detect_record 集合）
+                    self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
             else:
                 # 场次边界第二步：结算页过后回到战斗/准备界面 = 跨过一场

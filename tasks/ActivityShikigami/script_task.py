@@ -967,7 +967,11 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                     self.auto_battle_count_step()
                     seg_done += 1
                     waiting_settle = False
-                    # 新一场开始：重置续窗与单场墙钟
+                    # 新一场开始：重置续窗与单场墙钟。
+                    # stuck 续窗本身已由 auto_battle_count_step 完成（clear+re-add）——
+                    # 原先这里只推 stuck_refresh_ts，而单场约 16.5s 永远够不到 120s 的
+                    # AUTO_BATTLE_STUCK_REFRESH_S 阈值，上面那段续窗一次都跑不到，
+                    # 段起点点击后满 300s 必被 GameStuckError 误判卡死（2026-09-11 oas2 事故）
                     stuck_refresh_ts = now
                     battle_deadline = now + AUTO_BATTLE_BATTLE_TIMEOUT_S
                     # 计数偏差截断：剩余场数不够"段剩余+1 场取消"
