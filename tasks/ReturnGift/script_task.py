@@ -131,7 +131,7 @@ class ScriptTask(GuildPopupMixin, GameUi,ReturnGiftAssets):
                         break
                     if self.appear_then_click(self.I_R_BACK_Y, interval=2):
                         continue
-                    if self.ui_get_current_page() != page_guild:
+                    if not self.appear(self.I_TO_PAGE_PIECE) and self.ui_get_current_page() != page_guild:
                         self.ui_goto(page_guild)
                         continue
                     

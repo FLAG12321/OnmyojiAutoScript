@@ -514,6 +514,17 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             return x, y, rule
         return nx, ny, moved
 
+    def settlement_click_count(self, page_clicks: int) -> int:
+        """本次结算手势的总点击数（含首击）：默认按真人簇长直方图查表抽样。
+
+        任务级覆盖点：固定返回值后连击不再抽样——结算画面切换快的任务
+        （如活动爬塔）用固定双击把追加击的误触窗口压到最小。
+        :param page_clicks: 本奖励页已发起的点击事件数（衰减查表索引，
+            覆盖方不需要衰减时忽略该参数）
+        """
+        return random.choices(MULTI_CLICK_SIZES,
+                              weights=multi_click_weights(page_clicks))[0]
+
     def _settlement_extra_clicks(self, action, x, y, control_name,
                                  first_ts: float = None, page_clicks: int = 0):
         """按真人簇长分布在首击后追加快速连击，对齐真人结算行为。
@@ -522,7 +533,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             调用方用它做 TTL 基准（见 settlement_gesture）。
 
         追加击的特征（MULTI_CLICK_* 常量在 reward_frame.py，取值由真人实采校准）：
-        - 次数按真人连击簇长直方图抽样，**在 4 点封顶**：首击点掉奖励页后，
+        - 次数由 settlement_click_count 给出（默认按真人簇长直方图抽样，任务
+          可覆盖为固定值，如活动爬塔的固定双击），**在 4 点封顶**：首击点掉奖励页后，
           剩余追加击会落到新出现的界面上（安全区域是按奖励页算的，在新界面
           上那个坐标可能是「再来一局」之类的按钮），所以真人尾部 5~11 点的
           长簇不采用，把最长暴露窗口从 2.20s 压到 0.66s。多点簇内部还把权重
@@ -560,8 +572,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             一次手势计 1 次、连点内部不重复计），作为多击权重的查表索引
             （MULTI_CLICK_WEIGHTS_BY_EVENT，2026-09-06 起查表替代线性衰减）。
         """
-        n = random.choices(MULTI_CLICK_SIZES,
-                           weights=multi_click_weights(page_clicks))[0]
+        # 簇长从 settlement_click_count 取（任务可覆盖为固定值），不再就地抽样
+        n = self.settlement_click_count(page_clicks)
         if n == 1:
             return None
         rx, ry, rw, rh = action.roi_front
@@ -664,9 +676,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 if not self.appear(self.I_FALSE, threshold=0.6):
                     return False
         # 最后保证能点击 获得奖励
+        # 结算面板就绪信号二选一：奖励框 I_REWARD 或左上角详情图标 I_EXTRA_INFO。
+        # 原来串行等待（EXTRA_INFO 3 秒超时后才等 I_REWARD）在没有 EXTRA_INFO 的
+        # 战斗（结界突破/寮突破）上每场白等 3 秒——两个信号并行等，任一出现即领奖
         self.screenshot()
-        if not  self.wait_until_appear(self.I_EXTRA_INFO,wait_time=3):
-            if not self.wait_until_appear(self.I_REWARD): 
+        panel_timer = Timer(3)
+        panel_timer.start()
+        while not (self.appear(self.I_REWARD) or self.appear(self.I_EXTRA_INFO)):
+            if panel_timer.reached():
+                break
+            self.screenshot()
+        if not self.appear(self.I_REWARD) and not self.appear(self.I_EXTRA_INFO):
+            # 并行等待超时：面板可能还没刷出来，限时再等 I_REWARD 一段时间。
+            # 原来这里不传 wait_time 是无限等待，「没有奖励」分支永远不可达，
+            # 真没奖励的战斗会卡死——限时等待让 no reward 路径可达
+            if not self.wait_until_appear(self.I_REWARD, wait_time=5):
                 # 有些的战斗没有下面的奖励，所以直接返回
                 logger.info("There is no reward, Exit battle")
                 return win
@@ -1092,6 +1116,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         任务层口径（五倍券/组队进度）经钩子同步，保证三处计数一致。
         """
         self.current_count += 1
+        # 与 run_general_battle 序言同格式记次：自动段内零输入翻场，
+        # 日志上看不到 GENERAL BATTLE START 分隔线，靠此行核对场次进度
+        logger.info(f"Current count: {self.current_count}")
         self._auto_seg['total_left'] -= 1
         # 段内零输入：stuck 检测靠页面翻转续命，每跨一场重挂长战斗计时
         self.device.stuck_record_add('BATTLE_STATUS_S')

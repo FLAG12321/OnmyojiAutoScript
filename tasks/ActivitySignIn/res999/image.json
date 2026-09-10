@@ -191,10 +191,10 @@
   {
     "itemName": "b_finish",
     "imageName": "res999_b_finish.png",
-    "roiFront": "592,637,94,38",
-    "roiBack": "541,600,220,107",
+    "roiFront": "591,635,93,36",
+    "roiBack": "543,599,218,105",
     "method": "Template matching",
-    "threshold": 0.7,
+    "threshold": 0.85,
     "description": ""
   }
 ]

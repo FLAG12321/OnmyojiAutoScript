@@ -78,6 +78,6 @@ class ActivitySignInAssets:
 	#  
 	I_A_FINISH = RuleImage(roi_front=(33,46,124,469), roi_back=(1,0,250,681), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_finish.png")
 	#  
-	I_B_FINISH = RuleImage(roi_front=(592,637,94,38), roi_back=(541,600,220,107), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_finish.png")
+	I_B_FINISH = RuleImage(roi_front=(591,635,93,36), roi_back=(543,599,218,105), threshold=0.85, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_finish.png")
 
 

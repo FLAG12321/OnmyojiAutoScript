@@ -360,7 +360,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     def detect_cells(self, screenshot: bool=True, rows_expected: int=GRID_ROWS,
                      cols_expected: int=GRID_COLS,
                      fallback_x: tuple=FALLBACK_SLOT_X, fallback_y: tuple=FALLBACK_SLOT_Y,
-                     read_level: bool=True) -> list:
+                     read_level: bool=True, slot_hits: list=None) -> list:
         """逐格判定网格状态、统计勋章数并读取结界等级。
 
         状态优先级：已攻破 > 攻打失败 > 可正常攻打。已攻破的格子勋章数没有意义，
@@ -369,12 +369,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         滚动截断时行数可能少于期望，识别到几行就返回几行。
         read_level=False 时跳过逐格等级 OCR（level 置 None）：等级只服务于
         auto_exit_all 的全退/禁退四策略，不消费等级的调用方不该付这笔 OCR 成本。
+        slot_hits 传入已跑过的勋章槽命中点可跳过全图匹配（调用方做过画面预检时复用）。
         :return: 格子 dict 列表，含 index/slot/region/state/medal_count/no_medal_count/level/click_roi
         """
         if screenshot:
             self.screenshot()
         image = self.device.image
-        hits = self._slot_hits(image)
+        hits = slot_hits if slot_hits is not None else self._slot_hits(image)
         cells = []
         for index, (slot_x, slot_y) in enumerate(self.detect_grid(hits, rows_expected, cols_expected,
                                                                   fallback_x, fallback_y), start=1):

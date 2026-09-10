@@ -558,6 +558,16 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         """
         return FORBIDDEN_ACTIVITY
 
+    def settlement_click_count(self, page_clicks: int) -> int:
+        """爬塔结算连击取消，固定单击（2026-09-10 用户指示）。
+
+        爬塔战斗结算画面切换快，连点手势内的追加击容易跨越画面切换点，
+        落到已切换的新界面上误触按钮。固定单击（每次手势只有首击、
+        无任何追加击）彻底消除追加击误触窗口；事件衰减查表
+        （page_clicks）对固定簇长无意义，忽略。
+        """
+        return 1
+
     def switch_soul(self):
         conf = self.conf.switch_soul_config
         conf.validate_switch_soul()
@@ -884,9 +894,11 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         battle_wait 继续手动流程。
         """
         seg = self._seg_state()
-        # 本段已领取：无论成败，本场 battle_wait 只进段一次
-        seg['planned'] = False
-        m = seg['seg_len']
+        # 一次性计划版（2026-09-09）由 _auto_seg_consume 统一推进 plan_idx 与
+        # planned，段不再"领取即消耗"，此处不改状态；段长取当前计划段
+        # （进入本函数前 _auto_seg_reached 已确认段有效，cur 不会为 None）
+        cur = self._auto_seg_current()
+        m = cur[1] if cur is not None else seg['seg_len']
 
         def _settle_appear() -> bool:
             """结算页系模板共判 + 活动卷轴标识 + 奖励框检测兜底。

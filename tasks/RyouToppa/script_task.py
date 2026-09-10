@@ -60,13 +60,23 @@ class ScriptTask(RealmRaidScriptTask, GeneralBattle, GameUi, SwitchSoul, RyouTop
         列锚点/行距与个人突破略有差异（列距 337 vs 332），按实测值传参。
         滚动截断后可能只返回 3 行甚至更少——识别到几行处理几行，不补齐。
         寮突不消费等级，read_level=False 跳过逐格等级 OCR。
+        画面有效性预检：一个勋章槽都识别不到说明不是列表界面（结算/过渡帧），
+        返回 [] 交给调用方重试——绝不回退写死锚点在错误画面上点击。
         """
-        return self.detect_cells(screenshot=screenshot,
+        if screenshot:
+            self.screenshot()
+        hits = self._slot_hits(self.device.image)
+        if not hits:
+            logger.warning('No medal slot on screen, realm list is not ready, retry later')
+            return []
+        # 预检已跑过全图匹配，传给 detect_cells 复用，避免重复匹配
+        return self.detect_cells(screenshot=False,
                                  rows_expected=RYOU_ROWS_EXPECTED,
                                  cols_expected=RYOU_COLS_EXPECTED,
                                  fallback_x=RYOU_FALLBACK_SLOT_X,
                                  fallback_y=RYOU_FALLBACK_SLOT_Y,
-                                 read_level=False)
+                                 read_level=False,
+                                 slot_hits=hits)
 
     def _infer_hidden_failed(self, cells: list) -> list:
         """按列表有序性补判被遮挡的失败结界。
@@ -217,8 +227,17 @@ class ScriptTask(RealmRaidScriptTask, GeneralBattle, GameUi, SwitchSoul, RyouTop
                 logger.warning("We have attacked the limit time.")
                 break
 
+            # 21 点后免票时段 has_ticket 直接返回（不等界面），结算→列表的过渡帧上
+            # 识别会 rows=0 回退写死锚点，第一击落空后还要吃 attack_area 里 5s 的
+            # 点击去重。这里显式等寮突界面就绪再识别；白天 has_ticket 已等过，
+            # 第二次等待界面已就绪、立即返回
+            self.wait_until_appear(self.I_TOPPA_RECORD)
             # 每次战斗前重新识别整屏：列表会重排，上一轮的格子位置不可复用
             cells = self._infer_hidden_failed(self.detect_ryou_cells())
+            if not cells:
+                # 画面不是列表（结算/过渡帧，勋章槽一个都没有）：回循环顶部重试，
+                # 不能把空结果当「没有可打目标」结束任务
+                continue
             self._current_cells = cells  # attack_area 取本轮回退落的点击区
             # 失败结界过多：上划刷新，把没失败的区域滚上来
             if self.decide_ryou_flush(cells):
