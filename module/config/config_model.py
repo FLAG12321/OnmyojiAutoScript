@@ -322,6 +322,7 @@ class ConfigModel(ConfigBase):
         self._inject_desktop_handle_options(result)
         self._filter_orochi_team_fields(task_name, result)
         self._filter_activity_shikigami_fields(task_name, result)
+        self._filter_master_disciple_fields(task_name, result)
         return result
 
     def _filter_activity_shikigami_fields(self, task_name: str, result: dict) -> None:
@@ -389,6 +390,66 @@ class ConfigModel(ConfigBase):
         else:
             # 队长：由自己发布场次，不需要指认别的实例作队长
             drop('team_config', {'leader_instance'})
+
+    def _filter_master_disciple_fields(self, task_name: str, result: dict) -> None:
+        """按师徒模式裁剪界面字段，只显示当前模式真正需要配置的项。
+
+        纯展示层过滤：只从返回给界面的字典里摘掉条目，不动 pydantic 模型
+        也不改任何落盘值。切模式后重新打开设置页即按新模式显示，隐藏字段
+        的值原样保留。
+
+        战斗行为指令（金币/经验是否准备后退出）已改由徒弟经同步协议下发，
+        师父侧不再读本地开关，因此师父模式下退出开关也不显示。
+        """
+        if task_name != 'master_disciple':
+            return
+        items = result.get('master_disciple_config')
+        if not items:
+            return
+
+        def drop(group: str, names: set) -> None:
+            group_items = result.get(group)
+            if not group_items:
+                return
+            kept = [item for item in group_items if item.get('name') not in names]
+            # 一组字段被摘空时连分组一起去掉，避免界面上留一个空的设置框
+            if kept:
+                result[group] = kept
+            else:
+                result.pop(group, None)
+
+        # mode 取枚举原始值（与御魂组队过滤同款写法）
+        mode = getattr(self.master_disciple.master_disciple_config, 'mode', None)
+        mode = getattr(mode, 'value', mode)
+
+        if mode == 'master':
+            # 师父模式：只留模式选择与御魂预设，徒弟专用字段全部隐藏
+            drop('master_disciple_config', {
+                'master_name', 'master_instance', 'limit_time', 'limit_count',
+                'run_exploration', 'run_exp_monster', 'run_stone_ju',
+                'run_coin_monster', 'run_guard', 'guard_battle_count',
+                'auto_switch_account', 'cycle_all_disciples', 'invite_timeout',
+                'master_coin_exit_after_prepare', 'master_exp_exit_after_prepare',
+                'buy_ap_when_low', 'ap_threshold'})
+            # 徒弟账号列表组（序列化后为 disciple_account_list_1..N）
+            for key in [k for k in result if k.startswith('disciple_account_list')]:
+                result.pop(key, None)
+        else:
+            # 徒弟模式：御魂预设只服务于师父模式；退出开关归徒弟配置并经协议下发
+            result.pop('master_preset_1', None)
+            result.pop('master_preset_2', None)
+            result.pop('master_preset_3', None)
+            # 轮询模式是纯单人流程（只跑探索/领体力，房间任务开关失效）：
+            # 房间任务与同步相关字段一并隐藏，界面只剩单人环节配置
+            md_config = self.master_disciple.master_disciple_config
+            cycle_mode = bool(getattr(md_config, 'auto_switch_account', False)
+                              and getattr(md_config, 'cycle_all_disciples', False))
+            if cycle_mode:
+                drop('master_disciple_config', {
+                    'master_name', 'master_instance', 'run_guard', 'run_stone_ju',
+                    'run_coin_monster', 'run_exp_monster', 'guard_battle_count',
+                    'invite_timeout', 'master_coin_exit_after_prepare',
+                    'master_exp_exit_after_prepare'})
 
     def _inject_desktop_handle_options(self, result: dict) -> None:
         """桌面模式下把 handle 就地改成"已开客户端窗口"下拉，供界面选择而非手填 PID。

@@ -28,6 +28,8 @@ class MasterDiscipleConfig(ConfigBase):
     mode: MasterDiscipleMode = Field(default=MasterDiscipleMode.MASTER, description='master_disciple_mode_help')
     # 师父角色名称
     master_name: str = Field(default='', description='master_name_help')
+    # 师父的 OAS 实例名（同步模式）：徒弟用它定位共享状态文件；仅徒弟模式必填，师父模式忽略
+    master_instance: str = Field(default='', description='master_instance_help')
     # 限制时间
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
     # 限制次数

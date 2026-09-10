@@ -20,6 +20,23 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall, page_friends
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
 from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode
+from tasks.MasterDisciple.team_state import (
+    BUFF_COIN,
+    BUFF_COIN_EXIT,
+    BUFF_EXP,
+    BUFF_EXP_EXIT,
+    MasterDiscipleSession,
+    MasterDiscipleStateStore,
+    PHASE_FINISHED,
+    PHASE_PAIRED,
+    StaleSessionError,
+    TASK_COIN,
+    TASK_EXP,
+    TASK_EXPLORATION,
+    TASK_GUARD,
+    TASK_STONE,
+    TASK_SWITCHING,
+)
 from tasks.Exploration.solo import SoloExploration
 from tasks.Exploration.config import ExplorationLevel, UpType
 from tasks.Plotline.assets import PlotlineAssets
@@ -53,6 +70,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     # 超限后本场放弃切换直接开打（保持原有降级语义，不会卡死在准备界面）
     HELP_ANCHOR_RETRY_LIMIT: int = 3
     coin_buff: bool =False
+    # 经验加成开关状态（师父侧跟随同步指令提前开关，与 coin_buff 同语义）
+    exp_buff_on: bool = False
     # 徒弟轮询的账号级续做进度，run_as_disciple 中创建；中断后接续时已完成徒弟直接跳过
     _progress: ProgressStore = None
     # run_guard 每次启动任务第一次战斗必须勾选"默认邀请"并确认勾选成功，防止首次未勾选导致后续战斗不自动邀请
@@ -63,6 +82,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     _account_switched: bool = False
     # 当前徒弟角色名（切号时记录）：探索完成截图存证用它命名文件；未切号时为 None，退化为配置实例名
     _current_disciple_name: str = None
+    # ===== 师徒同步（JSON 状态文件）=====
+    # 同步状态存储与会话令牌：仅当开启房间任务且成功发布会话时非 None
+    _md_store: MasterDiscipleStateStore = None
+    _md_session: MasterDiscipleSession = None
+    # 师父实例是否已加入会话（配对成功）；False 时房间任务跳过但状态序列照写
+    _md_paired: bool = False
+    # 当前等待的邀请序号：每轮等待师父进房前经 _md_next_invite() 递增
+    _md_invite_seq: int = 0
+    # 配对等待是否已结束（成功或放弃）：等待只发生在第一个房间任务前，之后不再重复
+    _md_join_wait_done: bool = False
+    # 徒弟侧心跳节流时间戳（monotonic 秒）
+    _md_last_heartbeat: float = 0.0
 
     def reward_avoid(self) -> tuple:
         """师徒是两人组队，胜利画面上多出一块队友战绩框，落点回避它。"""
@@ -104,6 +135,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     success = self.run_as_disciple()
                 case _:
                     logger.error('Unknown master-disciple mode')
+        except TaskEnd:
+            # TaskEnd 是任务正常结束信号（守护完成/师父走到探索退出等）：
+            # 此时 success 仍为 True，finally 按成功间隔调度；旧逻辑把它当
+            # 普通异常置 False，导致正常结束也按失败间隔调度
+            raise
         except Exception as e:
             # 异常上抛前必须置 success=False，否则 finally 会误判为成功并按成功间隔调度
             success = False
@@ -181,72 +217,78 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
     def run_as_disciple(self):
         """
-        以徒弟身份运行
+        以徒弟身份运行（同步模式：先与师父实例完成 JSON 配对）
         支持 cycle_all_disciples 配置：
         - False: 只切换到第一个徒弟账号执行任务
         - True: 轮询所有徒弟账号，依次切换并执行任务
         """
         logger.info("Running as disciple")
 
-        account_list = self.config.master_disciple.disciple_account_list
-        cycle_all = self.config.master_disciple.master_disciple_config.cycle_all_disciples
-        auto_switch = self.config.master_disciple.master_disciple_config.auto_switch_account
+        # 同步配对：发布状态文件并等师父实例加入（只跑单人任务时自动跳过）
+        self._md_setup_disciple()
+        try:
+            account_list = self.config.master_disciple.disciple_account_list
+            cycle_all = self.config.master_disciple.master_disciple_config.cycle_all_disciples
+            auto_switch = self.config.master_disciple.master_disciple_config.auto_switch_account
 
-        if not auto_switch or not account_list:
-            # 不切换账号或没有账号列表，直接在当前账号执行任务
-            self._execute_disciple_tasks()
-            return True
-
-        if not cycle_all:
-            # 只执行第一个徒弟账号
-            logger.info("Cycle all disciples is disabled, switching to first disciple account only")
-            if not self.switch_to_disciple_account(account_list[0]):
-                return False
-            self._execute_disciple_tasks()
-            return True
-
-        # 轮询所有徒弟账号：建账号级续做进度，阶段标识 = 徒弟账号集合 + 自然日
-        logger.info(f"Cycle all disciples enabled, total {len(account_list)} account(s) to process")
-        self._progress = ProgressStore('master_disciple', self.config.config_name)
-        self._progress.ensure_phase(
-            {'disciples': [acc_key(a.account, a.character, a.svr) for a in account_list],
-             'day': self.start_time.strftime('%Y-%m-%d')},
-            self.start_time.strftime('%Y%m%d-%H%M'),
-        )
-        all_success = True
-        for index, account_info in enumerate(account_list):
-            key = acc_key(account_info.account, account_info.character, account_info.svr)
-            if self._progress.is_account_done(key):
-                logger.info(f"Disciple {account_info.character}-{account_info.svr} already done, skipping")
-                continue
-            logger.info(f"Processing disciple account {index + 1}/{len(account_list)}: {account_info.character}-{account_info.svr}")
-            if not self.switch_to_disciple_account(account_info):
-                logger.warning(f"Failed to switch to disciple account {account_info.character}-{account_info.svr}, skipping")
-                all_success = False
-                continue
-            try:
+            if not auto_switch or not account_list:
+                # 不切换账号或没有账号列表，直接在当前账号执行任务
                 self._execute_disciple_tasks()
-                # 徒弟任务正常完成：即时落盘，中断后接续时整个跳过
-                self._progress.mark_account_done(key)
-            except TaskEnd:
-                raise
-            except RequestHumanTakeover:
-                raise
-            except GameNotRunningError:
-                raise
-            except Exception as e:
-                logger.error(f"Error executing tasks for disciple {account_info.character}-{account_info.svr}: {e}")
-                all_success = False
-                # 异常恢复：回到庭院
-                try:
-                    self.device.stuck_record_clear()
-                    self.screenshot()
-                    self.ui_get_current_page()
-                    self.ui_goto(page_main)
-                except Exception:
-                    logger.warning("Failed to recover to main page after error")
+                return True
 
-        return all_success
+            if not cycle_all:
+                # 只执行第一个徒弟账号
+                logger.info("Cycle all disciples is disabled, switching to first disciple account only")
+                if not self.switch_to_disciple_account(account_list[0]):
+                    return False
+                self._execute_disciple_tasks()
+                return True
+
+            # 轮询所有徒弟账号：建账号级续做进度，阶段标识 = 徒弟账号集合 + 自然日
+            logger.info(f"Cycle all disciples enabled, total {len(account_list)} account(s) to process")
+            self._progress = ProgressStore('master_disciple', self.config.config_name)
+            self._progress.ensure_phase(
+                {'disciples': [acc_key(a.account, a.character, a.svr) for a in account_list],
+                 'day': self.start_time.strftime('%Y-%m-%d')},
+                self.start_time.strftime('%Y%m%d-%H%M'),
+            )
+            all_success = True
+            for index, account_info in enumerate(account_list):
+                key = acc_key(account_info.account, account_info.character, account_info.svr)
+                if self._progress.is_account_done(key):
+                    logger.info(f"Disciple {account_info.character}-{account_info.svr} already done, skipping")
+                    continue
+                logger.info(f"Processing disciple account {index + 1}/{len(account_list)}: {account_info.character}-{account_info.svr}")
+                if not self.switch_to_disciple_account(account_info):
+                    logger.warning(f"Failed to switch to disciple account {account_info.character}-{account_info.svr}, skipping")
+                    all_success = False
+                    continue
+                try:
+                    self._execute_disciple_tasks()
+                    # 徒弟任务正常完成：即时落盘，中断后接续时整个跳过
+                    self._progress.mark_account_done(key)
+                except TaskEnd:
+                    raise
+                except RequestHumanTakeover:
+                    raise
+                except GameNotRunningError:
+                    raise
+                except Exception as e:
+                    logger.error(f"Error executing tasks for disciple {account_info.character}-{account_info.svr}: {e}")
+                    all_success = False
+                    # 异常恢复：回到庭院
+                    try:
+                        self.device.stuck_record_clear()
+                        self.screenshot()
+                        self.ui_get_current_page()
+                        self.ui_goto(page_main)
+                    except Exception:
+                        logger.warning("Failed to recover to main page after error")
+
+            return all_success
+        finally:
+            # 通知师父本轮流结束（异常上抛路径也通知，让师父侧立即退出而非等超时）
+            self._md_finish()
 
     def _check_and_buy_ap(self):
         """
@@ -355,27 +397,49 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
     def _execute_disciple_tasks(self):
         """
-        在当前徒弟账号上执行所有已启用的任务
+        在当前徒弟账号上执行所有已启用的任务（同步模式：房间任务前先与师父对齐）
+
+        轮询模式（cycle_all_disciples）为纯单人流程：只跑买体力与探索，
+        即使勾选了房间任务开关也一律失效跳过（无师父跟随）。
         """
+        cfg = self.config.master_disciple.master_disciple_config
+        # 轮询模式：只跑单人环节，房间任务开关全部失效
+        if self._md_is_cycle_mode():
+            if cfg.run_guard or cfg.run_stone_ju or cfg.run_coin_monster or cfg.run_exp_monster:
+                logger.info('轮询模式为纯单人流程，房间任务（守护/石距/金币/经验）开关失效不执行')
+            # 体力检测与购买
+            if cfg.buy_ap_when_low:
+                self._run_task_with_retry(self._check_and_buy_ap, "体力检测购买")
+            # 执行探索任务
+            if cfg.run_exploration:
+                self._run_task_with_retry(self.run_exploration_as_disciple, "探索")
+            return
+
         # 体力检测与购买
-        if self.config.master_disciple.master_disciple_config.buy_ap_when_low:
+        if cfg.buy_ap_when_low:
             self._run_task_with_retry(self._check_and_buy_ap, "体力检测购买")
         # 执行守护历练任务
-        if self.config.master_disciple.master_disciple_config.run_guard:
-            self._run_task_with_retry(self.run_guard_as_disciple, "守护历练")
+        if cfg.run_guard:
+            if self._md_announce_room_task(TASK_GUARD, "守护历练"):
+                self._run_task_with_retry(self.run_guard_as_disciple, "守护历练")
         # 执行石距任务
-        if self.config.master_disciple.master_disciple_config.run_stone_ju:
-            self._run_task_with_retry(self.run_stone_ju_as_disciple, "石距")
+        if cfg.run_stone_ju:
+            if self._md_announce_room_task(TASK_STONE, "石距"):
+                self._run_task_with_retry(self.run_stone_ju_as_disciple, "石距")
         # 执行金币妖怪任务
-        if self.config.master_disciple.master_disciple_config.run_coin_monster:
-            self._run_task_with_retry(self.run_coin_monster_as_disciple, "金币妖怪")
+        if cfg.run_coin_monster:
+            if self._md_announce_room_task(TASK_COIN, "金币妖怪"):
+                self._run_task_with_retry(self.run_coin_monster_as_disciple, "金币妖怪")
 
         # 执行经验妖怪任务
-        if self.config.master_disciple.master_disciple_config.run_exp_monster:
-            self._run_task_with_retry(self.run_exp_monster_as_disciple, "经验妖怪")
+        if cfg.run_exp_monster:
+            if self._md_announce_room_task(TASK_EXP, "经验妖怪"):
+                self._run_task_with_retry(self.run_exp_monster_as_disciple, "经验妖怪")
 
-        # 执行探索任务
-        if self.config.master_disciple.master_disciple_config.run_exploration:
+        # 执行探索任务（单人环节，不等师父就绪；师父侧看到该任务即结束跟随，
+        # 探索期间不再占用师父实例）
+        if cfg.run_exploration:
+            self._md_set_current_task(TASK_EXPLORATION)
             self._run_task_with_retry(self.run_exploration_as_disciple, "探索")
 
     def switch_to_disciple_account(self, account_info=None):
@@ -385,6 +449,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         :param account_info: 要切换的账号信息，若为None则从列表取第一个账号
         """
         logger.info("Switching to disciple account")
+
+        # 【同步】先告知师父「切号中」：切号耗时数分钟，师父侧按长超时等待
+        self._md_set_current_task(TASK_SWITCHING)
 
         if account_info is None:
             account_list = self.config.master_disciple.disciple_account_list
@@ -413,59 +480,283 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             logger.info(f"Successfully switched to disciple account: {account_info.character}-{account_info.svr}")
 
         return success
-    def _get_add_count(self, consecutive_count: int = 2) -> int:
+    # ======================== 师徒同步辅助（JSON 状态文件） ========================
+
+    def _md_is_cycle_mode(self) -> bool:
+        """轮询模式判定：自动切号 + 轮询开关同时开启。
+
+        该模式下徒弟是纯单人流程（只跑探索与领体力，房间任务一律跳过），
+        任何时候都不连接师父。
         """
-        连续采集加号图标数量，直到连续 consecutive_count 次结果相同时返回该数量
+        cfg = self.config.master_disciple.master_disciple_config
+        return bool(cfg.auto_switch_account and cfg.cycle_all_disciples)
 
-        :param consecutive_count: 需要连续多少次采集结果相同才返回，默认 3
-        :return: 稳定的加号图标数量
+    def _md_needs_pairing(self) -> bool:
+        """是否需要师父配合：守护/石距/金币/经验任一开启即需要同步配对。
+
+        只跑探索、买体力等单人任务时完全不连接师父（不发布、不等待），
+        避免无意义的配对等待。
         """
-        self.device.stuck_record_add('BATTLE_STATUS_S')
+        # 轮询模式是纯单人流程（只有探索/买体力），任何时候都不连接师父
+        if self._md_is_cycle_mode():
+            return False
+        cfg = self.config.master_disciple.master_disciple_config
+        return bool(cfg.run_guard or cfg.run_stone_ju or cfg.run_coin_monster or cfg.run_exp_monster)
 
-        def reject_invite():
-            from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
-            while 1:
-                self.screenshot()
-                if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2) or self.appear(gia.I_I_REJECT_3) or self.appear(gia.I_I_REJECT_4)):
-                    break
-                if self.appear(gia.I_I_REJECT_4):
-                    self.click(gia.I_I_REJECT_4, 1)
-                    continue
-                if self.appear(gia.I_I_REJECT_1):
-                    self.click(gia.I_I_REJECT_1, 1)
-                    continue
-                if self.appear(gia.I_I_REJECT_3):
-                    self.click(gia.I_I_REJECT_3, 1)
-                    continue
-                if self.appear(gia.I_I_REJECT_2):
-                    self.click(gia.I_I_REJECT_2, 1)
-                    continue
-                if self.appear(gia.I_I_REJECT_1):
-                    self.click(gia.I_I_REJECT_1, 1)
-                    continue
-            return True
+    def _md_setup_disciple(self) -> None:
+        """徒弟侧同步初始化：任务一开始就发布新会话，不等待师父加入。
 
-        list_add_count = [99] * consecutive_count
-        index = 0
+        发布后立即返回去切号/买体力——师父那边切完御魂预设随时可以加入
+        （join 与徒弟的单人环节并行），配对确认推迟到第一个房间任务前
+        （见 _md_wait_master_join）。
+        - 未开启任何房间任务：跳过同步直接返回（_md_store 保持 None）
+        - master_instance 未配置：保持未配对（房间任务将跳过）
+        """
+        self._md_store = None
+        self._md_session = None
+        self._md_paired = False
+        self._md_invite_seq = 0
+        self._md_join_wait_done = False
+        self._md_last_heartbeat = time.monotonic()
+        if not self._md_needs_pairing():
+            logger.info('未开启任何房间任务，跳过师徒同步配对')
+            return
+        master_instance = str(self.config.master_disciple.master_disciple_config.master_instance or '').strip()
+        if not master_instance:
+            logger.error('已开启房间任务但未配置师父实例名(master_instance)，无法建立同步')
+            self.config.notifier.push(
+                content='师徒任务开启了房间任务但未配置师父实例名(master_instance)，守护/石距/金币/经验将全部跳过',
+                title='师徒同步配置缺失')
+            return
+        self._md_store = MasterDiscipleStateStore(master_instance)
+        state = self._md_store.publish_session(self.config.config_name)
+        self._md_session = MasterDiscipleSession.from_state(state)
+        logger.info(f'已发布师徒同步会话，师父实例 [{master_instance}] 切完预设后可随时加入')
+
+    def _md_wait_master_join(self, timeout: int = 600) -> bool:
+        """等待师父加入会话：在第一个房间任务前确认配对（只等待一次）。
+
+        徒弟发布后与师父的御魂切换并行（切号/买体力不等师父），到需要
+        师父配合的第一个房间任务时才汇合：师父此时通常已切完预设。
+        等待失败后后续房间任务不再重复等待（_md_join_wait_done 标记），
+        但状态序列照写——迟到的师父加入后能顺着 current_task 跟到
+        FINISHED 自然退出。
+        :return: 是否配对成功
+        """
+        wait_pair = Timer(timeout).start()
+        sweep_count = 0
+        while not wait_pair.reached():
+            state = self._md_store.read()
+            if state.get('phase') == PHASE_PAIRED:
+                self._md_paired = True
+                logger.info(f'师父实例 [{state.get("master_joined_instance")}] 已加入同步会话')
+                return True
+            # 心跳保新鲜：师父只加入「最近心跳过的」会话，防止误连上一轮残留
+            self._md_heartbeat_disciple_if_due()
+            # 每约30秒清一次弹窗（拒绝好友邀请/关确认弹窗），防长等待期间堆积遮挡
+            sweep_count += 1
+            if sweep_count % 30 == 0:
+                self._md_idle_popup_sweep()
+            sleep(1)
+        logger.warning('等待师父实例加入配对超时，房间任务将全部跳过')
+        self.config.notifier.push(
+            content='师父实例在600秒内未加入同步会话，守护/石距/金币/经验已跳过',
+            title='师徒配对超时')
+        return False
+
+    def _md_heartbeat_disciple_if_due(self) -> None:
+        """徒弟侧心跳（5 秒节流）：等待期间刷新 disciple_seen_at 保会话新鲜。"""
+        if self._md_store is None or self._md_session is None:
+            return
+        now = time.monotonic()
+        if now - self._md_last_heartbeat < 5:
+            return
+        try:
+            self._md_store.heartbeat(self._md_session, 'disciple')
+        except StaleSessionError:
+            # 会话被新发布的会话取代（非 1:1 部署才会发生）：不再视为已配对
+            logger.warning('师徒同步会话已失效，停止徒弟侧心跳')
+            self._md_paired = False
+        self._md_last_heartbeat = now
+
+    def _md_set_current_task(self, task: str, buff_command: str = '') -> None:
+        """向师父下发当前任务与加成指令；会话缺失/失效时仅记日志不中断本地流程。"""
+        if self._md_store is None or self._md_session is None:
+            return
+        try:
+            self._md_store.set_current_task(self._md_session, task, buff_command)
+            logger.info(f'已下发任务同步: [{task}] 加成指令: [{buff_command or "无"}]')
+        except StaleSessionError:
+            logger.warning(f'师徒同步会话已失效，无法下发任务 [{task}]')
+            self._md_paired = False
+
+    def _md_next_invite(self) -> int:
+        """递增并落盘本轮邀请序号，返回新序号。
+
+        调用时机：每轮「等待师父进房」开始前一次（首次邀请前）。
+        15 秒兜底重邀请不调用（序号不变，防师父写旧序号导致死等）。
+        """
+        if self._md_store is None or self._md_session is None:
+            return self._md_invite_seq
+        try:
+            self._md_invite_seq = self._md_store.next_invite(self._md_session)
+        except StaleSessionError:
+            logger.warning('师徒同步会话已失效，邀请序号不再递增')
+        return self._md_invite_seq
+
+    def _md_master_in_room(self) -> bool:
+        """师父是否已回报进入当前序号的房间（读共享状态，无截图依赖）。
+
+        取代旧的「反复识别加号数量并等稳定」进房检测。
+        """
+        if self._md_store is None or self._md_session is None or not self._md_paired:
+            return False
+        try:
+            state = self._md_store.read()
+        except Exception as e:
+            logger.warning(f'读取师徒同步状态失败: {e}')
+            return False
+        if MasterDiscipleSession.from_state(state) != self._md_session:
+            return False
+        in_room = int(state.get('master_in_room_seq', 0) or 0)
+        return self._md_invite_seq > 0 and in_room >= self._md_invite_seq
+
+    def _md_idle_popup_sweep(self) -> None:
+        """等待配对/就绪期间的轻量弹窗清理：拒绝好友邀请、关确认类弹窗。
+
+        长等待循环若不截图，游戏内弹窗会堆积遮挡画面，后续导航只能靠
+        ui_goto 的 unknown 兜底；每约 30 秒清一次把风险压回正常水平。
+        """
+        try:
+            self.screenshot()
+            self._reject_invite_popups()
+            self._handle_popup()
+        except Exception as e:
+            # 清理失败不中断等待主流程（弹窗兜底交给后续导航）
+            logger.warning(f'等待期间弹窗清理失败: {e}')
+
+    def _md_wait_master_ready(self, task: str, timeout: int = 240) -> bool:
+        """等待师父对当前任务的准备完成（提前开加成）标记。
+
+        :param timeout: 超时秒数（开加成最多一两分钟，240 秒留足余量）
+        :return: True 师父已就绪；False 未配对/超时/会话失效，调用方跳过该房间任务
+        """
+        if not self._md_paired or self._md_store is None or self._md_session is None:
+            return False
+        wait_ready = Timer(timeout).start()
+        sweep_count = 0
+        while not wait_ready.reached():
+            state = self._md_store.read()
+            if MasterDiscipleSession.from_state(state) != self._md_session:
+                logger.warning('师徒同步会话已失效，停止等待师父就绪')
+                self._md_paired = False
+                return False
+            if state.get('master_ready'):
+                logger.info(f'师父已就绪，开始执行任务 [{task}]')
+                return True
+            self._md_heartbeat_disciple_if_due()
+            # 每约30秒清一次弹窗，防长等待期间堆积遮挡
+            sweep_count += 1
+            if sweep_count % 30 == 0:
+                self._md_idle_popup_sweep()
+            sleep(1)
+        logger.warning(f'等待师父就绪超时({timeout}秒)，跳过任务 [{task}]')
+        # 师父就绪超时按「师父失联」处理：后续房间任务不再各等一轮超时，直接全部跳过
+        self._md_paired = False
+        self.config.notifier.push(content=f'等待师父就绪超时，{task} 任务已跳过', title='师徒同步超时')
+        return False
+
+    def _md_announce_room_task(self, task: str, task_label: str) -> bool:
+        """下发房间任务与战斗行为指令，并等师父就绪。
+
+        buff_command 同时承载「是否开加成」与「打完还是退出」两个决策，
+        师父侧只看同步指令、不读自己配置，杜绝两边开关不一致：
+          - 金币/经验的「打完」变体 → 师父提前开对应加成
+          - 「准备后退出」变体 → 不开加成（退出的场次开加成是浪费）
+        未配对也照写状态序列（迟到的师父能跟随到 FINISHED），但不再等待就绪。
+
+        :param task: team_state 任务类型常量
+        :param task_label: 日志与通知用的中文任务名
+        :return: True 可以执行；False 跳过该房间任务
+        """
+        cfg = self.config.master_disciple.master_disciple_config
+        buff_command = ''
+        if task == TASK_COIN:
+            buff_command = BUFF_COIN if not cfg.master_coin_exit_after_prepare else BUFF_COIN_EXIT
+        elif task == TASK_EXP:
+            buff_command = BUFF_EXP if not cfg.master_exp_exit_after_prepare else BUFF_EXP_EXIT
+        # 师父尚未加入时先等配对（只等一次）：发布后切号/买体力与师父切预设
+        # 并行进行，这里是与师父的汇合点
+        if not self._md_paired and not self._md_join_wait_done:
+            self._md_join_wait_done = True
+            if not self._md_wait_master_join():
+                # 配对失败：照写状态序列推进（迟到师父可跟随），但跳过执行
+                self._md_set_current_task(task, buff_command)
+                logger.warning(f'跳过房间任务 [{task_label}]（师父未配对）')
+                return False
+        self._md_set_current_task(task, buff_command)
+        if not self._md_wait_master_ready(task_label):
+            logger.warning(f'跳过房间任务 [{task_label}]')
+            return False
+        return True
+
+    def _md_finish(self) -> None:
+        """徒弟整个序列完成时通知师父退出；失败仅记日志不影响调度收尾。"""
+        if self._md_store is None or self._md_session is None:
+            return
+        try:
+            self._md_store.mark_finished(self._md_session)
+            logger.info('已通知师父本轮流结束')
+        except StaleSessionError:
+            logger.warning('师徒同步会话已失效，无法通知师父结束')
+
+    def _reject_invite_popups(self) -> None:
+        """关掉他人发来的邀请弹窗（会遮挡加号区域）；结束时最后一帧为干净画面。
+
+        原 _get_add_count 的内嵌逻辑抽出，拒绝优先级保持原样。
+        """
+        from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
         while 1:
             self.screenshot()
-            # 所有采集值相等且不为初始值 99 时，认为已稳定，返回该数量
-            if len(set(list_add_count)) == 1 and list_add_count[0] != 99:
-                logger.info(f'获取加号数量:[{list_add_count[0]}]')
-                return list_add_count[0]
-            if index >= consecutive_count:
-                index = 0
-            reject_invite()
-            list_add_count[index] = len(self.I_CLICK_INVITE_ADD.match_all_any(self.device.image))
-            index += 1
-            time.sleep(0.5)
+            if not (self.appear(gia.I_I_REJECT_1) or self.appear(gia.I_I_REJECT_2)
+                    or self.appear(gia.I_I_REJECT_3) or self.appear(gia.I_I_REJECT_4)):
+                break
+            if self.appear(gia.I_I_REJECT_4):
+                self.click(gia.I_I_REJECT_4, 1)
+                continue
+            if self.appear(gia.I_I_REJECT_1):
+                self.click(gia.I_I_REJECT_1, 1)
+                continue
+            if self.appear(gia.I_I_REJECT_3):
+                self.click(gia.I_I_REJECT_3, 1)
+                continue
+            if self.appear(gia.I_I_REJECT_2):
+                self.click(gia.I_I_REJECT_2, 1)
+                continue
+
+    def _count_add_icons_once(self) -> int:
+        """单次统计房间加号图标数量，不再等待读数稳定。
+
+        仅用于公开房补位判定：师父进房信号改由 JSON 同步后，加号计数
+        只剩「等路人补位」一个用途——加号变少即有人进，无需稳定确认。
+        """
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        # 拒绝他人邀请弹窗后最后一帧即为干净画面；留半秒给弹窗消失/进人
+        # 动画走完再计数，防动画帧上加号模板瞬时缺失导致误判
+        self._reject_invite_popups()
+        sleep(0.5)
+        self.screenshot()
+        count = len(self.I_CLICK_INVITE_ADD.match_all_any(self.device.image))
+        logger.info(f'当前加号数量:[{count}]')
+        return count
 
     def _create_room_and_invite(self, task_name: str, room_type: RoomType = RoomType.NORMAL_5,
                                  navigate_and_create_func=None, invite_timeout: int = None,
                                  wait_for_others: bool = True) -> bool:
         """
-        创建房间并邀请师父/好友的通用流程
-        通用流程：导航并创建房间 → 等待进入房间 → 记录加号状态 → 邀请师父 → 等待师父进入
+        创建房间并邀请师父/好友的通用流程（同步模式）
+        通用流程：导航并创建房间 → 等待进入房间 → 递增邀请序号 → 邀请师父 → 轮询同步状态等师父回报进房
+        师父进房判定由 JSON 同步信号取代旧的加号数量稳定检测；公开补位阶段保留单次加号计数
 
         :param task_name: 任务名称，如 '金币妖怪'、'守护历练'（用于日志和通知）
         :param room_type: 房间类型，决定加号图标和邀请逻辑
@@ -511,13 +802,24 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 logger.warning(f"[{task_name}] Failed to enter room")
                 return False
 
-        # 根据房间类型选择需要检测的加号图标数量
+        # 未配对时不应走到这里（房间任务已被上层跳过），防御性退出避免死等
+        if not self._md_paired:
+            logger.warning(f"[{task_name}] 师徒未配对，无法确认师父进房，跳过")
+            return False
+
+        # 根据房间类型选择初始加号图标数量（公开切换后的补位目标值）
         add_num = self._get_add_icons(room_type)
         # wait_for_others=False 时跳过公开房间和等待他人步骤
         if add_num == 4 and wait_for_others:
             add_other=True
         else:
             add_other=False
+        # 公开切换完成后置 True：该阶段改为单次加号计数等路人补位
+        public_waiting = False
+
+        # 【同步】递增邀请序号落盘：师父接受邀请进房后回报该序号，
+        # 15秒兜底重邀请不递增（防师父写旧序号导致死等）
+        self._md_next_invite()
 
         # 等待师父进入房间，每15秒重新邀请一次
         self.device.stuck_record_clear()
@@ -543,10 +845,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 )
                 self.exit_room()
                 return False
-            # 检查是否有人进入（某个加号从有变为无，表示有人进了该位置）
-            logger.info(f"add_num:[{add_num}]")
-            if  add_num>self._get_add_count():
+            # 【同步】师父进房信号（master_in_room_seq >= invite_seq），取代旧的加号稳定检测。
+            # 公开补位阶段必须跳过该判定：进房信号是状态查询（师父进房后恒真），
+            # 若继续命中会直接 return True，「等路人补位」分支将永远不可达
+            if not public_waiting and self._md_master_in_room():
                 if add_other:
+                    # 师父已进房且需要公开补位：切换为「所有人可见」
                     while 1:
                         self.screenshot()
                         if  self.appear(self.I_ENSURE_SWITCH):
@@ -559,18 +863,24 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
                             if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
                                 continue
+                    # 公开后加号目标值：5人房4-2=2，即等路人补到4/5人
                     add_num-=2
                     add_other=False
+                    public_waiting=True
                     continue
                 logger.info(f"return True")
                 return True
-            if add_num!=self._get_add_icons(room_type):
-                reinvite_timer.reset()
-            # 每15秒重新邀请师父
+            # 公开补位阶段：单次读加号数（不等稳定），小于目标值即有路人进来，直接开战
+            if public_waiting and self._count_add_icons_once() < add_num:
+                logger.info(f"[{task_name}] 路人已补位，开始挑战 (加号目标值:{add_num})")
+                return True
+            # 每15秒重新邀请师父（序号不变，见 _md_next_invite 注释）
             if reinvite_timer.reached():
                 logger.info(f"[{task_name}] Re-inviting master: {master_name}")
                 reinvite_timer.reset()
                 self._invite_by_room_type(master_name, room_type)
+            # 等待期间保持同步会话心跳
+            self._md_heartbeat_disciple_if_due()
 
         return False
 
@@ -915,11 +1225,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         """
         徒弟模式 - 金币妖怪（2次，邀请师父，5人房）
         战斗结算：检测 I_DE_WIN 或 I_GOLD_WIN（参照GoldYoukai）
+        等待路人：师父准备后退出→不等直接开战（快速收尾）；
+        师父打完→公开房间等路人补位到4/5人（凑满打收益最大）
         """
         logger.info("Running coin monster as disciple")
 
-        # 金币妖怪师父准备后退出时，徒弟公开房间等待其他人补位
-        wait = self.config.master_disciple.master_disciple_config.master_coin_exit_after_prepare
+        # 等路人与师父退出开关反向联动：退出=不等，打完=等
+        wait = not self.config.master_disciple.master_disciple_config.master_coin_exit_after_prepare
         self._run_battle_with_invite(
             zones_name='金币妖怪',
             battle_count=2,
@@ -948,8 +1260,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.exp_100(False)
             self.close_buff()
 
-        # 经验妖怪师父准备后退出时，徒弟公开房间等待其他人补位
-        wait = self.config.master_disciple.master_disciple_config.master_exp_exit_after_prepare
+        # 等路人与师父退出开关反向联动：退出=不等直接开战，打完=等路人凑满
+        wait = not self.config.master_disciple.master_disciple_config.master_exp_exit_after_prepare
         self._run_battle_with_invite(
             zones_name='经验妖怪',
             battle_count=2,
@@ -1256,7 +1568,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         count = 0
 
         while count < guard_count:
-            # 等待师父进入房间（I_ADD_2_1消失表示有人进入）
+            # 【同步】递增本轮邀请序号：第 2+ 场的邀请来自上一场胜利后的「默认邀请」
+            # （首次勾选后游戏自动邀请、不再弹出询问框），递增必须挂在等待开始前。
+            # 不能挂在弹窗出现上：默认邀请生效后弹窗不再出现，序号会漏递增，
+            # 徒弟将拿上一场的旧进房信号提前开战，把还在进房加载中的师父打断
+            if count > 0:
+                self._md_next_invite()
+            # 等待师父进入房间（同步信号：师父回报进房序号对上当前邀请序号）
             self.device.stuck_record_clear()
             self.device.stuck_record_add('BATTLE_STATUS_S')
             self.screenshot()
@@ -1270,8 +1588,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if not self.is_in_room():
                     continue
 
-                # 2人房：I_ADD_2_1消失表示有人进入
-                if self._get_add_count()==0:
+                # 【同步】师父进房信号（取代2人房加号归零检测）；第一场序号由
+                # _create_room_and_invite 递增，后续场次由 _guard_battle_wait 的胜利弹窗递增
+                if self._md_master_in_room():
                     break
 
                 if wait_timer.reached():
@@ -1282,6 +1601,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     logger.info('Guard: re-inviting master')
                     reinvite_timer.reset()
                     self._invite_by_room_type(master_name,RoomType.NORMAL_2)
+                # 等待期间保持同步会话心跳
+                self._md_heartbeat_disciple_if_due()
 
             # 师父已进入，点击挑战
             self.click_fire()
@@ -1356,7 +1677,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 临时替换battle_wait和battle_before方法
         original_battle_wait = solo_exploration.battle_wait
         original_battle_before = solo_exploration.battle_before
-        solo_exploration.battle_wait = self.battle_wait
+
+        def battle_wait_with_heartbeat(random_click_swipt_enable: bool) -> bool:
+            # 探索是长流程单人环节：每场战斗刷一次同步心跳，师父侧凭它确认徒弟仍在推进
+            self._md_heartbeat_disciple_if_due()
+            return self.battle_wait(random_click_swipt_enable)
+
+        solo_exploration.battle_wait = battle_wait_with_heartbeat
         solo_exploration.battle_before = self._disciple_exploration_battle_before
 
         try:
@@ -1525,23 +1852,24 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
     def run_as_master(self):
         """
-        以师父身份运行：
-        1. 任务开始前，去式神录一次性切换三组御魂预设（类似SixRealms）
-        2. 回到庭院被动等待徒弟邀请
-        3. 接受邀请 → 等待开战 → 战斗 → 循环
+        以师父身份运行（同步模式）：
+        1. 先一次性切换三组御魂预设（类似SixRealms）
+        2. 再与徒弟实例完成 JSON 配对（超时则本轮结束，按失败调度重试）
+        3. 跟随徒弟下发的任务序列：提前开加成 → 回报就绪 → 等邀请 → 战斗 → 循环
         """
         logger.info("Running as master")
 
         try:
-            # 任务开始前切换三组御魂预设
-            self._master_switch_presets()
+            # 同步准备与配对：御魂切换在配对前完成（见 _md_setup_master）
+            if not self._md_setup_master():
+                return False
 
             # 确保在庭院等待
             self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_main)
 
-            # 进入被动等待循环
+            # 进入跟随循环
             self.master_battle_flow()
 
         except GameNotRunningError:
@@ -1557,6 +1885,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 title="师父模式任务失败"
             )
             return False
+        finally:
+            # 收尾兜底：关掉可能还开着的加成（跟随循环内部已关，这里覆盖异常路径）；
+            # 游戏异常时关不掉也不能掩盖原异常
+            try:
+                if self.coin_buff:
+                    self._master_close_coin_buff()
+                if self.exp_buff_on:
+                    self._master_close_exp_buff()
+            except Exception:
+                pass
 
     def _master_switch_presets(self):
         """
@@ -1586,139 +1924,276 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         logger.info("Master preset switching completed")
 
+    def _md_setup_master(self) -> bool:
+        """师父侧准备与配对：先一次性切御魂预设，再循环尝试加入徒弟的新鲜会话。
+
+        御魂切换（三组预设约 2-3 分钟）发生在配对之前；徒弟侧的配对等待
+        已放宽到 600 秒覆盖这段时间，两边同时启动也不会错过配对窗口。
+        :return: 是否配对成功
+        """
+        # 先切御魂预设：不依赖徒弟，切完再去找会话（徒弟此时已在等待配对）
+        self._master_switch_presets()
+        # 状态文件按师父实例名（自己）命名，与徒弟配置的 master_instance 对应
+        store = MasterDiscipleStateStore(self.config.config_name)
+        self._md_last_heartbeat = time.monotonic()
+        # 加入窗口 600 秒：切完预设后等待徒弟发布的会话（徒弟发布后即去切号/
+        # 买体力，两边单人环节并行进行，会话在任务一开始就已存在）
+        wait_join = Timer(600).start()
+        sweep_count = 0
+        while not wait_join.reached():
+            state = store.try_join(self.config.config_name)
+            if state is not None:
+                self._md_store = store
+                self._md_session = MasterDiscipleSession.from_state(state)
+                self._md_paired = True
+                logger.info(f'已加入徒弟 [{state.get("disciple_instance")}] 的同步会话')
+                return True
+            # 每约30秒清一次弹窗（拒绝好友邀请/关确认弹窗），防长等待期间堆积遮挡
+            sweep_count += 1
+            if sweep_count % 30 == 0:
+                self._md_idle_popup_sweep()
+            sleep(1)
+        logger.warning('未发现徒弟发布的同步会话，师父本轮退出')
+        self.config.notifier.push(
+            content='师父实例600秒内未发现徒弟发布的同步会话，本轮按失败调度重试',
+            title='师徒配对超时')
+        return False
+
+    def _md_heartbeat_master_if_due(self) -> None:
+        """师父侧心跳（5 秒节流）：跟随期间刷新 master_seen_at。"""
+        if self._md_store is None or self._md_session is None:
+            return
+        now = time.monotonic()
+        if now - self._md_last_heartbeat < 5:
+            return
+        try:
+            self._md_store.heartbeat(self._md_session, 'master')
+        except StaleSessionError:
+            # 会话失效由跟随循环每轮的状态校验处理，心跳失败不中断任务
+            pass
+        self._md_last_heartbeat = now
+
+    def _master_open_coin_buff(self) -> None:
+        """提前开金币加成（50%+100%）：徒弟下发金币「打完」指令时调用。
+
+        取代旧的「收到邀请先不点、去开加成、等徒弟15秒重发邀请再接受」串行流程。
+        """
+        self.open_buff()
+        self.gold_50(True)
+        self.gold_100(True)
+        self.close_buff()
+        self.coin_buff = True
+
+    def _master_close_coin_buff(self) -> None:
+        """关金币加成：离开金币任务（切任务/序列结束/异常收尾）时调用。"""
+        self.open_buff()
+        self.gold_50(False)
+        self.gold_100(False)
+        self.close_buff()
+        self.coin_buff = False
+
+    def _master_open_exp_buff(self) -> None:
+        """提前开经验加成（50%+100%）：徒弟下发经验「打完」指令时调用。"""
+        self.open_buff()
+        self.exp_50(True)
+        self.exp_100(True)
+        self.close_buff()
+        self.exp_buff_on = True
+
+    def _master_close_exp_buff(self) -> None:
+        """关经验加成：离开经验任务（切任务/序列结束/异常收尾）时调用。"""
+        self.open_buff()
+        self.exp_50(False)
+        self.exp_100(False)
+        self.close_buff()
+        self.exp_buff_on = False
+
+    def _master_check_and_accept(self, task: str, keyword: str) -> bool:
+        """检测并接受徒弟的邀请弹窗（OCR 文字与当前任务匹配才接受）。
+
+        同步模式下任务类型已知，OCR 只做弹窗身份校验：防止接受到非徒弟
+        （其他好友/陌生人）发来的邀请。
+        :param task: 当前同步任务类型（日志用）
+        :param keyword: 任务关键词（守护/石距/金币/经验）
+        :return: True 已接受并确认进入房间
+        """
+        if not self.appear(self.I_ACCEPT):
+            return False
+        logger.info('Click accept')
+        start_time = time.time()
+        while time.time() - start_time < 30:
+            self.screenshot()
+            if self.is_in_room():
+                return True
+            # 被秒开
+            # https://github.com/runhey/OnmyojiAutoScript/issues/230
+            if self.appear(self.I_EXIT):
+                return False
+            if self.appear(self.I_ACCEPT, interval=1):
+                # OCR 校验弹窗文字与当前任务匹配（房间标题带任务名）
+                self.O_ACCEPT_NAME.roi = [self.I_ACCEPT.roi_front[0] + 167, self.I_ACCEPT.roi_front[1] + 25, 180, 47]
+                text = self.O_ACCEPT_NAME.ocr(self.device.image)
+                logger.info(f"accept text={text}")
+                if keyword not in text:
+                    logger.warning(f'邀请弹窗文字 [{text}] 与当前任务 [{task}] 不匹配，不接受')
+                    continue
+                self.click(self.I_I_ACCEPT, interval=2)
+        return False
+
     def master_battle_flow(self):
         """
-        师父的战斗流程：
-        在庭院被动等待邀请 → check_then_accept → wait_battle → run_general_battle → 循环
-        参照Orochi的run_member模式实现
-        配置不暴露给用户，在代码中初始化
+        师父的战斗流程（同步模式）：
+        跟随徒弟下发的任务序列：任务变化时按指令提前开/关加成并回报就绪，
+        庭院轮询邀请弹窗（OCR 文字与当前任务匹配才接受），进房后回报邀请
+        序号，等徒弟开战，按同步指令选择战斗方式。
+        退出时机：徒弟走到探索（单人任务，无需师父陪跑）→ 立即结束释放实例；
+        徒弟回报 FINISHED → 正常退出；会话失效/等待超时 → 退出本轮。
+        参照Orochi的run_member模式实现；配置不暴露给用户，在代码中初始化
         """
-        def check_then_accept() -> int :
-            """
-            队员接受邀请
-            :return:
-            """
-            battle_type = 0
-            if not self.appear(self.I_ACCEPT):
-                return battle_type
-            logger.info('Click accept')
-            start_time = time.time()
-            while time.time()-start_time < 30:
-                self.screenshot()
-                if self.is_in_room():
-                    return battle_type
-                # 被秒开
-                # https://github.com/runhey/OnmyojiAutoScript/issues/230
-                if self.appear(self.I_EXIT):
-                    return battle_type
-                if self.appear(self.I_ACCEPT, interval=1):
-                    self.O_ACCEPT_NAME.roi=[self.I_ACCEPT.roi_front[0]+167,self.I_ACCEPT.roi_front[1]+25,180,47]
-                    text=self.O_ACCEPT_NAME.ocr(self.device.image)
-                    logger.info(f"text={text}")
-                    if "金币"in text :
-                        if not self.coin_buff:
-                            self.open_buff()
-                            self.gold_50(True)
-                            self.gold_100(True)
-                            self.close_buff()
-                            self.coin_buff=True
-                            continue
-                        battle_type= 5
-                    elif "经验"in text:
-                        battle_type= 6
-                    elif "石距"in text:
-                        battle_type= 7
-                    elif "守护"in text:
-                        battle_type= 8
-                    else:
-                        continue
-                    self.click(self.I_I_ACCEPT,interval=2)
-            return battle_type 
-                    
-        logger.info("Master battle flow started, waiting in courtyard for invitations")
+        logger.info("Master battle flow started, following disciple's task sequence")
+        # 房间任务的弹窗关键词：OCR 文字与当前任务匹配才接受（防误接受他人邀请）
+        task_keywords = {
+            TASK_GUARD: '守护',
+            TASK_STONE: '石距',
+            TASK_COIN: '金币',
+            TASK_EXP: '经验',
+        }
+        # 已回报就绪的任务（变化检测用）
+        handled_task = None
+        # 当前等待档位的超时计时器（任务变化时按档位重置）
+        wait_out: Timer = None
+
+        def reset_wait_out(task: str) -> None:
+            nonlocal wait_out
+            # 房间任务用短档（等下一场邀请）；其余状态（空任务/切号/买体力等
+            # 单人环节）一律长档，覆盖徒弟侧各种耗时操作不误超时
+            timeout = 240 if task in task_keywords else 1800
+            wait_out = Timer(timeout).start()
+
         self.device.stuck_record_clear()
         self.device.stuck_record_add('BATTLE_STATUS_S')
-        wait_out=Timer(180).start()
-        exp_battle_count = 0  # 经验妖怪战斗计数
-        coin_battle_count =0
-        while not wait_out.reached():
+        while 1:
             self.screenshot()
-            battle_type = check_then_accept()
-            # 1. 检查并接受邀请
-            if battle_type ==0:
-                logger.info('Master accepted invitation')
+            # 读取共享状态：徒弟序列完成/会话失效/徒弟走到探索（单人）都结束跟随
+            try:
+                state = self._md_store.read()
+            except Exception as e:
+                logger.warning(f'读取师徒同步状态失败: {e}')
+                break
+            if state.get('phase') == PHASE_FINISHED:
+                logger.info('徒弟任务序列已完成，师父正常退出')
+                break
+            if state.get('current_task') == TASK_EXPLORATION:
+                # 探索是单人任务：走到这里说明所有房间任务已完成，
+                # 师父立即结束任务释放实例，不陪跑整个探索过程
+                logger.info('徒弟已进入探索（单人任务），师父任务完成')
+                break
+            if MasterDiscipleSession.from_state(state) != self._md_session:
+                logger.warning('师徒同步会话已失效（徒弟重启了新一轮），师父本轮退出')
+                break
+
+            task = str(state.get('current_task') or '')
+            buff_command = str(state.get('buff_command') or '')
+
+            # 任务变化：按指令切换加成后回报就绪（徒弟等 ready 才发起邀请）
+            if task != handled_task:
+                # 离开金币/经验任务时关掉对应加成
+                if self.coin_buff and task != TASK_COIN:
+                    self._master_close_coin_buff()
+                if self.exp_buff_on and task != TASK_EXP:
+                    self._master_close_exp_buff()
+                # 按指令提前开加成（「打完」变体才开；「退出」变体不开）
+                if buff_command == BUFF_COIN and not self.coin_buff:
+                    self._master_open_coin_buff()
+                elif buff_command == BUFF_EXP and not self.exp_buff_on:
+                    self._master_open_exp_buff()
+                try:
+                    # 就绪回报带任务校验：任务已被徒弟切换时写入被拒，
+                    # 下一轮读到新任务会重新准备并回报（自然自愈）
+                    self._md_store.mark_master_ready(self._md_session, task)
+                    logger.info(f'已就绪当前任务 [{task or "等待中"}]')
+                except StaleSessionError:
+                    break
+                handled_task = task
+                reset_wait_out(task)
                 continue
-            self.device.stuck_record_add('BATTLE_STATUS_S')
-            # 2. 如果已经在房间内，等待队长（徒弟）开战
-            if self.is_in_room():
-                self.device.stuck_record_clear()
-                self.device.stuck_record_add('BATTLE_STATUS_S')
-                if self.wait_battle(wait_time=dtime(minute=2)):
-                      
-                    # 进入战斗后根据金币/经验独立开关决定是否准备后退出
-                    master_config = self.config.master_disciple.master_disciple_config
-                    if battle_type == 8:
-                        # 守护历练：始终正常完成战斗
-                        self.run_general_battle(config=GeneralBattleConfig())
-                    elif battle_type == 5:
-                        # 金币妖怪：根据独立开关决定正常完成或准备后退出
-                        if not master_config.master_coin_exit_after_prepare:
-                            # 正常完成战斗
-                            battle_config = GeneralBattleConfig(lock_team_enable=True)
-                            self.battle_before(buff=None, config=battle_config)
-                            self._gold_youkai_battle_wait()
-                        else:
-                            # 进入后退出
-                            self.master_run_battle_back(config=GeneralBattleConfig())
-                    elif battle_type == 6:
-                        # 经验妖怪：根据独立开关决定正常完成或准备后退出
-                        if not master_config.master_exp_exit_after_prepare:
-                            # 正常完成战斗
-                            battle_config = GeneralBattleConfig(lock_team_enable=True)
-                            self.battle_before(buff=None, config=battle_config)
-                            self._exp_youkai_battle_wait()
-                        else:
-                            # 进入战斗后等待OCR数字达到24再退出
-                            self.master_run_exp_battle_back(config=GeneralBattleConfig())
-                    elif battle_type == 7:
-                        # 石距：始终进入后退出
-                        self.master_run_battle_back_stone(config=GeneralBattleConfig())
-                    else:
-                        # 未知类型：进入后退出
-                        self.master_run_battle_back(config=GeneralBattleConfig())
-                    # 经验妖怪(battle_type==6)退出后计数，达到2次则结束任务
-                    if battle_type == 6:
-                        exp_battle_count += 1
-                        logger.info(f'Exp battle count: {exp_battle_count}/2')
-                        if exp_battle_count >= 2:
-                            logger.info('Master has exited 2 exp battles, ending task')
-                            self.screenshot()
-                            self.ui_get_current_page()
-                            self.ui_goto(page_main)
-                            raise TaskEnd
-                    if battle_type == 5:
-                        coin_battle_count += 1
-                        if coin_battle_count >= 2:
-                            self.screenshot()
-                            self.ui_get_current_page()
-                            self.ui_goto(page_main)
-                            if self.coin_buff:
-                                self.open_buff()
-                                self.gold_50(False)
-                                self.gold_100(False)
-                                self.close_buff()
-                                self.coin_buff=False
+
+            # 房间任务：庭院轮询邀请弹窗，接受并确认进房后回报邀请序号
+            if task in task_keywords:
+                if self._master_check_and_accept(task, task_keywords[task]):
+                    try:
+                        # 回报最新邀请序号，徒弟据此确认师父进房并停止等待
+                        seq_state = self._md_store.read()
+                        self._md_store.mark_master_in_room(
+                            self._md_session, int(seq_state.get('invite_seq', 0) or 0))
+                    except StaleSessionError:
+                        break
+                    # 已在房间：等待徒弟（队长）开战
+                    self.device.stuck_record_clear()
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
+                    if self.wait_battle(wait_time=dtime(minute=2)):
+                        # 按同步指令选择战斗方式（类型不再依赖 OCR 识别）
+                        if task == TASK_GUARD:
+                            # 守护历练：始终正常完成战斗
+                            self.run_general_battle(config=GeneralBattleConfig())
+                        elif task == TASK_COIN:
+                            if buff_command == BUFF_COIN_EXIT:
+                                # 金币场指令=准备后退出
+                                self.master_run_battle_back(config=GeneralBattleConfig())
+                            else:
+                                # 金币场指令=正常打完
+                                battle_config = GeneralBattleConfig(lock_team_enable=True)
+                                self.battle_before(buff=None, config=battle_config)
+                                self._gold_youkai_battle_wait()
+                        elif task == TASK_EXP:
+                            if buff_command == BUFF_EXP_EXIT:
+                                # 经验场指令=等击杀数达标后退出
+                                self.master_run_exp_battle_back(config=GeneralBattleConfig())
+                            else:
+                                # 经验场指令=正常打完
+                                battle_config = GeneralBattleConfig(lock_team_enable=True)
+                                self.battle_before(buff=None, config=battle_config)
+                                self._exp_youkai_battle_wait()
+                        elif task == TASK_STONE:
+                            # 石距：始终进入后退出
+                            self.master_run_battle_back_stone(config=GeneralBattleConfig())
                     wait_out.reset()
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
                     sleep(2)
                     self.screenshot()
+                    continue
 
-            # 3. 如果不在房间也不在战斗，确保回到庭院
+                # 被徒弟秒开拉进战斗：接受流程被打断但战斗已经开始，直接接管，
+                # 否则会落到回庭院检查在战斗页面报 Unknown page 异常退出。
+                # 仅在真的接管了一场战斗（返回非 None）时才重置等待
+                if self.check_take_over_battle(False, config=GeneralBattleConfig()) is not None:
+                    wait_out.reset()
+                    self.device.stuck_record_clear()
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
+                    sleep(2)
+                    self.screenshot()
+                    continue
+
+            # 不在房间也不在战斗：确保回到庭院
             if self.ui_get_current_page() != page_main:
                 self.ui_get_current_page()
-                self.ui_goto(page_main) 
+                self.ui_goto(page_main)
                 continue
+
+            # 等待超时（当前档位）：徒弟迟迟没有下一个动作，师父退出本轮
+            if wait_out is not None and wait_out.reached():
+                logger.warning(f'等待徒弟下一个动作超时（当前任务 [{task}]），师父本轮退出')
+                break
+
+            # 跟随期间保持同步会话心跳
+            self._md_heartbeat_master_if_due()
+
+        # 收尾：关掉可能还开着的加成，避免把加成状态带出任务
+        if self.coin_buff:
+            self._master_close_coin_buff()
+        if self.exp_buff_on:
+            self._master_close_exp_buff()
         raise TaskEnd
 
     def master_run_exp_battle_back(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:

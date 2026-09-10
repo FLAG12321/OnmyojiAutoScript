@@ -269,6 +269,8 @@
   "master_disciple_mode_help": "本账号身份：master=师父，disciple=徒弟",
   "master_exp_exit_after_prepare": "经验场师父准备后退出",
   "master_exp_exit_after_prepare_help": "经验妖怪：师父点击准备后立即退出，由徒弟完成战斗",
+  "master_instance": "师父实例名",
+  "master_instance_help": "师父的OAS实例名（同步模式）：徒弟用它定位师徒共享状态文件。勾选了守护/石距/金币/经验任一房间任务时必填；只跑探索等单人任务时可留空跳过同步",
   "master_name": "师父名称",
   "master_name_help": "师父的游戏昵称，徒弟邀请组队时用于识别师父",
   "master_preset_1": "师父预设1",
