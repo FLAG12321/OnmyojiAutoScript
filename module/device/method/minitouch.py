@@ -556,6 +556,8 @@ class Minitouch(Connection):
     # 设备能力协商的最大压力值（^ banner）；默认 50 对应 MuMu 内置 minitouch，
     # TCP 握手成功后被真实值覆盖。压力随机化以它为量程基准
     max_pressure: int = 50
+    # 首连失败后是否已做过 atx-agent 补救（每个 Device 实例只做一次）
+    _atx_agent_ensure_tried: bool = False
 
     @cached_property
     def minitouch_builder(self):
@@ -1288,6 +1290,61 @@ class Minitouch(Connection):
         self.orientation = orientation
         return orientation
 
+    def _connect_humanized_minitouch_first(self):
+        """首连的一次完整尝试：方向查询 + 有界建连握手，两段各有独立 deadline。
+
+        抽成独立方法是为了让 atx-agent 补救后能原样重跑同一段逻辑。
+        """
+        if self.config.DEVICE_OVER_HTTP:
+            orientation_deadline = time.monotonic() + MINITOUCH_RECOVERY_HTTP_CALL_TIMEOUT_S
+            self._prepare_humanized_orientation(orientation_deadline)
+            self.max_x, self.max_y = 1280, 720
+            self._recover_humanized_minitouch_http()
+        else:
+            orientation_deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+            self._prepare_humanized_orientation(orientation_deadline)
+            # 方向查询与连接恢复分别有明确上界，避免查询耗时挤占握手预算。
+            deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+            self._recover_humanized_minitouch_tcp(
+                None, deadline=deadline, restart_atx=False)
+
+    def _ensure_atx_agent_once(self, exc):
+        """首连失败后的一次性补救：确保设备侧 atx-agent 已安装并在运行。
+
+        返回 True 表示已执行补救、值得重试首连；False 表示不适用或已试过。
+
+        背景（2026-09-11 实测，网络真机 + nemu_ipc 截图 + minitouch 控制）：
+        minitouch 由 atx-agent 作为守护者拉起（设备上 minitouch 进程的父进程
+        即 atx-agent），而全项目只有 install_uiautomator2() 会推送并启动
+        atx-agent。它仅有的两个调用点都在 retry 的自愈分支里——
+        MinitouchNotInstalledError（只有 legacy minitouch_init 会抛）与 u2 截图
+        的 JSONDecodeError。humanized 首连失败抛的是 RequestHumanTakeover，
+        retry_wrapper 见到它直接 break，两条自愈分支都够不着；截图方法又不经过
+        u2（nemu_ipc / scrcpy 等）时，全新设备上 atx-agent 永远装不上，
+        minitouch 也就永远连不上。这里补上首次部署的自举缺口。
+        """
+        if self._atx_agent_ensure_tried:
+            return False
+        self._atx_agent_ensure_tried = True
+        # HTTP 模式没有 adb 通道，install_uiautomator2/restart_atx 都不适用
+        if self.config.DEVICE_OVER_HTTP:
+            return False
+        logger.warning(f'Minitouch first connection failed: {exc}')
+        try:
+            # 二进制已在时只重启服务，避免每次失败都跑一遍耗时的推送/下载
+            listed = self.adb_shell(['ls', '/data/local/tmp/atx-agent'])
+            if listed.strip() and 'No such file' not in listed:
+                logger.info('atx-agent binary exists but unreachable, restarting it')
+                self.restart_atx()
+            else:
+                logger.info('atx-agent not installed, running uiautomator2 init '
+                            '(pushing binaries, this may take a while)')
+                self.install_uiautomator2()
+        except Exception as ensure_exc:
+            logger.warning(f'Ensure atx-agent failed: {ensure_exc}')
+            return False
+        return True
+
     def _prepare_humanized_minitouch_builder(self):
         """为首次开档输入建立有界连接，不进入 legacy 的无界初始化。"""
         cached = self.__dict__.get('minitouch_builder')
@@ -1297,24 +1354,24 @@ class Minitouch(Connection):
         if not isinstance(self, Minitouch):
             return self.minitouch_builder
         try:
-            if self.config.DEVICE_OVER_HTTP:
-                orientation_deadline = time.monotonic() + MINITOUCH_RECOVERY_HTTP_CALL_TIMEOUT_S
-                self._prepare_humanized_orientation(orientation_deadline)
-                self.max_x, self.max_y = 1280, 720
-                self._recover_humanized_minitouch_http()
-            else:
-                orientation_deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
-                self._prepare_humanized_orientation(orientation_deadline)
-                # 方向查询与连接恢复分别有明确上界，避免查询耗时挤占握手预算。
-                deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
-                self._recover_humanized_minitouch_tcp(
-                    None, deadline=deadline, restart_atx=False)
+            self._connect_humanized_minitouch_first()
         except RequestHumanTakeover:
             raise
         except Exception as exc:
             # 初始化失败时旧 legacy 会重入同一无界初始化，不能作为 B0 回退。
-            logger.exception('Minitouch first connection failed')
-            raise RequestHumanTakeover('Minitouch first connection failed') from exc
+            # 但首连失败的一个常见原因是设备侧 atx-agent 缺失/未运行（新机首次
+            # 部署），这属于可自愈场景：补救一次后重跑首连，仍失败才转人工接管。
+            if not self._ensure_atx_agent_once(exc):
+                logger.exception('Minitouch first connection failed')
+                raise RequestHumanTakeover('Minitouch first connection failed') from exc
+            try:
+                self._connect_humanized_minitouch_first()
+            except RequestHumanTakeover:
+                raise
+            except Exception as retry_exc:
+                logger.exception('Minitouch first connection failed after ensuring atx-agent')
+                raise RequestHumanTakeover(
+                    'Minitouch first connection failed') from retry_exc
         return self.__dict__['minitouch_builder']
 
     def recover_humanized_minitouch_b1(self):
