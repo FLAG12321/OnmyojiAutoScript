@@ -23,8 +23,15 @@ class MainType(str, Enum):
     COSTUME_MAIN_14 = 'costume_main_14'  # 雪月华庭
 
 # 结界皮肤
+# 默认套（妖伞结界）的资产在 tasks/KekkaiUtilize/realm/ 下，由 KekkaiUtilizeAssets 持有；
+# 其余各套的资产在 tasks/Component/CostumeRealm/realm<N>/ 下，由 CostumeRealmAssets 持有，
+# 运行时由 costume_base.check_costume_realm() 就地改写 KekkaiUtilize 上的对应资产。
+# 中文名沿用 i18n 镜像 module/config/i18n/zh-CN.json 里原作者留下的取值（DEFAULT 那条镜像写的是
+# 「妖扇结界」，与游戏内不符，已在补充源 assets/i18n/zh-CN.json 里改正）。
 class RealmType(str, Enum):
-    COSTUME_REALM_DEFAULT = 'costume_realm_default'  # 妖扇结界
+    COSTUME_REALM_DEFAULT = 'costume_realm_default'  # 妖伞结界
+    COSTUME_REALM_1 = 'costume_realm_1'  # 鬼灵咒符
+    COSTUME_REALM_2 = 'costume_realm_2'  # 狐梦之乡
 
 # 鲤鱼旗皮肤
 class CarpBannerType(str, Enum):

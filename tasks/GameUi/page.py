@@ -230,6 +230,23 @@ page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.5],
                          [KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE_2, 1.5]]
 page_guild.link(button=G.I_BACK_Y, destination=page_main)
 page_theme.link(button=G.O_PAGE_GUILD, destination=page_guild)
+# 寮结界 realm（从寮主页的「寮结界」按钮进入）
+# check_button 是**列表**，两个分量分工不同：
+#   I_REALM_PAGE —— 结界页的站位锚点，**随结界皮肤变**：牌匾位置与界面元素每套皮肤各一份，
+#                   所以它同时是运行时皮肤探测的模板。
+#   I_REALM_SHIN —— 「结界皮肤」入口图标，**不随结界皮肤变**：它是固定 UI，不是皮肤的画。
+#                   KekkaiUtilize 里 back_realm / _exit_to_realm 一直拿它当根页信号。
+# 后者是前者的兜底，缺不得：皮肤与配置不符时 I_REALM_PAGE 必然失效，只靠它这一页就完全
+# 认不出来，goto_realm 里那条「认出来了但锚点对不上 -> 补一次皮肤探测」的钩子也就无从触发。
+# 实测（2026-09-11，妖伞结界）I_REALM_PAGE 8/8 帧命中 0.958~1.000；
+# 实测（2026-09-12，14 帧覆盖鬼灵咒符 / 狐梦之乡两套皮肤）I_REALM_SHIN 0.9854~0.9875 全命中。
+page_guild_realm = Page([KekkaiUtilizeAssets.I_REALM_PAGE,
+                         KekkaiUtilizeAssets.I_REALM_SHIN])
+# 返回上一级（黄箭头）回寮主页；一键回庭院按钮直达 page_main
+page_guild_realm.link(button=G.I_BACK_YOLLOW, destination=page_guild)
+page_guild_realm.link(button=G.I_BACK_MAIN, destination=page_main)
+# 寮主页 -> 寮结界
+page_guild.link(button=KekkaiUtilizeAssets.I_GUILD_REALM, destination=page_guild_realm)
 # 组队 team
 page_team = Page(G.I_CHECK_TEAM)
 page_team.link(button=G.I_BACK_Y, destination=page_main)

@@ -8,6 +8,7 @@ from datetime import timedelta, datetime
 
 from module.base.timer import Timer
 from module.atom.image_grid import ImageGrid
+from module.atom.click import RuleClick
 from module.logger import logger
 from module.exception import TaskEnd
 
@@ -17,7 +18,7 @@ from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
 from tasks.KekkaiUtilize.utils import CardClass
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
-from tasks.GameUi.page import page_main, page_guild
+from tasks.GameUi.page import page_main, page_guild, page_guild_realm
 import random
 from tasks.Pets.script_task import ScriptTask as Pets
 """ 结界蹭卡 """
@@ -43,17 +44,30 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     priority_friend_records: dict = {}
     # 选卡阶段内部是否已完成寄养（搜索优先好友路径会自行进结界上式神）
     utilized_in_select = False
+    # 本次「进寄养」尝试中，育成界面显示已在寄养中（不需要再进寄养界面）
+    utilize_already_active = False
     msg: list = []
+    # 进入结界入口/子界面失败后的延后重试间隔（寄养与挂卡共用）
+    REALM_ENTRY_FAIL_DELAY = timedelta(minutes=5)
+    # 进入结界子界面（寄养/挂卡）的重试节奏
+    REALM_ENTRY_CLICK_MAX = 4    # 每步最多点几次区域
+    REALM_ENTRY_ROUND_MAX = 3    # 「回寮 -> 重进结界」最多几轮
+    # 从寮进结界的转场动画时长（秒）：页面判据会在动画中途就成立，等它放完再判皮肤
+    REALM_ANIMATION_WAIT = 2.0
+
     def run(self):
         con = self.config.kekkai_utilize.utilize_config
         # 检查是否处于禁止运行时间段，命中则跳过本次运行
         self.check_forbidden_time('KekkaiUtilize', con.forbidden_time_enable, con.forbidden_time_range)
         self.msg = []
         self.ui_get_current_page()
-        self.ui_goto(page_guild)
+        if not self.ui_goto(page_guild):
+            # 连寮主页都到不了，后面所有步骤都会落在错误页面上
+            self.realm_entry_failed('寮')
         logger.info(f'开始蹭卡{self.config.kekkai_utilize.utilize_config.utilize_rule}')
         # 进入寮结界
-        self.goto_realm()
+        if not self.goto_realm():
+            self.realm_entry_failed('寮结界')
         # 育成界面去蹭卡
         if con.utilize_enable:
             self.check_utilize_add()
@@ -93,6 +107,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     def check_utilize_add(self):
         con = self.config.kekkai_utilize.utilize_config
         while 1:
+            # 本循环只负责「换一张卡再试」；界面进不去由 goto_sub_page + realm_entry_failed
+            # 处理并直接结束任务，不再消耗 utilize_add_count 的剩余次数。
             self.utilize_add_count += 1
             if self.utilize_add_count >= 5:
                 logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
@@ -109,11 +125,13 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
             # 无论收不收到菜，都会进入看看至少看一眼时间还剩多少
             time.sleep(0.5)
-            # 进入育成界面
-            self.realm_goto_grown()
-            self.screenshot()
+            # 进入寄养界面（育成 + 寄养两步）。失败时回寮重进结界重试，仍失败就收尾结束
+            # 本次任务 —— 界面点不动与是哪张卡无关，继续换卡只会掩盖真因。
+            if not self.goto_sub_page(self.enter_utilize_once, '寄养'):
+                # 通知 + 5 分钟延后 + TaskEnd 都在这里完成；文案由 realm_entry_failed 统一生成
+                self.realm_entry_failed('寄养')
 
-            if not self.appear(self.I_UTILIZE_ADD):
+            if self.utilize_already_active:
                 remaining_time = self.O_UTILIZE_RES_TIME.ocr_duration(self.device.image)
                 if not isinstance(remaining_time, timedelta):
                     logger.warning('Ocr remaining time error')
@@ -128,16 +146,13 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
                 self.set_next_run(task='KekkaiUtilize', target=next_time)
                 return
-            if not self.grown_goto_utilize():
-                logger.info('Utilize failed, exit')
-                # 未进入蹭卡界面时退出本轮，避免在错误界面继续执行寄养
-                return
             # 开始执行寄养
             if self.run_utilize(con.select_friend_list, con.shikigami_class, con.shikigami_order):
                 # 退出寮结界
                 self.back_guild()
-                # 进入寮结界
-                self.goto_realm()
+                # 进入寮结界（back_guild 不更新 ui_current，goto_realm 内部会先重新识别）
+                if not self.goto_realm():
+                    self.realm_entry_failed('寮结界')
             else:
                 self.back_realm()
 
@@ -147,7 +162,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         退出的时候还是结界界面
         :return:
         """
-        self.realm_goto_grown()
+        if not self.realm_goto_grown():
+            logger.warning('进入式神育成界面失败，跳过满级检查')
+            return
         if self.appear(self.I_RS_LEVEL_MAX):
             # 存在满级的式神
             logger.info('Exist max level shikigami and replace it')
@@ -224,21 +241,186 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                     timer_check.reset()
                 continue
 
-    def goto_realm(self):
-        """
-        从寮的主界面进入寮结界
-        :return:
+    def goto_realm(self) -> bool:
+        """前往寮结界根页。
+
+        结构：先在**当前画面**上把弹窗清掉并判根页 → 不是就走导航图 → 到达后再核对一次皮肤。
+        **ui_goto_page 必须放在最后**：导航的第一次点击是从当前页出发的，画面被弹窗
+        盖住时那一下会被弹窗吃掉，所以要先清干净再导航。
+
+        判据用「当前页是不是 page_guild_realm」：这一页的 check_button 里有 I_REALM_SHIN，
+        它是固定 UI、不随结界皮肤变，所以换皮后照样认得出来。
+
+        :return: 已进入结界返回 True；导航失败返回 False（由调用方 realm_entry_failed 收尾）
         """
         while 1:
             self.screenshot()
-            if self.appear(self.I_REALM_SHIN):
-                break
-            if self.appear_multi_scale(self.I_SHI_DEFENSE):
-                break
+            if self.ui_page_appear(page_guild_realm, skip_first_screenshot=True, interval=None):
+                # 页面认出来了才校正皮肤：下面两个入口都是**按坐标**点的，用错皮肤
+                # 就是点空。校正放在页面判据之后，判据本身不重复判（见 _check_realm_skin）。
+                self._check_realm_skin()
+                # 根页判据命中：同步页面缓存，否则下一次导航会按旧缓存走同节点空路径
+                self.ui_current = page_guild_realm
+                return True
+            # 种树 / 种花活动弹窗。与 page_guild.additional 用的是同一组图——那边只在
+            # page_guild 上关，这里补上根页这一侧，否则弹窗盖住时导航点不动。
             if self.appear_then_click(self.I_PLANT_TREE_CLOSE):
                 continue
-            if self.appear_then_click(self.I_GUILD_REALM, interval=1):
+            if self.appear_then_click(self.I_PLANT_TREE_CLOSE_2):
                 continue
+            if self.appear_then_click(self.I_PLANT_FLOWER_ENSURE):
+                continue
+            if self.appear_then_click(self.I_PLANT_FLOWER_ENSURE2):
+                continue
+            break
+        # 必须走 ui_goto_page 而不是 ui_goto：back_guild() 手动退回寮后不更新 ui_current，
+        # 缓存若仍停在结界，直接导航会把同节点路径当成已到达、根本不点链接按钮
+        if not self.ui_goto_page(page_guild_realm):
+            return False
+        # 到达后再校正一次，**不改判到达**（ui_goto_page 已由 ui_wait_until_appear 确认过）：
+        # 从庭院/寮进来的那一跳里结界背景根本不在画面上，循环里那次看不到，
+        # 真正该校正的是这一帧。
+        self._check_realm_skin()
+        return True
+
+    def _check_realm_skin(self) -> None:
+        """在结界帧上补一次皮肤探测（探到即就地改写资产并回写配置）。
+
+        **调用点必须已经确认画面就是 page_guild_realm**（见 goto_realm 的两处调用）。
+        这里刻意**不设自己的判据**：判据交给页面本身 —— page_guild_realm 的 check_button
+        已经同时含了随皮肤变的站位锚点与不随皮肤变的 I_REALM_SHIN，在它之后再用其中
+        某一个单独卡一道，只是把同一件事用更严的阈值重判一遍。
+
+        实测（2026-09-12）这样卡会**静默**跳过纠正：00:34 那次 signal=False
+        （I_REALM_SHIN 单帧未命中）直接 return，接着拿错皮肤的坐标点了 4 次；
+        00:36 / 00:37 同一条路径 signal=True，探测触发并成功纠正。
+        **同一个信号时灵时不灵，就不能当闸门用** —— 它在 back_realm 那种每轮重判的
+        循环里没问题，在只跑一两次的一次性判据里就是单点故障。
+
+        两个判据仍然照打日志：它们是「皮肤到底相不相符」唯一的佐证，
+        signal=False anchor=True 这种组合本身就是有价值的现场信息。
+
+        探测自身带独立的节流与锁，且是「配置优先」顺序扫候选 —— 配置那套相符时
+        第一个就命中、幂等套用并上锁，代价只有一次扫描。
+        """
+        # **先等转场动画放完再判**。从寮进结界的动画很长（实测页面判据会在
+        # [0.9s]~[2.0s] 就成立，即动画中途），此时截图做模板匹配等于拿半张画面去比：
+        # 三张探测候选会全部零命中、I_REALM_SHIN 也会掉到阈值下、连锚点都可能误判。
+        # 实测（2026-09-12）两次翻车都是这个原因：00:34 那次 signal=False、
+        # 00:51 第 1 轮探针零命中；而等到画面稳定后判的几次（00:36 / 00:37 / 00:50 /
+        # 00:51 第 2 轮）次次命中。**探针不是认不出皮肤，是根本没看清。**
+        time.sleep(self.REALM_ANIMATION_WAIT)
+        self.screenshot()
+        signal = self.appear(self.I_REALM_SHIN)
+        anchor = self.appear(self.I_REALM_PAGE)
+        logger.info(f'Realm skin check: signal={signal} anchor={anchor}')
+        self.try_detect_costume_realm()
+
+    @staticmethod
+    def _realm_region(asset, name: str) -> RuleClick:
+        """把资产的当前 roi_front 变成点击区域。
+
+        realm_grown / realm_card 用 C_REALM_* （RuleClick 资产，roi_front 本身就是
+        点击区域）；realm_utilize 用 I_UTILIZE_ADD（1:1 固定位资产）。
+        坐标现取是为了跟随成本管线的皮肤改写：结界皮肤将来会覆盖 C_REALM_*，
+        鲤鱼旗皮肤会就地改写 I_SHI_* 的 roi_front（costume_base.py:383）。
+        :param asset: 资产（C_REALM_GROWN / I_UTILIZE_ADD / C_REALM_CARD）
+        :param name: 日志用的区域名
+        """
+        # 两个 list 分开构造，避免 roi_front 与 roi_back 共享同一个对象
+        return RuleClick(list(asset.roi_front), list(asset.roi_front), name=name)
+
+    def realm_entry_failed(self, name: str) -> None:
+        """进入结界入口或子界面失败的统一收尾：通知、延后、结束本次任务。
+
+        文案不写「已重试 N 轮」：goto_sub_page 在回寮/重进结界失败时会提前放弃，
+        实际轮数不一定跑满，写死轮数会说谎。
+        :param name: 失败位置（'寮' / '寮结界' / '寄养'）
+        """
+        fail_msg = (f'进入{name}失败, '
+                    f'{int(self.REALM_ENTRY_FAIL_DELAY.total_seconds() // 60)}分钟后再次执行')
+        logger.warning(fail_msg)
+        from tasks.DailyAltAcc.config import MSGType
+        self.msg.append([MSGType.Utilize, fail_msg])
+        self.push_notify(content=fail_msg)
+        if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
+            self.config.notifier.push(content=fail_msg, title='寄养')
+        self.set_next_run(task='KekkaiUtilize',
+                          target=datetime.now() + self.REALM_ENTRY_FAIL_DELAY)
+        raise TaskEnd(self.msg)
+
+    def realm_entry_click(self, region, arrived, max_clicks: int = None) -> bool:
+        """在结界界面点 region 区域，直到 arrived() 为真；最多点 max_clicks 次。
+
+        每次点击前先判 arrived()：已经进去了就不再多点一下，避免误触界面里的其它控件。
+
+        **前置条件：结界皮肤必须已识别**（`realm_skin_confirmed()`，由 goto_realm 里的探测置位）。
+        不满足时一次都不点、直接返回 False —— region 是按皮肤定的坐标，认不出皮肤就是盲点。
+        这是「所有按坐标点结界页」的唯一收口，realm_grown / realm_utilize / realm_card 都走这里。
+
+        :param region: 点击区域（RuleClick）
+        :param arrived: 成功判据，无参可调用、返回 bool
+        :param max_clicks: 本步点击预算，默认 REALM_ENTRY_CLICK_MAX
+        :return: 已进入目标界面返回 True；进不去、或皮肤未识别而拒点时返回 False
+        """
+        if max_clicks is None:
+            max_clicks = self.REALM_ENTRY_CLICK_MAX
+        for _ in range(max_clicks):
+            self.screenshot()
+            if arrived():
+                return True
+            # 皮肤没识别出来就**不许按坐标点**：region 的坐标是按某套皮肤定的（C_REALM_GROWN /
+            # C_REALM_CARD 都随结界皮肤变，由 costume_base 就地改写），认不出是哪套皮肤，
+            # 就没有任何依据判断这些坐标能不能用 —— 点了就是盲点，既浪费整个点击预算，
+            # 还可能误触界面里的其它控件。返回 False 交给 goto_sub_page 走「回寮重进」，
+            # 那条路会重新 goto_realm、重新探一次皮肤（探针零命中只节流 2 秒、不锁死）。
+            #
+            # 放在 arrived() 之后：人已经在目标界面时直接成功，不需要皮肤作依据。
+            if not self.realm_skin_confirmed():
+                logger.warning('结界皮肤未识别，跳过按坐标点击，交给外层重进结界后重探')
+                return False
+            # 同一区域是**刻意连点**（每步 4 次 × 3 轮 = 12 次），正好会撞上 device 的防连点
+            # 门禁：同名计数 >= 12 先清记录 + sleep(10)，连续触发还会抛
+            # GameTooManyClickError，从 click 内部抛出、绕过 realm_entry_failed 的干净收尾
+            # （module/device/device.py:446）。在调用处显式声明「预期内连点」，
+            # 与 DemonEncounter 同一范式（tasks/DemonEncounter/script_task.py:100）。
+            # 注意：这里只豁免 device 的点击记录门禁；拟人化的同一资源退避走 repeat_exempt，
+            # 而 BaseTask.click 未暴露该参数，故连点退避仍会生效（拟人化默认 off，影响面小）。
+            self.device.click_record_remove(region)
+            self.click(region)
+        # 最后一次点击后界面可能已经切过去，再判一次
+        self.screenshot()
+        return arrived()
+
+    def goto_sub_page(self, enter_once, name: str) -> bool:
+        """进入结界子界面的统一重试外壳。
+
+        每轮先尝试一次完整进入；失败则退回寮并重新进入结界再试。全部轮次失败即返回
+        False —— 本函数**不**自行通知，通知与延后由调用方按任务各自的渠道处理。
+
+        调用方拿到 False 后应当直接收尾（`realm_entry_failed`），不要再回到「换卡」之类
+        的上层循环里重试：界面点不动是 UI 层面的问题、与是哪张卡无关，换卡重试只会把
+        真因掩盖成「没有合适的卡」。
+
+        :param enter_once: 无参可调用，执行一次完整进入尝试，返回是否成功
+        :param name: 界面名（'寄养' / '挂卡'），用于日志文案
+        :return: 进入成功返回 True；判定失败返回 False
+        """
+        for r in range(1, self.REALM_ENTRY_ROUND_MAX + 1):
+            if enter_once():
+                return True
+            # 最后一轮失败后不再回寮重进 —— 后面已经没有下一轮，多跑一次导航只是白等
+            if r < self.REALM_ENTRY_ROUND_MAX:
+                logger.warning(f'第[{r}]轮进入{name}界面失败，退回寮并重新进入结界')
+                # 走 ui_goto_page：连续失败后 ui_current 未必可信，直接 ui_goto 可能拿旧缓存走空路径
+                if not self.ui_goto_page(page_guild):
+                    logger.warning(f'退回寮失败，放弃进入{name}界面')
+                    return False
+                if not self.goto_realm():
+                    logger.warning(f'重新进入结界失败，放弃进入{name}界面')
+                    return False
+        logger.warning(f'进入{name}界面失败（已重试{self.REALM_ENTRY_ROUND_MAX}轮）')
+        return False
 
     def check_box_ap_or_exp(self, ap_enable: bool = True, exp_enable: bool = True, exp_waste: bool = True) -> bool:
         """
@@ -360,40 +542,55 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.ui_get_reward(self.I_UTILIZE_EXP)
         return True
 
-    def realm_goto_grown(self):
-        """
-        进入式神育成界面
-        :return:
-        """
-        while 1:
-            self.screenshot()
+    def realm_goto_grown(self) -> bool:
+        """结界界面 -> 式神育成界面。
 
-            if self.in_shikigami_growth():
-                break
-
-            if self.appear_then_click_multi_scale(self.I_SHI_GROWN, interval=1):
-                continue
+        保持「单步原语」语义：只点固定次数，自身不做回寮重进 —— check_max_lv() 也调它，
+        那里不该触发整套重试。
+        :return: 已进入式神育成界面返回 True
+        """
+        if not self.realm_entry_click(self._realm_region(self.C_REALM_GROWN, 'realm_grown'),
+                                      self.in_shikigami_growth):
+            logger.warning('进入式神育成界面失败')
+            return False
         logger.info('Enter shikigami grown')
+        return True
 
-    def grown_goto_utilize(self):
-        """
-        从式神育成界面到 蹭卡界面
-        :return:
+    def grown_goto_utilize(self) -> bool:
+        """式神育成界面 -> 寄养界面。
+
+        I_UTILIZE_ADD 的存在性是业务判据（有可寄养的槽位），不是导航判据，
+        所以保留原有守卫，不随入口区域一起改成盲点。
+        :return: 已进入寄养界面返回 True
         """
         self.screenshot()
         if not self.appear(self.I_UTILIZE_ADD):
             logger.warning('No utilize add')
             return False
-
-        while 1:
-            self.screenshot()
-
-            if self.appear(self.I_U_ENTER_REALM):
-                break
-            if self.appear_then_click(self.I_UTILIZE_ADD, interval=2):
-                continue
+        if not self.realm_entry_click(self._realm_region(self.I_UTILIZE_ADD, 'realm_utilize'),
+                                      lambda: self.appear(self.I_U_ENTER_REALM)):
+            logger.warning('进入寄养界面失败')
+            return False
         logger.info('Enter utilize')
         return True
+
+    def enter_utilize_once(self) -> bool:
+        """结界界面 -> 寄养界面的一次完整尝试（育成、寄养两步）。
+
+        育成界面若看不到「放置好友寄养」，说明已经有寄养在进行，本次不需要再进寄养
+        界面 —— 置 utilize_already_active 并返回 True，调用方据此走「已寄养」分支
+        （读剩余时间、设置下次运行）。这个判定必须夹在两步之间，因为判据只存在于
+        育成界面，没法被 goto_sub_page 的重试外壳吞掉。
+        :return: 本次尝试成功（含「不需要进入」）返回 True
+        """
+        self.utilize_already_active = False
+        if not self.realm_goto_grown():
+            return False
+        self.screenshot()
+        if not self.appear(self.I_UTILIZE_ADD):
+            self.utilize_already_active = True
+            return True
+        return self.grown_goto_utilize()
 
     @staticmethod
     def parse_priority_search_names(raw_names: str) -> list[tuple[SelectFriendList, str]]:

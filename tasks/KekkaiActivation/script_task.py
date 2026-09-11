@@ -41,13 +41,15 @@ class ScriptTask(KU, KekkaiActivationAssets):
         # 检查是否处于禁止运行时间段，命中则跳过本次运行
         self.check_forbidden_time('KekkaiActivation', con.forbidden_time_enable, con.forbidden_time_range)
         self.ui_get_current_page()
-        self.ui_goto(page_guild)
+        if not self.ui_goto(page_guild):
+            self.realm_entry_failed('寮')
         logger.info(f'开始挂卡{self.config.kekkai_activation.activation_config.card_type}')
         # 在寮的主界面 检查是否有收取体力或者是收取寮资金
         # self.check_guild_ap_or_assets()
 
         # 进入寮结界
-        self.goto_realm()
+        if not self.goto_realm():
+            self.realm_entry_failed('寮结界')
 
         if con.exchange_before:
             self.check_max_lv(con.shikigami_class)
@@ -74,6 +76,18 @@ class ScriptTask(KU, KekkaiActivationAssets):
         if con.pets_enable:
             pets = Pets(self.config, self.device)
             pets.run()
+        raise TaskEnd('KekkaiActivation')
+
+    def realm_entry_failed(self, name: str) -> None:
+        """挂卡侧的失败收尾：通知渠道换成挂卡标题，延后与父类一致。"""
+        fail_msg = (f'进入{name}失败, '
+                    f'{int(self.REALM_ENTRY_FAIL_DELAY.total_seconds() // 60)}分钟后再次挂卡')
+        logger.warning(fail_msg)
+        # 与同文件既有的两处写法一致：DAILY 由 DailyAltAcc 嵌套调用时强制指定，
+        # 那条路径的失败通知应由 DailyAltAcc 自己出，这里静默
+        if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY:
+            self.config.notifier.push(content=fail_msg, title='结界挂卡')
+        self.set_next_run('KekkaiActivation', target=datetime.now() + self.REALM_ENTRY_FAIL_DELAY)
         raise TaskEnd('KekkaiActivation')
 
     @cached_property
@@ -202,21 +216,26 @@ class ScriptTask(KU, KekkaiActivationAssets):
                     self.config.notifier.push(content=f'结界下次挂卡时间: {next_time}', title='结界挂卡')
                 self.set_next_run("KekkaiActivation", target=next_time)
                 return True
-    def goto_cards(self):
-        """
-        寮结界,前往挂卡界面
-        :return:
-        """
-        while 1:
-            self.screenshot()
+    def goto_cards(self) -> None:
+        """寮结界 -> 挂卡界面。
 
-            if self.appear(self.I_A_CHECK_CARD):
-                break
-            if self.appear(self.I_A_AUTO_INVITE):
-                break
+        入口由模板匹配改为固定区域点击，并由父类的 goto_sub_page 负责「回寮重进结界」
+        的重试；旧实现是 while 1 死循环，进不去就永远卡住。失败时交由 realm_entry_failed
+        通知 + 延后并抛 TaskEnd 结束本次任务，不再返回调用方。
+        """
+        def _enter_once() -> bool:
+            # 先截图，否则 harvest_card 用的是上一轮遗留的 device.image（appear 不强制重截）。
+            # 语义相对旧实现略放宽：旧的是「先判是否已在卡页，已到就 break 且不收菜」，
+            # 这里每次尝试都先收一次；差异极小（harvest_card 全是 appear_then_click，不命中即空操作）。
+            self.screenshot()
             self.harvest_card()
-            if self.appear_then_click_multi_scale(self.I_SHI_CARD, interval=1):
-                continue
+            return self.realm_entry_click(
+                self._realm_region(self.C_REALM_CARD, 'realm_card'),
+                lambda: self.appear(self.I_A_CHECK_CARD) or self.appear(self.I_A_AUTO_INVITE))
+
+        if not self.goto_sub_page(_enter_once, '挂卡'):
+            # 通知 + 5 分钟延后 + TaskEnd 都在这里完成；文案由本类覆写的实现生成
+            self.realm_entry_failed('挂卡')
         logger.info('Enter card page')
 
     def check_card_status(self, screenshot=False) -> bool:
@@ -436,7 +455,9 @@ class ScriptTask(KU, KekkaiActivationAssets):
         退出的时候还是结界界面
         :return:
         """
-        self.realm_goto_grown()
+        if not self.realm_goto_grown():
+            logger.warning('进入式神育成界面失败，跳过满级检查')
+            return
         if self.appear(self.I_RS_LEVEL_MAX):
             # 存在满级的式神
             logger.info('Exist max level shikigami and replace it')

@@ -36,6 +36,13 @@ class KekkaiUtilizeAssets:
 	S_GUILD_FIND_AP = RuleSwipe(roi_front=(420,546,40,40), roi_back=(8,546,40,40), mode="default", name="guild_find_ap")
 
 
+	# Click Rule Assets
+	# 进式神育成（2026-09-11 实机帧实测，见 Spec §4.2） 
+	C_REALM_GROWN = RuleClick(roi_front=(602,303,26,74), roi_back=(602,303,26,74), name="realm_grown")
+	# 进结界卡（2026-09-11 实机帧实测，见 Spec §4.2） 
+	C_REALM_CARD = RuleClick(roi_front=(893,295,26,100), roi_back=(893,295,26,100), name="realm_card")
+
+
 	# Image Rule Assets
 	# 育成 
 	I_SHI_GROWN = RuleImage(roi_front=(595,291,35,38), roi_back=(530,220,202,267), threshold=0.6, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_shi_grown.png")
@@ -67,6 +74,8 @@ class KekkaiUtilizeAssets:
 	I_PLANT_FLOWER_ENSURE2 = RuleImage(roi_front=(1085,171,31,31), roi_back=(939,55,318,253), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_flower_ensure2.png")
 	# description 
 	I_PLANT_TREE_CLOSE_2 = RuleImage(roi_front=(1022,71,34,35), roi_back=(704,31,398,312), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/plant_tree_close_2.png")
+	# 结界页面判据（默认皮肤 costume_realm_default；占位待采集） 
+	I_REALM_PAGE = RuleImage(roi_front=(1154,279,60,41), roi_back=(1110,231,146,139), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_page.png")
 
 
 	# Click Rule Assets

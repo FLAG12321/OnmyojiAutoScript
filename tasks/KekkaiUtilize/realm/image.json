@@ -109,29 +109,38 @@
   },
   {
     "itemName": "plant_flower_ensure",
+    "imageName": "plant_flower_ensure.png",
     "roiFront": "1167,576,46,55",
     "roiBack": "951,391,325,317",
-    "description": "description",
-    "imageName": "plant_flower_ensure.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "plant_flower_ensure2",
+    "imageName": "plant_flower_ensure2.png",
     "roiFront": "1085,171,31,31",
     "roiBack": "939,55,318,253",
-    "description": "description",
-    "imageName": "plant_flower_ensure2.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "plant_tree_close_2",
+    "imageName": "plant_tree_close_2.png",
     "roiFront": "1022,71,34,35",
     "roiBack": "704,31,398,312",
-    "description": "description",
-    "imageName": "plant_tree_close_2.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "realm_page",
+    "imageName": "realm_page.png",
+    "roiFront": "1154,279,60,41",
+    "roiBack": "1110,231,146,139",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "结界页面判据（默认皮肤 costume_realm_default；占位待采集）"
   }
 ]

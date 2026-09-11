@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 
+from module.atom.click import RuleClick
 from module.atom.image import RuleImage
 from module.base.decorator import del_cached_property
 from module.base.timer import Timer
@@ -14,7 +15,9 @@ from tasks.Component.CostumeTheme.assets import CostumeThemeAssets
 from tasks.Component.CostumeBattle.assets import CostumeBattleAssets
 from tasks.Component.CostumeShikigami.assets import CostumeShikigamiAssets
 from tasks.Component.CostumeCarpBanner.assets import CostumeCarpBannerAssets
+from tasks.Component.CostumeRealm.assets import CostumeRealmAssets
 from tasks.GameUi.assets import GameUiAssets
+from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Pets.assets import PetsAssets
 from tasks.Restart.assets import RestartAssets
 
@@ -99,12 +102,20 @@ shikigami_costume_model = {
 def _clear_rule_image_cache(obj: RuleImage) -> None:
     """清掉 RuleImage 的懒加载缓存。
 
+    结界链的 target 里混着 RuleClick（C_REALM_GROWN / C_REALM_CARD），所以开头必须先挡一道：
+    RuleClick 不做模板匹配，既没有 _image / _kp / _des，name 也不是 cached_property 而是
+    __init__ 里赋的普通实例属性。del_cached_property 只吞 KeyError、删得到就真删——删掉
+    name 之后 RuleClick.__repr__ 直接 AttributeError，而 name 还担着 device 防连点记录的
+    键与日志展示。往 RuleClick 上塞 _image 之类的空壳属性同样没有意义。
+
     replace_img 只改 .file，而 load_image() 开头 `if self._image is not None: return`
     会直接早退，不清就是换了白换；name / kp / des 都是 cached_property（结果塞在实例
     __dict__ 里），不清 name 会继续按旧文件名登记 interval_timer，不清 kp/des 会让
     Sift Flann 方法沿用旧模板的特征点（当前映射的资产都是 Template matching，属潜伏
     问题，但这是个通用清理器）。
     """
+    if isinstance(obj, RuleClick):
+        return
     obj._image = None
     obj._kp = None
     obj._des = None
@@ -131,11 +142,21 @@ _applied_main: MainType | None = None
 
 
 def _snapshot(obj: RuleImage) -> dict:
-    """记下 RuleImage 的出厂取值，供回切默认套时重建。
+    """记下资产的出厂取值，供回切默认套时重建。
 
     method 必须一起记：不记就只能在 _rebuild 里硬编码，回切默认套会把 method 改掉
     （当前涉及的资产都是 Template matching，属潜伏问题）。
+
+    结界链的 target 混着 RuleClick：它不做模板匹配，没有 file / threshold / method，
+    照 RuleImage 那套读会直接 AttributeError。所以按类型分开记——**没有 file 键就是
+    RuleClick**，_rebuild 用同一个判据分流，不必额外加类型标记位。
     """
+    if isinstance(obj, RuleClick):
+        return {
+            'name': obj.name,
+            'roi_front': tuple(obj.roi_front),
+            'roi_back': tuple(obj.roi_back),
+        }
     return {
         'file': obj.file,
         'roi_front': tuple(obj.roi_front),
@@ -146,10 +167,14 @@ def _snapshot(obj: RuleImage) -> dict:
 
 
 def _rebuild(snapshot: dict) -> RuleImage:
-    """按快照重建一个 RuleImage。
+    """按快照重建一个资产对象。
 
     不能直接复用快照里的原对象——那个对象已经被 replace_img 就地改写成别的皮肤了。
     """
+    if 'file' not in snapshot:
+        # 没有 file 键即为 RuleClick（见 _snapshot），按区域重建
+        return RuleClick(roi_front=snapshot['roi_front'], roi_back=snapshot['roi_back'],
+                         name=snapshot['name'])
     return RuleImage(roi_front=snapshot['roi_front'], roi_back=snapshot['roi_back'],
                      method=snapshot['method'], threshold=snapshot['threshold'],
                      file=snapshot['file'])
@@ -210,6 +235,54 @@ def _ensure_default_theme_snapshot() -> None:
     _default_theme_snapshot = snap
 
 
+# 结界皮肤。默认套（妖伞结界）的资产挂在 KekkaiUtilizeAssets 上，靠出厂快照回切，不登记映射。
+# 键用 (资产类, 属性名)：活资产在 KekkaiUtilizeAssets 上，而换肤发生在 KekkaiUtilize /
+# KekkaiActivation 及其派生任务里，写元组直接落到类属性对象上，不依赖调用方任务的 MRO。
+#
+# 一套结界皮肤要换三样东西（用户实测确认过，其余资源与皮肤无关）：
+#   1. I_REALM_PAGE   结界页的站位锚点，同时是 page_guild_realm 的 check_button
+#   2. C_REALM_GROWN  进式神育成的点击区域
+#   3. C_REALM_CARD   进结界卡的点击区域
+# 注意 I_UTILIZE_ADD（育成界面里「放置好友寄养」那个按钮）**不随皮肤变**，是固定资产，
+# 所以刻意不在这张表里。
+realm_costume_model = {
+    RealmType.COSTUME_REALM_1: {   # 鬼灵咒符
+        (KekkaiUtilizeAssets, 'I_REALM_PAGE'): 'I_REALM_1_PAGE',
+        (KekkaiUtilizeAssets, 'C_REALM_GROWN'): 'C_REALM_1_GROWN',
+        (KekkaiUtilizeAssets, 'C_REALM_CARD'): 'C_REALM_1_CARD',
+    },
+    RealmType.COSTUME_REALM_2: {   # 狐梦之乡
+        (KekkaiUtilizeAssets, 'I_REALM_PAGE'): 'I_REALM_2_PAGE',
+        (KekkaiUtilizeAssets, 'C_REALM_GROWN'): 'C_REALM_2_GROWN',
+        (KekkaiUtilizeAssets, 'C_REALM_CARD'): 'C_REALM_2_CARD',
+    },
+}
+
+# 结界皮肤涉及的资产 key。同 _MAIN_TARGETS，从 model 的第一项推导，避免映射表与
+# 「默认套要快照哪些 key」两处各维护一份清单而脱节。
+_REALM_TARGETS = tuple(next(iter(realm_costume_model.values())).keys())
+
+_default_realm_snapshot: dict | None = None
+_applied_realm: RealmType | None = None
+
+
+def _ensure_default_realm_snapshot() -> None:
+    """冻结默认结界的出厂资产值。必须在首次真替换之前调用，且只做一次。
+
+    快照里有 RuleClick（两个点击区域），_snapshot 已按类型分流处理。
+    """
+    global _default_realm_snapshot
+    if _default_realm_snapshot is not None:
+        return
+    snap: dict = {}
+    for target in _REALM_TARGETS:
+        asset_cls, attr = target
+        if not hasattr(asset_cls, attr):
+            continue
+        snap[target] = _snapshot(getattr(asset_cls, attr))
+    _default_realm_snapshot = snap
+
+
 # 探测候选表：(皮肤类型, 用于判定的资产列表)。惰性构建一次并缓存。
 #
 # 缓存的理由不是「CostumeAssets() 很贵」——那 70 个 RuleImage 是类属性、import 期建
@@ -219,36 +292,54 @@ def _ensure_default_theme_snapshot() -> None:
 # 一次默认模板；顺带也省掉每轮对映射表的 hasattr/getattr 扫描。
 _probe_table_main: dict | None = None
 _probe_table_theme: dict | None = None
+_probe_table_realm: dict | None = None
 
 # 探测节流。Timer 未 start 时 _current == 0，reached() 恒为 True，所以新建即「已到点」，
 # 首次探测不被拦；零命中后 reset() 才真正开始计时。
 _probe_timer = Timer(2)
 
+# 结界探测**单独**一个节流计时器，不与 main/theme 共用：两者不在同一时机跑
+# （main/theme 在登录的庭院帧上，realm 在结界页帧上），共用会让 goto_realm 里紧挨着
+# 的两次探测互相挡住——第一次零命中 reset 之后，第二次（刚导航进结界、人已经站在
+# 结界页上）会被窗口拦掉，而那正是唯一能探到结界背景的一次。
+_realm_probe_timer = Timer(2)
+
 # 探针锁：探测成功即锁定，避免页面识别每轮都全量轮询。
 # 解锁在 _app_handle_login() 开头（重试循环内，见 Task 6）。
 _main_probe_locked = False
 _theme_probe_locked = False
+_realm_probe_locked = False
 
 # 零命中告警去重：探测受 2s 节流，登录卡住时会反复零命中，不加限制会刷屏。
 _probe_warned = False
+# 结界探测的告警去重单独一个标志，不与上面的共用：两者生命周期不同，共用会让先探的
+# 那个把后探的那个的告警吞掉，而且文案分不出是哪个探针零命中、该去补哪套皮肤的图。
+_realm_probe_warned = False
 
 # 庭院探测只用一个 key。RuleImage.match() 命中时会写 roi_front，而 I_MAIN_GOTO_* /
 # I_PET_HOUSE 是要被点击的，被探测写脏会点错位置；I_CHECK_MAIN 只用于状态判定
 # （page_main.check_button 与十余处 appear 检查），从不被点击。
 _MAIN_PROBE_KEY = (GameUiAssets, 'I_CHECK_MAIN')
 
+# 结界探测同理只取页锚点这一个 key。映射表里另外两项是 RuleClick（两个点击区域），
+# 它们没有模板图、进不了候选表——而且 C_REALM_* 也不该被 match() 写脏。
+_REALM_PROBE_KEY = (KekkaiUtilizeAssets, 'I_REALM_PAGE')
+
 
 def _ensure_probe_tables() -> None:
-    """惰性构建庭院/卷轴探测候选表，只做一次。"""
-    global _probe_table_main, _probe_table_theme
+    """惰性构建庭院/卷轴/结界探测候选表，只做一次。"""
+    global _probe_table_main, _probe_table_theme, _probe_table_realm
     if _probe_table_main is not None:
         return
     _ensure_default_main_snapshot()
     _ensure_default_theme_snapshot()
+    _ensure_default_realm_snapshot()
     costume_assets = CostumeAssets()
     # 卷轴图放独立组件 tasks/Component/CostumeTheme/（与 CostumeBattle / CostumeShikigami
     # / CostumeCarpBanner 同构），不混进庭院那套 CostumeAssets
     theme_assets = CostumeThemeAssets()
+    # 结界同理：皮肤版资源在 CostumeRealmAssets 上，活资产挂在 KekkaiUtilizeAssets
+    realm_assets = CostumeRealmAssets()
 
     main_table: dict = {}
     # 默认套：活对象已被就地改写，只能从出厂快照重建；建一次后缓存住，别每次探测都重读盘
@@ -271,8 +362,20 @@ def _ensure_probe_tables() -> None:
         if assets:
             theme_table[theme_type] = assets
 
+    realm_table: dict = {}
+    # 结界候选一套只取页锚点（_REALM_PROBE_KEY）。映射表里另外两项是 RuleClick，
+    # 没有模板图可匹配，也不该被 match() 写脏 roi_front
+    if _REALM_PROBE_KEY in _default_realm_snapshot:
+        realm_table[RealmType.COSTUME_REALM_DEFAULT] = [
+            _rebuild(_default_realm_snapshot[_REALM_PROBE_KEY])]
+    for realm_type, model in realm_costume_model.items():
+        value = model.get(_REALM_PROBE_KEY)
+        if value and hasattr(realm_assets, value):
+            realm_table[realm_type] = [getattr(realm_assets, value)]
+
     _probe_table_main = main_table
     _probe_table_theme = theme_table
+    _probe_table_realm = realm_table
 
 
 def _ordered_candidates(table: dict, configured):
@@ -298,6 +401,21 @@ def _warn_probe_missed_once(what: str) -> None:
                    f'the current skin may not be collected yet')
 
 
+def _warn_realm_probe_missed_once() -> None:
+    """结界探测零命中告警，每次解锁周期只打一条。
+
+    不复用 _warn_probe_missed_once：两者跑在不同时机（main/theme 在登录的庭院帧上，
+    结界在结界页帧上），共用一个标志会让先探的那个把后探的那个的告警吞掉；
+    文案也要分开，否则日志里看不出该去补哪套皮肤的图。
+    """
+    global _realm_probe_warned
+    if _realm_probe_warned:
+        return
+    _realm_probe_warned = True
+    logger.warning('Costume realm probe found no match; '
+                   'the current realm skin may not be collected yet')
+
+
 def reset_costume_module_state() -> None:
     """把模块级状态复位到出厂。仅供测试隔离使用。
 
@@ -308,20 +426,27 @@ def reset_costume_module_state() -> None:
     tests/device/ 的庭院用例调的是私有 _app_handle_login()，不经过解锁入口，
     也必须靠 autouse fixture 调这个函数，否则探针锁会跨用例污染。
     """
-    global _default_main_snapshot, _default_theme_snapshot
-    global _applied_main, _applied_theme
-    global _probe_table_main, _probe_table_theme
-    global _main_probe_locked, _theme_probe_locked, _probe_warned
+    global _default_main_snapshot, _default_theme_snapshot, _default_realm_snapshot
+    global _applied_main, _applied_theme, _applied_realm
+    global _probe_table_main, _probe_table_theme, _probe_table_realm
+    global _main_probe_locked, _theme_probe_locked, _realm_probe_locked
+    global _probe_warned, _realm_probe_warned
     _default_main_snapshot = None
     _default_theme_snapshot = None
+    _default_realm_snapshot = None
     _applied_main = None
     _applied_theme = None
+    _applied_realm = None
     _probe_table_main = None
     _probe_table_theme = None
+    _probe_table_realm = None
     _main_probe_locked = False
     _theme_probe_locked = False
+    _realm_probe_locked = False
     _probe_warned = False
+    _realm_probe_warned = False
     _probe_timer.clear()
+    _realm_probe_timer.clear()
 
 
 def release_costume_probe_locks() -> None:
@@ -333,12 +458,19 @@ def release_costume_probe_locks() -> None:
 
     这次登录可能落到另一个号上，之前锁定的皮肤对它不一定成立；解锁后同一次登录里的
     探测会重新锁定。连节流一起 clear：切号后应该立刻能探，不该白等一个节流窗口。
+
+    结界锁也在这里放掉：换号后结界皮肤同样可能不同，而结界探测要等到任务真正走进
+    结界页才跑，锁留着会让新号第一次进结界时探不了。
     """
-    global _main_probe_locked, _theme_probe_locked, _probe_warned
+    global _main_probe_locked, _theme_probe_locked, _realm_probe_locked
+    global _probe_warned, _realm_probe_warned
     _main_probe_locked = False
     _theme_probe_locked = False
+    _realm_probe_locked = False
     _probe_warned = False
+    _realm_probe_warned = False
     _probe_timer.clear()
+    _realm_probe_timer.clear()
 
 
 class CostumeBase:
@@ -350,6 +482,7 @@ class CostumeBase:
         self.check_costume_carpbanner(config.costume_carpbanner_type)
         self.check_costume_battle(config.costume_battle_type)
         self.check_costume_shikigami(config.costume_shikigami_type)
+        self.check_costume_realm(config.costume_realm_type)
 
     def replace_img(self,
                     target,
@@ -383,8 +516,10 @@ class CostumeBase:
         obj.roi_front = list(asset_after.roi_front)
         if rp_roi_back:
             obj.roi_back = asset_after.roi_back
-        obj.threshold = asset_after.threshold
-        obj.file = asset_after.file
+        # RuleClick 没有 threshold / file（它不做模板匹配），只同步区域
+        if not isinstance(obj, RuleClick):
+            obj.threshold = asset_after.threshold
+            obj.file = asset_after.file
         _clear_rule_image_cache(obj)
 
     def check_costume_main(self, main_type: MainType):
@@ -472,6 +607,26 @@ class CostumeBase:
                     return theme_type
         return None
 
+    def probe_costume_realm(self) -> RealmType | None:
+        """在当前截图上轮询结界皮肤候选，返回第一个命中的，都不中返回 None。
+
+        只读 self.device.image，不重新截图——调用方刚取的那一帧就是判定依据。
+
+        候选一套只有一张：页锚点（`I_REALM_PAGE`）。映射表里另外两项是 RuleClick，
+        没有模板图可匹配。
+
+        **不能挂到登录的庭院帧上**（try_detect_costume 那条路）：结界换的是结界页的
+        背景，庭院那帧里根本看不到，探了必然零命中。调用方是结界任务自己，只在真正
+        站在结界页上时探。
+        """
+        _ensure_probe_tables()
+        configured = self.config.model.global_game.costume_config.costume_realm_type
+        for realm_type, assets in _ordered_candidates(_probe_table_realm, configured):
+            for asset in assets:
+                if self.appear(asset):
+                    return realm_type
+        return None
+
     def _apply_detected_costume_main(self, detected: MainType) -> None:
         """套用探测到的庭院皮肤并回写配置（配置自我修正）。
 
@@ -503,6 +658,18 @@ class CostumeBase:
         self.config.save()
         logger.info(f'Costume theme detected {old} -> {detected}, config updated')
 
+    def _apply_detected_costume_realm(self, detected: RealmType) -> None:
+        """套用探测到的结界皮肤并回写配置。语义同 _apply_detected_costume_main。"""
+        config = self.config.model.global_game.costume_config
+        old = config.costume_realm_type
+        self.check_costume_realm(detected)
+        if old == detected:
+            logger.info(f'Costume realm detected {detected} (matches config)')
+            return
+        config.costume_realm_type = detected
+        self.config.save()
+        logger.info(f'Costume realm detected {old} -> {detected}, config updated')
+
     def try_detect_costume_main(self) -> MainType | None:
         """带节流与锁的庭院探测入口。命中即套用 + 回写并锁定。
 
@@ -521,6 +688,41 @@ class CostumeBase:
         _probe_warned = False
         self._apply_detected_costume_main(detected)
         return detected
+
+    def try_detect_costume_realm(self) -> bool:
+        """带节流与锁的结界探测入口。命中即套用 + 回写并锁定。**返回「是否刚修好了皮肤资产」。**
+
+        返回值语义与 try_detect_costume 一致，调用方拿到 True 应该重截一帧重判，
+        让修正后的 I_REALM_PAGE（page_guild_realm 的 check_button）在下一帧生效；
+        **不要把它直接当成「在结界里」的证据**——它只在命中那一帧为真，而判「到了结界」
+        仍要靠页面判据本身。
+
+        零命中打一条 warning（当前皮肤可能尚未采集），每次解锁周期只打一条。
+        """
+        global _realm_probe_locked, _realm_probe_warned
+        if _realm_probe_locked or not _realm_probe_timer.reached():
+            return False
+        _realm_probe_timer.reset()
+        detected = self.probe_costume_realm()
+        if detected is None:
+            _warn_realm_probe_missed_once()
+            return False
+        _realm_probe_locked = True
+        _realm_probe_warned = False
+        self._apply_detected_costume_realm(detected)
+        return True
+
+    def realm_skin_confirmed(self) -> bool:
+        """结界皮肤是否已确认（探测命中过至少一次）。
+
+        结界页上的点击区域都是**按皮肤**的坐标（C_REALM_GROWN / C_REALM_CARD），皮肤没认出来
+        就没有任何依据判断这些坐标能不能用——此时按坐标点就是盲点。探测命中即上锁，
+        所以那把锁就是「已确认」的判据；release_costume_probe_locks()（登录开头）会清掉它。
+
+        注意它**不是**「皮肤与配置相符」的判据：探测是配置优先扫候选，配置那套相符时
+        第一个就命中并上锁，所以正常路径同样是 True。
+        """
+        return _realm_probe_locked
 
     def try_detect_costume(self) -> bool:
         """庭院与卷轴各探一次，共用一次节流窗口。**返回「是否刚修好了资产」，不是「是否在庭院」。**
@@ -597,6 +799,42 @@ class CostumeBase:
             assert_value: RuleImage = getattr(shikigami_assets, value)
             # 一般不需要固定 back ROI，如确有需要可在此为特例设置 rp_roi_back=False
             self.replace_img(key, assert_value)
+
+    def check_costume_realm(self, realm_type: RealmType):
+        """套用指定结界皮肤。幂等；默认套按出厂快照还原。
+
+        结构与 check_costume_theme 同构，理由也一样：结界皮肤换的那三样资产
+        （页面锚点 / 育成区域 / 挂卡区域）都是 KekkaiUtilizeAssets 上的类属性活对象，
+        replace_img 就地改写一次，KekkaiUtilize 与 KekkaiActivation 后续读到的就是新皮肤。
+        CostumeRealm/realm<N>/ 下的规则文件只是这些「皮肤版」资产的来源。
+
+        默认套（妖伞结界）不登记映射：它的资产就是 KekkaiUtilizeAssets 上的出厂值，
+        被就地改写后原值再没有别的引用，只能靠 _default_realm_snapshot 重建回切。
+
+        图还没采集时（映射里的属性名在 CostumeRealmAssets 上不存在）打警告后跳过；
+        一个都没换成就不记 _applied_realm，否则幂等守卫会让它永不重试。
+        """
+        global _applied_realm
+        _ensure_default_realm_snapshot()
+        if realm_type == _applied_realm:
+            return
+        logger.info(f'Switch realm costume to {realm_type}')
+        targets: dict = {}
+        if realm_type == RealmType.COSTUME_REALM_DEFAULT:
+            targets = {t: _rebuild(s) for t, s in _default_realm_snapshot.items()}
+        else:
+            realm_assets = CostumeRealmAssets()
+            for target, value in realm_costume_model.get(realm_type, {}).items():
+                if not hasattr(realm_assets, value):
+                    logger.warning(f'Realm costume asset {value} not found, skip')
+                    continue
+                targets[target] = getattr(realm_assets, value)
+        for target, asset in targets.items():
+            self.replace_img(target, asset)
+        if not targets:
+            logger.warning(f'Realm costume {realm_type} applied nothing, keep previous state')
+            return
+        _applied_realm = realm_type
 
 
 if __name__ == '__main__':
