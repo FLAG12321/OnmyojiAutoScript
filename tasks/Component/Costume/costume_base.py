@@ -179,6 +179,11 @@ theme_costume_model = {
         (RestartAssets, 'I_LOGIN_SCROOLL_CLOSE'): 'I_THEME_1_SCROLL_CLOSE',
         (RestartAssets, 'I_LOGIN_SCROOLL_OPEN'): 'I_THEME_1_SCROLL_OPEN',
     },
+    # 新语明霄
+    ThemeType.COSTUME_THEME_2: {
+        (RestartAssets, 'I_LOGIN_SCROOLL_CLOSE'): 'I_THEME_2_SCROLL_CLOSE',
+        (RestartAssets, 'I_LOGIN_SCROOLL_OPEN'): 'I_THEME_2_SCROLL_OPEN',
+    },
 }
 
 # 卷轴皮肤涉及的资产 key（收起态 + 展开态），默认套也要，回切时得知道还原哪几个。
