@@ -412,12 +412,14 @@ class GameUi(BaseTask, GameUiAssets):
         """执行页面附加操作"""
         if not page.additional:
             return
+
+        # 先统一解析出所有附加项: condition, action, detect_seconds
+        # 格式: btn                          -> condition=btn, action=btn, detect=0 (普通点击)
+        #       [target, detect]             -> condition=target, action=target, detect=detect (限时检测点击)
+        #       [condition, action]          -> condition=condition, action=action, detect=0 (复合条件)
+        #       [condition, action, detect]  -> condition=condition, action=action, detect=detect (限时复合条件)
+        items: list = []
         for btn in page.additional:
-            # 统一解析: condition, action, detect_seconds
-            # 格式: btn                          -> condition=btn, action=btn, detect=0 (普通点击)
-            #       [target, detect]             -> condition=target, action=target, detect=detect (限时检测点击)
-            #       [condition, action]           -> condition=condition, action=action, detect=0 (复合条件)
-            #       [condition, action, detect]   -> condition=condition, action=action, detect=detect (限时复合条件)
             condition = btn
             action = btn
             detect_seconds = 0
@@ -428,22 +430,25 @@ class GameUi(BaseTask, GameUiAssets):
                     condition, action, detect_seconds = btn[0], btn[0], btn[1]
                 elif len(btn) == 2:
                     condition, action = btn
+            items.append((condition, action, detect_seconds))
 
-            # 限时检测: 在指定秒数内反复检测，检测到则操作
+        # 限时检测: 所有限时项共享同一个超时窗口(取各项峰值时长)，而不是每项各自跑满自己的时长。
+        # 总耗时由 sum(detect) 降为 max(detect)；且 appear() 读的是缓存帧, 一轮只截一次图就能同时
+        # 匹配全部模板（原先每项独立截图, 一帧只查一个模板）。
+        # 命中一项后立刻重置计时, 剩余项重新获得一个完整窗口, 所以「关掉一个又弹出下一个」仍能依次处理。
+        timed = [item for item in items if item[2] > 0]
+        timed_seconds = max((item[2] for item in timed), default=0)
+        timed_done = False
+
+        # 列表顺序即优先级: 从前往后处理, 靠前的先识别, 同一帧里多个都命中时也靠前的先操作。
+        # 限时项整批只在「首个限时项」的位置执行一次 —— 排在它前面的非限时项先就地处理,
+        # 从而保持配置里写下的先后顺序不被改写。
+        for condition, action, detect_seconds in items:
             if detect_seconds > 0:
-                detected = False
-                detect_timer = Timer(detect_seconds).start()
-                while not detect_timer.reached():
-                    self.screenshot()
-                    if self.appear(condition):
-                        detected = True
-                        break
-                    sleep(0.1)
-                skip_first_screenshot = False
-                if detected:
-                    if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
-                        logger.info(f'Page {page} additional {condition} -> {action} detected within {detect_seconds}s')
-                        skip_first_screenshot = False
+                if not timed_done:
+                    self._run_timed_additional(page, timed, timed_seconds, interval)
+                    timed_done = True
+                    skip_first_screenshot = True  # 批次已截过图, 后续非限时项直接复用
                 continue
 
             # 无延时时: 原有逻辑
@@ -454,9 +459,31 @@ class GameUi(BaseTask, GameUiAssets):
                     if self.appear_then_operate(action, interval=interval, skip_first_screenshot=False):
                         logger.info(f'Page {page} additional conditional {condition} -> {action} executed')
                         skip_first_screenshot = False
-            elif self.appear_then_operate(btn, interval=interval, skip_first_screenshot=skip_first_screenshot):
-                logger.info(f'Page {page} additional {btn} clicked')
+            elif self.appear_then_operate(condition, interval=interval, skip_first_screenshot=skip_first_screenshot):
+                logger.info(f'Page {page} additional {condition} clicked')
                 skip_first_screenshot = False
+
+    def _run_timed_additional(self, page: Page, timed: list, timeout: float, interval: float) -> None:
+        """共享超时窗口处理限时项。
+
+        所有项共用一个计时器：每轮只截一次图供全部模板复用，并按列表顺序从前往后匹配。
+        命中一项立即操作并从待检列表移除，随后重置计时器，让剩余项重新获得完整窗口。
+        于是总耗时是 max(各项 detect) 而非 sum，且同帧多命中时靠前的项先被操作。
+        """
+        detect_timer = Timer(timeout).start()
+        while timed and not detect_timer.reached():
+            self.screenshot()
+            for i, (condition, action, _) in enumerate(timed):
+                if not self.appear(condition):
+                    continue
+                timed.pop(i)
+                # 复用刚匹配到的那一帧执行动作, 不再重复截图
+                if self.appear_then_operate(action, interval=interval, skip_first_screenshot=True):
+                    logger.info(f'Page {page} additional {condition} -> {action} detected within {timeout}s')
+                detect_timer.reset()  # 找到一个就重置时间
+                break  # 画面已变化, 跳出重新截图后再查剩余项
+            else:
+                sleep(0.1)
     def appear_then_operate(self, target: RuleList | RuleImage | RuleGif | RuleOcr | RuleClick,
                             interval: float = None, skip_first_screenshot: bool = True):
         """

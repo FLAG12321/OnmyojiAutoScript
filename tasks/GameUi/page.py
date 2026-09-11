@@ -221,8 +221,13 @@ page_mall.link(button=G.I_BACK_MALL, destination=page_main)
 page_theme.link(button=G.O_PAGE_MALL, destination=page_mall)
 # 阴阳寮 guild
 page_guild = Page(G.I_CHECK_GUILD)
-#page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.0], [KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE2, 1.0]]
-#page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE, 1.5],[KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE_2,1.5]]
+# 活动弹窗常驻检测: 种花与种树两组模板全部挂上，以适配不同时期的活动弹窗。
+# 限时项共享同一个 1.5s 窗口(命中一项即重置计时)，挂几组模板的日常成本都是 1.5s，
+# 不随模板数量线性叠加 —— 这正是原先只能注释掉一组轮换使用的原因。
+page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.5],
+                         [KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE2, 1.5],
+                         [KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE, 1.5],
+                         [KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE_2, 1.5]]
 page_guild.link(button=G.I_BACK_Y, destination=page_main)
 page_theme.link(button=G.O_PAGE_GUILD, destination=page_guild)
 # 组队 team
