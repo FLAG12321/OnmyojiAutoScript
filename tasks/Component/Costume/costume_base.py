@@ -199,16 +199,18 @@ def _ensure_default_main_snapshot() -> None:
 # 卷轴（主题）皮肤。默认套的资产在 RestartAssets，靠出厂快照回切，不登记映射。
 # 键是 (资产类, 属性名)：卷轴的收起/展开态挂在 RestartAssets 上，而 Plotline /
 # ExperienceYoukai 的任务 MRO 里没有 RestartAssets，用 getattr(self, ...) 会静默跳过。
+#
+# 用推导式而非逐套登记：各套的键集合完全一致、value 名只差一个序号，属**同构**。
+# 同构就该让结构去保证一致性——逐套手写的第 N 项和第 1 项一样容易写错 value 名或漏键，
+# 推导式在结构上不可能出现这两种错。代价是「有几套」这个事实同时存在于枚举与 range
+# 两处，加新皮肤**记得把上界 +1**：漏改会静默少一套，但 verify.py 会以「映射表里没有
+# 这一项」报 [NG] 兜住。若将来某套换的资产与其余不一致（异构），再照 battle_theme_model
+# 那样按序号补特例块。每套的中文名见 assets/i18n/zh-CN.json，不在这里重复。
 theme_costume_model = {
-    ThemeType.COSTUME_THEME_1: {
-        (RestartAssets, 'I_LOGIN_SCROOLL_CLOSE'): 'I_THEME_1_SCROLL_CLOSE',
-        (RestartAssets, 'I_LOGIN_SCROOLL_OPEN'): 'I_THEME_1_SCROLL_OPEN',
-    },
-    # 新语明霄
-    ThemeType.COSTUME_THEME_2: {
-        (RestartAssets, 'I_LOGIN_SCROOLL_CLOSE'): 'I_THEME_2_SCROLL_CLOSE',
-        (RestartAssets, 'I_LOGIN_SCROOLL_OPEN'): 'I_THEME_2_SCROLL_OPEN',
-    },
+    getattr(ThemeType, f'COSTUME_THEME_{i}'): {
+        (RestartAssets, 'I_LOGIN_SCROOLL_CLOSE'): f'I_THEME_{i}_SCROLL_CLOSE',
+        (RestartAssets, 'I_LOGIN_SCROOLL_OPEN'): f'I_THEME_{i}_SCROLL_OPEN',
+    } for i in range(1, 3)
 }
 
 # 卷轴皮肤涉及的资产 key（收起态 + 展开态），默认套也要，回切时得知道还原哪几个。
@@ -245,17 +247,14 @@ def _ensure_default_theme_snapshot() -> None:
 #   3. C_REALM_CARD   进结界卡的点击区域
 # 注意 I_UTILIZE_ADD（育成界面里「放置好友寄养」那个按钮）**不随皮肤变**，是固定资产，
 # 所以刻意不在这张表里。
+# 用推导式而非逐套登记，理由同 theme_costume_model：三样资产的键在每套里完全相同、
+# 只有 value 名带序号，属同构。加新皮肤**记得把 range 上界 +1**。
 realm_costume_model = {
-    RealmType.COSTUME_REALM_1: {   # 鬼灵咒符
-        (KekkaiUtilizeAssets, 'I_REALM_PAGE'): 'I_REALM_1_PAGE',
-        (KekkaiUtilizeAssets, 'C_REALM_GROWN'): 'C_REALM_1_GROWN',
-        (KekkaiUtilizeAssets, 'C_REALM_CARD'): 'C_REALM_1_CARD',
-    },
-    RealmType.COSTUME_REALM_2: {   # 狐梦之乡
-        (KekkaiUtilizeAssets, 'I_REALM_PAGE'): 'I_REALM_2_PAGE',
-        (KekkaiUtilizeAssets, 'C_REALM_GROWN'): 'C_REALM_2_GROWN',
-        (KekkaiUtilizeAssets, 'C_REALM_CARD'): 'C_REALM_2_CARD',
-    },
+    getattr(RealmType, f'COSTUME_REALM_{i}'): {
+        (KekkaiUtilizeAssets, 'I_REALM_PAGE'): f'I_REALM_{i}_PAGE',
+        (KekkaiUtilizeAssets, 'C_REALM_GROWN'): f'C_REALM_{i}_GROWN',
+        (KekkaiUtilizeAssets, 'C_REALM_CARD'): f'C_REALM_{i}_CARD',
+    } for i in range(1, 3)
 }
 
 # 结界皮肤涉及的资产 key。同 _MAIN_TARGETS，从 model 的第一项推导，避免映射表与
