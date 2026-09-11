@@ -254,7 +254,7 @@ realm_costume_model = {
         (KekkaiUtilizeAssets, 'I_REALM_PAGE'): f'I_REALM_{i}_PAGE',
         (KekkaiUtilizeAssets, 'C_REALM_GROWN'): f'C_REALM_{i}_GROWN',
         (KekkaiUtilizeAssets, 'C_REALM_CARD'): f'C_REALM_{i}_CARD',
-    } for i in range(1, 3)
+    } for i in range(1, 9)
 }
 
 # 结界皮肤涉及的资产 key。同 _MAIN_TARGETS，从 model 的第一项推导，避免映射表与
