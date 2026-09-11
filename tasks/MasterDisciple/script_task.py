@@ -88,8 +88,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     _md_session: MasterDiscipleSession = None
     # 师父实例是否已加入会话（配对成功）；False 时房间任务跳过但状态序列照写
     _md_paired: bool = False
-    # 当前等待的邀请序号：每轮等待师父进房前经 _md_next_invite() 递增
-    _md_invite_seq: int = 0
     # 配对等待是否已结束（成功或放弃）：等待只发生在第一个房间任务前，之后不再重复
     _md_join_wait_done: bool = False
     # 徒弟侧心跳节流时间戳（monotonic 秒）
@@ -515,7 +513,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self._md_store = None
         self._md_session = None
         self._md_paired = False
-        self._md_invite_seq = 0
         self._md_join_wait_done = False
         self._md_last_heartbeat = time.monotonic()
         if not self._md_needs_pairing():
@@ -590,23 +587,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             logger.warning(f'师徒同步会话已失效，无法下发任务 [{task}]')
             self._md_paired = False
 
-    def _md_next_invite(self) -> int:
-        """递增并落盘本轮邀请序号，返回新序号。
-
-        调用时机：每轮「等待师父进房」开始前一次（首次邀请前）。
-        15 秒兜底重邀请不调用（序号不变，防师父写旧序号导致死等）。
-        """
-        if self._md_store is None or self._md_session is None:
-            return self._md_invite_seq
-        try:
-            self._md_invite_seq = self._md_store.next_invite(self._md_session)
-        except StaleSessionError:
-            logger.warning('师徒同步会话已失效，邀请序号不再递增')
-        return self._md_invite_seq
-
     def _md_master_in_room(self) -> bool:
-        """师父是否已回报进入当前序号的房间（读共享状态，无截图依赖）。
+        """师父此刻是否在房间里（读共享状态，无截图依赖）。
 
+        这是**状态**查询而不是事件对齐：师父进房置位、离开房间复位，徒弟只看
+        当前值，不问这是第几次邀请、也不需要记录自己消费到哪一版。此前两版
+        事件对齐（徒弟递增邀请序号 / 师父累加进房次数）都要求双方对某个编号
+        达成共识，而游戏自动发邀请的时机不受脚本控制，共识必然出现窗口期。
         取代旧的「反复识别加号数量并等稳定」进房检测。
         """
         if self._md_store is None or self._md_session is None or not self._md_paired:
@@ -618,8 +605,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             return False
         if MasterDiscipleSession.from_state(state) != self._md_session:
             return False
-        in_room = int(state.get('master_in_room_seq', 0) or 0)
-        return self._md_invite_seq > 0 and in_room >= self._md_invite_seq
+        return bool(state.get('master_in_room'))
 
     def _md_idle_popup_sweep(self) -> None:
         """等待配对/就绪期间的轻量弹窗清理：拒绝好友邀请、关确认类弹窗。
@@ -817,10 +803,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 公开切换完成后置 True：该阶段改为单次加号计数等路人补位
         public_waiting = False
 
-        # 【同步】递增邀请序号落盘：师父接受邀请进房后回报该序号，
-        # 15秒兜底重邀请不递增（防师父写旧序号导致死等）
-        self._md_next_invite()
-
         # 等待师父进入房间，每15秒重新邀请一次
         self.device.stuck_record_clear()
         self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -845,9 +827,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 )
                 self.exit_room()
                 return False
-            # 【同步】师父进房信号（master_in_room_seq >= invite_seq），取代旧的加号稳定检测。
-            # 公开补位阶段必须跳过该判定：进房信号是状态查询（师父进房后恒真），
-            # 若继续命中会直接 return True，「等路人补位」分支将永远不可达
+            # 【同步】师父进房信号（师父此刻是否在房间里），取代旧的加号稳定检测。
+            # 公开补位阶段必须跳过该判定：师父进房后该状态恒真，继续命中会直接
+            # return True，「等路人补位」分支将永远不可达
             if not public_waiting and self._md_master_in_room():
                 if add_other:
                     # 师父已进房且需要公开补位：切换为「所有人可见」
@@ -874,7 +856,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             if public_waiting and self._count_add_icons_once() < add_num:
                 logger.info(f"[{task_name}] 路人已补位，开始挑战 (加号目标值:{add_num})")
                 return True
-            # 每15秒重新邀请师父（序号不变，见 _md_next_invite 注释）
+            # 每15秒重新邀请师父（重邀请不产生新的进房计数，
+            # 师父若已在房间也收不到邀请，纯兜底动作）
             if reinvite_timer.reached():
                 logger.info(f"[{task_name}] Re-inviting master: {master_name}")
                 reinvite_timer.reset()
@@ -1568,13 +1551,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         count = 0
 
         while count < guard_count:
-            # 【同步】递增本轮邀请序号：第 2+ 场的邀请来自上一场胜利后的「默认邀请」
-            # （首次勾选后游戏自动邀请、不再弹出询问框），递增必须挂在等待开始前。
-            # 不能挂在弹窗出现上：默认邀请生效后弹窗不再出现，序号会漏递增，
-            # 徒弟将拿上一场的旧进房信号提前开战，把还在进房加载中的师父打断
-            if count > 0:
-                self._md_next_invite()
-            # 等待师父进入房间（同步信号：师父回报进房序号对上当前邀请序号）
+            # 等待师父进入房间（同步信号：师父进房次数大于上次开战时的已消费值）
             self.device.stuck_record_clear()
             self.device.stuck_record_add('BATTLE_STATUS_S')
             self.screenshot()
@@ -1588,8 +1565,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 if not self.is_in_room():
                     continue
 
-                # 【同步】师父进房信号（取代2人房加号归零检测）；第一场序号由
-                # _create_room_and_invite 递增，后续场次由 _guard_battle_wait 的胜利弹窗递增
+                # 【同步】师父进房信号（取代2人房加号归零检测）：读的是「师父此刻
+                # 在不在房间里」这个状态——第 2+ 场的邀请由游戏在上一场战斗结算时
+                # 自动发出，师父何时进房不受脚本控制，问状态就不必对时序做假设
                 if self._md_master_in_room():
                     break
 
@@ -1959,6 +1937,32 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             title='师徒配对超时')
         return False
 
+    def _md_mark_master_in_room(self) -> None:
+        """师父确认进房后置位「我在房间里」，徒弟据此开战。
+
+        会话失效只记日志：徒弟那边会等到超时并重邀请，不必中断师父的跟随循环。
+        """
+        if self._md_store is None or self._md_session is None:
+            return
+        try:
+            self._md_store.mark_master_in_room(self._md_session)
+        except StaleSessionError:
+            pass
+
+    def _md_clear_master_in_room(self) -> None:
+        """师父离开房间（开战/房间销毁/超时退出）时复位状态位。
+
+        必须在离开房间的每个出口都调用：漏掉一次标志就停在 True，
+        徒弟下一场会看到陈旧的 True 而提前开战，把还没进房的师父打断。
+        """
+        if self._md_store is None or self._md_session is None:
+            return
+        try:
+            self._md_store.clear_master_in_room(self._md_session)
+        except StaleSessionError:
+            # 会话已失效：本轮跟随即将结束，标志随徒弟发布的新会话重建
+            pass
+
     def _md_heartbeat_master_if_due(self) -> None:
         """师父侧心跳（5 秒节流）：跟随期间刷新 master_seen_at。"""
         if self._md_store is None or self._md_session is None:
@@ -2118,20 +2122,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 reset_wait_out(task)
                 continue
 
-            # 房间任务：庭院轮询邀请弹窗，接受并确认进房后回报邀请序号
+            # 房间任务：庭院轮询邀请弹窗，接受并确认进房后置位「师父在房间里」
             if task in task_keywords:
                 if self._master_check_and_accept(task, task_keywords[task]):
-                    try:
-                        # 回报最新邀请序号，徒弟据此确认师父进房并停止等待
-                        seq_state = self._md_store.read()
-                        self._md_store.mark_master_in_room(
-                            self._md_session, int(seq_state.get('invite_seq', 0) or 0))
-                    except StaleSessionError:
-                        break
-                    # 已在房间：等待徒弟（队长）开战
+                    # 置位供徒弟判断可以开战；离开房间的每个出口都要复位，
+                    # 否则徒弟下一场会看到陈旧的 True 提前开战
+                    self._md_mark_master_in_room()
+                    # 已在房间：等待徒弟（队长）开战。等待时长按任务档位——
+                    # 金币/经验的「打完」变体下，徒弟还要把房间公开等路人补位
+                    # （_run_battle_with_invite 给的上限是 240 秒），师父必须等
+                    # 得一样久，否则会先超时离房，徒弟随后开战时房里已没有师父
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
-                    if self.wait_battle(wait_time=dtime(minute=2)):
+                    wait_minutes = 4 if buff_command in (BUFF_COIN, BUFF_EXP) else 2
+                    if self.wait_battle(wait_time=dtime(minute=wait_minutes)):
                         # 按同步指令选择战斗方式（类型不再依赖 OCR 识别）
                         if task == TASK_GUARD:
                             # 守护历练：始终正常完成战斗
@@ -2157,6 +2161,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         elif task == TASK_STONE:
                             # 石距：始终进入后退出
                             self.master_run_battle_back_stone(config=GeneralBattleConfig())
+                    # 已经离开房间（开战 / 房间销毁 / 等待超时）：复位状态位
+                    self._md_clear_master_in_room()
                     wait_out.reset()
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -2168,6 +2174,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 # 否则会落到回庭院检查在战斗页面报 Unknown page 异常退出。
                 # 仅在真的接管了一场战斗（返回非 None）时才重置等待
                 if self.check_take_over_battle(False, config=GeneralBattleConfig()) is not None:
+                    # 被拉进战斗 = 已经不在房间等开战，复位状态位
+                    self._md_clear_master_in_room()
                     wait_out.reset()
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -2189,7 +2197,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # 跟随期间保持同步会话心跳
             self._md_heartbeat_master_if_due()
 
-        # 收尾：关掉可能还开着的加成，避免把加成状态带出任务
+        # 收尾：先撤掉「在房间里」标志（退出时机可能有徒弟还在等），
+        # 再关掉可能还开着的加成，避免把加成状态带出任务
+        self._md_clear_master_in_room()
         if self.coin_buff:
             self._master_close_coin_buff()
         if self.exp_buff_on:

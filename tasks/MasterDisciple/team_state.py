@@ -6,13 +6,18 @@
 命名，存放于 config/tasks_config/（运行期数据，不入库）。
 
 协议总览：
-- 徒弟(disciple)是主动方：发布会话、下发任务序列、每轮等待前递增邀请序号
+- 徒弟(disciple)是主动方：发布会话、下发任务序列、等师父就位后开战
 - 师父(master)是被动方：加入会话、按任务指令提前开加成并回报就绪、
-  接受邀请且确认在房间后回报进房序号
-- 进房信号用「邀请序号」对齐：徒弟每轮等待师父进房前 invite_seq+1 落盘，
-  师父接受邀请进房后写 master_in_room_seq（取最大值），徒弟等到
-  master_in_room_seq >= invite_seq 即认为师父已进房——完全取代旧的
-  「反复识别房间加号数量并等它稳定」的进房检测
+  接受邀请进入房间后置位「在房间里」，离开房间时复位
+- 进房信号是**状态**而不是事件：师父确认进入房间后把 master_in_room 置 True，
+  开战/房间销毁/超时退出时复位 False；徒弟只读这个布尔值，不问「第几次」，
+  因此双方都不需要对齐编号或快照时机——完全取代旧的「反复识别房间加号
+  数量并等它稳定」的进房检测。
+  历史上先后用过两版事件对齐（徒弟递增邀请序号、师父累加进房次数），都栽在
+  同一件事上：游戏在徒弟战斗结算时自动发出下一场邀请，师父响应快慢不受脚本
+  控制。序号版会让师父读到递增前的旧序号、徒弟死等一个新序号（真机表现为
+  徒弟 15 秒重邀请、师父在房间里点表情干等到超时）。状态版没有编号可比，
+  谁先谁后都不影响结论
 """
 import json
 import os
@@ -159,8 +164,8 @@ class MasterDiscipleStateStore:
             'current_task': '',
             'buff_command': '',
             'master_ready': False,
-            'invite_seq': 0,
-            'master_in_room_seq': 0,
+            # 师父此刻是否在房间里等开战（状态位，不是事件计数）：徒弟据此决定开战
+            'master_in_room': False,
             'disciple_seen_at': _iso(now),
             'master_seen_at': None,
             'master_joined_instance': '',
@@ -187,23 +192,6 @@ class MasterDiscipleStateStore:
             return state
 
         return self._update(mutate)
-
-    def next_invite(self, session: MasterDiscipleSession) -> int:
-        """徒弟每轮「等待师父进房」开始前递增邀请序号并落盘，返回新序号。
-
-        15 秒兜底重邀请不递增：师父接受任意一次邀请后写入的是它读到的
-        最新序号，若重邀请也递增，会出现「师父写旧序号、徒弟死等新序号」
-        的错位。
-        """
-        def mutate(state: dict) -> dict:
-            self._require_session(state, session)
-            state['invite_seq'] = int(state.get('invite_seq', 0) or 0) + 1
-            state['disciple_seen_at'] = _iso(_now())
-            state['updated_at'] = _iso(_now())
-            return state
-
-        state = self._update(mutate)
-        return int(state.get('invite_seq', 0) or 0)
 
     def mark_finished(self, session: MasterDiscipleSession) -> dict:
         """徒弟整个任务序列完成；师父读到 FINISHED 后正常退出。"""
@@ -295,14 +283,36 @@ class MasterDiscipleStateStore:
         self._update(mutate)
         return not rejected
 
-    def mark_master_in_room(self, session: MasterDiscipleSession, seq: int) -> dict:
-        """师父接受邀请且确认在房间后回报进房序号（取最大值防回退）。"""
+    def mark_master_in_room(self, session: MasterDiscipleSession) -> dict:
+        """师父接受邀请且确认进入房间：置位供徒弟判断可以开战。
+
+        幂等：徒弟只看当前是不是 True，重复置位不产生额外语义。
+        """
         def mutate(state: dict) -> dict:
             self._require_session(state, session)
             if state.get('phase') != PHASE_PAIRED:
                 raise StaleSessionError('STALE_PHASE')
-            state['master_in_room_seq'] = max(int(state.get('master_in_room_seq', 0) or 0),
-                                              int(seq))
+            state['master_in_room'] = True
+            state['master_seen_at'] = _iso(_now())
+            state['updated_at'] = _iso(_now())
+            return state
+
+        return self._update(mutate)
+
+    def clear_master_in_room(self, session: MasterDiscipleSession) -> dict:
+        """师父已不在房间里等开战（开战/房间销毁/超时退出）：复位标志。
+
+        师父必须在离开房间的每个出口都调用：标志停留在 True 会让徒弟下一场看到
+        陈旧的 True 而提前开战，把还没进房的师父打断。复位比置位更危险，因此
+        这里不复用 _require_session 抛错——会话已失效说明本轮跟随即将结束，
+        标志会随徒弟发布的新会话重建，不写即可。
+        """
+        def mutate(state: dict) -> dict:
+            if MasterDiscipleSession.from_state(state) != session:
+                return None
+            if not state.get('master_in_room'):
+                return None
+            state['master_in_room'] = False
             state['master_seen_at'] = _iso(_now())
             state['updated_at'] = _iso(_now())
             return state
