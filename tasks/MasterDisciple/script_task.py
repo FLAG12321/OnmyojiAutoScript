@@ -2012,11 +2012,28 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self.close_buff()
         self.exp_buff_on = False
 
+    def _md_current_task_changed(self, task: str) -> bool:
+        """徒弟下发的任务是否已不是 task（读不到状态时按「未变」处理）。"""
+        if self._md_store is None or self._md_session is None:
+            return False
+        try:
+            state = self._md_store.read()
+        except Exception:
+            return False
+        if MasterDiscipleSession.from_state(state) != self._md_session:
+            return False
+        return str(state.get('current_task') or '') != str(task)
+
     def _master_check_and_accept(self, task: str, keyword: str) -> bool:
         """检测并接受徒弟的邀请弹窗（OCR 文字与当前任务匹配才接受）。
 
         同步模式下任务类型已知，OCR 只做弹窗身份校验：防止接受到非徒弟
         （其他好友/陌生人）发来的邀请。
+        本函数必须快速收场：师父是跟随方，一旦卡在「接受邀请 → 进不去房间」
+        里不动，就会停止处理徒弟下发的下一个任务（不开加成、不回报就绪），
+        徒弟那边只能干等到超时。因此三条早退路径——徒弟已切任务、接受后
+        迟迟进不去、弹窗文字对不上——都会立刻收场返回 False，把控制权交还
+        给跟随循环。
         :param task: 当前同步任务类型（日志用）
         :param keyword: 任务关键词（守护/石距/金币/经验）
         :return: True 已接受并确认进入房间
@@ -2025,6 +2042,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             return False
         logger.info('Click accept')
         start_time = time.time()
+        accept_clicked_at = 0.0
         while time.time() - start_time < 30:
             self.screenshot()
             if self.is_in_room():
@@ -2033,16 +2051,45 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # https://github.com/runhey/OnmyojiAutoScript/issues/230
             if self.appear(self.I_EXIT):
                 return False
+            # 徒弟已经下发下一个任务：这次接受已经没有意义（多半是上一轮的
+            # 过期邀请），必须立刻回去跟随新任务，不能把切任务的窗口耗光
+            if self._md_current_task_changed(task):
+                logger.warning(f'接受 [{task}] 邀请期间徒弟已切换任务，放弃本次接受')
+                self._dismiss_accept_dialog()
+                return False
             if self.appear(self.I_ACCEPT, interval=1):
                 # OCR 校验弹窗文字与当前任务匹配（房间标题带任务名）
                 self.O_ACCEPT_NAME.roi = [self.I_ACCEPT.roi_front[0] + 167, self.I_ACCEPT.roi_front[1] + 25, 180, 47]
                 text = self.O_ACCEPT_NAME.ocr(self.device.image)
                 logger.info(f"accept text={text}")
                 if keyword not in text:
-                    logger.warning(f'邀请弹窗文字 [{text}] 与当前任务 [{task}] 不匹配，不接受')
-                    continue
+                    logger.warning(f'邀请弹窗文字 [{text}] 与当前任务 [{task}] 不匹配，拒绝该邀请')
+                    self._dismiss_accept_dialog()
+                    return False
                 self.click(self.I_I_ACCEPT, interval=2)
+                accept_clicked_at = time.time()
+                continue
+            # 点过接受、弹窗也消失了，却迟迟没有进房：这次邀请已经失效
+            # （过期 / 房间已解散），接受动作发出去也没用，同样立刻收场。
+            # 8 秒是给正常进房加载留的余量（实测 1.2~1.5 秒进房）
+            if accept_clicked_at and time.time() - accept_clicked_at > 8:
+                logger.warning(f'接受 [{task}] 邀请后未进入房间，返回跟随')
+                self._dismiss_accept_dialog()
+                return False
         return False
+
+    def _dismiss_accept_dialog(self) -> None:
+        """点掉还挂着的邀请弹窗（拒绝按钮在接受按钮同一行的左侧）。
+
+        模态弹窗不关掉就一直遮挡画面：师父既进不了房也回不到庭院跟随，
+        每轮截图都在同一个弹窗上重复决策。
+        """
+        for _ in range(5):
+            self.screenshot()
+            if not self.appear(self.I_ACCEPT):
+                return
+            if not self.appear_then_click(self.I_I_REJECT, interval=1):
+                return
 
     def master_battle_flow(self):
         """
@@ -2074,8 +2121,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             timeout = 240 if task in task_keywords else 1800
             wait_out = Timer(timeout).start()
 
+        # 这里只清不挂 BATTLE_STATUS_S：本循环大部分时间是在庭院等徒弟的下一个
+        # 动作（单人环节/切号最长可等 30 分钟），而该标记的语义是「马上要进战斗」，
+        # 挂满 60 秒就会被设备层判成卡死抛 GameStuckError。只在真正等战斗时挂
+        # （接受邀请后 → wait_battle），见下方 accept 分支
         self.device.stuck_record_clear()
-        self.device.stuck_record_add('BATTLE_STATUS_S')
         while 1:
             self.screenshot()
             # 读取共享状态：徒弟序列完成/会话失效/徒弟走到探索（单人）都结束跟随
@@ -2161,11 +2211,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         elif task == TASK_STONE:
                             # 石距：始终进入后退出
                             self.master_run_battle_back_stone(config=GeneralBattleConfig())
-                    # 已经离开房间（开战 / 房间销毁 / 等待超时）：复位状态位
+                    # 已经离开房间（开战 / 房间销毁 / 等待超时）：复位状态位。
+                    # 战斗预期到此结束，只清不重挂——重挂会把「马上要进战斗」的
+                    # 预期带进随后的庭院等待，那种等待按设计可以长达 30 分钟
                     self._md_clear_master_in_room()
                     wait_out.reset()
                     self.device.stuck_record_clear()
-                    self.device.stuck_record_add('BATTLE_STATUS_S')
                     sleep(2)
                     self.screenshot()
                     continue
