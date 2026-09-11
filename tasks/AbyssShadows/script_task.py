@@ -18,6 +18,7 @@ from tasks.AbyssShadows.assets import AbyssShadowsAssets
 from tasks.AbyssShadows.config import AbyssShadows, EnemyType, AreaType, Code, AbyssShadowsDifficulty, \
     CodeList, IndexMap
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.reward_frame import weighted_choice
 from tasks.Component.SwitchAccount.switch_account import SwitchAccountOnStart
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
@@ -733,6 +734,15 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
         logger.info(f"{item_code} done, real_battle={real_battle}")
         return real_battle
 
+    def settlement_click_count(self, page_clicks: int) -> int:
+        """狭间结算固定单击：不做任何追加击（2026-09-11 用户指示）。
+
+        狭间结算画面切换快，追加击容易跨越画面切换点落到新界面上误触按钮，
+        固定单击彻底消除追加击误触窗口。与 ActivityShikigami（爬塔）同一策略；
+        事件衰减查表（page_clicks）对固定簇长无意义，忽略。
+        """
+        return 1
+
     def run_battle(self, item_code: Code):
         success = False
         enemy_type = item_code.get_enemy_type()
@@ -802,13 +812,15 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
                 self.device.stuck_record_add("BATTLE_STATUS_S")
                 _timer_battle.reset()
                 continue
+            # 结算点击：安全落点 + 固定单击（settlement_click_count 覆盖为 1）
+            action_click = weighted_choice(self.reward_click_actions())
             # 战斗胜利标志
-            if self.appear_then_click(self.I_WIN, interval=1):
+            if self.settlement_click(self.I_WIN, action_click, interval=1):
                 self.device.screenshot_interval_set()
                 need_check_damage = False
                 continue
             # 战斗奖励标志
-            if self.appear_then_click(self.I_REWARD, interval=1):
+            if self.settlement_click(self.I_REWARD, action_click, interval=1):
                 self.device.screenshot_interval_set()
                 need_check_damage = False
                 continue
@@ -1238,13 +1250,15 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SwitchAccountOnStart, AbyssS
                 self.device.stuck_record_add("BATTLE_STATUS_S")
                 _timer_battle.reset()
                 continue
+            # 结算点击：安全落点 + 固定单击（settlement_click_count 覆盖为 1）
+            action_click = weighted_choice(self.reward_click_actions())
             # 战斗胜利标志
-            if self.appear_then_click(self.I_WIN, interval=1):
+            if self.settlement_click(self.I_WIN, action_click, interval=1):
                 self.device.screenshot_interval_set()
                 need_check_damage = False
                 continue
             # 战斗奖励标志
-            if self.appear_then_click(self.I_REWARD, interval=1):
+            if self.settlement_click(self.I_REWARD, action_click, interval=1):
                 self.device.screenshot_interval_set()
                 need_check_damage = False
                 continue

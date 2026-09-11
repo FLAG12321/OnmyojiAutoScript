@@ -840,7 +840,12 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         win: bool = False
         retry_cnt: int = 0
         attack_flag: bool = True
-        while 1:
+        # 自动战斗等待：原 while 1 的出口全部绑定「战斗标识存在」，页面若不是战斗
+        # （剧情战斗已自行结算、上游场景误判）就会无限空转，只能靠设备 300 秒长 stuck
+        # 收场（2026-09-11 事故：在奖励结算页空转 4 分 50 秒）。补两处退出：
+        # 结果页出现即视为已结算（见下），并给等待本身加 30 秒硬上限。
+        auto_wait = Timer(30).start()
+        while not auto_wait.reached():
             self.screenshot()
             if retry_cnt >3:
                 logger.info("手动战斗")
@@ -849,12 +854,28 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 attack_flag = False
                 logger.info("自动战斗")
                 break 
+            # 战斗已自行打完：结果/奖励页出现就按胜利结果交给后续结算流程，
+            # 同时关掉 attack_flag，避免在结算页上走随机点击
+            if self.win_appear(threshold=0.8):
+                logger.info("Battle result is win")
+                attack_flag = False
+                win = True
+                break
+            if self.appear(self.I_REWARD, threshold=0.6) or self.appear(self.I_REWARD_GOLD, threshold=0.8):
+                attack_flag = False
+                win = True
+                break
             if self.appear_then_click(self.I_CLICK_BATTLE_SPEED_X1, interval=1):
                 pass
             if self.appear_then_click(self.I_CLICK_TO_AUTO, interval=1):
                 retry_cnt +=1
                 continue
             
+        if auto_wait.reached():
+            # 超时：页面上没有任何战斗标识，判定不在战斗中，交还场景循环重新识别
+            logger.warning('未等到自动战斗标识，判定已不在战斗中')
+            return False
+
         click_timer = Timer(5)
         swipe_timer = Timer(10)
         attack_click_timer = Timer(0.5)
