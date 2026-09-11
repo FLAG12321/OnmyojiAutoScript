@@ -45,6 +45,12 @@ class Scene(Enum):
 
 class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, ReplaceShikigami, SwitchSoul, ExplorationAssets):
     minions_cnt = 0
+    # 章节列表识别为空时允许的重试次数：空结果多为页面过渡帧（点击章节后的加载
+    # 动画），连续多次仍空才认定为异常页面（2026-09-11 事故：重试撞上过渡帧被判死）
+    EMPTY_LEVEL_RETRY = 5
+    # 「点击章节后没进入」需连续采样成立的轮数：慢加载期间界面会短暂停在列表态，
+    # 单轮采样会把慢加载误判成点击无效而重试（2026-09-11 事故）
+    NO_ENTER_STABLE = 2
 
     @cached_property
     def _config(self):
@@ -270,6 +276,8 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             raise GameStuckError('Invalid exploration level')
         target_name = target_level.value
 
+        # 空帧重试计数：跨 attempt 累计，识别到章节后清零
+        empty_retry = 0
         for attempt in range(max_swipe):
             self.screenshot()
             # 已经进入章节入口时不再按章节列表识别，避免把剧情文案页误判为“无可见章节”。
@@ -296,9 +304,16 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             visible_levels = [self.level_name_to_enum(name) for name in normalized_names]
             visible_levels = [level for level in visible_levels if level is not None]
             if not visible_levels:
-                raise GameStuckError(
-                    f'No visible levels found while looking for {target_name}; attempt={attempt + 1}'
-                )
+                # 空结果多为页面过渡帧：不立即判死，短等后重试；连续多次仍空才抛
+                empty_retry += 1
+                if empty_retry > self.EMPTY_LEVEL_RETRY:
+                    raise GameStuckError(
+                        f'No visible levels found while looking for {target_name}; attempt={attempt + 1}'
+                    )
+                logger.warning(f'No visible levels while looking for {target_name}, retry: {empty_retry}')
+                time.sleep(1)
+                continue
+            empty_retry = 0
 
             min_visible = min(visible_levels, key=self._chapter_level_index)
             max_visible = max(visible_levels, key=self._chapter_level_index)
@@ -344,12 +359,17 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             if not self.click_level_with_enhanced_ocr(target_level, max_swipe=40):
                 raise GameStuckError(f'Could not find exploration level with enhanced OCR: {target_level}')
 
+            # 「点击没进章节」需连续多轮采样成立才判定：慢加载期间界面会短暂停在
+            # 列表态，单轮 1.5 秒采样会把慢加载误判成点击无效（2026-09-11 事故）
+            no_enter_count = 0
             for _ in range(6):
                 time.sleep(1.5)
                 self.screenshot()
                 if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+                    no_enter_count = 0
                     continue
                 if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
+                    no_enter_count = 0
                     continue
                 if self.appear(self.I_E_EXPLORATION_CLICK):
                     return True
@@ -357,8 +377,13 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                     return True
                 # 章节点击偶发无效时，仍停留在章节列表且目标章节可见就重新点击
                 if self.appear(self.I_CHECK_EXPLORATION) and self.target_level_visible_with_enhanced_ocr(target_level):
-                    logger.warning(f'Chapter click did not enter page, retry click: {click_retry + 1}')
-                    break
+                    no_enter_count += 1
+                    if no_enter_count >= self.NO_ENTER_STABLE:
+                        logger.warning(f'Chapter click did not enter page, retry click: {click_retry + 1}')
+                        break
+                    continue
+                # 既没进章节也不在列表（页面正在过渡）：清掉计数，别急着判失败
+                no_enter_count = 0
             else:
                 continue
 
