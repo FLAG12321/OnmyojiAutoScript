@@ -14,7 +14,8 @@ from pathlib import Path
 from time import sleep
 from cached_property import cached_property
 from anytree import NodeMixin, RenderTree, PreOrderIter
-from win32api import GetSystemMetrics, SendMessage, MAKELONG, PostMessage
+from win32api import (GetSystemMetrics, SendMessage, MAKELONG, PostMessage,
+                      MonitorFromWindow, GetMonitorInfo)
 from win32print import GetDeviceCaps
 from win32process import GetWindowThreadProcessId
 from win32gui import (GetWindowText, EnumWindows, FindWindow, FindWindowEx,
@@ -28,7 +29,7 @@ from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE,
                       WM_CLOSE, WM_KEYDOWN, WM_KEYUP, VK_RETURN,
                       GWL_STYLE, GWL_EXSTYLE, HWND_TOP, SWP_NOMOVE,
-                      SWP_SHOWWINDOW, SW_RESTORE)
+                      SWP_SHOWWINDOW, SW_RESTORE, MONITOR_DEFAULTTONEAREST)
 from module.config.config import Config
 from module.base.decorator import del_cached_property
 from module.logger import logger
@@ -140,6 +141,32 @@ def _window_total_size(width: int, height: int, style: int, ex_style: int) -> tu
     rect = RECT(0, 0, width, height)
     user32.AdjustWindowRectEx(byref(rect), style, False, ex_style)
     return rect.right - rect.left, rect.bottom - rect.top
+
+
+def _window_center_args(hwnd, total_w: int, total_h: int) -> tuple:
+    """给 SetWindowPos 算出「在所在显示器工作区居中」的 (x, y, flags)。
+
+    客户端自己启动时窗口是居中摆放的，OAS 把客户区放大到 1280x720 时若带 SWP_NOMOVE，
+    左上角钉死不动、窗口只朝右下膨胀，视觉上就从居中变成偏右下（小屏还会捅出屏幕边界）。
+    因此调整尺寸时同步把窗口移回正中。
+
+    取显示器信息失败时返回 SWP_NOMOVE 退化为保持原位：居中只是观感，resize 才是识别
+    1:1 的刚需，不能让前者的失败连带把后者也搞失败。
+
+    必须在 dpi_awareness() 上下文内调用。工作区与 SetWindowPos 必须同处物理像素空间，
+    否则 125% 缩放下拿到的是被虚拟化的逻辑工作区，算出的位置整体偏左上。
+    按 Work（工作区）而非 Monitor（整屏）居中，才不会被任务栏压掉一截。
+    """
+    try:
+        monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        left, top, right, bottom = GetMonitorInfo(monitor)['Work']
+    except Exception as e:
+        logger.warning(f'GetMonitorInfo failed (hwnd={hwnd}): {e}, keep window position')
+        return 0, 0, SWP_NOMOVE | SWP_SHOWWINDOW
+    # 窗口比工作区还大时夹到工作区左上角，保证标题栏可见而不是负坐标跑到屏幕外
+    x = max(left, left + (right - left - total_w) // 2)
+    y = max(top, top + (bottom - top - total_h) // 2)
+    return x, y, SWP_SHOWWINDOW
 
 
 def list_desktop_windows() -> list:
@@ -608,7 +635,8 @@ class Handle:
     def desktop_window_set_size(self, width: int = 1280, height: int = 720) -> bool:
         """桌面模式：检测窗口客户区尺寸，非目标大小时用 SetWindowPos 调整到 width×height。
 
-        窗口位置保持不变；返回是否执行了调整。全过程在 DPI 感知上下文内完成，
+        调整尺寸时一并把窗口移回所在显示器工作区正中（尺寸本来就对则不动窗口，保留用户
+        手动摆放的位置）；返回是否执行了调整。全过程在 DPI 感知上下文内完成，
         GetClientRect/SetWindowPos 处理的都是物理像素，因此目标尺寸无需按缩放比换算，
         调整后客户区物理尺寸恰为 width×height，游戏画面与资产 1:1 对应。
 
@@ -657,9 +685,13 @@ class Handle:
             style = GetWindowLong(hwnd, GWL_STYLE)
             ex_style = GetWindowLong(hwnd, GWL_EXSTYLE)
             total_w, total_h = _window_total_size(width, height, style, ex_style)
-            logger.info(f'Resize desktop window to {total_w}x{total_h} to get client {width}x{height}')
+            # 与 resize 同一次调用里把窗口摆回正中：分两次 SetWindowPos 会让窗口先跳到
+            # 偏位再挪回来，用户能看到明显的闪动
+            x, y, flags = _window_center_args(hwnd, total_w, total_h)
+            logger.info(f'Resize desktop window to {total_w}x{total_h} at ({x}, {y}) '
+                        f'to get client {width}x{height}')
             try:
-                SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
+                SetWindowPos(hwnd, HWND_TOP, x, y, total_w, total_h, flags)
             except Exception as e:
                 # 拒绝访问通常是目标窗口权限更高（游戏以管理员运行）或客户端锁定窗口大小
                 logger.error(f'SetWindowPos failed: {e}. '
@@ -678,9 +710,12 @@ class Handle:
                     return True
                 total_w += width - cw
                 total_h += height - ch
-                logger.info(f'Calibrate desktop window to {total_w}x{total_h}, current client {cw}x{ch}')
+                # 总尺寸变了就要重算居中位置，否则校准完的窗口会偏离中心几个像素
+                x, y, flags = _window_center_args(hwnd, total_w, total_h)
+                logger.info(f'Calibrate desktop window to {total_w}x{total_h} at ({x}, {y}), '
+                            f'current client {cw}x{ch}')
                 try:
-                    SetWindowPos(hwnd, HWND_TOP, 0, 0, total_w, total_h, SWP_NOMOVE | SWP_SHOWWINDOW)
+                    SetWindowPos(hwnd, HWND_TOP, x, y, total_w, total_h, flags)
                 except Exception as e:
                     logger.warning(f'SetWindowPos failed during calibration (hwnd={hwnd}): {e}')
                     return None
