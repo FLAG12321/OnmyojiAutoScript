@@ -245,11 +245,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         return False
 
     def _close_courtyard_popup(self) -> bool:
-        """ 统一关闭登录庭院 Scroll 弹窗：5 个模板共判，命中点固定关闭区域。
+        """ 统一关闭登录庭院 Scroll 弹窗：3 路模板共判，命中点固定关闭区域。
         合并主循环与 change_main_scene 两份实现，保留 interval=0.2 高轮询限频。 """
         if self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
-                self.appear(RestartAssets.I_LOGIN_COURTYARD2, interval=0.2) or \
-                self.ocr_appear(RestartAssets.O_LOGIN_COURTYARD, interval=0.2) or \
                 self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2) or \
                 self.appear(self.I_P_LOGIN_SCROOLL_CLOSE, interval=0.2):
             if self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):

@@ -1310,8 +1310,9 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         """
         # 更改式神录跳转
         ipages.page_shikigami_records.links.clear()
-        if ipages.page_shikigami_records in ipages.page_main.links:
-            del ipages.page_main.links[ipages.page_shikigami_records]
+        # 式神录入口挂在 page_theme 下（卷轴展开后才点得到），劫持期间要摘掉的也是这条边
+        if ipages.page_shikigami_records in ipages.page_theme.links:
+            del ipages.page_theme.links[ipages.page_shikigami_records]
         ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_dokan)
         ipages.page_dokan.link(button=self.I_PAGE_DOKAN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
         sleep(5)
@@ -1450,7 +1451,8 @@ class ScriptTask(GeneralBattle,GameUi, SwitchSoul, DokanAssets, RichManAssets):
         ipages.page_dokan.links.clear()
         if ipages.page_dokan in ipages.page_shikigami_records.links:
             del ipages.page_shikigami_records.links[ipages.page_dokan]
-        ipages.page_main.link(button=self.I_MAIN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
+        # 恢复时同样挂回 page_theme：挂到 page_main 的话会绕过「先展开卷轴」这条必经路径
+        ipages.page_theme.link(button=self.I_MAIN_GOTO_SHIKIGAMI_RECORDS, destination=ipages.page_shikigami_records)
         ipages.page_shikigami_records.link(button=self.I_BACK_Y, destination=ipages.page_main)
 
         # QQ群触发模式: 道馆完成后，下次运行设到21点

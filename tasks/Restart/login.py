@@ -5,6 +5,8 @@ import random
 from module.base.timer import Timer
 from module.exception import RequestHumanTakeover, GameTooManyClickError, GameStuckError
 from module.logger import logger
+from module.atom.click import RuleClick
+from tasks.Component.Costume.costume_base import release_costume_probe_locks
 from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
@@ -144,6 +146,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         :return:
         """
         logger.hr('App login')
+        # 这次登录可能落到另一个号上，之前锁定的庭院/卷轴皮肤对它不一定成立，先解锁；
+        # 本次登录里的探测（下方 courtyard_mark 全假时）会重新锁定。
+        # 放在这个私有函数开头而不是 app_handle_login()：后者的重试循环在函数体内，
+        # 放外面只解锁一次，第二轮重试会带着上一轮的锁状态进来。
+        release_costume_probe_locks()
         self.device.stuck_record_add('LOGIN_CHECK')
 
         # 庭院二次确认计时器。首次看到干净庭院时才 start，到点后再判一次才认定登录完成；
@@ -201,16 +208,26 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             # 这些标识出现都意味着已经在庭院里：式神录按钮和展开的卷轴要卷轴展开后才有，
             # 卷轴收起图标与闲庭图标则是卷轴没展开时唯一的证据，少算哪个都会让庭院里的
             # 正常画面被判成「不是庭院」，计时被自己的卷轴动作反复清掉，确认永远走不完。
+            #
+            # I_CHECK_MAIN 是 page_main 的 check_button，本身就是「在庭院」的权威判据，
+            # 且不随卷轴皮肤变——卷轴换皮后上面两个 I_LOGIN_SCROOLL_* 会一起失效，只靠
+            # 闲庭与式神录两路缺口太大，加上它才补得住。
+            #
             # 一律不传 interval：判定的是画面状态而非点击节流，带上会让静默期内的每一帧
             # 都误判成非庭院；桌面端截图间隔可低到 0.05s，这种漏判会让确认永远走不完。
-            courtyard_mark = (self.appear(self.I_MAIN_GOTO_SHIKIGAMI_RECORDS)
+            courtyard_mark = (self.appear(self.I_CHECK_MAIN)
+                              or self.appear(self.I_MAIN_GOTO_SHIKIGAMI_RECORDS)
                               or self.appear(self.I_LOGIN_SCROOLL_OPEN)
-                              or self.appear(self.I_LOGIN_SCROOLL_CLOSE, threshold=0.9)
-                              or self.appear(self.I_LOGIN_COURTYARD)
-                              or self.appear(self.I_LOGIN_COURTYARD2))
-            # OCR 比模板匹配贵得多，只在所有图像标识都没命中时才兜底跑一次，结果下面复用
-            courtyard_ocr = False if courtyard_mark else self.ocr_appear(self.O_LOGIN_COURTYARD)
-            courtyard = courtyard_mark or courtyard_ocr
+                              or self.appear(self.I_LOGIN_SCROOLL_CLOSE)
+                              or self.appear(self.I_LOGIN_COURTYARD))
+            # 一个证据都没命中：可能是庭院皮肤与配置不符，I_CHECK_MAIN 匹配不上。
+            # 跑一次探测**只为修资产**，修好就 continue 让下一帧用修正后的 I_CHECK_MAIN
+            # 重新判定——不能把探测的返回值直接当 courtyard 证据：它只在命中那一帧为真，
+            # 而 courtyard_timer 要求连续 2.5s，拿单帧真去撑会把计时反复清掉。
+            if not courtyard_mark and self.try_detect_costume():
+                logger.info('Costume fixed by probe, re-check courtyard next frame')
+                continue
+            courtyard = courtyard_mark
             # 已看到庭院即可停掉屏幕旋转检测，不必等二次确认通过
             if courtyard:
                 login_success = True
@@ -229,13 +246,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             # ── 庭院里该点的东西。触发条件不能换成 courtyard：式神录按钮已经露出来时
             # 再点卷轴区域会把卷轴收回去。这些都是庭院内的动作，不影响已开始的计时。──
             # 确认进入庭院
-            if self.appear_then_click(self.I_LOGIN_SCROOLL_CLOSE, interval=2, threshold=0.9):
+            if self.appear_then_click(self.I_LOGIN_SCROOLL_CLOSE, interval=2):
                 logger.info('Open scroll')
                 continue
             # 确认进入庭院(优化：当出现闲庭图片时，点击卷轴关闭区域，然后判断式神录按钮出现就代表登录成功)
-            if (self.appear(self.I_LOGIN_COURTYARD, interval=0.2)
-                    or self.appear(self.I_LOGIN_COURTYARD2, interval=0.2)
-                    or courtyard_ocr):
+            if self.appear(self.I_LOGIN_COURTYARD, interval=0.2):
                 if self.click(self.C_LOGIN_SCROLL_CLOSE_AREA, interval=2):
                     logger.info('Click scroll close area because courtyard appears')
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确

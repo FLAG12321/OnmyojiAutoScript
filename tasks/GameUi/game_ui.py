@@ -101,6 +101,16 @@ class GameUi(BaseTask, GameUiAssets):
             skip_first_screenshot = False
         return False
 
+    def _costume_scroll_visible(self) -> bool:
+        """卷轴两个状态（展开 / 收起）的图标至少认得出一个。
+
+        两个都认不出，就说明卷轴皮肤与当前配置不符 —— 换皮后 theme_costume_model 替换的
+        正是这两张图，它们会一起失效。两张图都走资产自带阈值（收起态 0.7），与 login.py
+        的 courtyard_mark 保持一致。
+        """
+        return bool(self.appear(RestartAssets.I_LOGIN_SCROOLL_OPEN)
+                    or self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE))
+
     def ui_get_current_page(self, skip_first_screenshot=True, accept_login: bool = False) -> Page:
         """
         获取当前页面
@@ -148,6 +158,7 @@ class GameUi(BaseTask, GameUiAssets):
             if timeout.reached():
                 break
             # Known pages
+            redetect = False
             for page in self.ui_pages:
                 if not page.check_button:
                     continue
@@ -160,8 +171,32 @@ class GameUi(BaseTask, GameUiAssets):
                             self.ui_current = page
                             return page
                         raise GameNotRunningError("Login page detected")
+                    # 在庭院却认不出卷轴本身：卷轴换皮后两张 I_LOGIN_SCROOLL_* 一起失效，
+                    # 而 I_CHECK_MAIN 不随卷轴变、庭院照样判得出来。不在这里补一次探测，
+                    # 卷轴皮肤与配置不符就永远发现不了 —— login 那边的探测要求 courtyard_mark
+                    # 为假才跑，而庭院认得出时它根本不触发。
+                    # 探到就重截一帧重判，让修正后的卷轴资产立刻生效（探针自带节流与锁）。
+                    # 只挂 page_main：卷轴开合不参与页面识别，庭院一律判成 page_main，
+                    # page_theme 只做导航中转、永远不会由这里返回。
+                    if page == page_main and not self._costume_scroll_visible():
+                        if self.try_detect_costume():
+                            logger.info('Costume fixed by probe, re-check current page')
+                            redetect = True
+                            break
                     self.ui_current = page
                     return page
+            if redetect:
+                continue
+            # ── 全页扫描全落空：可能是庭院皮肤与配置不符，I_CHECK_MAIN 匹配不上 ──
+            # 探到哪套就套用哪套（并回写配置），page_main 立刻恢复可用。
+            # 位置要在下面 _try_back_main_shortcut / try_close_unknown_page 之前——
+            # 那两支会重置 timeout 并可能把画面导离庭院。也不能再往前挪到页面循环之前，
+            # 那会让每一轮都白跑一次探测。
+            detected = self.try_detect_costume_main()
+            if detected is not None:
+                logger.info(f'Courtyard recognised as {detected}, recover page_main')
+                self.ui_current = page_main
+                return page_main
             # Try to close unknown page: 优先尝试 I_BACK_MAIN 回主页
             if self._try_back_main_shortcut(skip_first_screenshot=False):
                 timeout = Timer(10, count=20).start()

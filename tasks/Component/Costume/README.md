@@ -2,7 +2,7 @@
 
 1. 在`./tasks/Component/Costume`文件夹下面新建一个你的这个庭院皮肤文件夹比如`mainxxx`
 
-2. 在你的文件夹下面新增一个`image.json`，启动`gui.py`对应工具添加对应的assets
+2. 在你的文件夹下面新增一个`image.json`，用标注工具添加对应的 assets：启动 `./toolkit/python.exe server.py`，浏览器打开 `http://127.0.0.1:22288/tool/annotator`（端口取 `config/deploy.yaml` 的 `WebuiPort`），目标指到该 `image.json`。保存时会自动重新生成 `assets.py`
 
    **很重要很重要，你不要乱划动庭院，如果你留意到游戏在你的停留位置是默认的**
 
@@ -30,12 +30,14 @@
 
    解释一下，`COSTUME_MAIN_2` 是你刚刚定义的一个庭院类型，后面的第一个key就是原先的assets, 后面的value就是你刚刚输出的要替换的原先的assets。具体的值在`assets.py`文件有定义。照着填没毛病吧。
 
+   **key 的第一个元素是资产类，不同 key 可能属于不同的类——别默认都写 `GameUiAssets`。上面 `I_PET_HOUSE` 就在 `PetsAssets` 上（`GameUiAssets` 根本没有这个属性，写错会让宠物屋图标静默不跟随皮肤）。从 `costume_base.py` 顶部已有的 import 里选。**
+
    ```python
-   MainType.COSTUME_MAIN_2: {'I_CHECK_MAIN': 'I_CHECK_MAIN_1',
-                                 'I_MAIN_GOTO_EXPLORATION': 'I_MAIN_GOTO_EXPLORATION_1',
-                                 'I_MAIN_GOTO_SUMMON': 'I_MAIN_GOTO_SUMMON_1',
-                                 'I_MAIN_GOTO_TOWN': 'I_MAIN_GOTO_TOWN_1',
-                                 'I_PET_HOUSE': 'I_PET_HOUSE_1', },
+   MainType.COSTUME_MAIN_2: {(GameUiAssets, 'I_CHECK_MAIN'): 'I_CHECK_MAIN_1',
+                                 (GameUiAssets, 'I_MAIN_GOTO_EXPLORATION'): 'I_MAIN_GOTO_EXPLORATION_1',
+                                 (GameUiAssets, 'I_MAIN_GOTO_SUMMON'): 'I_MAIN_GOTO_SUMMON_1',
+                                 (GameUiAssets, 'I_MAIN_GOTO_TOWN'): 'I_MAIN_GOTO_TOWN_1',
+                                 (PetsAssets, 'I_PET_HOUSE'): 'I_PET_HOUSE_1', },
    ```
 
 7. 完事之后，你需要测试一下。执行`./tasks/Component/Costume/costume_test.py` 这个文件。

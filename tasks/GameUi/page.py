@@ -62,12 +62,31 @@ page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
 page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
 # Main Home 主页
 page_main = Page(G.I_CHECK_MAIN)
-page_main.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE,
-                        [RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
-                        [RestartAssets.I_LOGIN_COURTYARD2, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
-                        [RestartAssets.O_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA],
-                        [RestartAssets.I_LOGIN_SCROOLL_CLOSE, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA]]
+# 卷轴收起时庭院上只剩这四样要处理的。展开/收起卷轴不在 additional 里——
+# 那是「前往 page_theme / 回到 page_main」的页面跳转，由下面的 link 承担。
+page_main.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE]
 page_bind_phone.link(button=RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE, destination=page_main)
+
+# 卷轴展开态：庭院右下角卷轴打开后，底部露出一排入口（图鉴/珍旅居/组队/阴阳寮/商店/合战/好友/阴阳术/式神录）。
+#
+# 它**不参与页面识别**：卷轴开合不影响「当前在庭院」这个判断，ui_get_current_page 在庭院
+# 一律返回 page_main（展开态也只返回 page_main）。page_theme 只是导航图上的中转节点 ——
+# 去底部那排入口时，路径 page_main -> page_theme -> 目标 会顺带把卷轴展开。
+# ui_wait_until_appear(page_theme) 直接查 check_button、不经过 ui_get_current_page，
+# 所以这条两跳路径照样推进得动（_execute_path 命中它会自己把 ui_current 设成 page_theme）。
+# 第一个 check_button 是卷轴展开图（随卷轴皮肤变，theme_costume_model 换的就是它）；
+# 第二个是卷轴展开后才会出现的式神录按钮，作为卷轴图失效时的兜底判据（不随任何皮肤变）。
+page_theme = Page([RestartAssets.I_LOGIN_SCROOLL_OPEN, G.I_MAIN_GOTO_SHIKIGAMI_RECORDS])
+# 展开态同样要处理这四样：弹窗/邀战都是覆盖层，不随卷轴开合变化，少了这套在 page_theme
+# 上就没人关弹窗，去式神录那一步会被挡住。
+page_theme.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE]
+# 展开卷轴用「卷轴收起图」而不是那块点击区域：点击区域是 toggle，卷轴已经展开时点它反而会
+# 把卷轴收回去；而收起图标在展开态根本不匹配，appear_then_operate 不会误点。代价是卷轴已经
+# 展开时这一步要等满 _execute_path 的 6s max_wait_timer 才会被跳过，随后
+# ui_wait_until_appear(page_theme) 直接命中展开图，路径照常推进。
+page_main.link(button=RestartAssets.I_LOGIN_SCROOLL_CLOSE, destination=page_theme)
+# 回庭院反过来用点击区域：从展开态点卷轴收起，区域点击不依赖任何一张卷轴图。
+page_theme.link(button=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, destination=page_main)
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
 page_summon.additional = [G.O_SUMMON_BACK_Y, G.I_SUMMON_BACK_R,G.I_SUMMON_BACK_TICKET]
@@ -176,38 +195,40 @@ page_town.link(button=G.I_TOWN_GOTO_HYAKKIYAKOU, destination=page_hyakkiyakou)
 page_shikigami_records = Page(G.I_CHECK_RECORDS)
 page_shikigami_records.additional = [[G.I_DLC_EXIT, 1.5],[G.I_AD_DISAPPEAR_2, 1.5],[G.I_DLC_EXIT,1.5]]
 page_shikigami_records.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.O_PAGE_SHIKIGAMI_RECORDS, destination=page_shikigami_records)
+# ↓ 以下这排页面都挂在 page_theme 下而非 page_main：它们的入口在屏幕底部 y≈656 一带，
+#   卷轴收起时被卷轴挡住，必须先展开卷轴（page_main -> page_theme）才点得到。
+page_theme.link(button=G.O_PAGE_SHIKIGAMI_RECORDS, destination=page_shikigami_records)
 # 阴阳术 onmyodo
 page_onmyodo = Page(G.I_CHECK_ONMYODO)
 page_onmyodo.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.O_PAGE_ONMYODO, destination=page_onmyodo)
+page_theme.link(button=G.O_PAGE_ONMYODO, destination=page_onmyodo)
 # 好友 friends
 page_friends = Page(G.I_CHECK_FRIENDS)
 page_friends.additional = [[G.I_FAVORABILITY_UP, G.C_FAVORABILITY_UP]]
 page_friends.link(button=G.I_BACK_FRIENDS, destination=page_main)
-page_main.link(button=G.O_PAGE_FRIENDS, destination=page_friends)
+page_theme.link(button=G.O_PAGE_FRIENDS, destination=page_friends)
 # 花合战 daily
 page_daily = Page(G.I_CHECK_DAILY)
 page_daily.additional = [G.O_CLICK_CLOSE_1, G.O_CLICK_CLOSE_2]
 page_daily.link(button=G.I_BACK_DAILY, destination=page_main)
-page_main.link(button=G.O_PAGE_DAILY, destination=page_daily)
+page_theme.link(button=G.O_PAGE_DAILY, destination=page_daily)
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 
 # 商店 mall
 page_mall = Page(check_button=[G.I_CHECK_MALL, DailyTriflesAssets.I_ROOM_GIFT])
 page_mall.additional = [[G.I_AD_CLOSE_RED, 1.5],[G.I_DLC_EXIT, 1.5], [G.I_BACK_Y, 1.5], G.I_DLC_CLOSE]
 page_mall.link(button=G.I_BACK_MALL, destination=page_main)
-page_main.link(button=G.O_PAGE_MALL, destination=page_mall)
+page_theme.link(button=G.O_PAGE_MALL, destination=page_mall)
 # 阴阳寮 guild
 page_guild = Page(G.I_CHECK_GUILD)
 #page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE, 1.0], [KekkaiUtilizeAssets.I_PLANT_FLOWER_ENSURE2, 1.0]]
 #page_guild.additional = [[KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE, 1.5],[KekkaiUtilizeAssets.I_PLANT_TREE_CLOSE_2,1.5]]
 page_guild.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.O_PAGE_GUILD, destination=page_guild)
+page_theme.link(button=G.O_PAGE_GUILD, destination=page_guild)
 # 组队 team
 page_team = Page(G.I_CHECK_TEAM)
 page_team.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.O_PAGE_TEAM, destination=page_team)
+page_theme.link(button=G.O_PAGE_TEAM, destination=page_team)
 # 组队房间 room (退出需要两步: additional点击返回触发确认框, link点击确认退出)
 page_room = Page(GeneralInviteAssets.I_GI_EMOJI_1)
 page_room.additional = [GeneralInviteAssets.I_BACK_YELLOW]
@@ -216,11 +237,11 @@ page_room.link(button=GeneralInviteAssets.I_GI_SURE, destination=page_main)
 page_collection = Page(G.I_CHECK_COLLECTION)
 page_collection.additional =[G.I_DLC_TICK,G.I_DLC_EXIT]
 page_collection.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.O_PAGE_COLLECTION, destination=page_collection)
+page_theme.link(button=G.O_PAGE_COLLECTION, destination=page_collection)
 # 珍旅居
 page_travel = Page(G.I_CHECK_TRAVEL)
 page_travel.link(button=G.I_BACK_Y, destination=page_main)
-page_main.link(button=G.O_PAGE_TRAVEL, destination=page_travel)
+page_theme.link(button=G.O_PAGE_TRAVEL, destination=page_travel)
 
 # 道馆
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
