@@ -379,6 +379,8 @@ class GameUi(BaseTask, GameUiAssets):
             # 跳转页面
             max_wait_timer = Timer(6).start()
             logger.info(f'Wait appear and operate {button} on {current_page}')
+            # 提前收工判据用的按钮：列表取第一个，与上面 exec_operates[0] 的语义一致
+            probe = button[0] if isinstance(button, list) else button
             while not max_wait_timer.reached():
                 if timeout_timer.reached():
                     return False
@@ -388,6 +390,18 @@ class GameUi(BaseTask, GameUiAssets):
                     if exec_operates[0]:  # 只要第一个成功就跳出
                         break
                 if self.appear_then_operate(button, interval=0.8, skip_first_screenshot=False):
+                    break
+                # 跳转按钮不出现、而目标页已经可见：这一步就没有可操作的对象了，
+                # 直接进入到达判定，省掉最多 6 秒空等。典型是 page_main -> page_theme：
+                # 卷轴已经展开时「收起卷轴」图不匹配，但 page_theme 的展开图已命中。
+                # 两个条件缺一不可：目标页判据可能与当前页重叠（卷轴展开态下
+                # I_CHECK_MAIN 照样匹配），只看目标页会把该点的「收起卷轴」跳掉，
+                # 卷轴就一直挂着。RuleClick 类跳转（固定点击区域）不参与本判据——
+                # 它必然可点，该点就得点
+                if isinstance(probe, (RuleImage, RuleGif, RuleOcr)) \
+                        and not self.appear(probe) \
+                        and self.ui_page_appear(next_page, skip_first_screenshot=False):
+                    logger.info(f'{next_page} already appear, skip operating {probe}')
                     break
             else:
                 logger.warning(f'Failed recognize {button} on {current_page}')

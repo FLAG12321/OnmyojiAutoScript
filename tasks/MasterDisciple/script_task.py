@@ -25,6 +25,7 @@ from tasks.MasterDisciple.team_state import (
     BUFF_COIN_EXIT,
     BUFF_EXP,
     BUFF_EXP_EXIT,
+    disciple_alive,
     MasterDiscipleSession,
     MasterDiscipleStateStore,
     PHASE_FINISHED,
@@ -92,6 +93,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
     _md_join_wait_done: bool = False
     # 徒弟侧心跳节流时间戳（monotonic 秒）
     _md_last_heartbeat: float = 0.0
+    # 师父侧设备层卡死检测的续期时间戳（monotonic 秒，见 _md_keepalive_stuck_detection）
+    _md_last_keepalive: float = 0.0
 
     def reward_avoid(self) -> tuple:
         """师徒是两人组队，胜利画面上多出一块队友战绩框，落点回避它。"""
@@ -530,7 +533,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         self._md_session = MasterDiscipleSession.from_state(state)
         logger.info(f'已发布师徒同步会话，师父实例 [{master_instance}] 切完预设后可随时加入')
 
-    def _md_wait_master_join(self, timeout: int = 600) -> bool:
+    def _md_wait_master_join(self, timeout: int = 300) -> bool:
         """等待师父加入会话：在第一个房间任务前确认配对（只等待一次）。
 
         徒弟发布后与师父的御魂切换并行（切号/买体力不等师父），到需要
@@ -550,14 +553,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 return True
             # 心跳保新鲜：师父只加入「最近心跳过的」会话，防止误连上一轮残留
             self._md_heartbeat_disciple_if_due()
-            # 每约30秒清一次弹窗（拒绝好友邀请/关确认弹窗），防长等待期间堆积遮挡
+            # 每约30秒清一次弹窗（拒绝好友邀请/关确认弹窗），防长等待期间堆积遮挡；
+            # 同时给设备层的空闲看门狗续期（两侧的配对等待都是 300 秒）
             sweep_count += 1
             if sweep_count % 30 == 0:
                 self._md_idle_popup_sweep()
+            self._md_keepalive_stuck_detection()
             sleep(1)
         logger.warning('等待师父实例加入配对超时，房间任务将全部跳过')
         self.config.notifier.push(
-            content='师父实例在600秒内未加入同步会话，守护/石距/金币/经验已跳过',
+            content='师父实例在300秒内未加入同步会话，守护/石距/金币/经验已跳过',
             title='师徒配对超时')
         return False
 
@@ -810,8 +815,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         wait_timer.start()
         reinvite_timer = Timer(15)
         reinvite_timer.start()
-        # 首次邀请师父（即使失败也不退出，继续等待重试）
-        self._invite_by_room_type(master_name, room_type)
+        # 师父可能已经被游戏自己拉进房间了：守卫第一场勾选「默认邀请」后，
+        # 之后每次建房游戏都会自动邀请上一次的队友，通常比这里的手动邀请更快
+        # （实测建房后 5~7 秒师父就已就位）。同步信号说师父已在房间时就不再
+        # 从好友列表邀请一遍——那要开列表、OCR 找人、确认，约 6 秒，而且只有
+        # 邀请态确认后房间权限才会停在「仅邀请」，让路人补位更晚
+        if self._md_master_in_room():
+            logger.info(f"[{task_name}] 师父已在房间（游戏自动邀请），跳过手动邀请")
+        else:
+            # 首次邀请师父（即使失败也不退出，继续等待重试）
+            self._invite_by_room_type(master_name, room_type)
 
         while 1:
             self.screenshot()
@@ -832,19 +845,41 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             # return True，「等路人补位」分支将永远不可达
             if not public_waiting and self._md_master_in_room():
                 if add_other:
-                    # 师父已进房且需要公开补位：切换为「所有人可见」
-                    while 1:
+                    # 师父已进房且需要公开补位：切换为「所有人可见」。
+                    # 两段循环都必须带超时兜底——它们是纯 UI 操作，切不过去时
+                    # （弹窗遮挡导致文字识别不到、点了没反应）不能把整轮任务
+                    # 挂死在这里：外层等师父的超时盖不住本段，而师父那边的
+                    # wait_battle 到点就会超时离房，结果是整场白打
+                    switch_ok = False
+                    open_timer = Timer(20).start()
+                    while not open_timer.reached():
                         self.screenshot()
-                        if  self.appear(self.I_ENSURE_SWITCH):
+                        if self.appear(self.I_ENSURE_SWITCH):
+                            switch_ok = True
                             break
                         self.appear_then_click(self.I_TO_SWITCH, interval=1)
-                    while 1:
-                        self.screenshot()
-                        if "所有人"in self.O_ADD_ALL.ocr(self.device.image):
-                            break
-                        if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
-                            if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
-                                continue
+                    if switch_ok:
+                        confirmed = False
+                        confirm_timer = Timer(20).start()
+                        while not confirm_timer.reached():
+                            self.screenshot()
+                            if "所有人"in self.O_ADD_ALL.ocr(self.device.image):
+                                confirmed = True
+                                break
+                            if self.ui_click(self.I_SWITCH_ALL,stop=self.I_SWITCH_ALL_OVER, interval=1):
+                                if self.appear_then_click(self.I_ENSURE_SWITCH,interval=1):
+                                    continue
+                        switch_ok = confirmed
+                    if not switch_ok:
+                        # 切不过去就放弃补位：师父已在房间里，直接按「仅邀请」开战。
+                        # 少几个路人的收益，远好过把整场挂死（师父会先超时离房）
+                        logger.warning(f"[{task_name}] 切换「所有人」失败，放弃公开补位直接开战")
+                        # 存一张现场：这一步失败说明 O_ADD_ALL 认不出房间权限文字，
+                        # 只看日志分不清是弹窗遮挡还是 UI 布局变了
+                        self.save_image(content='切换所有人失败')
+                        add_other = False
+                        public_waiting = False
+                        return True
                     # 公开后加号目标值：5人房4-2=2，即等路人补到4/5人
                     add_num-=2
                     add_other=False
@@ -856,12 +891,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             if public_waiting and self._count_add_icons_once() < add_num:
                 logger.info(f"[{task_name}] 路人已补位，开始挑战 (加号目标值:{add_num})")
                 return True
-            # 每15秒重新邀请师父（重邀请不产生新的进房计数，
-            # 师父若已在房间也收不到邀请，纯兜底动作）
+            # 每15秒重新邀请师父（重邀请不产生新的进房计数，纯兜底动作）。
+            # 师父已在房间时再邀请一遍是空动作：它在房间里收不到邀请，白开一次
+            # 好友列表；公开补位阶段（此时师父必然已在房间）尤其不该再发邀请
             if reinvite_timer.reached():
-                logger.info(f"[{task_name}] Re-inviting master: {master_name}")
                 reinvite_timer.reset()
-                self._invite_by_room_type(master_name, room_type)
+                if self._md_master_in_room():
+                    logger.info(f"[{task_name}] 师父已在房间，跳过重新邀请")
+                else:
+                    logger.info(f"[{task_name}] Re-inviting master: {master_name}")
+                    self._invite_by_room_type(master_name, room_type)
             # 等待期间保持同步会话心跳
             self._md_heartbeat_disciple_if_due()
 
@@ -1906,7 +1945,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         """师父侧准备与配对：先一次性切御魂预设，再循环尝试加入徒弟的新鲜会话。
 
         御魂切换（三组预设约 2-3 分钟）发生在配对之前；徒弟侧的配对等待
-        已放宽到 600 秒覆盖这段时间，两边同时启动也不会错过配对窗口。
+        是 300 秒，覆盖这段时间还有约两分钟余量，两边同时启动也不会错过
+        配对窗口。
         :return: 是否配对成功
         """
         # 先切御魂预设：不依赖徒弟，切完再去找会话（徒弟此时已在等待配对）
@@ -1914,9 +1954,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         # 状态文件按师父实例名（自己）命名，与徒弟配置的 master_instance 对应
         store = MasterDiscipleStateStore(self.config.config_name)
         self._md_last_heartbeat = time.monotonic()
-        # 加入窗口 600 秒：切完预设后等待徒弟发布的会话（徒弟发布后即去切号/
+        # 加入窗口 300 秒：切完预设后等待徒弟发布的会话（徒弟发布后即去切号/
         # 买体力，两边单人环节并行进行，会话在任务一开始就已存在）
-        wait_join = Timer(600).start()
+        wait_join = Timer(300).start()
         sweep_count = 0
         while not wait_join.reached():
             state = store.try_join(self.config.config_name)
@@ -1926,14 +1966,16 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self._md_paired = True
                 logger.info(f'已加入徒弟 [{state.get("disciple_instance")}] 的同步会话')
                 return True
-            # 每约30秒清一次弹窗（拒绝好友邀请/关确认弹窗），防长等待期间堆积遮挡
+            # 每约30秒清一次弹窗（拒绝好友邀请/关确认弹窗），防长等待期间堆积遮挡；
+            # 同时给设备层的空闲看门狗续期（两侧的配对等待都是 300 秒）
             sweep_count += 1
             if sweep_count % 30 == 0:
                 self._md_idle_popup_sweep()
+            self._md_keepalive_stuck_detection()
             sleep(1)
         logger.warning('未发现徒弟发布的同步会话，师父本轮退出')
         self.config.notifier.push(
-            content='师父实例600秒内未发现徒弟发布的同步会话，本轮按失败调度重试',
+            content='师父实例300秒内未发现徒弟发布的同步会话，本轮按失败调度重试',
             title='师徒配对超时')
         return False
 
@@ -1962,6 +2004,40 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         except StaleSessionError:
             # 会话已失效：本轮跟随即将结束，标志随徒弟发布的新会话重建
             pass
+
+    def _md_disciple_alive(self) -> bool:
+        """徒弟是否还在推进（心跳新鲜）。
+
+        单人环节（切号/买体力/探索）耗时不可预知，固定超时只能靠猜——本次
+        真机故障就是 1800 秒档位太钝。改看心跳：徒弟在这些环节里会持续刷新
+        disciple_seen_at，停了才说明它真走了。
+        读不到状态时按「还活着」处理：师父宁可多等，也不要因为一次读取失败
+        就把整轮任务判失败（失败调度会把它推到下一个调度周期）。
+        """
+        if self._md_store is None or self._md_session is None:
+            return True
+        try:
+            state = self._md_store.read()
+        except Exception:
+            return True
+        return disciple_alive(state)
+
+    def _md_keepalive_stuck_detection(self) -> None:
+        """跟随等待期给设备层的卡死检测续期（30 秒节流）。
+
+        设备层规则（module/device/device.py:372）：detect_record 里有
+        BATTLE_STATUS_S 时给 300 秒窗口，集合为空只给 60 秒，到点就抛
+        GameStuckError。师父在庭院等徒弟的下一个动作按设计最长可等 30 分钟，
+        远超这个窗口，因此必须周期性重置计时器——师徒之间的「对方还在不在」
+        由 wait_out 业务档位负责，不该由设备层的空闲看门狗来判。
+        师父是跟随方，等待期挂着「等一场战斗」的标记是准确的语义。
+        """
+        now = time.monotonic()
+        if now - self._md_last_keepalive < 30:
+            return
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        self._md_last_keepalive = now
 
     def _md_heartbeat_master_if_due(self) -> None:
         """师父侧心跳（5 秒节流）：跟随期间刷新 master_seen_at。"""
@@ -2116,16 +2192,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
         def reset_wait_out(task: str) -> None:
             nonlocal wait_out
-            # 房间任务用短档（等下一场邀请）；其余状态（空任务/切号/买体力等
-            # 单人环节）一律长档，覆盖徒弟侧各种耗时操作不误超时
-            timeout = 240 if task in task_keywords else 1800
-            wait_out = Timer(timeout).start()
+            # 房间任务用短档：徒弟此时应当在主动邀请，240 秒等不到就是异常。
+            # 其余状态（空任务/切号/买体力等单人环节）不设固定超时——那些环节
+            # 耗时不可预知，改由徒弟心跳判断它是否还在推进（见 _md_disciple_alive）
+            wait_out = Timer(240).start() if task in task_keywords else None
 
-        # 这里只清不挂 BATTLE_STATUS_S：本循环大部分时间是在庭院等徒弟的下一个
-        # 动作（单人环节/切号最长可等 30 分钟），而该标记的语义是「马上要进战斗」，
-        # 挂满 60 秒就会被设备层判成卡死抛 GameStuckError。只在真正等战斗时挂
-        # （接受邀请后 → wait_battle），见下方 accept 分支
+        # 挂 BATTLE_STATUS_S：师父是跟随方，整个循环都在等徒弟把战斗开起来。
+        # 它同时是设备层空闲看门狗的长窗口标记（挂着 300 秒 vs 空集 60 秒），
+        # 等待期间由 _md_keepalive_stuck_detection 周期续期
         self.device.stuck_record_clear()
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        self._md_last_keepalive = time.monotonic()
         while 1:
             self.screenshot()
             # 读取共享状态：徒弟序列完成/会话失效/徒弟走到探索（单人）都结束跟随
@@ -2211,12 +2288,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         elif task == TASK_STONE:
                             # 石距：始终进入后退出
                             self.master_run_battle_back_stone(config=GeneralBattleConfig())
-                    # 已经离开房间（开战 / 房间销毁 / 等待超时）：复位状态位。
-                    # 战斗预期到此结束，只清不重挂——重挂会把「马上要进战斗」的
-                    # 预期带进随后的庭院等待，那种等待按设计可以长达 30 分钟
+                    # 已经离开房间（开战 / 房间销毁 / 等待超时）：复位状态位，
+                    # 并把「等下一场战斗」的标记重新挂上——设备层给它的窗口是
+                    # 300 秒（空集只有 60 秒），随后由空闲续期接管
                     self._md_clear_master_in_room()
                     wait_out.reset()
                     self.device.stuck_record_clear()
+                    self.device.stuck_record_add('BATTLE_STATUS_S')
                     sleep(2)
                     self.screenshot()
                     continue
@@ -2241,12 +2319,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 continue
 
             # 等待超时（当前档位）：徒弟迟迟没有下一个动作，师父退出本轮
+            # 等待超时（房间任务短档）：徒弟迟迟不发下一场邀请，师父退出本轮
             if wait_out is not None and wait_out.reached():
                 logger.warning(f'等待徒弟下一个动作超时（当前任务 [{task}]），师父本轮退出')
                 break
 
-            # 跟随期间保持同步会话心跳
+            # 单人环节不设固定超时，改看徒弟心跳：它还在推进就一直陪等，
+            # 心跳停了（崩溃/被用户停掉）才退出释放实例
+            if wait_out is None and not self._md_disciple_alive():
+                logger.warning(f'徒弟心跳已停止（当前任务 [{task}]），师父本轮退出释放实例')
+                break
+
+            # 跟随期间保持同步会话心跳，并给设备层的空闲看门狗续期
             self._md_heartbeat_master_if_due()
+            self._md_keepalive_stuck_detection()
 
         # 收尾：先撤掉「在房间里」标志（退出时机可能有徒弟还在等），
         # 再关掉可能还开着的加成，避免把加成状态带出任务

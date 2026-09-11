@@ -53,10 +53,16 @@ BUFF_COIN_EXIT = 'coin_exit'  # 金币场：师父不开加成，准备后退出
 BUFF_EXP = 'exp'          # 经验场：师父提前开经验加成，战斗正常打完
 BUFF_EXP_EXIT = 'exp_exit'    # 经验场：师父不开加成，等击杀数达标后退出
 
-# 配对阶段要求徒弟最近心跳过：徒弟发布后即去切号/买体力（长 UI 流程期间
-# 无法刷心跳），窗口必须覆盖这些单人环节与师父切预设的并行耗时。
-# 上一轮残留至少间隔一轮任务周期（小时级），600 秒仍能明确区分
-DISCIPLE_FRESH_SECONDS = 600
+# 徒弟心跳新鲜窗口。两个用途共用同一个含义「徒弟最近还在推进」：
+# - 配对门槛：徒弟发布后即去切号/买体力（长 UI 流程期间无法刷心跳），
+#   窗口必须覆盖这些单人环节
+# - 师父的存活判断：单人环节耗时不可预知，用固定超时只能靠猜；只要徒弟
+#   还在刷心跳就一直陪等，心跳过期才认定它已停止
+# 300 秒的依据：徒弟唯一不刷心跳的长流程是切号，而切号前会先写 switching
+# 任务、那次写入本身就刷新了心跳，所以实际空档就是一次切号加买体力；
+# 其余环节（房间等待、探索战斗之间）都是几秒到几十秒刷一次。
+# 上一轮残留至少间隔一轮任务周期（小时级），300 秒仍能明确区分
+DISCIPLE_FRESH_SECONDS = 300
 
 
 class StaleSessionError(RuntimeError):
@@ -325,8 +331,9 @@ class MasterDiscipleStateStore:
                   now: datetime | None = None) -> dict:
         """双方在轮询等待期间刷新心跳，供对方做新鲜度判断与诊断。
 
-        心跳不做超时判定（同 Orochi）：掉线兜底由各业务级超时负责，
-        心跳只影响对方「还要不要继续等」的判断。
+        心跳不设自己的超时（同 Orochi）：掉线兜底由各业务级超时负责。
+        但它对师父侧是「徒弟还在不在」的唯一判据——单人环节耗时不可预知，
+        固定超时只能靠猜，见 disciple_alive。
         """
         if role not in {'disciple', 'master'}:
             raise ValueError('invalid role')
@@ -341,3 +348,19 @@ class MasterDiscipleStateStore:
             return state
 
         return self._update(mutate)
+
+
+def disciple_alive(state: dict, now: datetime | None = None) -> bool:
+    """徒弟是否还在推进（最近刷过心跳）。
+
+    徒弟在切号发布、房间等待、探索战斗之间都会刷新 disciple_seen_at，所以
+    「心跳过期」只可能是它真的停了（崩溃或被停），而不是某个环节耗时长。
+    状态缺失/时间戳非法一律返回 False，由调用方决定怎么处理。
+    """
+    if not state:
+        return False
+    seen_at = _parse_datetime(state.get('disciple_seen_at'))
+    if seen_at is None:
+        return False
+    now = (now or _now()).replace(microsecond=0)
+    return 0 <= (now - seen_at).total_seconds() <= DISCIPLE_FRESH_SECONDS

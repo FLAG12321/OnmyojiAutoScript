@@ -28,7 +28,7 @@
   },
   {
     "itemName": "add_all",
-    "roiFront": "609,640,167,35",
+    "roiFront": "500,640,166,35",
     "roiBack": "0,0,100,100",
     "mode": "Single",
     "method": "Default",

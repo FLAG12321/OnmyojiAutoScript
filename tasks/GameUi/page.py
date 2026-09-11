@@ -81,9 +81,9 @@ page_theme = Page([RestartAssets.I_LOGIN_SCROOLL_OPEN, G.I_MAIN_GOTO_SHIKIGAMI_R
 # 上就没人关弹窗，去式神录那一步会被挡住。
 page_theme.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE]
 # 展开卷轴用「卷轴收起图」而不是那块点击区域：点击区域是 toggle，卷轴已经展开时点它反而会
-# 把卷轴收回去；而收起图标在展开态根本不匹配，appear_then_operate 不会误点。代价是卷轴已经
-# 展开时这一步要等满 _execute_path 的 6s max_wait_timer 才会被跳过，随后
-# ui_wait_until_appear(page_theme) 直接命中展开图，路径照常推进。
+# 把卷轴收回去；而收起图标在展开态根本不匹配，appear_then_operate 不会误点。
+# 卷轴已经展开时这一步就没有可点的东西，由 _execute_path 的「跳转按钮不在、目标页已可见」
+# 判据提前收工，不会再空等满 6 秒。
 page_main.link(button=RestartAssets.I_LOGIN_SCROOLL_CLOSE, destination=page_theme)
 # 回庭院反过来用点击区域：从展开态点卷轴收起，区域点击不依赖任何一张卷轴图。
 page_theme.link(button=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, destination=page_main)

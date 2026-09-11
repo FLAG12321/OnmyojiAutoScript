@@ -45,7 +45,7 @@ class MasterDiscipleAssets:
 	# description 
 	O_ACCEPT_NAME = RuleOcr(roi=(115,256,300,47), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="accept_name")
 	# description 
-	O_ADD_ALL = RuleOcr(roi=(609,640,167,35), area=(0,0,100,100), mode="Single", method="Default", keyword="所有人", name="add_all")
+	O_ADD_ALL = RuleOcr(roi=(500,640,166,35), area=(0,0,100,100), mode="Single", method="Default", keyword="所有人", name="add_all")
 	#  
 	O_SUSHI_NUM = RuleOcr(roi=(881,18,103,31), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="sushi_num")
 	#  
