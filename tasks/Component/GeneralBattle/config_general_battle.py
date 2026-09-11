@@ -7,7 +7,7 @@ from datetime import datetime, time
 from pydantic import BaseModel, ValidationError, validator, Field, field_validator
 
 # 段长上限：与 auto_total_count 的单段量级对齐（2026-09-09 前为固定 10，后放宽 50）
-SEGMENT_COUNT_MAX = 50
+SEGMENT_COUNT_MAX = 500
 
 
 def segment_count_normalize(v):
