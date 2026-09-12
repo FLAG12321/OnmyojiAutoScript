@@ -55,17 +55,17 @@ class KekkaiUtilizeAssets:
 	# 收取体力（没有满） 
 	I_BOX_AP = RuleImage(roi_front=(815,435,57,51), roi_back=(744,336,395,216), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_box_ap.png")
 	# 收取盒子的经验（没有满） 
-	I_BOX_EXP = RuleImage(roi_front=(893,440,42,45), roi_back=(792,334,359,232), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_box_exp.png")
+	I_BOX_EXP = RuleImage(roi_front=(893,440,42,45), roi_back=(677,106,561,603), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_box_exp.png")
 	# 结界皮肤 
-	I_REALM_SHIN = RuleImage(roi_front=(175,460,54,58), roi_back=(22,359,393,328), threshold=0.9, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_realm_shin.png")
+	I_REALM_SHIN = RuleImage(roi_front=(176,460,54,58), roi_back=(22,197,418,490), threshold=0.9, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_realm_shin.png")
 	# 寄养别人的经验 
-	I_UTILIZE_EXP = RuleImage(roi_front=(583,144,58,43), roi_back=(513,43,280,309), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_utilize_exp.png")
+	I_UTILIZE_EXP = RuleImage(roi_front=(583,144,58,42), roi_back=(399,100,423,506), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_utilize_exp.png")
 	# 取出 
 	I_AP_EXTRACT = RuleImage(roi_front=(592,501,100,75), roi_back=(592,501,100,75), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_ap_extract.png")
 	# 提取 
 	I_EXP_EXTRACT = RuleImage(roi_front=(592,448,100,73), roi_back=(592,448,100,73), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_exp_extract.png")
 	# 盒子经验满 
-	I_BOX_EXP_MAX = RuleImage(roi_front=(889,430,61,64), roi_back=(796,326,405,330), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_box_exp_max.png")
+	I_BOX_EXP_MAX = RuleImage(roi_front=(888,430,61,64), roi_back=(677,106,561,603), threshold=0.7, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_box_exp_max.png")
 	# 种树活动关闭标识 
 	I_PLANT_TREE_CLOSE = RuleImage(roi_front=(777,91,36,34), roi_back=(711,52,367,259), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/realm/realm_plant_tree_close.png")
 	# description 

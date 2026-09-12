@@ -48,7 +48,7 @@
     "itemName": "box_exp",
     "imageName": "realm_box_exp.png",
     "roiFront": "893,440,42,45",
-    "roiBack": "792,334,359,232",
+    "roiBack": "677,106,561,603",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "收取盒子的经验（没有满）"
@@ -56,8 +56,8 @@
   {
     "itemName": "realm_shin",
     "imageName": "realm_realm_shin.png",
-    "roiFront": "175,460,54,58",
-    "roiBack": "22,359,393,328",
+    "roiFront": "176,460,54,58",
+    "roiBack": "22,197,418,490",
     "method": "Template matching",
     "threshold": 0.9,
     "description": "结界皮肤"
@@ -65,8 +65,8 @@
   {
     "itemName": "utilize_exp",
     "imageName": "realm_utilize_exp.png",
-    "roiFront": "583,144,58,43",
-    "roiBack": "513,43,280,309",
+    "roiFront": "583,144,58,42",
+    "roiBack": "399,100,423,506",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "寄养别人的经验"
@@ -92,8 +92,8 @@
   {
     "itemName": "box_exp_max",
     "imageName": "realm_box_exp_max.png",
-    "roiFront": "889,430,61,64",
-    "roiBack": "796,326,405,330",
+    "roiFront": "888,430,61,64",
+    "roiBack": "677,106,561,603",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "盒子经验满"
