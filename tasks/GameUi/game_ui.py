@@ -23,11 +23,23 @@ from module.exception import (GameNotRunningError, GamePageUnknownError)
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.GameUi.assets import GameUiAssets
-from tasks.GameUi.page import Page, PageRegistry, page_login, page_main, random_click,page_mall,page_shikigami_records,page_onmyodo,page_friends,page_guild,page_team,page_collection,page_travel,page_daily
+from tasks.GameUi.page import Page, PageRegistry, page_login, page_main, random_click,page_mall,page_shikigami_records,page_onmyodo,page_friends,page_guild,page_team,page_collection,page_travel,page_daily,page_theme
 from tasks.Restart.assets import RestartAssets
 from tasks.SixRealms.assets import SixRealmsAssets
 from tasks.base_task import BaseTask
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
+
+
+# 判「卷轴是否展开」用的入口：卷轴展开后它们会一起露出来，命中任一即算展开。
+# 从 page_theme 的 9 个 OCR 出边里挑 4 个就够 —— 每多一个就多一次 OCR 推理，而判别力
+# 几乎不增。用 OCR 而不是式神录按钮的图：展开后的排版随卷轴皮肤变，图判据在没采集过的
+# 皮肤上照样认不出，而这些入口的文字不随皮肤变。
+_SCROLL_ENTRIES = (
+    GameUiAssets.O_PAGE_SHIKIGAMI_RECORDS,   # 式神录
+    GameUiAssets.O_PAGE_GUILD,               # 阴阳寮
+    GameUiAssets.O_PAGE_TEAM,                # 组队
+    GameUiAssets.O_PAGE_COLLECTION,          # 图鉴
+)
 
 
 class GameUi(BaseTask, GameUiAssets):
@@ -43,6 +55,9 @@ class GameUi(BaseTask, GameUiAssets):
         super().__init__(config, device)
         # 初始化时动态导入所有 page 模块
         self._import_all_pages()
+        # 卷轴皮肤未采集时的兜底点击本轮导航是否已用过（见 _execute_path）。
+        # 每次 ui_goto 重置，保证一轮导航最多兜底一次。
+        self._scroll_fallback_used = False
 
     @staticmethod
     def _import_all_pages():
@@ -110,6 +125,31 @@ class GameUi(BaseTask, GameUiAssets):
         """
         return bool(self.appear(RestartAssets.I_LOGIN_SCROOLL_OPEN)
                     or self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE))
+
+    def _scroll_entries_visible(self) -> bool:
+        """卷轴展开后底部那几个入口是否可见（_SCROLL_ENTRIES 任一命中即算）。
+
+        成本说明：一次调用最多 4 次 OCR 推理，所以只在导航走到 page_main -> page_theme
+        这条边时才调。不要挂进 page_theme.check_button —— 那个会随 ui_get_current_page
+        的全页遍历反复执行。
+        """
+        return any(self.ocr_appear(entry) for entry in _SCROLL_ENTRIES)
+
+    def _page_theme_appear(self) -> bool:
+        """page_theme（卷轴展开态）是否可见。
+
+        先走 check_button 的图判据（快，已采集的皮肤下够用），不命中再补一路底部入口的
+        OCR —— 展开后的排版随卷轴皮肤变，没采集过的皮肤上图判据认不出，而入口的文字不随
+        皮肤变。图判据放在前面是为了让正常路径零额外成本：OCR 只在它失败后才跑。
+        """
+        return (self.ui_page_appear(page_theme, skip_first_screenshot=False)
+                or self._scroll_entries_visible())
+
+    def _target_page_appear(self, page: Page) -> bool:
+        """跳转目标页是否已经可见。page_theme 多一路 OCR 判据，其余页仍走 check_button。"""
+        if page == page_theme:
+            return self._page_theme_appear()
+        return self.ui_page_appear(page, skip_first_screenshot=False)
 
     def ui_get_current_page(self, skip_first_screenshot=True, accept_login: bool = False) -> Page:
         """
@@ -298,6 +338,8 @@ class GameUi(BaseTask, GameUiAssets):
         timeout_timer = Timer(timeout).start()
         confirm_timer = Timer(confirm_wait, count=int(confirm_wait // 0.5)).start()
         close_unknown_timer = Timer(3).start()
+        # 卷轴兜底点击一轮导航最多用一次：展开区域是 toggle，反复点会来回切换
+        self._scroll_fallback_used = False
         # 构建路径映射
         path_dict = self.build_reverse_path_dict(destination)
 
@@ -393,18 +435,34 @@ class GameUi(BaseTask, GameUiAssets):
                     break
                 # 跳转按钮不出现、而目标页已经可见：这一步就没有可操作的对象了，
                 # 直接进入到达判定，省掉最多 6 秒空等。典型是 page_main -> page_theme：
-                # 卷轴已经展开时「收起卷轴」图不匹配，但 page_theme 的展开图已命中。
+                # 卷轴已经展开时「收起卷轴」图不匹配，但目标页判据已经命中（page_theme
+                # 走 _target_page_appear，图之外还有一路 OCR）。
                 # 两个条件缺一不可：目标页判据可能与当前页重叠（卷轴展开态下
                 # I_CHECK_MAIN 照样匹配），只看目标页会把该点的「收起卷轴」跳掉，
                 # 卷轴就一直挂着。RuleClick 类跳转（固定点击区域）不参与本判据——
                 # 它必然可点，该点就得点
                 if isinstance(probe, (RuleImage, RuleGif, RuleOcr)) \
                         and not self.appear(probe) \
-                        and self.ui_page_appear(next_page, skip_first_screenshot=False):
+                        and self._target_page_appear(next_page):
                     logger.info(f'{next_page} already appear, skip operating {probe}')
                     break
             else:
                 logger.warning(f'Failed recognize {button} on {current_page}')
+                # 卷轴皮肤未采集时两张图都认不出 → 卷轴展不开 → 底部那排入口不出现 →
+                # 目标页进不去，形成死循环。展开区域是固定坐标、不依赖任何一张图，
+                # 是「未知皮肤」这种情况下唯一的突破口。
+                #
+                # 「卷轴是不是已经展开」用底部那排入口的 OCR 判，不用 check_button 的
+                # 图判据：展开后的排版随卷轴皮肤变，式神录按钮图在没采集过的皮肤上照样
+                # 认不出，而入口的文字不随皮肤变。OCR 说没展开才点 —— 展开区域是 toggle，
+                # 判错方向就会把它点回收起。
+                # 限次：一轮导航最多兜底一次，防展开后到达判定没跟上、下一轮又点回收起。
+                if (not self._scroll_fallback_used
+                        and current_page == page_main and next_page == page_theme
+                        and not self._scroll_entries_visible()):
+                    self._scroll_fallback_used = True
+                    logger.info('Scroll images unrecognized, click the fixed expand area')
+                    self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA)
                 self.ui_get_current_page(skip_first_screenshot=False)
                 # 当前页面不是对应路径的页面, 则尝试下一个页面
                 if self.ui_current != current_page:
@@ -413,7 +471,18 @@ class GameUi(BaseTask, GameUiAssets):
             while not max_wait_timer.reached():
                 if timeout_timer.reached():
                     return False
-                if self.ui_wait_until_appear(next_page, timeout=2.5, skip_first_screenshot=False):
+                # page_theme 的可见性要带上 OCR 判据（见 _page_theme_appear），而
+                # ui_wait_until_appear 内部只认 check_button，所以对它特判；其余页保持
+                # 原来的等待逻辑。特判分支每轮都要重截一帧，OCR 才有新画面可判。
+                if next_page == page_theme:
+                    # 注意参数名是 soft_skip 而不是 skip_first_screenshot：本文件另几处
+                    # 都是位置传参、变量名与形参名对不上，这里显式写关键字，别跟着抄错
+                    self.maybe_screenshot(soft_skip=False)
+                    arrived = self._page_theme_appear()
+                else:
+                    arrived = self.ui_wait_until_appear(next_page, timeout=2.5,
+                                                        skip_first_screenshot=False)
+                if arrived:
                     logger.info(f'[{max_wait_timer.current():.1f}s]Page arrived {next_page}')
                     self.ui_current = next_page
                     break
