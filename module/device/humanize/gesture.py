@@ -13,7 +13,6 @@ import math
 
 import numpy as np
 
-from module.device.humanize import HumanizeLevel
 from module.device.humanize.persona import Persona
 from module.device.humanize.plan import MovePlan, Point, TailPlan
 from module.device.humanize.timing import (
@@ -33,10 +32,10 @@ LIFTOFF_GAP_S = (0.010, 0.030)
 # "多出的 before-UP 微位移会不会把短按判成拖拽"验证
 LIFTOFF_POINTS = 1
 
-SLIDE_AWAY_PX = (10.0, 40.0)
-SLIDE_AWAY_POINTS = (3, 5)
+# 画布边缘"放手"路径的分段数（plan_idle 的 park 分支）。原名 SLIDE_AWAY_POINTS：
+# slide_away 随 heavy 档于 2026-09-13 删除后，它唯一的消费者是 park，改名以免误导
+PARK_PATH_POINTS = (3, 5)
 
-POINTER_TAIL_OPTIONS = ('micro_drift', 'slide_away')
 TOUCH_LIFTOFF_OPTIONS = ('liftoff_drift', 'none')
 
 # ---------------------------------------------------------------- 维度 G 常量
@@ -74,8 +73,6 @@ def plan_pointer_tail(
     target: Point,
     persona: Persona,
     *,
-    option: str,
-    level: HumanizeLevel,
     canvas_size: tuple[int, int] = (1280, 720),
 ) -> TailPlan:
     """维度 F（指针语义）：抬起**之后**的漂移。
@@ -83,11 +80,10 @@ def plan_pointer_tail(
     **永不返回 None**：桌面路径今天就有一条 after-UP 同坐标移动
     （windows_impl.py:303/:413），去掉它会丢失 hover 刷新。不提供"完全不补"
     的方案——风险不值。
-    """
-    if option not in POINTER_TAIL_OPTIONS:
-        raise ValueError(
-            f'plan_pointer_tail: 未知 option {option!r}，可选 {POINTER_TAIL_OPTIONS}')
 
+    2026-09-13：slide_away 曾作为第二个候选（仅 heavy），随档位收敛删除；
+    本函数从此只有一个行为，故不再有 option 参数与权重抽样。
+    """
     count = int(rng.integers(MICRO_DRIFT_COUNT[0], MICRO_DRIFT_COUNT[1] + 1))
     points = [
         _clip_point((target[0] + rng.normal(0.0, MICRO_DRIFT_SIGMA_PX),
@@ -95,27 +91,6 @@ def plan_pointer_tail(
         for _ in range(count)
     ]
     delays = [float(rng.uniform(*MICRO_DRIFT_GAP_S)) for _ in range(count)]
-
-    # slide_away 仅 heavy；其他档位在此退化为纯 micro_drift，不靠调用方自律
-    if option == 'slide_away' and level == 'heavy':
-        dist = float(rng.uniform(*SLIDE_AWAY_PX))
-        ang = float(rng.uniform(0.0, 2.0 * math.pi))
-        away = _clip_point((target[0] + math.cos(ang) * dist,
-                           target[1] + math.sin(ang) * dist), canvas_size)
-        n = int(rng.integers(SLIDE_AWAY_POINTS[0], SLIDE_AWAY_POINTS[1] + 1))
-        last = points[-1]
-        seg = [
-            _clip_point((last[0] + (away[0] - last[0]) * (i / n),
-                         last[1] + (away[1] - last[1]) * (i / n)), canvas_size)
-            for i in range(1, n + 1)
-        ]
-        seg[-1] = away
-        # 漂移段走 min_jerk 剖面（Spec §5 F），预算按距离折算
-        budget = float(np.clip(dist / 400.0, 0.05, 0.25))
-        seg_delays = profiled_move_delays(
-            rng, segment_distances(last, seg), budget, 'min_jerk')
-        points.extend(seg)
-        delays.extend(seg_delays)
 
     return TailPlan(points=tuple(points), delays=tuple(delays))
 
@@ -126,7 +101,6 @@ def plan_touch_liftoff(
     persona: Persona,
     *,
     option: str,
-    level: HumanizeLevel,
     canvas_size: tuple[int, int] = (1280, 720),
 ) -> TailPlan | None:
     """维度 F（触摸语义）：抬起**之前**的微位移。
@@ -160,7 +134,6 @@ def plan_idle(
     persona: Persona,
     *,
     option: str,
-    level: HumanizeLevel,
     canvas_size: tuple[int, int] = (1280, 720),
 ) -> MovePlan | None:
     """维度 G：点击间空闲。仅指针语义有效。
@@ -200,7 +173,7 @@ def plan_idle(
             end = (0, int(rng.integers(0, canvas_size[1])))
         else:
             end = (canvas_size[0] - 1, int(rng.integers(0, canvas_size[1])))
-        n = int(rng.integers(SLIDE_AWAY_POINTS[0], SLIDE_AWAY_POINTS[1] + 1))
+        n = int(rng.integers(PARK_PATH_POINTS[0], PARK_PATH_POINTS[1] + 1))
     else:
         if since_last_s <= IDLE_DRIFT_THRESHOLD_S:
             return None

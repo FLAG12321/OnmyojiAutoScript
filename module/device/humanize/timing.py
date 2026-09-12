@@ -1,8 +1,10 @@
-"""维度 B（按压时长）、I（动作间隔）、D（速度剖面）、E/H（停顿与末段）。
+"""维度 B（按压时长）、I（动作间隔）、D（速度剖面）、E（到位停顿）。
 
-本模块只做"给定 RNG 与已选定的 option，算出秒数"。方案选择、档位允许集求交、
+本模块只做"给定 RNG 与已选定的 option，算出秒数"。方案选择、允许集求交、
 旁路判断全部归 facade（Plan 契约 12）——所以这里没有任何 option=None 的隐式
 分支，也没有 enabled 参数。
+
+维度 H（滑动末段）随 light 档于 2026-09-13 删除，本模块不再有相应实现。
 """
 from __future__ import annotations
 
@@ -10,24 +12,31 @@ import math
 
 import numpy as np
 
-from module.device.humanize import HumanizeLevel
 from module.device.humanize.persona import Persona
-from module.device.humanize.plan import DwellPlan, Point, _SwipeTail
+from module.device.humanize.plan import DwellPlan, Point
 
 # ---------------------------------------------------------------- 维度 B 常量
 
 # 人类按压时长的物理边界（Spec §5 B）。45ms 下界是本维度的核心价值：
-# 今天 minitouch/scrcpy 的 0ms 按压和桌面 fast 的 10~25ms 都在这条线以下
+# 今天 minitouch/scrcpy 的 0ms 按压和桌面 fast 的 10~25ms 都在这条线以下。
+# 250ms 上界（2026-09-12 应用户要求从 600ms 下调）：实测主干分布 99 分位
+# 只有 235ms，600ms 上界从未被触发，形同虚设；下调到 250ms 后上界才成为
+# 真实约束——lognormal 的极长尾（原可到 600ms+ 的罕见值）被压到 250ms，
+# 保证每一次点击的按住时长都在人类短按的范围内。代价是尾部约 1% 的样本
+# 堆在 250ms 这一点上（与下界 45ms 的堆积同性质）
 PRESS_MIN_S = 0.045
-PRESS_MAX_S = 0.600
+PRESS_MAX_S = 0.250
 
 # fast 只缩放中位数，不下移边界（Spec §5 B「fast 的语义」）。
 # 结果是桌面 fast 点击从 10~25ms 升到约 45~85ms —— 有意的行为变更
 PRESS_FAST_MEDIAN_SCALE = 0.65
 
-# bimodal 的"分神"分支占比与区间（Spec §5 B）
+# bimodal 的"分神"分支占比与区间（Spec §5 B）。区间 2026-09-12 由
+# (250, 500)ms 压到 (200, 250)ms：原区间整段超出新的 250ms 上界会被夹平、
+# 等于删掉该特征，压进区间内则保留「偶尔慢一拍」的方差，同时不再有任何
+# 超过 250ms 的点击
 PRESS_BIMODAL_DISTRACTED_P = 0.15
-PRESS_BIMODAL_DISTRACTED_S = (0.250, 0.500)
+PRESS_BIMODAL_DISTRACTED_S = (0.200, 0.250)
 
 PRESS_OPTIONS = ('lognormal', 'bimodal', 'gamma')
 
@@ -70,32 +79,29 @@ def swipe_duration_by_dist(dist: float | None) -> tuple[float, float]:
 
 # ---------------------------------------------------------------- 全操作共享间隔常量
 
-# 输入操作间最小间隔的上下限（秒）：人类在两个独立操作之间至少需要"反应 +
-# 视线/手指移动"时间，0.5~1.5 覆盖从熟练到从容的区间（2026-08-28 应用户
-# 要求从 0.3~1.0 抬高：0.3s 仍偏机器节奏）
-INTER_CLICK_MIN_S = 0.5
-INTER_CLICK_MAX_S = 1.5
-
-# 距离 → 间隔目标（秒），2026-09-06 用户实测（间隔含移动全过程）：
-# ≤400px 300~600ms、>500px 700ms~1.5s，400~500px 线性插值过渡。
-# 距离分档优先于 base 自适应（物理事实优先于习惯漂移）；无 dist==0 档——
-# 同目标连击由结算连点机制负责（pace=False 直通），不归距离分档管。
-INTER_CLICK_DIST_STOPS = (400.0, 500.0)      # px（authoring 坐标）
-INTER_CLICK_DIST_GOALS = ((0.30, 0.60),      # ≤400px: 300~600ms
-                          (0.70, 1.50))      # >500px: 700ms~1.5s
-# 自适应基准 base 每次操作的调整步长（秒）：小步长体现"慢慢变高/变短"的动态
-# 平衡；区间从 0.3~1.0 扩到 0.5~1.5 后步长等比放大（保持约 5 步爬满区间）
-INTER_CLICK_STEP_S = 0.2
-# 原始间隔统计窗口大小：最近几次间隔的均值参与判定，平滑单次抖动
-# （脚本偶发一次连击不应立刻把要求抬满）
-INTER_CLICK_WINDOW = 5
-# 本次目标间隔的抽样形态：右偏 lognormal（人类反应时间的典型形态——多数操作
-# 偏快、偶尔拖沓），拒绝均匀分布的"有规律"指纹。中位数取 base 的
-# MEDIAN_RATIO 倍，长尾被 base 截断、短尾被 MIN_S 托底
-INTER_CLICK_SIGMA = 0.45
-INTER_CLICK_MEDIAN_RATIO = 0.55
+# 距离 → 间隔区间（秒）。2026-09-12 应用户要求：**区间整体随距离平移，
+# 宽度固定**——近端 [0.20, 0.35]、远端 [0.65, 0.80]，中间按距离线性插值，
+# 落点距离越大，抽样中心越靠后（越慢）。
+#   t = clamp(dist / D_MAX, 0, 1)
+#   下界 = lerp(0.20, 0.65, t)   上界 = lerp(0.35, 0.80, t)   宽度恒 0.15
+# 即「一个档位」：没有近/远两套数值，只有一个随距离滑动的区间。
+# 演进过程：两档 + 过渡带（2026-09-06 实测）→ 连续插值 → 单档固定区间
+# → 单档平移区间（现状）。
+# 这是**点击间隔的唯一取值来源**（原 lognormal + base 自适应双路已合并）。
+INTER_CLICK_DIST_NEAR_GOAL = (0.20, 0.35)    # dist = 0（原地 / 相邻）
+INTER_CLICK_DIST_FAR_GOAL = (0.65, 0.80)     # dist >= D_MAX（跨屏）
+INTER_CLICK_DIST_D_MAX = 1000.0              # px（authoring 坐标），归一化上限
+# 无落点（首次操作 / 上一次是 swipe，距离不可得）时的兜底区间：按近端处理
+# （目标位置未知 → 不预设它是远的，取最快一档；用户 2026-09-12 的选择）
+INTER_CLICK_DIST_UNKNOWN_GOAL = INTER_CLICK_DIST_NEAR_GOAL
 
 # ---------------------------------------------------------------- 同一资源重复点击退避常量
+
+# 同一资源连点退避总开关。False = 退避恒为 0（next_action_requirement 不并入
+# 退避、不消费 RNG）：连点同一控件时不再等 1.5~16s，其余拟人维度（间隔节奏、
+# 落点抖动、轨迹）不受影响。开发机（DESKTOP-PODM7VC / 自用脚本号）实测嫌
+# 长退避拖慢任务节奏，2026-09-12 置 False；办公机保留 True 走拟人节奏
+ENABLE_REPEAT_BACKOFF = False
 
 # 连续点击同一资源（控件名相同 / 坐标半径内）的退避标称序列（秒）：
 # 第 2 次 1.5s、第 3 次 1.5s、第 4 次 2s、第 5 次 2s、第 6 次 4s、第 7 次
@@ -188,33 +194,30 @@ def gap_seconds(
 
 
 def dist_goal_interval(dist: float | None) -> tuple[float, float] | None:
-    """按两次操作落点距离返回间隔目标区间（秒），距离输入无效时返回 None。
+    """按落点距离返回间隔区间（秒），距离不可用时返回 None。
 
-    2026-09-06 用户实测（间隔含移动全过程）：≤400px → 300~600ms、
-    >500px → 700ms~1.5s、400~500px 线性插值过渡（两端单调衔接无跳变）。
+    2026-09-12 单档平移：只有一个区间，随距离整体平移、宽度固定——
+    近端 [0.20, 0.35]（dist=0）、远端 [0.65, 0.80]（dist>=D_MAX），中间
+    按 t = clamp(dist / D_MAX, 0, 1) 对上下界同步线性插值。没有近/远两套
+    数值，只是同一个区间的位置随距离变化。
+
     dist 为 None/负数（swipe 无坐标、首次操作）时返回 None，调用方走
-    base 自适应的既有常规抽样。本函数只算区间，抽样归调用方。
+    INTER_CLICK_DIST_UNKNOWN_GOAL（按近端处理）。本函数只算区间，
+    抽样归调用方。
     """
     if dist is None or dist < 0:
         return None
-    lo_stop, hi_stop = INTER_CLICK_DIST_STOPS
-    (lo_near, hi_near), (lo_far, hi_far) = INTER_CLICK_DIST_GOALS
-    if dist <= lo_stop:
-        return (lo_near, hi_near)
-    if dist >= hi_stop:
-        return (lo_far, hi_far)
-    # 过渡带线性插值：t=0 在 400px、t=1 在 500px，两端取值分别衔接 0.6 与 0.7
-    t = (dist - lo_stop) / (hi_stop - lo_stop)
+    lo_near, hi_near = INTER_CLICK_DIST_NEAR_GOAL
+    lo_far, hi_far = INTER_CLICK_DIST_FAR_GOAL
+    t = min(dist / INTER_CLICK_DIST_D_MAX, 1.0)
     return (lo_near + (lo_far - lo_near) * t, hi_near + (hi_far - hi_near) * t)
 
 
 def next_action_requirement(
     rng: np.random.Generator,
-    recent_gaps,
-    base_s: float,
     repeat_count: int,
     dist: float | None = None,
-) -> tuple[float, float]:
+) -> float:
     """操作结束时计算**下一次**操作的间隔要求（预付制纯函数）。
 
     预付制（2026-08-27 二次修订）：等待全部发生在下一次**截图**之前
@@ -223,70 +226,45 @@ def next_action_requirement(
     正是人类模型）。旧模型把等待插在执行前，实测导致决策-执行之间画面
     过期（接受邀请弹窗过期、结算画面关闭后误点庭院）。
 
+    2026-09-12 取值单档平移：不分近/远两套数值，只有一个随距离整体平移的
+    区间 [0.20, 0.35] → [0.65, 0.80]（宽度恒 0.15），距离越远抽样中心越靠后。
+    原「有距离走分档、无距离退回 lognormal + base 自适应」的双路已合并：
+    后者需要 recent_gaps / base_s 两个反馈状态（意图间隔窗口 + 自适应基准），
+    已随合并整体移除，行为完全开环、可预测，也消灭了「控制器被自己制造的慢
+    欺骗」的压-松振荡来源。
+
     逻辑：
-    - 窗口均值 < base（近期节奏偏快）→ base 抬高一步，强制间隔慢慢变高；
-    - 窗口均值 >= base（近期节奏偏慢，含几秒级识别等待）→ base 回落一步；
-    - 常规要求的抽样中心（2026-09-06 距离分档）：有距离输入时按实测区间
-      uniform 抽样（物理事实优先于习惯漂移，base 只参与退避取 max）；
-      无距离输入时保持原右偏 lognormal（中位数 = MEDIAN_RATIO×base）
-      截断在 [MIN, base]；
+    - 有距离 → 按距离插值出区间后 uniform 抽样；
+    - 无距离（首次操作 / 上一次是 swipe）→ 按近端区间抽样；
     - repeat_count >= 2（本次已是同一资源第 2+ 次连续点击，下次大概率还是
       它）：与退避查表取 max——下次（连续第 repeat_count+1 次）要求
       backoff(repeat_count+1)（1.5/1.5/2/2/4/10/16s...）。repeat_count == 1（首次点该
       资源）**不**预付退避：下次换目标的概率不低（结算画面交替点击不同
       奖励区域、点完接受弹窗进房间），全额预付 backoff(2) 会让每一次点击
-      都白等 2s 起步——代价是第 2 次同资源点击的间隔只有常规量级
-      （0.5~1.5s），从第 3 次起进入 3/4/10/16s 退避；
+      都白等 2s 起步——代价是第 2 次同资源点击的间隔只有常规量级，
+      从第 3 次起进入退避档；
     - 预付的退避在下次实际换目标时成为白等——拟人上可解释（愣神/视线
       转移），且目标消失时识别自然失败、不会产生过期点击。
 
-    窗口必须记**意图间隔**（自然节奏，不含机制注入的等待，调用方负责
-    扣除），否则控制器会被自己制造的慢"欺骗"而放松，形成压-松振荡。
-
     Args:
         rng: 人格派生的随机源（persona-seeded）
-        recent_gaps: 最近 INTER_CLICK_WINDOW 次意图间隔（秒）
-        base_s: 当前的最小间隔基准（秒），必须在 [MIN, MAX] 内
         repeat_count: 本次操作的同一资源连续次数（1 = 首次点该资源）
         dist: 本次与上次操作落点的距离（px，authoring 坐标）。预付制下
             下一个目标尚未确定，用本次已知坐标作下一次距离的代理；
-            None 表示无法计算（首次操作/无名 swipe），走常规抽样。
+            None 表示无法计算（首次操作 / 无名 swipe），按近端区间处理。
     Returns:
-        (require_s, new_base_s)：require 是对下一次操作的间隔要求，
-        new_base 是调整后的基准。
+        require_s：对下一次操作的间隔要求（秒）。
     """
-    base_s = _require_finite_non_negative(base_s, 'next_action_requirement.base_s')
-    if not INTER_CLICK_MIN_S <= base_s <= INTER_CLICK_MAX_S:
-        raise ValueError(
-            f'next_action_requirement: base_s 必须在 [{INTER_CLICK_MIN_S}, '
-            f'{INTER_CLICK_MAX_S}] 内，收到 {base_s}')
-    gaps = [float(g) for g in recent_gaps]
-    # 用窗口均值判定节奏方向：快了抬要求、慢了降要求，小步长动态平衡
-    if gaps:
-        mean_gap = sum(gaps) / len(gaps)
-        if mean_gap < base_s:
-            base_s = min(INTER_CLICK_MAX_S, base_s + INTER_CLICK_STEP_S)
-        else:
-            base_s = max(INTER_CLICK_MIN_S, base_s - INTER_CLICK_STEP_S)
-    # 常规要求：距离分档区间（2026-09-06 实测）优先，无距离输入时保持
-    # 原右偏 lognormal（均匀在区间内等概率取值本身就是规律，但实测区间
-    # 本身就是用户数据，先按 uniform 落地）；lognormal 的中位数 =
-    # MEDIAN_RATIO×base，长尾截断到 base、短尾托底 MIN
-    goal = dist_goal_interval(dist)
-    if goal is not None:
-        lo, hi = goal
-        require = float(rng.uniform(lo, hi))
-    else:
-        require = float(rng.lognormal(
-            math.log(base_s * INTER_CLICK_MEDIAN_RATIO), INTER_CLICK_SIGMA))
-        require = min(max(require, INTER_CLICK_MIN_S), base_s)
+    lo, hi = dist_goal_interval(dist) or INTER_CLICK_DIST_UNKNOWN_GOAL
+    require = float(rng.uniform(lo, hi))
     # 同一资源重复点击退避：只有已确认重复（第 2+ 次连续点击）才预付退避，
     # 首次点击（repeat_count==1）下次换目标概率不低，全额预付 backoff(2)
-    # 会让每次点击都白等 2s 起步（正常任务换目标节奏被灾难性拖慢）
-    if repeat_count >= 2:
+    # 会让每次点击都白等 2s 起步（正常任务换目标节奏被灾难性拖慢）。
+    # ENABLE_REPEAT_BACKOFF=False 时整条退避链跳过（不查表、不消费 RNG）
+    if ENABLE_REPEAT_BACKOFF and repeat_count >= 2:
         backoff = repeat_backoff_seconds(rng, repeat_count + 1)
         require = max(require, backoff)
-    return require, base_s
+    return require
 
 
 def repeat_backoff_seconds(rng: np.random.Generator, count: int) -> float:
@@ -350,7 +328,7 @@ def report_rate_hz(quantile: float, *, mouse: bool = False) -> float:
 
 SPEED_OPTIONS = ('min_jerk', 'sigmoid', 'ease_out')
 
-# legacy 点位上的相关抖动强度。刻意小：light 档的承诺是"近恒定"，
+# legacy 点位上的相关抖动强度。刻意小：该路径的承诺是"近恒定"，
 # 不是在 legacy 点距上叠加第二层速度编码
 LEGACY_JITTER_SIGMA = 0.15
 
@@ -452,7 +430,10 @@ def legacy_move_delays(
     base_delay_s: float,
     total_budget_s: float | None = None,
 ) -> list[float]:
-    """light 档用：在既有点位上生成近恒定间隔。
+    """在既有点位上生成近恒定间隔。
+
+    2026-09-13 档位收敛后，唯一调用方是 facade 的 profile 降点仍不可信时的
+    退化路径（_downscale 的 profile_untrusted 分支）。
 
     **刻意不接受 points/distances**：legacy 的点距本身已编码速度（Spec §2.5），
     在其上再套 dt ∝ 1/v 会得到约 v² 的二次编码。本函数因此只知道"有几个点"，
@@ -482,7 +463,7 @@ def profiled_move_delays(
     total_budget_s: float,
     profile: str,
 ) -> list[float]:
-    """medium/heavy 用：按**真实段长**做时间参数化。
+    """按**真实段长**做时间参数化。
 
     τ 取每段的累计弧长中点比例，**不是 i/n**（Spec §5 D）。用索引参数化会在
     分段极不均匀时把长段误判成低速段，几何与时间就对不上了。
@@ -526,18 +507,10 @@ def profiled_move_delays(
 
 DWELL_CLIP_S = (0.020, 0.250)
 DWELL_SIGMA_RATIO = 0.35          # σ = dwell_mu * 0.35（Spec §5 E）
-HESITATE_RANGE_S = (0.300, 0.800)
 SETTLE_SEGMENTS = (2, 3)
 SETTLE_JITTER_PX = 2              # 段间位置更新幅度 ±1~2px
-DWELL_OPTIONS = ('gauss', 'settle', 'hesitate')
-
-# ---------------------------------------------------------------- 维度 H 常量
-
-RANDOM_TAIL_COUNT = (2, 5)
-RANDOM_TAIL_DELAY_S = (0.050, 0.130)
-# light 的 natural 用主体 delay 中位数做基准，抖动系数刻意小（近恒定）
-NATURAL_LIGHT_JITTER = 0.35
-SWIPE_TAIL_OPTIONS = ('random_tail', 'natural')
+# hesitate（长尾停顿）随 heavy 档于 2026-09-13 删除，选项收敛为两档
+DWELL_OPTIONS = ('gauss', 'settle')
 
 
 def _dwell_gauss_seconds(rng: np.random.Generator, persona: Persona) -> float:
@@ -560,7 +533,6 @@ def plan_dwell(
     persona: Persona,
     *,
     option: str,
-    level: HumanizeLevel,
     canvas_size: tuple[int, int] = (1280, 720),
 ) -> DwellPlan:
     """维度 E：到位停顿。仅桌面指针语义消费（Spec §5 E）。
@@ -569,12 +541,6 @@ def plan_dwell(
     """
     if option not in DWELL_OPTIONS:
         raise ValueError(f'plan_dwell: 未知 option {option!r}，可选 {DWELL_OPTIONS}')
-
-    if option == 'hesitate':
-        # 长尾只属 heavy；medium 传进来也退化为 gauss，不靠调用方自律
-        if level == 'heavy' and rng.random() < persona.hesitate_p:
-            return DwellPlan(segments=((None, float(rng.uniform(*HESITATE_RANGE_S))),))
-        return DwellPlan(segments=((None, _dwell_gauss_seconds(rng, persona)),))
 
     if option == 'gauss':
         return DwellPlan(segments=((None, _dwell_gauss_seconds(rng, persona)),))
@@ -603,43 +569,3 @@ def plan_dwell(
         point = _clip_strategy_point((target[0] + dx, target[1] + dy), canvas_size)
         segments.append((point, float(sec)))
     return DwellPlan(segments=tuple(segments))
-
-
-def swipe_tail(
-    rng: np.random.Generator,
-    base_delays: list[float],
-    *,
-    option: str,
-    level: HumanizeLevel,
-) -> _SwipeTail | None:
-    """维度 H：滑动末段。返回 None 表示**不替换末段**。
-
-    只在 facade 的 plan_swipe() 内调用，_SwipeTail 不出 facade。四个 backend
-    各自实现"覆盖最后 N 个 delay"正是要避免的分歧来源。
-
-    替换而非叠加：叠加会让预算失控（Spec §5 H）。
-    """
-    if option not in SWIPE_TAIL_OPTIONS:
-        raise ValueError(f'swipe_tail: 未知 option {option!r}，可选 {SWIPE_TAIL_OPTIONS}')
-    n = len(base_delays)
-    if n == 0:
-        return None
-
-    if option == 'natural' and level in ('medium', 'heavy'):
-        # medium/heavy 的 D 已给出自然减速，不需要也不应该再替换
-        return None
-
-    count = int(rng.integers(RANDOM_TAIL_COUNT[0], RANDOM_TAIL_COUNT[1] + 1))
-    count = min(count, n)   # 点数不足时裁剪，不添加额外点
-
-    if option == 'random_tail':
-        delays = [float(rng.uniform(*RANDOM_TAIL_DELAY_S)) for _ in range(count)]
-        return _SwipeTail(count=count, delays=tuple(delays))
-
-    # option == 'natural' 且 level == 'light'：无可信 profile，用主体 delay 中位数
-    # 做基准生成低频近恒定 jitter。目的是甩掉 legacy 的固定尾巴，而不是造一个新常量
-    body = base_delays[:-count] or base_delays
-    median = float(sorted(body)[len(body) // 2])
-    noise = _correlated_jitter(rng, count, NATURAL_LIGHT_JITTER)
-    delays = [max(0.0, median * (1.0 + e)) for e in noise]
-    return _SwipeTail(count=count, delays=tuple(delays))

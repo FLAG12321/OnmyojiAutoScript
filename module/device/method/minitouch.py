@@ -1488,39 +1488,25 @@ class Minitouch(Connection):
     def _swipe_minitouch_humanized_impl(self, p1, p2, duration=None):
         """开档滑动：DOWN/MOVE/UP 三批，MOVE 批内按 wait(ms) → move → commit 追加。
 
-        light 保留 legacy 贝塞尔点位（不启用 C 几何），只替换 timing；
-        medium/heavy 由 facade 生成新几何与最终 MovePlan。触摸 liftoff（维度 F）
-        在 UP 前并入 MOVE 批。DOWN 使用 startPos，最终 endpoint 原样发送；
-        UP 后不消费 MovePlan delay。A 类计划回退（plan/量化不可表示）在事件
-        发出前直接走一次无装饰 legacy。
+        几何与最终 MovePlan 均由 facade 生成。触摸 liftoff（维度 F）在 UP 前
+        并入 MOVE 批。DOWN 使用 startPos，最终 endpoint 原样发送；UP 后不消费
+        MovePlan delay。A 类计划回退（plan/量化不可表示）在事件发出前直接走
+        一次无装饰 legacy。
         """
         start = (int(p1[0]), int(p1[1]))
         end = (int(p2[0]), int(p2[1]))
-        if self.humanizer.level == 'light' and duration is None:
-            # light 的点位复现依赖 duration×100；缺失时无法保持形状等价。
-            # 此时尚未消费任何 RNG，直接走 legacy 与 off 路径完全一致
-            return self._swipe_minitouch_legacy_impl(p1, p2, duration=duration)
         gap = self.humanizer.gap_seconds(0.05)
         if gap is not None:
             self._humanized_minitouch_gap_s = gap
         try:
-            legacy_points = None
             base_delay_s = 0.010
-            if self.humanizer.level == 'light':
-                # light 复用现有 _generate_bezier_points 得到相同形状与点数，去掉起点；
-                # 预算 = 0.010 × duration×100 点 = duration，与 legacy 总时长一致
-                points = self._generate_bezier_points(start, end, max(int(duration * 100), 5))
-                legacy_points = [tuple(p) for p in points]
-                if legacy_points and legacy_points[0] == start:
-                    legacy_points.pop(0)
-            elif duration is not None:
-                # medium/heavy 预算 = 调用方 duration（legacy 总时长语义）：
+            if duration is not None:
+                # 预算 = 调用方 duration（legacy 总时长语义）：
                 # budget = base × PROFILE_MAX_POINTS。之前写死 base=0.010 →
                 # 预算恒 120ms，长滑动（如 2s）被压成 120ms（17 倍过快）
                 base_delay_s = duration / timing.PROFILE_MAX_POINTS
             plan = self.humanizer.plan_swipe(
                 start, end, timing_mode='device_wait', base_delay_s=base_delay_s,
-                legacy_points=legacy_points,
             )
             if plan is None:
                 # A 类计划回退：事件尚未发出，直接调用一次无装饰 legacy impl

@@ -1,6 +1,6 @@
 """拟人化输入的计划数据类（Spec §4.6）。
 
-四个 frozen dataclass 是策略层与 backend 之间的唯一契约载体。backend 只把最终
+三个 frozen dataclass 是策略层与 backend 之间的唯一契约载体。backend 只把最终
 计划翻译成原生事件，不自行解释语义——这正是"不同后端各自解释同一个 delays"
 那类隐患的收口方式。
 
@@ -82,10 +82,10 @@ class MovePlan:
 
     @property
     def total_seconds(self) -> float:
-        """最终计划的请求耗时，已含维度 H 的末段替换。
+        """最终计划的请求耗时。
 
-        这是预算门禁的唯一比较对象：H 是"替换"而非"叠加"，所以合并后的 delays
-        之和才是真值，不能再拿 H 合并前的基础预算断言。
+        这是预算门禁的唯一比较对象：delays 是**合并后**的真值（facade 可能把
+        two_phase 的停顿并入对应 delay），不能再拿合并前的基础预算断言。
         """
         return float(sum(self.delays))
 
@@ -129,28 +129,3 @@ class TailPlan:
 
     def __post_init__(self):
         _validate_parallel(self.points, self.delays, 'TailPlan')
-
-
-@dataclass(frozen=True)
-class _SwipeTail:
-    """维度 H 的内部载体。
-
-    下划线前缀是契约的一部分：H 在 facade 的 plan_swipe() 内部完成末段替换，
-    任何 backend 都不得 import 本类型。四个 backend 各自实现"覆盖最后 N 个
-    delay"正是要避免的分歧来源。
-    """
-
-    count: int
-    delays: tuple[float, ...]
-
-    def __post_init__(self):
-        if isinstance(self.count, bool) or not isinstance(self.count, int):
-            raise ValueError(f'_SwipeTail.count 必须是 int，收到 {self.count!r}')
-        if self.count < 0:
-            raise ValueError(f'_SwipeTail.count 不能为负，收到 {self.count}')
-        _require_tuple(self.delays, '_SwipeTail.delays')
-        if len(self.delays) != self.count:
-            raise ValueError(
-                f'_SwipeTail: delays({len(self.delays)}) 长度必须等于 count({self.count})')
-        for i, d in enumerate(self.delays):
-            _validate_delay(d, f'_SwipeTail.delays[{i}]')

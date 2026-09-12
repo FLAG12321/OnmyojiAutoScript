@@ -1,8 +1,10 @@
 """拟人化输入策略层。
 
-档位枚举放在包的 __init__ 是刻意的：timing / geometry / gesture 都要按档位
-分叉，而门面 HumanizerContext（Task 11）又要 import 这三个模块——把 HumanizeLevel
-下沉到子模块会形成循环 import。
+档位枚举定义在本包的 __init__ 里，是它对外的公开类型（配置层
+`tasks/Script/config_device.py` 直接引用它做字段校验）。
+2026-09-13 档位收敛后，timing / geometry / gesture 三个子模块已不再从包级
+import 任何名字，因此这里**不再有**循环 import 的约束——枚举留在原处只是
+保持公开 API 的位置不变。
 
 本文件追加 HumanizerContext 门面与 ContextVar 绑定 API（Plan Task 11）：
 - 门面的方法名与模块函数同名是刻意的，但签名差别就是门面的职责——门面**不收
@@ -18,7 +20,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
 
-from collections import deque
 import math
 import time
 
@@ -27,12 +28,12 @@ import numpy as np
 from module.device.humanize.plan import DwellPlan, MovePlan, Point, TailPlan
 from module.logger import logger
 
-# 四档：off 全旁路，light/medium/heavy 逐级放开维度（Spec §7.2）。
-# 必须先于子模块 import 定义：timing/gesture 都会 `from module.device.humanize
-# import HumanizeLevel`，此时本模块若未定义该名字会触发循环 import 报错。
-HumanizeLevel = Literal['off', 'light', 'medium', 'heavy']
+# 两档：off 全旁路，medium 是唯一拟人档（2026-09-13 收敛：原 light/heavy 的
+# 实现路径已删除，磁盘上的旧档位值由 config_validation._migrate_humanize_level
+# 迁移到 medium）。
+HumanizeLevel = Literal['off', 'medium']
 
-LEVELS: tuple[str, ...] = ('off', 'light', 'medium', 'heavy')
+LEVELS: tuple[str, ...] = ('off', 'medium')
 
 # 门面对外类型别名（Spec §4.5）
 GestureKind = Literal['pointer_move', 'swipe', 'drag', 'idle']
@@ -50,15 +51,17 @@ from module.device.humanize import timing
 # geometry.shape_points 时不受影响），真实计划生成仍走 geometry.shape_points 属性
 from module.device.humanize.geometry import shape_points as _geometry_shape_points
 
-# light 档 plan_move 的近恒定延迟基准（秒）。桌面指针移动的预算 15~30ms 由 backend
-# 通过 budget_ms 传入；本常量只在预算缺失时兜底（12 点约 60ms，属可接受回退）
-_LIGHT_MOVE_BASE_DELAY_S = 0.005
+# plan_move 近恒定延迟的兜底基准（秒）。桌面指针移动的预算 40~120ms 由 backend
+# 通过 budget_ms 传入；本常量只在预算缺失、且 profile 降点后仍不可信时的
+# legacy_move_delays 退化路径里使用（12 点约 60ms，属可接受回退）。
+# 原名 _LIGHT_MOVE_BASE_DELAY_S——light 档于 2026-09-13 删除后仅剩这条退化路径消费
+_MOVE_FALLBACK_BASE_DELAY_S = 0.005
 
 # plan_swipe 的逐点基准 delay（秒）。minitouch 显式传 base_delay_s=0.010；
-# 此处是预算缺失时的默认值，也是 medium/heavy 预算的推导基准（base × PROFILE_MAX_POINTS）
+# 此处是预算缺失时的默认值，也是预算的推导基准（base × PROFILE_MAX_POINTS）
 _SWIPE_BASE_DELAY_S = 0.010
 
-# medium/heavy plan_move 未传 budget_ms 时的默认预算（秒）。桌面 C 档请求 40~120ms，
+# plan_move 未传 budget_ms 时的默认预算（秒）。桌面请求 40~120ms，
 # 取中值 60ms 作回退
 _MOVE_BUDGET_DEFAULT_S = 0.060
 
@@ -98,12 +101,14 @@ def bind_humanizer(context: 'HumanizerContext | None'):
 class HumanizerContext:
     """每个 Device 一份的拟人化门面。
 
-    enabled/off 时所有策略入口返回 None 且不消费 RNG；开档时内部持有
-    persona + rng，按权重在允许集内挑选方案后委托给模块级策略函数。
+    enabled 为 False（off 档）时所有策略入口返回 None 且不消费 RNG；开档时
+    内部持有 persona + rng，按权重在允许集内挑选方案后委托给模块级策略函数。
+
+    2026-09-13 收敛后档位只剩 off/medium 两值，与 enabled 一一对应，因此门面
+    不再持有 level 字段——档位只在配置层与日志里存在，实现层只用布尔。
     """
 
     enabled: bool
-    level: HumanizeLevel
     persona: 'persona.Persona | None'
     rng: 'np.random.Generator | None'
     canvas_size: tuple[int, int]
@@ -112,31 +117,27 @@ class HumanizerContext:
         self,
         *,
         enabled: bool,
-        level: HumanizeLevel,
         persona: 'persona.Persona | None',
         rng: 'np.random.Generator | None',
         canvas_size: tuple[int, int] = (1280, 720),
     ) -> None:
         self.enabled = enabled
-        self.level = level
         self.persona = persona
         self.rng = rng
         self.canvas_size = canvas_size
         # 全操作共享间隔（2026-08-27 新增）状态：click/long_click/swipe/drag
-        # 共用同一份 CD。这是门面首个有状态维度——窗口与基准跟随 Device 生命周期。
+        # 共用同一份 CD，跟随 Device 生命周期。
         # 预付制：操作结束时计算下一次操作的间隔要求（_pending_require），
         # 由下一次截图入口（pace_view）等满——等待全部发生在「看」之前，
-        # 动作一旦决定立即执行（反应慢、动作快，人类模型）
+        # 动作一旦决定立即执行（反应慢、动作快，人类模型）。
+        # 2026-09-12 起间隔取值完全开环（单档区间随距离平移，不读历史节奏），
+        # 原先为 lognormal 分支服务的意图间隔窗口（_gap_window）与自适应基准
+        # （_gap_base）、以及配合它们的机制等待记账（_mech_wait）一起移除：
+        # 那条反馈回路在主导路径上从不参与取值
         self._gap_last_ts: float | None = None
-        self._gap_window: deque = deque(maxlen=timing.INTER_CLICK_WINDOW)
-        self._gap_base: float = timing.INTER_CLICK_MIN_S
         self._pending_require: float = 0.0
-        # 自上次操作以来机制注入的等待总量：record 时从间隔里扣除得到
-        # 「意图节奏」，防止控制器被自己制造的慢"欺骗"而压-松振荡
-        self._mech_wait: float = 0.0
-        # 距离分档的上一个落点（2026-09-06）：record_action 用它与本次
-        # target 的距离查 dist_goal_interval——预付制下下一次的目标尚未
-        # 确定，本次距离是下一次的经验代理
+        # 上一个落点（2026-09-06）：record_action 用它与本次 target 算距离，
+        # 距离决定间隔区间在 [0.20,0.35]~[0.65,0.80] 之间的位置
         self._last_record_point: 'tuple[int, int] | None' = None
         # 同一资源重复点击的指数退避状态：判定键优先用点击控件名 + roi_front
         # （不同按钮即便相邻也不会误判；同名且 ROI 一致才是同一资源——同名但
@@ -167,13 +168,13 @@ class HumanizerContext:
         if level not in LEVELS:
             raise ValueError(f'未知 humanize_level {level!r}，可选 {LEVELS}')
         if level == 'off':
-            return cls(enabled=False, level='off', persona=None, rng=None,
+            return cls(enabled=False, persona=None, rng=None,
                        canvas_size=canvas_size)
         config_name = getattr(config, 'config_name', None) or 'default'
         p = persona.PersonaStore(config_name).load_or_create()
         # 同一人格固定 seed 派生 RNG：同一个"人"的重启行为可复现
         rng = np.random.Generator(np.random.PCG64(p.seed))
-        return cls(enabled=True, level=level, persona=p, rng=rng,
+        return cls(enabled=True, persona=p, rng=rng,
                    canvas_size=canvas_size)
 
     # ---------------------------------------------------------------- 内部
@@ -359,21 +360,9 @@ class HumanizerContext:
             return None
         if profile_untrusted:
             delays = timing.legacy_move_delays(
-                self.rng, len(points), _LIGHT_MOVE_BASE_DELAY_S, total_budget_s=budget_s)
+                self.rng, len(points), _MOVE_FALLBACK_BASE_DELAY_S, total_budget_s=budget_s)
             logger.warning('拟人化 profile 未达可信门槛（含降点后），退化为近恒定 delay')
         return points, delays, extra
-
-    def _apply_swipe_tail(self, start: Point, end: Point, points, base_delays):
-        """维度 H 在 facade 内合并末段：替换而非叠加，合并后 total_seconds 即为真值。
-
-        _SwipeTail 只在门面内部出现，绝不向 backend 暴露（Plan 契约 9）。
-        """
-        tail_option = self._choose('swipe_tail', timing.SWIPE_TAIL_OPTIONS)
-        tail = timing.swipe_tail(self.rng, base_delays, option=tail_option, level=self.level)
-        if tail is not None:
-            base_delays = list(base_delays)
-            base_delays[-tail.count:] = list(tail.delays)
-        return plan.MovePlan(points=tuple(points), delays=tuple(base_delays))
 
     # ---------------------------------------------------------------- 公开方法
 
@@ -399,7 +388,6 @@ class HumanizerContext:
         gesture_kind: str,
         budget_ms: float | None = None,
         safe_region=None,
-        legacy_points: list[Point] | None = None,
     ) -> MovePlan | None:
         """一次移动/点击前定位的完整计划；失败（off/越界/无候选/几何失败）返回 None。"""
         if not self.enabled:
@@ -407,30 +395,10 @@ class HumanizerContext:
         if not self._endpoint_ok(start) or not self._endpoint_ok(end):
             self._warn_endpoint_oob('plan_move', start, end)
             return None
-        if self.level == 'light':
-            return self._plan_move_light(start, end, budget_ms, legacy_points)
         return self._plan_move_profiled(start, end, gesture_kind, budget_ms, safe_region)
 
-    def _plan_move_light(self, start, end, budget_ms, legacy_points):
-        """light：保留 legacy 点位，只剥离与 start 相等的首点，用近恒定间隔补时。
-
-        MovePlan.points 恒不含起点（全局契约 4）；剥离后为空、末项不等于 end 或
-        没有 legacy_points 时返回 None。
-        """
-        if not legacy_points:
-            return None
-        points = list(legacy_points)
-        if points and points[0] == start:
-            points.pop(0)
-        if not points or points[-1] != end:
-            return None
-        budget = None if budget_ms is None else budget_ms / 1000.0
-        delays = timing.legacy_move_delays(
-            self.rng, len(points), _LIGHT_MOVE_BASE_DELAY_S, total_budget_s=budget)
-        return plan.MovePlan(points=tuple(points), delays=tuple(delays))
-
     def _plan_move_profiled(self, start, end, gesture_kind, budget_ms, safe_region):
-        """medium/heavy：新二维几何 + 真实段长 profile + 动态降点，two_phase 停顿并入 delay。"""
+        """新二维几何 + 真实段长 profile + 动态降点，two_phase 停顿并入 delay。"""
         # 距离门控：长距离指针移动才允许纠正性子动作（overshoot）进入候选
         dist = math.hypot(float(end[0] - start[0]), float(end[1] - start[1]))
         shape_option = self._choose_shape_option(gesture_kind, safe_region, dist=dist)
@@ -462,8 +430,6 @@ class HumanizerContext:
         base_delay_s: float | None = None,
         timing_mode: TimingMode = 'python_sleep',
         safe_region=None,
-        legacy_points: list[Point] | None = None,
-        legacy_delays: list[float] | None = None,
         mouse: bool = False,
         point_cap: int | None = None,
     ) -> MovePlan | None:
@@ -482,65 +448,12 @@ class HumanizerContext:
         if not self._endpoint_ok(start) or not self._endpoint_ok(end):
             self._warn_endpoint_oob('plan_swipe', start, end)
             return None
-        if self.level == 'light':
-            return self._plan_swipe_light(
-                start, end, base_delay_s, timing_mode, legacy_points, legacy_delays)
         return self._plan_swipe_profiled(
             start, end, base_delay_s, timing_mode, safe_region, mouse, point_cap)
 
-    def _plan_swipe_light(self, start, end, base_delay_s, timing_mode, legacy_points, legacy_delays):
-        """light：保留 legacy 点位，不启用 C 几何。
-
-        python_sleep 下 legacy_delays 逐项原样作为基础 delay（只允许 H 替换末段），
-        否则按 base_delay_s 生成近恒定间隔；device_wait 下按真实段长做设备端
-        profile（预算 = sum(legacy_delays) 或 base_delay_s * len(points)）。
-        """
-        if not legacy_points:
-            return None
-        points = list(legacy_points)
-        delays = list(legacy_delays) if legacy_delays is not None else None
-        # 全局契约 4：MovePlan.points 恒不含起点。若 backend 传入的首点仍是 start，
-        # 连同其同索引 delay 一起剥离（backend 通常已剥离，这里是结构性兜底）
-        if points and points[0] == start:
-            points.pop(0)
-            if delays:
-                delays.pop(0)
-        if not points or points[-1] != end:
-            return None
-
-        if timing_mode == 'python_sleep':
-            if delays is not None:
-                base_delays = delays
-            else:
-                base = base_delay_s if base_delay_s is not None else _SWIPE_BASE_DELAY_S
-                base_delays = timing.legacy_move_delays(self.rng, len(points), base)
-        else:  # device_wait：minitouch 专用，不启用 C 几何
-            if delays is not None:
-                budget = float(sum(delays))
-            else:
-                base = base_delay_s if base_delay_s is not None else _SWIPE_BASE_DELAY_S
-                budget = base * len(points)
-            speed_option = self._choose('speed', timing.SPEED_OPTIONS)
-            distances = timing.segment_distances(start, points)
-            base_delays = timing.profiled_move_delays(
-                self.rng, distances, budget, speed_option)
-            # 整数毫秒可表示性检查（契约 #6 step 5）：legacy 点数固定不可降，退化为近恒定
-            total_ms = int(sum(base_delays) * 1000 + 0.5)
-            positive = sum(1 for d in base_delays if d > 0)
-            if total_ms < positive:
-                base = base_delay_s if base_delay_s is not None else _SWIPE_BASE_DELAY_S
-                base_delays = timing.legacy_move_delays(
-                    self.rng, len(points), base, total_budget_s=budget)
-                logger.warning(
-                    '拟人化 light+device_wait 预算不足 1ms/点（目标 %d ms / %d 正 delay）：'
-                    'legacy 点数固定不可降，近恒定退化仍无法满足 minitouch 整数毫秒量化'
-                    '（契约 #6 step 5/6）；维持近恒定 delay，交由 Task 16 的量化与 §11 校准兜底',
-                    total_ms, positive)
-        return self._apply_swipe_tail(start, end, points, base_delays)
-
     def _plan_swipe_profiled(self, start, end, base_delay_s, timing_mode, safe_region,
                              mouse=False, point_cap=None):
-        """medium/heavy：恒定回报率设备仿真——间隔严格相等的点流。
+        """恒定回报率设备仿真——间隔严格相等的点流。
 
         真实输入设备按固定采样率（回报率）上报事件：每个事件的时间间隔相同、
         速度编码在位置增量里。回报率来自人格分位数映射到真实设备区间（触摸
@@ -582,12 +495,11 @@ class HumanizerContext:
         points, delays, extra = result
         for idx, sec in extra.items():
             delays[idx] += sec
-        # H（滑动末段迟疑）在恒定回报率模型下不再替换末段 delay：速度已编码进
-        # 点密度（末段减速 = 末段点距变小、间隔恒定），random_tail 的大 delay
-        # 会让事件间隔突增到 50~130ms——USB/触摸上报不会这样，间隔方差本身就是
-        # 指纹。"到达后停顿再抬起"由维度 F 的 touch_liftoff 表达（UP 前小步
-        # 微位移 + 恒定间隔）。light 档保留 H：legacy 点距均匀，末段加大 delay
-        # 是真实的末端迟疑（见 _plan_swipe_light 的 _apply_swipe_tail）
+        # 速度已编码进点密度（末段减速 = 末段点距变小、间隔恒定），不再替换末段
+        # delay：50~130ms 的大 delay 会让事件间隔突增——USB/触摸上报不会这样，
+        # 间隔方差本身就是指纹。"到达后停顿再抬起"由维度 F 的 touch_liftoff 表达
+        # （UP 前小步微位移 + 恒定间隔）。原维度 H 只在 light 档生效，已随 light
+        # 于 2026-09-13 一并删除
         return plan.MovePlan(points=tuple(points), delays=tuple(delays))
 
     def plan_dwell(self, target: Point) -> DwellPlan | None:
@@ -599,7 +511,7 @@ class HumanizerContext:
             return None
         option = self._choose('dwell', timing.DWELL_OPTIONS)
         return timing.plan_dwell(
-            self.rng, target, self.persona, option=option, level=self.level,
+            self.rng, target, self.persona, option=option,
             canvas_size=self.canvas_size)
 
     def plan_pointer_tail(self, target: Point) -> TailPlan | None:
@@ -609,10 +521,8 @@ class HumanizerContext:
         if not self._endpoint_ok(target):
             self._warn_endpoint_oob('plan_pointer_tail', target, None)
             return None
-        option = self._choose('pointer_tail', gesture.POINTER_TAIL_OPTIONS)
         return gesture.plan_pointer_tail(
-            self.rng, target, self.persona, option=option, level=self.level,
-            canvas_size=self.canvas_size)
+            self.rng, target, self.persona, canvas_size=self.canvas_size)
 
     def plan_touch_liftoff(self, target: Point) -> TailPlan | None:
         """维度 F（触摸语义）UP 前微位移。None 可能是 off 旁路或策略 none（20% 人类方差）。"""
@@ -623,7 +533,7 @@ class HumanizerContext:
             return None
         option = self._choose('touch_liftoff', gesture.TOUCH_LIFTOFF_OPTIONS)
         return gesture.plan_touch_liftoff(
-            self.rng, target, self.persona, option=option, level=self.level,
+            self.rng, target, self.persona, option=option,
             canvas_size=self.canvas_size)
 
     def plan_hold(
@@ -731,8 +641,6 @@ class HumanizerContext:
             return 0.0
         self._pending_require = 0.0
         time.sleep(wait)
-        # 机制等待记账：record 时从间隔里扣除，窗口只统计意图节奏
-        self._mech_wait += wait
         return wait
 
     def pace_execute(self) -> float:
@@ -752,7 +660,6 @@ class HumanizerContext:
                    timing.EXECUTE_PACE_MAX_S)
         if wait > 0:
             time.sleep(wait)
-            self._mech_wait += wait
         # 扣除已流逝/已等待的部分，剩余要求留给后续消费点
         self._pending_require = max(
             0.0, self._pending_require - (elapsed + wait))
@@ -760,11 +667,9 @@ class HumanizerContext:
 
     def record_action(self, target=None, name=None, roi=None,
                       repeat_exempt: bool = False) -> None:
-        """操作结束打点：更新节奏统计 + 同一资源重复判定 + 计算下次要求。
+        """操作结束打点：同一资源重复判定 + 计算下次要求。
 
         由 Control 在每次输入操作（click/long_click/swipe/drag）完成后调用。
-        - 意图间隔 = (本次操作时刻 - 上次操作结束时刻) - 期间机制等待：
-          窗口只统计任务层的自然节奏，防止控制器被自己制造的慢"欺骗"；
         - 同一资源判定（优先级从高到低）：
           ① name + roi（点击控件名与其 roi_front）：同名且 ROI 一致才是同一
             资源——同名但 ROI 不同说明任务在复用同一 RuleClick 遍历列表
@@ -780,23 +685,16 @@ class HumanizerContext:
           就是「预期内连点」的资源在点击处显式声明豁免（每次点击都真实
           生效、退避前提「点了没反应」不成立，如十连召唤的金按钮每出一抽
           重现一次）；豁免点击仍更新判重基准，不影响其他控件的计数重置；
-        - 下次要求由 timing.next_action_requirement 计算（动态平衡基准 +
-          常规要求 + 退避取 max），挂起待 pace_view 消费。常规要求的抽样
-          中心按本次与上次落点的距离分档（2026-09-06 用户实测：≤400px
-          300~600ms、>500px 700ms~1.5s）；距离不可得时走 base 自适应。
+        - 下次要求由 timing.next_action_requirement 计算（单档区间随距离平移，
+          uniform 抽样；再与退避取 max），挂起待 pace_view 消费。
 
         off 档无副作用。
         """
         if not self.enabled:
             return
-        now = time.time()
-        if self._gap_last_ts is not None:
-            # 意图间隔：扣除机制注入的等待（pace_view/pace_execute 的 sleep），
-            # 窗口记录的是任务层想多快，而不是被我们拖慢后的实际节奏
-            intent = max(0.0, (now - self._gap_last_ts) - self._mech_wait)
-            self._gap_window.append(intent)
-        self._gap_last_ts = now
-        self._mech_wait = 0.0
+        # 只留计时原点（预付制用它算「已流逝」）；原意图间隔记账
+        # （_mech_wait 扣除 + _gap_window 追加）随 base 自适应一并移除
+        self._gap_last_ts = time.time()
         # 同一资源判定：控件名 + roi_front 判重（任一方缺 ROI 退化为仅按名），
         # 坐标半径兜底，swipe/drag 重置
         if name is not None and name not in ('Click', 'LongClick', 'SWIPE', 'DRAG'):
@@ -833,9 +731,8 @@ class HumanizerContext:
             self._repeat_name = None
             self._repeat_point = None
             self._repeat_roi = None
-        # 距离分档（2026-09-06 实测）：本次落点与上一落点的距离作为下一次
-        # 间隔要求的经验代理（预付制下下一目标未知）；无名 swipe（target=None）
-        # 距离为 None 走常规抽样。本次有落点则更新基准供下一次使用。
+        # 本次落点与上一落点的距离：决定间隔区间的位置（区间随距离整体平移，
+        # 越远越慢）。无落点（首次操作 / 无名 swipe）时 dist 为 None
         dist = None
         if target is not None and self._last_record_point is not None:
             dist = math.hypot(target[0] - self._last_record_point[0],
@@ -844,8 +741,8 @@ class HumanizerContext:
             self._last_record_point = (int(target[0]), int(target[1]))
         else:
             self._last_record_point = None
-        self._pending_require, self._gap_base = timing.next_action_requirement(
-            self.rng, self._gap_window, self._gap_base, self._repeat_count, dist)
+        self._pending_require = timing.next_action_requirement(
+            self.rng, self._repeat_count, dist)
 
     def plan_idle(self, since_last_s: float, cursor: Point | None) -> MovePlan | None:
         """维度 G 点击间空闲。cursor 未知或未达阈值时返回 None（策略层语义）。"""
@@ -858,7 +755,7 @@ class HumanizerContext:
         option = self._choose('idle', gesture.IDLE_OPTIONS)
         return gesture.plan_idle(
             self.rng, since_last_s, cursor, self.persona, option=option,
-            level=self.level, canvas_size=self.canvas_size)
+            canvas_size=self.canvas_size)
 
 
 __all__ = [

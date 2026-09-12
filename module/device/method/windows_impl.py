@@ -55,14 +55,15 @@ class Window(Handle):
         return getattr(self, 'humanizer', None)
 
     def _desktop_move_budget_ms(self, start, end) -> float:
-        """桌面指针移动的请求预算（Spec §5 D）：light 15~30ms；medium/heavy 40~120ms × 人格速度缩放。
+        """桌面指针移动的请求预算（Spec §5 D）：40~120ms × 人格速度缩放。
 
-        facade 的 plan_move 按传入 budget_ms 生成 delays，不自行套档位公式，
+        facade 的 plan_move 按传入 budget_ms 生成 delays，不自行套公式，
         因此预算推导落在消费点（backend）——这正是契约 #10「消费点决定能力与预算」。
+        humanizer 未启用时 plan_move 直接返回 None，本函数的返回值不被消费。
         """
         humanizer = self._humanizer
         d = dist(start, end)
-        if humanizer is not None and humanizer.level in ('medium', 'heavy'):
+        if humanizer is not None and humanizer.enabled:
             return min(max(d * 0.35, 40.0), 120.0) * humanizer.persona.move_speed_scale
         return min(max(d * 0.12, 15.0), 30.0)
 
@@ -353,10 +354,10 @@ class Window(Handle):
         self.move_desktop_window_message(x, y)
         mx, my = self.desktop_message_coord(x, y)
         lparam = MAKELONG(mx, my)
-        # 维度 E：到位停顿，仅桌面指针语义且只属 medium/heavy（§7.2：light 无 E）。
+        # 维度 E：到位停顿，仅桌面指针语义消费（触摸协议无此维度）。
         # DwellPlan 语义写死为"先发点、再等待"；None 段只等待，settle 段发
         # ±(1~2)px 的 WM_MOUSEMOVE 保持悬停刷新
-        if humanizer is not None and humanizer.level in ('medium', 'heavy'):
+        if humanizer is not None and humanizer.enabled:
             dwell = humanizer.plan_dwell((int(x), int(y)))
         else:
             dwell = None
@@ -416,17 +417,12 @@ class Window(Handle):
         if len(trace) > self.DESKTOP_MOVE_MAX_POINTS:
             step = len(trace) / self.DESKTOP_MOVE_MAX_POINTS
             trace = [trace[int(i * step)] for i in range(self.DESKTOP_MOVE_MAX_POINTS)]
-        # 维度 D（light 桌面移动的主要收益点，今天零 sleep）：把既有轨迹点交给
-        # plan_move，light 由 facade 剥离与 start 相同的首点后补近恒定间隔，
-        # medium/heavy 生成新二维几何。None（off/越界/失败）回退原裸循环（逐点连发）
+        # 维度 D：把既有轨迹点交给 plan_move 生成新二维几何与速度剖面。
+        # None（off/越界/失败）回退原裸循环（逐点连发）
         humanizer = self._humanizer
         if humanizer is not None:
-            # desktop_trace 返回 list，facade 的起点/终点比较用 tuple：统一转 tuple，
-            # 否则 [600,500] != (600,500) 会让 light 判定"末项非终点"而整体回退
-            legacy_points = [tuple(p) for p in trace]
             plan = humanizer.plan_move(
                 start, target, gesture_kind='pointer_move',
-                legacy_points=legacy_points,
                 budget_ms=self._desktop_move_budget_ms(start, target))
             if plan is not None:
                 # MovePlan.delays[i] 是发送 points[i] 前的等待；无 DOWN 的纯 pointer
@@ -563,9 +559,9 @@ class Window(Handle):
         self.move_desktop_window_message(x, y)
         lparam = MAKELONG(*self.desktop_message_coord(x, y))
         humanizer = self._humanizer
-        # 维度 E：到位停顿，仅桌面指针语义且只属 medium/heavy（§7.2）。
+        # 维度 E：到位停顿，仅桌面指针语义消费。
         # 既有长按时长是业务参数，不由维度 B 重采样
-        if humanizer is not None and humanizer.level in ('medium', 'heavy'):
+        if humanizer is not None and humanizer.enabled:
             dwell = humanizer.plan_dwell((int(x), int(y)))
         else:
             dwell = None
@@ -637,9 +633,8 @@ class Window(Handle):
         # PostMessage(handleNum, WM_ACTIVATE, WA_ACTIVE, 0)
 
         humanizer = self._humanizer
-        # 维度 D/H：light 保留既有逐点 sleep（近恒定，D no-op），只由 facade 应用
-        # H 末段替换；medium/heavy 用最终 plan_swipe（新几何）。None（off/失败）
-        # 回退原逐点循环。维度 I：UP 前固定 sleep(0.05) 换成同均值抖动
+        # 维度 D：手势主体走最终 plan_swipe（新几何 + 恒定回报率点流）。
+        # None（off/失败）回退原逐点循环。维度 I：UP 前固定 sleep(0.05) 换成同均值抖动
         manual_control: int = 3  # 手动控制最后几个点的数量
         total_len: int = len(trace)
         # 每点基础延迟（秒）：duration 提供时均摊到轨迹各点——轨迹几何仍由 interval
@@ -649,31 +644,20 @@ class Window(Handle):
         else:
             per_point_delay = interval / 1000.0
         plan = None
-        # off 档必须整体走旧循环：legacy_delays 的 random.randint 预消耗会让 fallback
-        # 再消费一次全局 RNG（契约 #1 off 零回归），故门控加 humanizer.enabled
         if humanizer is not None and humanizer.enabled:
-            # 按既有算法预生成 legacy_delays，facade 原样保留基础 delay、只替换末段。
-            # trackArray 返回 list，facade 的起点/终点比较用 tuple：先统一转 tuple
-            legacy_rng_state = random.get_state()
-            legacy_points = [tuple(p) for p in trace]
-            legacy_delays = [
-                0.08 if manual_control >= total_len - index
-                else ((interval + random.randint(-2, 2)) / 1000.0 if duration is None
-                      else max(per_point_delay + random.uniform(-per_point_delay * 0.2,
-                                                                 per_point_delay * 0.2), 0.001))
-                for index, pos in enumerate(trace)
-            ]
+            # 预算 = legacy 逐点延迟的总和。2026-09-13 之前这里为 light 档预生成
+            # 整份 legacy_delays 再求和，而 profiled 路径从不消费那份随机数——纯粹
+            # 白消费全局 RNG（成功后不回滚）。改用各点标称值直接算总和：抖动项
+            # 均值为 0，在可达输入上与原期望相等（唯一的偏离是旧式非尾点
+            # max(..., 0.001) 的 1ms 地板在 duration/total_len < 1.25ms 时抬高预算，
+            # 而调用方 duration 至少 0.5s 或由 swipe_duration_by_dist 推导，
+            # 到不了那个区间）；配套的 random.set_state 回滚一并省掉
+            n_tail = min(manual_control, total_len)
+            budget_s = (total_len - n_tail) * per_point_delay + n_tail * 0.08
             plan = humanizer.plan_swipe(
                 tuple(startPos), tuple(endPos),
-                legacy_points=legacy_points, legacy_delays=legacy_delays,
-                # medium/heavy 预算 = legacy 总时长（duration 提供时每点延迟已按其
-                # 均摊，预算随之缩放）。不传时 facade 用固定 120ms，长滑动会被压快。
-                # light 路径直接消费 legacy_delays，不读该参数
-                base_delay_s=sum(legacy_delays) / PROFILE_MAX_POINTS)
-            if plan is None:
-                # 计划失败时完全回到原始循环，撤销仅为拟人化计划预消费的随机数，
-                # 让 enabled fallback 与原 legacy 路径保持同一事件和 RNG 序列。
-                random.set_state(legacy_rng_state)
+                # 不传时 facade 用固定 120ms，长滑动会被压快
+                base_delay_s=budget_s / PROFILE_MAX_POINTS)
             # 维度 I：UP 前固定 sleep(0.05) 换成同均值抖动。只随主计划成功生效——
             # plan 失败（off/越界）时整体回退原旁路，连 gap 也保持原常量
             gap = humanizer.gap_seconds(0.05) if plan is not None else None
@@ -747,8 +731,7 @@ class Window(Handle):
         self.move_desktop_window_message(startPos[0], startPos[1])
         start_lparam = MAKELONG(*self.desktop_message_coord(startPos[0], startPos[1]))
         PostMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, start_lparam)
-        # 维度 D/H：手势主体走 plan_swipe——light 保留既有逐点 sleep（D no-op），
-        # 只由 facade 应用 H 末段替换；medium/heavy 用最终 plan_swipe（新几何）。
+        # 维度 D：手势主体走最终 plan_swipe（新几何 + 恒定回报率点流）。
         # None（off/失败）回退原逐点循环。维度 I：UP 前固定 sleep(0.05) 换同均值抖动
         humanizer = self._humanizer
         manual_control: int = 3
@@ -760,32 +743,18 @@ class Window(Handle):
         else:
             per_point_delay = interval / 1000.0
         plan = None
-        # off 档必须整体走旧循环：legacy_delays 的 random.randint 预消耗会让 fallback
-        # 再消费一次全局 RNG（契约 #1 off 零回归），故门控加 humanizer.enabled
         if humanizer is not None and humanizer.enabled:
-            # 按既有算法预生成 legacy_delays，facade 原样保留基础 delay、只替换末段。
-            # desktop_trace 返回 list，facade 的起点/终点比较用 tuple：先统一转 tuple
-            legacy_rng_state = random.get_state()
-            legacy_points = [tuple(p) for p in trace]
-            legacy_delays = [
-                0.08 if manual_control >= total_len - index
-                else ((interval + random.randint(-2, 2)) / 1000.0 if duration is None
-                      else max(per_point_delay + random.uniform(-per_point_delay * 0.2,
-                                                                 per_point_delay * 0.2), 0.001))
-                for index, pos in enumerate(trace)
-            ]
+            # 预算 = legacy 逐点延迟的总和，同模拟器入口：改用各点标称值直接算
+            # （抖动项均值为 0，可达输入上与原期望相等），不再为已删除的 light 档
+            # 预生成整份 legacy_delays
+            n_tail = min(manual_control, total_len)
+            budget_s = (total_len - n_tail) * per_point_delay + n_tail * 0.08
             plan = humanizer.plan_swipe(
                 tuple(startPos), tuple(endPos),
-                legacy_points=legacy_points, legacy_delays=legacy_delays,
-                # 同模拟器入口：medium/heavy 预算 = legacy 总时长（duration 提供时
-                # 每点延迟已按其均摊，预算随之缩放），light 不读该参数。桌面拖拽是
-                # 鼠标语义，回报率走鼠标区间（125~1000Hz，python_sleep 下被 clamp
-                # 到 200Hz）
-                base_delay_s=sum(legacy_delays) / PROFILE_MAX_POINTS,
+                # 桌面拖拽是鼠标语义，回报率走鼠标区间（125~1000Hz，python_sleep
+                # 下被 clamp 到 200Hz）
+                base_delay_s=budget_s / PROFILE_MAX_POINTS,
                 mouse=True)
-            if plan is None:
-                # 计划失败时完全回到原始循环，撤销仅为拟人化计划预消费的随机数。
-                random.set_state(legacy_rng_state)
             # 维度 I：UP 前固定 sleep(0.05) 换成同均值抖动。只随主计划成功生效——
             # plan 失败（off/越界）时整体回退原旁路，连 gap 也保持原常量
             gap = humanizer.gap_seconds(0.05) if plan is not None else None

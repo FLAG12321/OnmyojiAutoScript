@@ -4,7 +4,8 @@
 以及按压中位数、瞄准偏心、手腕转动方向等标量。同一个人格跨重启保持不变，
 所以它必须持久化（Task 4），也必须能从 seed 完全复现。
 
-档位切换不重签人格：同一个"人"换了拟人化强度，把权重与档位允许集求交即可。
+档位收敛为 off/medium 两档后，off 根本不加载人格（不读文件、不生成），
+所以人格只属于"开档"这一种状态：方案允许集按 gesture_kind 划分，不再与档位求交。
 """
 from __future__ import annotations
 
@@ -21,26 +22,32 @@ from module.logger import logger
 
 # v2（2026-08-26）：权重表新增 'hold' 维（长按 hold 微颤）。旧人格 JSON 因
 # 严格键校验失败自动重签（换新 seed），日志记本版本号可归因到这次 schema 变更
-PERSONA_VERSION = 2
+# v3（2026-09-13）：档位收敛为 off/medium，权重表删除 swipe_tail 整维、
+# pointer_tail 整维与 dwell.hesitate；同时删掉 shape 维里永远抽不到的 two_phase
+# 权重（_choose_shape_option 的三个 gesture_kind 允许集都不放行它，等 API 能
+# 表达"容差足够"判据时再加回来——几何实现 geometry.shape_points 仍然保留）。
+# 旧人格同样因键集合不一致自动重签
+PERSONA_VERSION = 3
 
 # Dirichlet 浓度系数。用 25 而非 8：浓度太低会采出退化人格（某维度权重逼近 1，
 # 等于"永远只选一个方案"），与"多方案随机执行"的目标直接矛盾
 DIRICHLET_ALPHA_SCALE = 25
 
-# 各维度的默认权重。键名与 §4.5 的门面方法一一对应：
-# pointer_tail → plan_pointer_tail、touch_liftoff → plan_touch_liftoff
+# 各维度的默认权重。键名与 §4.5 的门面方法一一对应（如 touch_liftoff →
+# plan_touch_liftoff）。pointer_tail 与 swipe_tail 两维随 2026-09-13 的档位收敛
+# 一并删除：前者删掉 slide_away 后只剩 micro_drift 一个候选，单候选的权重没有
+# 意义（plan_pointer_tail 已改为直接生成）；后者（维度 H 滑动末段）随 light 档
+# 整体下线。
 # 标注"今天"的现状方案默认不进本表（uniform / same_point / fixed3 / fixed / none），
 # 唯一例外是 touch_liftoff.none —— 保留 0.2 表示约 20% 的触摸动作不产生抬起前漂移，
 # 这是真人方差而不是机器指纹
 DEFAULT_WEIGHTS: dict[str, dict[str, float]] = {
     'point': {'center_gauss': 0.50, 'offset_gauss': 0.35, 'edge_avoid': 0.10, 'prev_biased': 0.05},
     'press': {'lognormal': 0.60, 'bimodal': 0.20, 'gamma': 0.20},
-    'shape': {'bezier': 0.30, 'overshoot': 0.30, 'two_phase': 0.20, 'arc': 0.10, 's_curve': 0.05, 'jitter_line': 0.05},
+    'shape': {'bezier': 0.30, 'overshoot': 0.30, 'arc': 0.10, 's_curve': 0.05, 'jitter_line': 0.05},
     'speed': {'min_jerk': 0.60, 'ease_out': 0.25, 'sigmoid': 0.15},
-    'dwell': {'gauss': 0.75, 'settle': 0.20, 'hesitate': 0.05},
-    'pointer_tail': {'micro_drift': 0.70, 'slide_away': 0.30},
+    'dwell': {'gauss': 0.75, 'settle': 0.20},
     'touch_liftoff': {'liftoff_drift': 0.8, 'none': 0.2},
-    'swipe_tail': {'random_tail': 0.6, 'natural': 0.4},
     'idle': {'idle_drift': 0.7, 'park': 0.3},
     # 维度 J（长按 hold 微颤，2026-08-26 新增）：tremor 常态，none 保留约两成
     # "按得很稳"的人类方差
@@ -54,7 +61,6 @@ SCALAR_RANGES: dict[str, tuple[float, float]] = {
     'press_sigma': (0.25, 0.45),        # Spec §5 B
     'press_shape': (2.5, 5.0),          # Spec §5 B
     'dwell_mu': (50.0, 110.0),          # ms，Spec §5 E
-    'hesitate_p': (0.02, 0.07),         # Spec §5 E
     'move_speed_scale': (0.85, 1.30),   # Spec §5 D
     # 设备回报率分位数（不是 Hz 值）：触摸/鼠标各自的真实回报率区间不同，
     # 存分位数由 timing.report_rate_hz 映射到对应区间。设备回报率是硬件属性，
@@ -83,7 +89,6 @@ class Persona:
     press_sigma: float
     press_shape: float
     dwell_mu: float
-    hesitate_p: float
     arc_side: int
     move_speed_scale: float
     # 设备回报率分位数（SCALAR_RANGES 注释同）：timing.report_rate_hz 映射到
@@ -133,7 +138,6 @@ class Persona:
             press_sigma=_u('press_sigma'),
             press_shape=_u('press_shape'),
             dwell_mu=_u('dwell_mu'),
-            hesitate_p=_u('hesitate_p'),
             # 同一个人的手腕转动方向固定，所以 arc_side 是人格字段而不是每次随机
             arc_side=int(rng.choice([-1, 1])),
             move_speed_scale=_u('move_speed_scale'),

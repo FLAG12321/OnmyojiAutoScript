@@ -463,7 +463,7 @@ class Uiautomator2(Connection):
         return self._drag_along_impl(path)
 
     def _swipe_uiautomator2_humanized_impl(self, p1, p2, duration=0.1):
-        # 开档滑动（无 @retry）：plan_swipe 消费 C/D/H；None（off/越界/几何失败）
+        # 开档滑动（无 @retry）：plan_swipe 消费 C/D；None（off/越界/几何失败）
         # 时单次调用无装饰 legacy。path 结构：[起点(0)] + 每个计划点前带 delay +
         # 末尾 target 的 UP 哨兵(0)——points 已含 target，故只补 UP 不补第二个 MOVE。
         # 预算 = 调用方 duration（legacy 总时长语义）：budget = base × 12。此前

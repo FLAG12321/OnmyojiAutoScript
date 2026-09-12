@@ -209,6 +209,25 @@ def _migrate_drop_multi_daily_need_login(raw: dict) -> None:
         section.pop("need_login_time", None)
 
 
+def _migrate_humanize_level(raw: dict) -> None:
+    """拟人化档位收敛（2026-09-13）：已删除的 light/heavy 映射到 medium。
+
+    档位从四档收敛为 off/medium 两档，旧值留在磁盘上会被 pydantic 枚举校验
+    拒绝 → ConfigValidationError → 整份配置隔离、实例停止。迁移只改写被删掉的
+    两个值：off/medium 原样保留（幂等），字段缺失时无操作（模型填默认 off），
+    其余任意值故意不动——那是真正的配置损坏，必须继续 fail-closed，不能被
+    迁移悄悄掩盖成 medium。
+    """
+    script = raw.get("script")
+    if not isinstance(script, dict):
+        return
+    device = script.get("device")
+    if not isinstance(device, dict):
+        return
+    if device.get("humanize_level") in ("light", "heavy"):
+        device["humanize_level"] = "medium"
+
+
 LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]] = (
     (("master_disciple", "master_disciple_config", "master_battle_mode"), _migrate_master_battle_mode),
     (("orochi", "orochi_config", "leader_instance"), _migrate_orochi_team_fields),
@@ -225,6 +244,8 @@ LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]
     # 纯删除：多账号完成判定已由进度文件驱动，旧字段随配置残留须 pop 掉
     (("multi_daily_alt_acc", "multi_daily_alt_acc_config", "need_login"), _migrate_drop_multi_daily_need_login),
     (("multi_daily_alt_acc", "multi_daily_alt_acc_config", "need_login_time"), _migrate_drop_multi_daily_need_login),
+    # 档位收敛：light/heavy 已从枚举删除，旧值必须改写成 medium 才通得过校验
+    (("script", "device", "humanize_level"), _migrate_humanize_level),
 )
 
 

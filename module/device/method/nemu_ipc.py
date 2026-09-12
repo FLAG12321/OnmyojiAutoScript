@@ -670,7 +670,7 @@ class NemuIpc():
         self.sleep(gap if gap is not None else 0.050)
 
     def _swipe_nemu_ipc_humanized_impl(self, p1, p2, duration=0.1):
-        # 开档滑动：plan_swipe 消费 C/D/H；None（off/越界/几何失败）时走 legacy。
+        # 开档滑动：plan_swipe 消费 C/D；None（off/越界/几何失败）时走 legacy。
         # 语义与 swipe_nemu_ipc 相同：沿轨迹逐点 down（连续 down 被内核解释为
         # 同一接触点的 MOVE，见探针 getevent 验证），结尾 up。point_cap=100 与
         # uiautomator2 同口径（100 点/2s ≈ 50Hz 有效回报率）
