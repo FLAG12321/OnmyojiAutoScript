@@ -262,10 +262,10 @@ class ScriptTask(GameUi, ActivitySignInAssets):
         while not timeout_timer.reached():
             self.screenshot()
 
+            # 回到活动页即完成；否则连点返回逐层退出分享流程
+            if self.appear(self.I_E_MAIN):
+                return True
             if shared:
-                # 回到活动页即完成；否则连点返回逐层退出分享流程
-                if self.appear(self.I_E_MAIN):
-                    return True
                 if self.appear_then_click(self.I_B_BACK_RED, interval=1.5):
                     continue
 
