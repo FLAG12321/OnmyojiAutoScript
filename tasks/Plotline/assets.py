@@ -138,7 +138,7 @@ class PlotlineAssets:
 
 	# Ocr Rule Assets
 	# description 
-	O_CHARACTER_LEVEL = RuleOcr(roi=(13,25,23,23), area=(0,0,100,100), mode="DIGIT", method="Default", keyword="", name="character_level")
+	O_CHARACTER_LEVEL = RuleOcr(roi=(7,20,28,24), area=(0,0,100,100), mode="Digit", method="Default", keyword="", name="character_level")
 
 
 	# Swipe Rule Assets

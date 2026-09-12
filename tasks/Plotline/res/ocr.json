@@ -1,11 +1,11 @@
 [
   {
     "itemName": "character_level",
-    "roiFront": "13,25,23,23",
+    "roiFront": "7,20,28,24",
     "roiBack": "0,0,100,100",
-    "description": "description",
-    "mode": "DIGIT",
+    "mode": "Digit",
     "method": "Default",
-    "keyword": ""
+    "keyword": "",
+    "description": "description"
   }
 ]
