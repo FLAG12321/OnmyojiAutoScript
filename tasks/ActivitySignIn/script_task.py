@@ -263,10 +263,10 @@ class ScriptTask(GameUi, ActivitySignInAssets):
             self.screenshot()
 
             # 回到活动页即完成；否则连点返回逐层退出分享流程
-            if self.appear(self.I_E_MAIN):
+            if self.appear_rgb(self.I_E_MAIN):
                 time.sleep(1.5)
                 self.screenshot()
-                if self.appear(self.I_E_MAIN):
+                if self.appear_rgb(self.I_E_MAIN):
                     return True
                 continue
             if shared:
@@ -282,7 +282,7 @@ class ScriptTask(GameUi, ActivitySignInAssets):
             
             if self.appear_then_click(self.I_E_WECHAT_SHARE, interval=8):
                 continue
-            if self.appear(self.I_E_TO_SHARE):
+            if self.appear_rgb(self.I_E_TO_SHARE):
                 time.sleep(1.5)
                 self.screenshot()
                 self.appear_then_click(self.I_E_TO_SHARE, interval=1.5)
