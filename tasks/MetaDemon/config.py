@@ -28,9 +28,6 @@ class Strategy(ConfigBase):
     md_preset_group_team_1: str = Field(default='1,1')
     md_preset_group_team_2: str = Field(default='1,1')
 
-    def is_valid(self):
-        return self.md_match_names != "" and self.md_match_names is not None
-
     @classmethod
     def parse_names(cls, names: str) -> list[str]:
         names = names.replace('，', ',').replace(' ', '')
@@ -117,8 +114,8 @@ class MetaDemon(ConfigBase):
                     continue
                 try:
                     item = item_type(**value)
-                    if item.is_valid():
-                        data[list_name].append(item)
+                    # 编辑中的策略允许暂时清空名称，不能因此丢失预设或改变成员编号。
+                    data[list_name].append(item)
                     remove_keys.append(key)
                 except ValidationError as e:
                     pass

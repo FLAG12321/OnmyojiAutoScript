@@ -109,8 +109,8 @@ class MultiTasks(ConfigBase):
                     continue
                 try:
                     item = item_type(**value)
-                    if item.is_valid():
-                        data[list_name].append(item)
+                    # 保留空白和未填完的账号，逐字段编辑时不能丢内容或改变成员编号。
+                    data[list_name].append(item)
                     remove_keys.append(key)
                 except ValidationError:
                     pass

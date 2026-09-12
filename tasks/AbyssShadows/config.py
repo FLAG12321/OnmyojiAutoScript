@@ -389,8 +389,8 @@ class AbyssShadows(ConfigBase):
                 continue
             try:
                 item = AccountInfo(**value)
-                if item.is_valid():
-                    v[list_name].append(item)
+                # 目标账号允许先填区服或邮箱，角色名暂空时也应保存已填写内容。
+                v[list_name].append(item)
                 remove_keys.append(key)
             except (ValidationError, TypeError):
                 pass

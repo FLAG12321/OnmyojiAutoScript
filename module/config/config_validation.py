@@ -625,14 +625,8 @@ def _validate_dynamic_payloads(
                         profile.repaired_paths = []
                     profile.repaired_paths.extend(member_removed)
                 item = item_model.model_validate(copy.deepcopy(payload))
-                is_valid = getattr(item, "is_valid", None)
-                if callable(is_valid) and not is_valid():
-                    # 历史模板会保留默认空项；只有 canonical 精确等于默认实例时才兼容。
-                    default_item = item_model()
-                    if item.model_dump(mode="json") != default_item.model_dump(mode="json"):
-                        raise ConfigValidationError(
-                            f"invalid dynamic member {'/'.join(member_path)}: semantic validation failed"
-                        )
+                # 配置允许逐字段填写；是否具备执行条件不能决定账号草稿能否保存。
+                # 保留类型与范围校验，并在序列化后核对成员内容和索引未被改写。
                 expected_members[key] = item.model_dump(mode="json")
             except ConfigValidationError:
                 raise

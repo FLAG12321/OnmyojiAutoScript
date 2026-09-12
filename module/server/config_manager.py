@@ -23,6 +23,7 @@ from module.config.config_validation import (
     STRICT_CONFIG_VALIDATION,
     ConfigValidationError as StrictConfigValidationError,
     _reject_unknown_keys,
+    _sort_dynamic_member_keys,
     normalize_legacy_config,
 )
 from module.config.utils import convert_to_underscore
@@ -285,6 +286,8 @@ class ConfigManager:
             # 迁移会深拷贝输入；保留任务根路径，复用改名字段、旧枚举及动态字段的规则。
             task_value = normalize_legacy_config({task_key: task_value}, "")[task_key]
             _reject_unknown_keys(task_value, task_model_type, DEFAULT_CONFIG_PROFILE, (task_key,))
+            # 导入 JSON 的键顺序不代表账号顺序，补默认前按成员编号排列，避免账号错位。
+            _sort_dynamic_member_keys({task_key: task_value}, DEFAULT_CONFIG_PROFILE)
             # 部分任务的 before-validator 会吞掉坏列表项，仍需在补默认之前显式拦截。
             fields.extend(ConfigManager._collect_dynamic_field_validation_errors(
                 task_value, task_model_type, task_key,

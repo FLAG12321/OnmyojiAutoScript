@@ -102,8 +102,8 @@ class MasterDisciple(ConfigBase):
                     continue
                 try:
                     item = item_type(**value)
-                    if item.is_valid():
-                        data[list_name].append(item)
+                    # 保留空白和未填完的徒弟账号，编辑其他成员时不能压缩列表。
+                    data[list_name].append(item)
                     remove_keys.append(key)
                 except ValidationError as e:
                     pass

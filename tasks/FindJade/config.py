@@ -50,9 +50,6 @@ class InviteInfo(BaseModel):
             return
         self.__setattr__("invite_history_" + str(ctype), datetime.now())
 
-    def is_valid(self):
-        return self.name != "" and self.name is not None
-
 
 class FindJadeConfig(ConfigBase, extra='allow'):
     # 被邀请人数
@@ -117,8 +114,8 @@ class FindJade(ConfigBase):
                     continue
                 try:
                     item = item_type(**value)
-                    if item.is_valid():
-                        data[list_name].append(item)
+                    # 邀请对象和账号均允许逐字段填写，空白项也必须保留原编号。
+                    data[list_name].append(item)
                     remove_keys.append(key)
                 except ValidationError as e:
                     pass
