@@ -19,8 +19,11 @@ from module.config.config_generation import (
     ConfigIdentityConflictError,
 )
 from module.config.config_validation import (
+    DEFAULT_CONFIG_PROFILE,
     STRICT_CONFIG_VALIDATION,
     ConfigValidationError as StrictConfigValidationError,
+    _reject_unknown_keys,
+    normalize_legacy_config,
 )
 from module.config.utils import convert_to_underscore
 from module.logger import logger
@@ -162,44 +165,6 @@ class ConfigManager:
         return f'{prefix}.{key}' if prefix else key
 
     @staticmethod
-    def _collect_unknown_field_errors(data: Any, model_type: type[BaseModel], prefix: str = '') -> list[dict[str, str]]:
-        if not isinstance(data, dict):
-            return []
-
-        errors = []
-        fields = model_type.model_fields
-        for key, value in data.items():
-            field_path = ConfigManager._join_field_path(prefix, str(key))
-            if key == 'config_name' and model_type is ConfigModel:
-                continue
-            if key not in fields:
-                dynamic_field = ConfigManager._dynamic_list_item_model(str(key), fields)
-                if dynamic_field is None:
-                    errors.append(
-                        ConfigManager._format_field_error(
-                            field_path,
-                            'Extra inputs are not permitted',
-                            'extra_forbidden',
-                        )
-                    )
-                    continue
-                _, item_model = dynamic_field
-                errors.extend(ConfigManager._collect_unknown_field_errors(value, item_model, field_path))
-                continue
-
-            annotation = fields[key].annotation
-            if ConfigManager._is_model_type(annotation):
-                errors.extend(ConfigManager._collect_unknown_field_errors(value, annotation, field_path))
-                continue
-            item_model = ConfigManager._list_item_model(annotation)
-            if item_model is not None and isinstance(value, list):
-                for index, item in enumerate(value):
-                    errors.extend(
-                        ConfigManager._collect_unknown_field_errors(item, item_model, f'{field_path}.{index}')
-                    )
-        return errors
-
-    @staticmethod
     def _collect_dynamic_field_validation_errors(
         data: Any,
         model_type: type[BaseModel],
@@ -238,24 +203,6 @@ class ConfigManager:
                         ConfigManager._collect_dynamic_field_validation_errors(item, item_model, f'{field_path}.{index}')
                     )
         return errors
-
-    @staticmethod
-    def _validate_config_model(name: str, data: dict[str, Any]) -> None:
-        fields = ConfigManager._collect_unknown_field_errors(data, ConfigModel)
-        fields.extend(ConfigManager._collect_dynamic_field_validation_errors(data, ConfigModel))
-        model_data = copy.deepcopy(data)
-        model_data['config_name'] = name
-        try:
-            ConfigModel.model_validate(model_data)
-        except ValidationError as e:
-            fields.extend(ConfigManager._format_validation_error(e))
-        except (TypeError, ValueError, AttributeError) as e:
-            # 兼容模型的 before-validator 可能假定任务/分组节点为 dict，统一转成导入校验错误。
-            fields.append(ConfigManager._format_field_error(
-                "__root__", str(e), "model_type",
-            ))
-        if fields:
-            raise ConfigValidationError(fields)
 
     @staticmethod
     def validate_task_key(task_name: str) -> str:
@@ -326,20 +273,26 @@ class ConfigManager:
 
     @staticmethod
     def validate_task_value(task_key: str, task_value: dict[str, Any]) -> dict[str, Any]:
-        """
-        使用对应任务模型校验任务 value，返回可写回 JSON 的数据。
+        """迁移旧字段并补齐任务默认值，返回交给 Store 做最终校验的数据。
+
+        废弃字段使用持久化层的同一规则剔除，不再额外拒绝。模型仍负责新字段和
+        动态列表的默认补全，避免直接把旧任务片段交给严格存储时误判为缺项。
         """
         task_model_type = ConfigModel.model_fields[task_key].annotation
-        fields = ConfigManager._collect_unknown_field_errors(task_value, task_model_type, task_key)
-        fields.extend(ConfigManager._collect_dynamic_field_validation_errors(task_value, task_model_type, task_key))
+        fields = []
 
         try:
+            # 迁移会深拷贝输入；保留任务根路径，复用改名字段、旧枚举及动态字段的规则。
+            task_value = normalize_legacy_config({task_key: task_value}, "")[task_key]
+            _reject_unknown_keys(task_value, task_model_type, DEFAULT_CONFIG_PROFILE, (task_key,))
+            # 部分任务的 before-validator 会吞掉坏列表项，仍需在补默认之前显式拦截。
+            fields.extend(ConfigManager._collect_dynamic_field_validation_errors(
+                task_value, task_model_type, task_key,
+            ))
             # 任务导入属于持久化边界，禁止 ConfigBase 把越界值静默回退为默认值。
             token = STRICT_CONFIG_VALIDATION.set(True)
             try:
-                task_model = task_model_type.model_validate(
-                    copy.deepcopy(task_value)
-                )
+                task_model = task_model_type.model_validate(task_value)
             finally:
                 STRICT_CONFIG_VALIDATION.reset(token)
         except ValidationError as e:
@@ -371,13 +324,19 @@ class ConfigManager:
         if task_key not in canonical:
             raise ConfigNotFoundError(f'Task not found in config: {task_key}')
         expected = canonical[task_key]
-        self.store.replace_subtree(
-            name,
-            (task_key,),
-            expected,
-            validated_task_value,
-            loaded.generation,
-        )
+        try:
+            self.store.replace_subtree(
+                name,
+                (task_key,),
+                expected,
+                validated_task_value,
+                loaded.generation,
+            )
+        except StrictConfigValidationError as e:
+            # 完整配置的最终校验（如列表数量一致性）也返回可读的 400，失败不写盘。
+            raise ConfigValidationError([
+                self._format_field_error(task_key, str(e), "config_validation"),
+            ]) from e
         logger.info(f'import task {task_key} to {name}')
         return name, task_key
 

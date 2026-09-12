@@ -432,19 +432,24 @@ class GenerationManager:
         return canonical
 
     def _validate_with_repair(self, name: str, raw: dict) -> dict:
-        """带自动修复的严格校验：unknown field 剔除前先备份磁盘原字节并告警。
+        """带自动修复的严格校验：剔除 unknown field 时备份原始配置并告警。
 
         修复只发生在内存（validate_persisted_config 深拷贝后再剔）；canonical
-        落盘与否由调用方的现有写盘机制决定。其它校验失败仍原样抛出（fail closed）。
+        落盘与否由调用方的现有写盘机制决定。新导入尚无磁盘文件时备份传入内容，
+        已有配置仍保留磁盘原字节；其它校验失败仍原样抛出（fail closed）。
         """
         repaired_paths: list = []
         profile = copy.copy(self.profile)
         profile.repaired_paths = repaired_paths
         _model, canonical = validate_persisted_config(raw, name, profile)
         if repaired_paths:
-            # 备份磁盘原字节（含失效字段的完整文件）：复用迁移备份目录，
-            # 同名已有备份不覆盖——每份配置的首次备份永远是原字节
-            backup_path = self._write_backup(name, self._config_path(name).read_bytes())
+            # 新名称导入在首次落盘前就会清理旧字段，不能读取尚不存在的目标文件。
+            # 复用迁移备份目录保存未清理的完整内容，同名已有备份仍不覆盖。
+            try:
+                original_bytes = self._config_path(name).read_bytes()
+            except FileNotFoundError:
+                original_bytes = _config_bytes(raw)
+            backup_path = self._write_backup(name, original_bytes)
             for path in repaired_paths:
                 logger.warning(
                     f"[{name}] unknown field stripped: {'/'.join(path)}; "
