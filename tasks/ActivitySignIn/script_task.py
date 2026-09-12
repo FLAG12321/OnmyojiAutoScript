@@ -264,7 +264,11 @@ class ScriptTask(GameUi, ActivitySignInAssets):
 
             # 回到活动页即完成；否则连点返回逐层退出分享流程
             if self.appear(self.I_E_MAIN):
-                return True
+                time.sleep(1.5)
+                self.screenshot()
+                if self.appear(self.I_E_MAIN):
+                    return True
+                continue
             if shared:
                 if self.appear_then_click(self.I_B_BACK_RED, interval=1.5):
                     continue
