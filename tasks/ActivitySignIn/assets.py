@@ -79,5 +79,35 @@ class ActivitySignInAssets:
 	I_A_FINISH = RuleImage(roi_front=(33,46,124,469), roi_back=(1,0,250,681), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_a_finish.png")
 	#  
 	I_B_FINISH = RuleImage(roi_front=(591,635,93,36), roi_back=(543,599,218,105), threshold=0.85, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_b_finish.png")
+	#  
+	I_C_TO_MAIN = RuleImage(roi_front=(329,474,63,91), roi_back=(73,254,699,347), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_c_to_main.png")
+	#  
+	I_C_SKIP = RuleImage(roi_front=(1153,34,68,28), roi_back=(1072,0,208,130), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_c_skip.png")
+	#  
+	I_C_GET = RuleImage(roi_front=(698,537,158,41), roi_back=(651,509,241,87), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_c_get.png")
+	#  
+	I_C_MAIN = RuleImage(roi_front=(984,66,94,110), roi_back=(581,0,699,347), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_c_main.png")
+	#  
+	I_C_TO_MAIN_2 = RuleImage(roi_front=(809,53,45,44), roi_back=(673,25,296,197), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_c_to_main_2.png")
+	#  
+	I_D_TO_MAIN = RuleImage(roi_front=(1187,216,45,44), roi_back=(1143,120,124,472), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_d_to_main.png")
+	#  
+	I_D_TO_GET = RuleImage(roi_front=(1071,654,142,40), roi_back=(1024,639,237,76), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_d_to_get.png")
+	#  
+	I_D_GET = RuleImage(roi_front=(1017,480,85,93), roi_back=(968,445,181,178), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_d_get.png")
+	#  
+	I_D_MAIN = RuleImage(roi_front=(1089,650,104,45), roi_back=(1024,607,238,113), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_d_main.png")
+	#  
+	I_E_TO_MAIN = RuleImage(roi_front=(1182,297,45,44), roi_back=(1143,120,124,472), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_e_to_main.png")
+	#  
+	I_E_TO_SHARE = RuleImage(roi_front=(1178,598,50,68), roi_back=(1101,524,169,196), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_e_to_share.png")
+	#  
+	I_E_WECHAT_SHARE = RuleImage(roi_front=(324,641,58,50), roi_back=(205,568,790,152), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_e_wechat_share.png")
+	#  
+	I_E_WECHAT_SUCCESS = RuleImage(roi_front=(517,492,261,30), roi_back=(449,346,418,269), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_e_wechat_success.png")
+	#  
+	I_E_MAIN = RuleImage(roi_front=(1161,583,79,92), roi_back=(1020,519,260,201), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_e_main.png")
+	#  
+	I_D_TO_MAIN_2 = RuleImage(roi_front=(598,343,135,113), roi_back=(369,106,588,485), threshold=0.7, method="Template matching", file="./tasks/ActivitySignIn/res999/res999_d_to_main_2.png")
 
 

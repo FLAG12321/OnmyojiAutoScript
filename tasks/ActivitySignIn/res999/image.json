@@ -196,5 +196,140 @@
     "method": "Template matching",
     "threshold": 0.85,
     "description": ""
+  },
+  {
+    "itemName": "c_to_main",
+    "imageName": "res999_c_to_main.png",
+    "roiFront": "329,474,63,91",
+    "roiBack": "73,254,699,347",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "c_skip",
+    "imageName": "res999_c_skip.png",
+    "roiFront": "1153,34,68,28",
+    "roiBack": "1072,0,208,130",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "c_get",
+    "imageName": "res999_c_get.png",
+    "roiFront": "698,537,158,41",
+    "roiBack": "651,509,241,87",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "c_main",
+    "imageName": "res999_c_main.png",
+    "roiFront": "984,66,94,110",
+    "roiBack": "581,0,699,347",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "c_to_main_2",
+    "imageName": "res999_c_to_main_2.png",
+    "roiFront": "809,53,45,44",
+    "roiBack": "673,25,296,197",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "d_to_main",
+    "imageName": "res999_d_to_main.png",
+    "roiFront": "1187,216,45,44",
+    "roiBack": "1143,120,124,472",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "d_to_get",
+    "imageName": "res999_d_to_get.png",
+    "roiFront": "1071,654,142,40",
+    "roiBack": "1024,639,237,76",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "d_get",
+    "imageName": "res999_d_get.png",
+    "roiFront": "1017,480,85,93",
+    "roiBack": "968,445,181,178",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "d_main",
+    "imageName": "res999_d_main.png",
+    "roiFront": "1089,650,104,45",
+    "roiBack": "1024,607,238,113",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "e_to_main",
+    "imageName": "res999_e_to_main.png",
+    "roiFront": "1182,297,45,44",
+    "roiBack": "1143,120,124,472",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "e_to_share",
+    "imageName": "res999_e_to_share.png",
+    "roiFront": "1178,598,50,68",
+    "roiBack": "1101,524,169,196",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "e_wechat_share",
+    "imageName": "res999_e_wechat_share.png",
+    "roiFront": "324,641,58,50",
+    "roiBack": "205,568,790,152",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "e_wechat_success",
+    "imageName": "res999_e_wechat_success.png",
+    "roiFront": "517,492,261,30",
+    "roiBack": "449,346,418,269",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "e_main",
+    "imageName": "res999_e_main.png",
+    "roiFront": "1161,583,79,92",
+    "roiBack": "1020,519,260,201",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "d_to_main_2",
+    "imageName": "res999_d_to_main_2.png",
+    "roiFront": "598,343,135,113",
+    "roiBack": "369,106,588,485",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": ""
   }
 ]
