@@ -107,7 +107,7 @@ class EmulatorHealth:
 
     def _state_check(self) -> tuple:
         """
-        MuMuManager state check: player_state == 'start_finished'。
+        MuMuManager 状态优先；starting 滞后时用 shell 和游戏包就绪验证，保持与启动监视一致。
 
         Note: device._query_mumu12_state() returns None for non-MuMu12 emulators
         (LDPlayer / BlueStacks / etc). For those, this check returns False with
@@ -123,6 +123,16 @@ class EmulatorHealth:
             return False, STATE_UNAVAILABLE_REASON
         player_state = state.get('player_state', '')
         if player_state != 'start_finished':
+            # MuMuManager 可能仍显示 starting，而 Android 已能正常响应。
+            # 与 emulator_start_watch 使用相同的实际可用性证据，避免刚启动成功就被再次强杀。
+            # 仅放行启动中的滞后状态，停止中等状态仍判失败。
+            if player_state == 'starting' and state.get('is_process_started'):
+                try:
+                    pong = self.device.adb_shell(['echo', 'pong'])
+                    if str(pong).strip() == 'pong' and self.device.list_app_packages(show_log=False):
+                        return True, 'starting (shell and game packages ready)'
+                except Exception as e:
+                    return False, f'player_state={player_state!r}, readiness probe failed: {e}'
             return False, f'player_state={player_state!r}'
         return True, 'start_finished'
 

@@ -202,10 +202,8 @@ class Device(Platform, Screenshot, Control, AppControl):
         """
         ZOMBIE/COLD → HEALTHY recovery.
 
-        Sequence: FullReset.execute() → _emulator_start → emulator_start_watch
-        → health.is_alive() verification. If start watch fails once, kill the
-        emulator again and retry start/watch one more time. Transitions state
-        to HEALTHY on success.
+        恢复顺序：清理成功 → 启动 → 等待就绪 → 健康复检；监视或复检失败均最多重试两轮。
+        清理失败时不继续启动，重试耗尽后清理残留；取消后不再启动或强杀模拟器。
 
         NOTE: this method MUST NOT call itself recursively (D14). Retries are
         bounded inside this method; callers still decide whether to run another
@@ -234,24 +232,37 @@ class Device(Platform, Screenshot, Control, AppControl):
                 logger.info('full_recovery: cancelled before attempt, abort launch')
                 return False
             # 每轮启动前都强杀一次，确保上轮 180s 超时后的 MuMu 残留被清掉。
-            self.reset.execute()
+            # 清理失败意味着旧进程仍可能存活，不能继续叠加启动或宣告 COLD。
+            if not self.reset.execute():
+                logger.error('full_recovery: reset failed, abort launch')
+                return False
             if self.emulator_state != EmulatorState.COLD:
                 self._transition_to(EmulatorState.COLD)
 
+            # reset 可能耗时数秒，返回后再次检查，防止取消期间又拉起模拟器。
+            if self._is_cancelled():
+                return False
             if not self._emulator_function_wrapper(self._emulator_start):
                 logger.warning(f'full_recovery: _emulator_start failed (attempt {attempt + 1}/2)')
                 continue
 
-            if self.emulator_start_watch():
+            ready = self.emulator_start_watch()
+            # 最后一轮收到取消信号也应直接退出，不能落入循环后的强杀清理。
+            if self._is_cancelled():
+                return False
+            if ready:
                 if not self.health.is_alive():
                     logger.warning(f'full_recovery: health check failed: {self.health.why_dead()}')
-                    return False
+                    continue
                 self._transition_to(EmulatorState.HEALTHY)
                 logger.info('full_recovery: HEALTHY')
                 return True
 
             logger.warning(f'full_recovery: emulator_start_watch returned False (attempt {attempt + 1}/2)')
 
+        # 启动调用或健康复检期间也可能取消，最终清理前仍需确认。
+        if self._is_cancelled():
+            return False
         logger.warning('full_recovery: all attempts failed, kill emulator before returning False')
         # full_recovery 最终失败时再强杀一次，确保脚本进程退出前模拟器进程已被清理。
         self.reset.execute()
@@ -346,12 +357,10 @@ class Device(Platform, Screenshot, Control, AppControl):
         return self.image
 
     def release_during_wait(self):
-        # Scrcpy server is still sending video stream,
-        # stop it during wait
-        # self.config.script.device.screenshot_method = 'scrcpy'
+        # 空闲时释放实际使用的截图通道，避免旧版配置字段让普通等待抛 AttributeError。
         if self.config.script.device.screenshot_method == 'scrcpy':
             self._scrcpy_server_stop()
-        if self.config.Emulator_ScreenshotMethod == 'nemu_ipc':
+        elif self.config.script.device.screenshot_method == 'nemu_ipc':
             self.nemu_ipc_release()
 
     def stuck_record_add(self, button):
