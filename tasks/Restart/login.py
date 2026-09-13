@@ -6,9 +6,13 @@ from module.exception import RequestHumanTakeover, GameNotRunningError, GameTooM
 from module.logger import logger
 from module.atom.click import RuleClick
 from tasks.Component.Costume.costume_base import release_costume_probe_locks
+from tasks.Component.SwitchAccount.character_match import (
+    CHARACTER_LIST_EMPTY_OCR_DELAY, CHARACTER_LIST_EMPTY_OCR_LIMIT, find_character_index,
+)
 from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
+import cv2
 import time
 
 # 单次登录流程里容许处理的 MPay 弹窗次数上限。弹窗关得掉却反复重弹，说明客户端登录态
@@ -43,34 +47,27 @@ SELECT_CHARACTER_Y_TOLERANCE = 30
 # 恰好是目标）会零点击直接通过。
 SELECT_CHARACTER_CLICK_RETRY = 3
 
+# 半透明条目会透出登录插画，彩图模板失配时改比对亮色勾选的形状；阈值仍须严格，
+# 不能仅凭金色边框或高亮背景认定选中。所有转换只在内存中进行，不修改模板资源。
+SELECT_CHARACTER_BRIGHTNESS = 220
+SELECT_CHARACTER_SHAPE_THRESHOLD = 0.85
+
 # 角色列表滑动后的等待时间。列表有惯性动画，滑完立刻截图会拍到运动残影导致 OCR 拉花，
 # 与 login_account.py 的 switch_character 同口径。
 CHARACTER_LIST_SWIPE_DELAY = 1.5
 
-# 查找目标角色时容许的滑动轮数上限。正常情况靠「两轮 OCR 结果相同即到底」收敛，这个上限
-# 只防列表因动画未停等原因每轮结果都有细微抖动、导致收敛判定永不成立的死循环。
-CHARACTER_LIST_SCROLL_LIMIT = 15
-
-
-def _normalize_svr(text: str) -> str:
-    """统一异体字：游戏内显示「瑤/別」而配置里通常写「瑶/别」。
-
-    角色名的归一已内建在 LoginAccount._is_character_name 内部（对 ocr_text 与目标名
-    双向归一），所以这个函数只服务区服名比对，不要再套到角色名上重复处理。
-    """
-    return text.replace('瑤', '瑶').replace('別', '别')
-
-
 class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     character: str
     svr: str
+    # 旧配置单槽允许填写角色或区服，显式调用则分别使用传入的两个字段。
+    _legacy_character_or_svr = False
 
     def __init__(self, *wargs, **kwargs):
         super().__init__(*wargs, **kwargs)
-        self.character = self.config.restart.login_character_config.character
-        # 独立启动路径只有一个配置字段，角色名与区服名填同一个值。config.py 里该字段的注释
-        # 写的是「角色名/服务器名」，双值匹配下用户填哪个都能命中。
-        self.svr = self.character
+        self.character = self.config.restart.login_character_config.character.strip()
+        # 独立 Restart 的旧配置仅有「角色名/服务器名」单槽，显式标记其二选一语义。
+        self.svr = ''
+        self._legacy_character_or_svr = True
         self.O_LOGIN_SPECIFIC_SERVE.keyword = self.character
         # self.specific_usr = kwargs['config'].
 
@@ -264,7 +261,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 continue
             # 点击屏幕进入游戏
             if self.appear(self.I_LOGIN_SPECIFIC_SERVE, interval=0.6):
-                self._select_login_character()
+                if not self._select_login_character():
+                    # 未识别只结束本次尝试；先退回登录页，现有账号级重试再重新进入。
+                    self.ui_click(self.I_BACK_BLUE, self.I_LOGIN_8, interval=1)
+                    logger.warning('Character selection failed, returned to login page')
+                    return False
                 logger.info('login specific user')
                 continue
             
@@ -295,7 +296,7 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
 
         return login_success
 
-    def app_handle_login(self, start_app: bool = False) -> bool:
+    def app_handle_login(self, start_app: bool = False, *, account_retry: bool = False) -> bool:
         # Restart 可要求在重试内启动游戏；其他调用方仍可直接处理已经打开的登录界面。
         # 桌面客户端的启动、清理和三轮重建统一由 _desktop_start_and_login 管理。
         # 这里若再 stop/start，会在内部重试耗尽后留下一个从未验证的新进程。
@@ -307,7 +308,12 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 # 只有真正开始下一轮登录才启动，最后一次失败后不再额外拉起游戏。
                 if start_app or attempt > 0:
                     self.device.app_start()
-                self._app_handle_login()
+                if self._app_handle_login() is False:
+                    # 切号调用方已有三次账号级预算，普通未识别不叠加应用重启重试。
+                    if account_retry:
+                        return False
+                    # 独立 Restart 没有账号队列接管失败，仍沿用原有登录恢复。
+                    raise GameStuckError('Login character selection failed')
                 # 桌面分支：登录成功标记登录态，使 app_is_running 判定为已在游戏中
                 if self.device.is_desktop:
                     self.device.desktop_mark_logged_in()
@@ -445,43 +451,29 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                     return
 
     def set_specific_usr(self, character: str, svr: str = None):
-        """设置要登录的目标角色名与区服名，两者任一被 OCR 命中即选中该条目。
+        """设置角色与区服；同一帧中任意一个字段命中即可。
 
         @param character: 角色名
-        @param svr: 区服名，不传则与角色名同值（兼容只知道其中一个的调用方）
+        @param svr: 区服名，不传则只匹配角色；仅填区服时角色传空字符串
         """
-        self.character = character
-        self.svr = svr if svr else character
-        self.O_LOGIN_SPECIFIC_SERVE.keyword = character
+        self.character = character.strip()
+        self.svr = svr.strip() if svr else ''
+        # 显式字段分别比对；旧单槽的区服回退仅在配置初始化时启用。
+        self._legacy_character_or_svr = False
+        self.O_LOGIN_SPECIFIC_SERVE.keyword = self.character
 
     # ------------------------------------------------------------------
-    # 选角：双值匹配 + 向上滑动 + 勾选态验证
+    # 选角：同帧角色或区服匹配 + 向上滑动 + 勾选态验证
     # 判据全部抽成不依赖 device 的静态方法，查找循环只负责截图与调用，便于单测。
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _match_character_index(texts: list, character: str, svr: str) -> int:
-        """在一屏 OCR 文本里找目标条目，返回下标；没找到返回 -1。
-
-        角色名与区服名同时参与比对，任一命中即算命中，取第一个命中的（列表从上到下）。
-        两者的判据不同：
-          - 角色名走 LoginAccount._is_character_name 的宽松匹配，因为等级徽章的数字会被
-            OCR 读进同一个文本框（如 '60js15瑶光'）；
-          - 区服名是独立一行、左边没有徽章，异体字归一后严格相等即可。
-        """
-        # Restart 与 SwitchAccount 互相依赖（switch_account.py 顶层已 import LoginHandler），
-        # 顶层反向导入会成环，跟随本文件既有惯例做函数内延迟导入。
-        from tasks.Component.SwitchAccount.login_account import LoginAccount
-
-        svr_normalized = _normalize_svr(svr) if svr else ''
-        for index, text in enumerate(texts):
-            if character and LoginAccount._is_character_name(text, character):
-                logger.info('Match character name %s at index %d', text, index)
-                return index
-            if svr_normalized and _normalize_svr(text) == svr_normalized:
-                logger.info('Match svr name %s at index %d', text, index)
-                return index
-        return -1
+    def _match_character_index(ocr_results: list, character: str, svr: str, *,
+                               legacy_either: bool = False) -> int:
+        """共用一帧 OCR，角色优先、区服兜底；缺失返回 -1。"""
+        index = find_character_index(ocr_results, character, svr,
+                                     legacy_either=legacy_either)
+        return index if index is not None else -1
 
     @staticmethod
     def _ocr_box_to_roi(ocr_roi: tuple, box) -> list:
@@ -501,21 +493,23 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         """勾选标记的中心 y 与目标文本的中心 y 是否落在同一个条目内。"""
         return abs(mark_y - target_y) <= SELECT_CHARACTER_Y_TOLERANCE
 
-    def _select_login_character(self) -> None:
+    def _select_login_character(self) -> bool:
         """在角色列表里选中目标角色并确认登录。
 
         三个阶段：查找（一轮一次 OCR，未命中则向上滑动重试）→ 选中（点击并用勾选标记验证）
         → 确认（点确认按钮直到列表界面消失）。
 
-        显式指定目标时，查找或选中验证失败必须进入登录重试，不能确认到其他角色。
+        查找或选中验证失败返回 False，调用方返回登录页后复用账号级重试。
         """
         target_click, target_y = self._find_login_character()
 
         if target_click is None:
             if self.character or self.svr:
-                raise GameStuckError(f'Login character not found: {self.character} / {self.svr}')
+                logger.warning('Login character not found: %s / %s', self.character, self.svr)
+                return False
         elif not self._ensure_character_selected(target_click, target_y):
-            raise GameStuckError(f'Login character not selected: {self.character} / {self.svr}')
+            logger.warning('Login character not selected: %s / %s', self.character, self.svr)
+            return False
 
         # 只有未配置角色时才允许默认登录；已配置角色须通过上面的查找和选中验证。
         while True:
@@ -524,12 +518,13 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 self.click(self.C_LOGIN_ENSURE_LOGIN_CHARACTER_IN_SAME_SVR, interval=2)
                 continue
             break
+        return True
 
     def _find_login_character(self):
         """查找目标角色，返回 (点击区域, 目标文本中心 y)；无目标可点时返回 (None, None)。
 
-        一轮只 OCR 一次，用同一份结果比对角色名与区服名；未命中才向上滑动并重新 OCR。
-        收敛条件是「两轮 OCR 结果相同即到底」，与 login_account.py 的 switch_character 同口径。
+        同一帧比对角色名与区服名，任一命中即可；连续三帧空 OCR 才交账号级重试。
+        有文本但未命中才滑动，两轮结果相同即到底，不另设扫描次数上限。
         """
         # 未指定角色和区服：不 OCR、不滑动，直接登默认第一个角色（保持原有行为）
         if not self.character and not self.svr:
@@ -537,19 +532,30 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             return None, None
 
         ocr_roi = self.O_LOGIN_SPECIFIC_SERVE.roi
-        last_texts = None  # 初值不能是 []，否则首轮空屏会与初值相等而误判到底
-        for _ in range(CHARACTER_LIST_SCROLL_LIMIT):
+        last_texts = None
+        empty_ocr_count = 0
+        while True:
             self.screenshot()
             ocr_res = self.O_LOGIN_SPECIFIC_SERVE.detect_and_ocr(self.device.image)
-            texts = [item.ocr_text for item in ocr_res]
+            # 空帧不滑动、不判断到底，先原地等下一帧，避免短暂加载消耗账号重试。
+            if not any(item.ocr_text.strip() for item in ocr_res):
+                empty_ocr_count += 1
+                if empty_ocr_count >= CHARACTER_LIST_EMPTY_OCR_LIMIT:
+                    logger.warning('Character list OCR empty for %d consecutive frames', empty_ocr_count)
+                    return None, None
+                logger.info('Character list OCR empty (%d/%d), wait and retry in place',
+                            empty_ocr_count, CHARACTER_LIST_EMPTY_OCR_LIMIT)
+                time.sleep(CHARACTER_LIST_EMPTY_OCR_DELAY)
+                continue
+            # 有效帧清零计数，下一页短暂空白仍可原地等待。
+            empty_ocr_count = 0
 
-            # 空屏保护必须排在收敛判定之前：这一屏没有任何文本时兜底取首条会越界，
-            # 而且首轮空屏与初值比较若判成「到底」会直接崩在下标访问上。
-            if not texts:
-                logger.error('No character text recognized in character list')
-                return None, None
-
-            index = self._match_character_index(texts, self.character, self.svr)
+            # OCR 返回顺序变化不代表列表发生移动，按视觉位置统一顺序再判定到底。
+            texts = tuple(item.ocr_text for item in sorted(
+                ocr_res, key=lambda item: (min(point[1] for point in item.box),
+                                          min(point[0] for point in item.box))))
+            index = self._match_character_index(ocr_res, self.character, self.svr,
+                                                legacy_either=self._legacy_character_or_svr)
             if index < 0:
                 if texts == last_texts:
                     # 两轮结果一致说明已滑到底；返回查找失败，禁止兜底选择别的角色。
@@ -568,9 +574,26 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             target_y = ocr_roi[1] + (box[0][1] + box[2][1]) // 2
             return RuleClick(roi, roi, 'character select'), target_y
 
-        logger.error('Character %s / svr %s not found within %d swipes',
-                     self.character, self.svr, CHARACTER_LIST_SCROLL_LIMIT)
-        return None, None
+    def _find_select_mark_y(self):
+        """返回本帧勾选中心 y；插画干扰彩图时，用亮色轮廓保留勾选形状证据。"""
+        rule = self.I_SELECT_CHARACTER
+        # 原模板命中后立即读取回写坐标，不能复用上一帧的 roi_front。
+        if self.appear(rule):
+            mark = rule.roi_front
+            return mark[1] + mark[3] // 2
+
+        # 背景透过条目后颜色会变化，而勾选主体仍为亮色；连同轮廓外的暗区一起
+        # 做二值模板匹配，避免把单纯明亮的插画误当成勾选。
+        template = cv2.inRange(cv2.cvtColor(rule.image, cv2.COLOR_RGB2GRAY),
+                               SELECT_CHARACTER_BRIGHTNESS, 255)
+        source = cv2.inRange(cv2.cvtColor(rule.corp(self.device.image), cv2.COLOR_RGB2GRAY),
+                             SELECT_CHARACTER_BRIGHTNESS, 255)
+        result = cv2.matchTemplate(source, template, cv2.TM_CCOEFF_NORMED)
+        _, score, _, position = cv2.minMaxLoc(result)
+        if score < SELECT_CHARACTER_SHAPE_THRESHOLD:
+            return None
+        logger.info('Select mark matched by brightness shape, score=%.3f', score)
+        return rule.roi_back[1] + position[1] + template.shape[0] // 2
 
     def _ensure_character_selected(self, target_click: RuleClick, target_y: int) -> bool:
         """点击目标条目并用勾选标记验证选中态，最多重试 SELECT_CHARACTER_CLICK_RETRY 次。
@@ -580,11 +603,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         """
         for attempt in range(SELECT_CHARACTER_CLICK_RETRY + 1):
             self.screenshot()
-            # RuleImage.match 命中时会把位置回写进 roi_front（module/atom/image.py:166），
-            # 所以必须在 appear 返回 True 的同一轮里立刻读，不能跨轮缓存。
-            if self.appear(self.I_SELECT_CHARACTER):
-                mark = self.I_SELECT_CHARACTER.roi_front
-                mark_y = mark[1] + mark[3] // 2
+            # 两种识别都必须命中真实勾选，并与目标同条目对齐后才能确认登录。
+            mark_y = self._find_select_mark_y()
+            if mark_y is not None:
                 logger.info('Select mark y=%d, target y=%d, delta=%d (tolerance=%d)',
                             mark_y, target_y, abs(mark_y - target_y), SELECT_CHARACTER_Y_TOLERANCE)
                 if self._is_select_mark_aligned(mark_y, target_y):

@@ -11,6 +11,10 @@ from module.atom.ocr import RuleOcr
 from module.exception import GameNotRunningError
 from module.logger import logger
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
+from tasks.Component.SwitchAccount.character_match import (
+    CHARACTER_LIST_EMPTY_OCR_DELAY, CHARACTER_LIST_EMPTY_OCR_LIMIT,
+    find_character_index, is_character_name,
+)
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.base_task import BaseTask
 def _prepare_image_for_ocr_1(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
@@ -78,7 +82,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         self.O_SA_LOGIN_FORM_SVR_NAME.keyword = svrName.replace('別', '别')
         if self.ocr_appear(self.O_SA_LOGIN_FORM_SVR_NAME):
             return True
-        return self.switch_character(svrName)
+        # 单独切服时显式传区服字段，不能把区服当成角色名。
+        return self.switch_character("", svrName)
         """ self.ui_click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, self.I_SA_CHECK_SELECT_SVR_1, 1.5)
         # 展开底部角色列表,显示角色所属服务器
         self.screenshot()
@@ -132,9 +137,6 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT)
         return False """
 
-    # 游戏内角色等级为 1~60，因此粘连到角色名前的等级数字最多 2 位
-    MAX_LEVEL_DIGITS = 2
-
     @classmethod
     def _is_character_name(cls, ocr_text: str, characterName: str) -> bool:
         """判断一条 OCR 文本是否就是目标角色名。
@@ -152,24 +154,15 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
 
         同时统一异体字：游戏内显示「瑤/別」而配置里通常写「瑶/别」。
         """
-        item = ocr_text.replace('瑤', '瑶').replace('別', '别')
-        characterName = characterName.replace('瑤', '瑶').replace('別', '别')
-        if not item.endswith(characterName):
-            return False
-        prefix = item[:-len(characterName)]
-        # 等级数字与角色名之间可能被识别出空格，切名后顺便吞掉这个空格
-        if prefix.endswith(' '):
-            prefix = prefix[:-1]
-        if len(prefix) > cls.MAX_LEVEL_DIGITS:
-            return False
-        return not prefix or prefix.isdigit()
+        # 两套登录界面共用同一判据，空目标不会再匹配任意 OCR 文本。
+        return is_character_name(ocr_text, characterName)
 
     @staticmethod
     def _bottom_ocr_texts(ocr_results) -> tuple[str, ...]:
         """提取 OCR 结果中最下面一组文字，用于判断列表是否已经滑到底部。
 
-        同一条目内的服务器名、登录时间和角色名检测框通常在同一水平行，按检测框
-        的纵向重叠归为一组；只比较这一组可避开上方条目的登录时间动态变化。
+        每张卡片按区服、登录时间、角色名从上到下排列，最底一行通常是并排卡片的
+        角色名。按检测框纵向重叠归组，只比较这一行可避开上方登录时间的动态变化。
         """
         if not ocr_results:
             return ()
@@ -191,26 +184,31 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         bottom_group.sort(key=lambda item: min(point[0] for point in item.box))
         return tuple(item.ocr_text for item in bottom_group)
 
-    def switch_character(self, characterName: str):
+    def switch_character(self, characterName: str, svrName: str = ""):
         """
               需保证账号已登录 且处于登录界面
         @param characterName:
+        @param svrName: 角色未命中时，复用本帧 OCR 结果查找区服
         @return:
         @rtype:
         """
+        # 未指定任何目标时不能打开列表并默认点击第一个角色。
+        if not characterName.strip() and not svrName.strip():
+            return False
         logger.info("start switch_character")
-        # 记录上次桌面闪退检测时间，定时触发而非每轮触发，避免影响点击循环速度
-        last_alive_check = time.time()
+        last_alive_check = time.monotonic()
+        # 只在新阶段开始时清理旧记录，后续重复点击必须保留卡死检测能力。
+        self.device.click_record_clear()
+        self.device.stuck_record_clear()
         while 1:
             self.screenshot()
-            self.device.click_record_clear()
-            self.device.stuck_record_clear()
-            # 点击切服按钮过程中游戏可能闪退回MuMu桌面，每隔10秒复用现成逻辑检测一次，若已闪退则抛异常交由恢复处理
-            if time.time() - last_alive_check >= 10:
-                self._ensure_game_alive()
-                last_alive_check = time.time()
             if self.appear(self.I_SA_CHECK_SELECT_SVR_1):
                 break
+            now = time.monotonic()
+            # 点击切服按钮过程中游戏可能闪退回MuMu桌面，每隔10秒复用现成逻辑检测一次，若已闪退则抛异常交由恢复处理
+            if now - last_alive_check >= 10:
+                self._ensure_game_alive()
+                last_alive_check = now
             self.click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, interval=1.5)
         # 展开底部角色列表,显示角色所属服务器
         """ self.screenshot()
@@ -222,21 +220,31 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             self.screenshot() """
 
         self.O_SA_SELECT_SVR_CHARACTER_LIST.keyword = characterName
-        lastBottomCharacterTexts = ()
-        while 1:
+        lastBottomCharacterTexts = None
+        empty_ocr_count = 0
+        # 扫描随页面和列表到底状态收敛，不再设置固定扫描轮数。
+        while True:
             self.screenshot()
             if self.appear_then_click(self.I_CANCEL_TOINVITE,interval=1.5):
                 continue
             ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
-            characterNameList =[ocrResItem.ocr_text for ocrResItem in ocrRes]
+            if not any(item.ocr_text.strip() for item in ocrRes):
+                # 加载或动画可能短暂遮住文字，连续三帧为空才交账号级重试。
+                empty_ocr_count += 1
+                if empty_ocr_count >= CHARACTER_LIST_EMPTY_OCR_LIMIT:
+                    logger.warning('Character list OCR empty for %d consecutive frames', empty_ocr_count)
+                    break
+                logger.info('Character list OCR empty (%d/%d), wait and retry in place',
+                            empty_ocr_count, CHARACTER_LIST_EMPTY_OCR_LIMIT)
+                time.sleep(CHARACTER_LIST_EMPTY_OCR_DELAY)
+                continue
+            # 有效帧结束本段连续空白；空帧不滑动，也不更新列表到底的判据。
+            empty_ocr_count = 0
             bottomCharacterTexts = self._bottom_ocr_texts(ocrRes)
-            #logger.info(characterNameList)
             ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
-            for index, item in enumerate(characterNameList):
-                #logger.info(f"characterNameList[{index}]: {item}", )
-                #logger.info(f"characterName:{characterName}")
-                if not self._is_character_name(item, characterName):
-                    continue
+            # 本帧只识别一次列表，先查角色名，未命中再从同一份结果查区服名。
+            index = find_character_index(ocrRes, characterName, svrName)
+            if index is not None:
                 tmp = self.O_SA_SELECT_SVR_CHARACTER_LIST
                 from copy import deepcopy
                 tmpClick = RuleClick(
@@ -251,8 +259,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 #logger.info(tmpClick.roi_front)
                 self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_1,
                                               interval=3)
-                # 此时 tmp 内存储的时角色名位置,而点击角色名没有反应
-                # 所以需要获取到对应的服务器图标位置
+                # 现场日志确认点击角色名即可返回登录页，下面的旧图标偏移示例保持停用。
                 """ tmpClick.roi_front[1] -= 30
                 self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_1,
                                               interval=3) """
@@ -298,10 +305,18 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         account_list_swipe_start = None
         # 正常情况一次就行,但防住OCR搞幺子 多来几次保险起见 反正挂机不差这点
         for i in range(3):
+            # 到底后先核验收起的表单，核验不符才消耗本轮扫描次数。
+            account_list_finished = False
+            awaiting_login_form = False
             while 1:
                 self.screenshot()
+                # 下拉展开才属于列表扫描阶段；重新展开后结束收起过渡的等待。
+                account_list_opened = self.appear(self.I_SA_ACCOUNT_DROP_DOWN_OPENED)
+                if account_list_opened:
+                    awaiting_login_form = False
                 # 优先检查是否已经出现登录按钮（即账号已选中）
                 if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
+                    awaiting_login_form = False
                     # 验证选中的账号是否正确
                     # 直接用原始截图：_prepare_image_for_ocr 的 OTSU 二值化会把字符
                     # 抗锯齿边缘硬化，PP-OCRv6 失去区分 l / I / li 的灰度线索，
@@ -314,19 +329,24 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     else:
                         # 账号不对，尝试重新选择
                         logger.warning("Login button appeared but wrong account selected")
+                        if account_list_finished:
+                            break
                         if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED):
                             self.ui_click_until_disappear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED, interval=1.5)
                             continue
                         else:
                             return False  # 无法重新选择，返回失败
 
-                # 检查下拉框是否关闭（即是否已选中账号）
-                if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED):
+                # 主动选中或关闭列表后，等红按钮出现再按原邮箱别名规则核验。
+                # CLOSED 可能先于红按钮出现，此时不能因严格整串 OCR 不符又重开列表。
+                if not awaiting_login_form and self.appear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED):
                     # 检查当前选中的账号是否是我们想要的
                     self.O_SA_ACCOUNT_ACCOUNT_SELECTED.keyword = accountInfo.account
                     if self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
                         logger.info(f"Confirmed account {accountInfo.account} is selected")
                         return True
+                    if account_list_finished:
+                        break
                     # 如果下拉框关闭但账号不对，重新打开下拉列表
                     self.ui_click_until_disappear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED,
                                                   interval=1.5)
@@ -347,7 +367,12 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                         time.sleep(1.5)
                     continue
 
-                # 账号列表已打开状态
+                # 未确认下拉展开时只等待页面转换，真实闪退仍交原设备恢复处理。
+                if not account_list_opened:
+                    self._ensure_game_alive()
+                    continue
+
+                # 账号列表已确认展开，才可识别列表里的账号名。
                 # 同上：账号名是长英文串，二值化后 l / I 无法区分，直接用原始截图
                 ocrRes = self.O_SA_ACCOUNT_ACCOUNT_LIST.detect_and_ocr(self.device.image)
 
@@ -382,24 +407,19 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     time.sleep(0.3)
                     logger.info("account [ %s ] found at position (%.1f, %.1f)", accountInfo.account, roi_x, roi_y)
                     
-                    # 点击账号
+                    # 每次点击前确认列表仍展开，收起只是转入表单核验，不能直接报成功。
                     retry_count=0
                     while 1:
-                        if retry_count > 4:
-                            # 连点5次后做最后一次确认（第5次点击后未再检查过）。
-                            # 仍未出现登录按钮＝点击未生效：直接判定失败交给上层
-                            # 兜底。原 break 会回 while 顶部重新 OCR 再点，但列表
-                            # 未滑动、账号恒在原位，会原地无限循环（点击持续清
-                            # stuck 记录，GameStuckError 也不会触发）
-                            self.screenshot()
-                            if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
-                                break
-                            logger.warning("account [ %s ] clicked 5 times but login button never appeared",
+                        self.screenshot()
+                        if (self.appear(self.I_SA_ACCOUNT_LOGIN_BTN)
+                                or not self.appear(self.I_SA_ACCOUNT_DROP_DOWN_OPENED)):
+                            awaiting_login_form = True
+                            break
+                        # 第五次点击后也先检查收起状态，仍展开才按原点击预算判失败。
+                        if retry_count >= 5:
+                            logger.warning("account [ %s ] clicked 5 times but dropdown is still open",
                                            accountInfo.account)
                             return False
-                        self.screenshot()
-                        if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
-                            break
                         self.click(account_click)
                         retry_count += 1
                         time.sleep(1.5)
@@ -414,19 +434,28 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 # S_SA_ACCOUNT_LIST_UP 的起点 (697,537,28,9) 会落在登录表单的
                 # 「选择其他登录方式」热区上，滑动的 touch-down 直接触发页面跳转
                 else:
-                    # 列表已到底（出现添加账号按钮）则重开下拉后放弃
+                    # OCR 期间页面也可能已变化，滑动或点击收起按钮前重新确认下拉。
+                    self.screenshot()
+                    if not self.appear(self.I_SA_ACCOUNT_DROP_DOWN_OPENED):
+                        awaiting_login_form = True
+                        continue
+                    # 列表到底后收起并核验，包括第三轮，不能直接跳过末次账号复查。
                     if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_ADD_ACCOUNT):
                         retry_count =0
                         while 1:
-                            if retry_count > 3:
-                                return False
                             self.screenshot()
-                            if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
+                            if (self.appear(self.I_SA_ACCOUNT_LOGIN_BTN)
+                                    or not self.appear(self.I_SA_ACCOUNT_DROP_DOWN_OPENED)):
+                                awaiting_login_form = True
+                                account_list_finished = True
                                 break
+                            # 保留原四次点击预算，最后一次生效后仍先检查页面转换。
+                            if retry_count >= 4:
+                                return False
                             self.click(self.C_SA_LOGIN_FORM_DROPDOWN_BTN)
                             retry_count += 1
                             time.sleep(1.5)
-                        break
+                        continue
                     if account_list_swipe_start is None:
                         account_list_swipe_start = time.time()
                     elif time.time() - account_list_swipe_start >= 60:
@@ -521,10 +550,14 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
 
         @param accountInfo:
         @type accountInfo:
-        @return:    True    点击了"进入游戏"按钮
-                    False   未找到相应角色
+        @return:    True    已核验账号并命中角色或区服，后续由 LoginHandler 进入游戏
+                    False   配置无效或角色、区服均未命中
         @rtype:bool
         """
+        # 直接调用登录组件也必须校验，不能只依赖任务队列过滤空白配置。
+        if not accountInfo or not accountInfo.is_valid():
+            logger.error("账号、角色名、区服名均必填，当前目标存在空项，中止登录")
+            return False
         self.screenshot()
         #
         if not (self.appear(self.I_CHECK_LOGIN_FORM) or self.appear(self.I_SA_NETEASE_GAME_LOGO)):
@@ -548,7 +581,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 btn = self.I_SA_LOGIN_FORM_ANDROID if accountInfo.apple_or_android else self.I_SA_LOGIN_FORM_APPLE
                 self.ui_click_until_disappear(btn)
                 time.sleep(1)
-                isAccountLogon = True
+                # 保留本轮已完成的账号核验；起始就在平台页时仍为 False，随后补验用户中心。
                 continue
             # 处于选择账号界面
             if self.appear(self.I_SA_NETEASE_GAME_LOGO) and not self.appear(self.I_SA_LOGIN_FORM_APPLE):
@@ -559,22 +592,25 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 if not self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
                     # 没有找到account
                     if not self.selectAccount(accountInfo):
-                        if self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
-                            return True
-                        if self.appear(self.I_SA_LOGIN_FORM_APPLE):
+                        # 最后一次点击可能刚生效；复查正确后继续登录和选角，不能提前报成功。
+                        self.screenshot()
+                        if not self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
+                            if self.appear(self.I_SA_LOGIN_FORM_APPLE):
+                                return False
+                            self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ACCOUNT_CLOSE_BTN,
+                                                          stop=self.I_SA_NETEASE_GAME_LOGO)
                             return False
-                        self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ACCOUNT_CLOSE_BTN,
-                                                      stop=self.I_SA_NETEASE_GAME_LOGO)
-                        return False
                     # selectAccount 后更新图片
                     self.screenshot()
                 self.ui_click(self.I_SA_ACCOUNT_LOGIN_BTN, stop=self.I_SA_LOGIN_FORM_APPLE, interval=3)
+                # 目标账号已核验且登录提交已到平台页，不再重复打开用户中心读取邮箱。
+                isAccountLogon = True
                 continue
             # 在用户中心界面
             if self.appear(self.I_SA_SWITCH_ACCOUNT_BTN):
                 # 如果当前已登录用户就是account
                 ocrRes = self.O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT.ocr_single(self.device.image)
-                # NOTE 由于邮箱账号@符号极易被误识别为其他,故对账号信息做预处理 便于比对
+                # 沿用原有邮箱预处理和别名规则，只读取既有账号区域，不扩大范围复读。
                 if (accountInfo.account is None) or accountInfo.account == "" or accountInfo.is_account_alias(ocrRes):
                     logger.info("current is the account we want:ocr result %s", ocrRes)
                     isAccountLogon = True
@@ -594,21 +630,17 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     continue
 
                 # 已登录 查找对应角色
-                if not isCharacterSelected and self.switch_character(accountInfo.character):
+                if not isCharacterSelected and self.switch_character(accountInfo.character, accountInfo.svr):
                     isCharacterSelected = True
                     continue
                 break
             continue
 
-        # 切换角色失败 /未找到该角色
-        # 尝试使用 选择服务器方式
-        if isAccountLogon and not isCharacterSelected and accountInfo.svr is not None and accountInfo.svr != "":
-            logger.info("try to find character with svrName %s", accountInfo.svr)
-            isCharacterSelected = self.switch_svr(accountInfo.svr)
+        # 角色或区服已在同一帧内完成二选一匹配，不再另开列表重复 OCR。
         if isAccountLogon and isCharacterSelected:
-            # 成功登录账号 找到角色
+            # 这里只完成账号核验和角色定位，进入庭院后才由 SwitchAccount 报登录成功。
             # self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ENTER_GAME_BTN, stop=self.I_CHECK_LOGIN_FORM)
-            logger.info("character %s-%s account:%s %s login Success", accountInfo.character, accountInfo.svr,
+            logger.info("character %s-%s account:%s %s ready for game login", accountInfo.character, accountInfo.svr,
                         accountInfo.account,
                         'Android' if accountInfo.apple_or_android else 'Apple')
             return True
