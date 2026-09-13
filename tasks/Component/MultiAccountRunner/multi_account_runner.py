@@ -172,7 +172,6 @@ class MultiAccountRunner:
         filtered_accounts = []
         for account_info in self.account_list:
             if not self.should_process_account(account_info):
-                logger.info(f"[{self.task_name}] Filtering out account {account_info.character} (already completed)")
                 continue
             filtered_accounts.append(account_info)
 
@@ -225,6 +224,10 @@ class MultiAccountRunner:
         @param account_info: 账号信息
         @return: True 表示需要处理
         """
+        # 将必填校验放在共用过滤入口，MultiTasks 等自定义排序也必须跳过空白配置。
+        if account_info is None or not account_info.is_valid():
+            logger.warning(f"[{self.task_name}] 跳过账号、角色名或区服名为空的配置")
+            return False
         if self.progress is not None:
             try:
                 key = acc_key(account_info.account, account_info.character, account_info.svr)

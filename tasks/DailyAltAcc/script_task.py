@@ -54,6 +54,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
     _progress = None
     # 当前账号在进度文件中的键
     _progress_key: str = None
+    # 即使子任务异常被内部捕获，也要通知多账号父任务本轮登录不可复用。
+    _subtask_error_occurred: bool = False
     # 当前账号的同心战斗上限，仅用于异常邮件里报告「已打 N/M 场」
     _alliedteam_limit: int = 0
     # 回礼与子任务段起点之间的最小间隔秒数：沿用原 sleep(10-delay_time) 的语义。
@@ -201,6 +203,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             )
             raise
         except self._DEVICE_LEVEL_ERRORS as e:
+            # 异常标记只在新一轮 run 开始时重置，后续子任务成功不能覆盖它。
+            self._subtask_error_occurred = True
             # 设备级异常仍原样上抛给 script.py 走 Restart/恢复，但**先把当前子任务标记
             # failed**：否则重调度接续时会再跑同一个子任务，若卡死源自该子任务自身的
             # UI 分支（如结界经验弹窗与【一键完成】互点触发 GameTooManyClickError），
@@ -233,6 +237,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 self._notify_task_failed(task_key, e)
             raise
         except Exception as e:
+            # 同心保持 pending 等吞异常分支，也必须使父任务的登录缓存失效。
+            self._subtask_error_occurred = True
             emsg = str(e).splitlines()[0] if str(e) else ""
             self.emit_stat(
                 StatEvent.ERROR,
@@ -288,8 +294,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         return task_cls(self.config, self.device)
 
     def run(self):
-        
- 
+        # 记录本轮全部子任务是否发生异常，不把上一轮的结果带入新运行。
+        self._subtask_error_occurred = False
         con = self.get_config()
         self.msg = []
         net_normal_flag = False

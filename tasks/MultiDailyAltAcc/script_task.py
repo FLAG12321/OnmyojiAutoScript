@@ -35,6 +35,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     _normal_plan_phase: str | None = None
     # 子任务进度存储，run() 中按配置实例创建
     _progress: ProgressStore = None
+    # 仅供同一账号的紧邻子任务重试使用，新账号、新调度和异常都会作废。
+    _retry_account_identity: tuple | None = None
     # 添加一个类级别的锁，用于同步关机操作
     _shutdown_lock = threading.Lock()
 
@@ -51,13 +53,17 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         GamePageUnknownError,
         ScriptError,
     )
-    # 账号循环用的清单：GameNotRunningError 有单独分支处理切号崩溃语义，排除之。
-    # 从 _DEVICE_LEVEL_ERRORS 派生，避免两份清单漂移。
-    _DEVICE_LEVEL_ERRORS_IN_LOOP = tuple(
-        e for e in _DEVICE_LEVEL_ERRORS if e is not GameNotRunningError
-    )
+
+    def _save_recovery_error_log(self):
+        """归档只是辅助诊断，磁盘或权限错误不能覆盖正在上抛的设备异常。"""
+        try:
+            Script.save_error_log(self)
+        except Exception as error:
+            logger.warning("保存错误现场失败，继续设备恢复：%s", error)
 
     def run(self):
+        # 恢复后重新调度必须重新登录，不跨运行复用上次的账号身份。
+        self._retry_account_identity = None
         import os
         pid = os.getpid()
         config_name = self.config.config_name  # 获取配置名称，例如oas1, oas2等
@@ -98,6 +104,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             phase_failed = False
             for accountInfo in sup_account_list:
 
+                # 复用只发生在这个账号的重试循环里，不能跳过新账号的首次切号。
+                self._retry_account_identity = None
                 max_retries = 3
                 retry_count = 0
 
@@ -113,30 +121,16 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                             else:
                                 logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")
                                 phase_failed = True
-                    except GameNotRunningError as e:
-                        if "Game crashed to desktop while switching account" not in str(e):
-                            # 这条 raise 路径走不到尾部 phase_failed 分流，必须先安排
-                            # 3 分钟退避；否则 Restart 后 next_run 仍在过去，立即紧密重试。
-                            self.next_run("MultiDailyAltAcc", success=False)
-                            raise GameNotRunningError("Game Not Running")
-                        logger.error(f"Error processing account {accountInfo.character}: {e}")
-                        self.config.notifier.push(
-                            content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",
-                            title="ERROR"
-                        )
-                        # 仅切换账号测活失败按账号任务失败处理，避免影响任务开始前的全局游戏未启动检测。
-                        # 进度文件保留，3 分钟后重调度时只补未完成的账号与子任务。
-                        phase_failed = True
-                        Script.save_error_log(self)
-                        break
-                    except self._DEVICE_LEVEL_ERRORS_IN_LOOP:
-                        # 设备级异常必须继续穿透到 script.py 的 Restart / 人工接管逻辑。
-                        # 这条路径走不到尾部 phase_failed 分流，先安排 3 分钟退避，
-                        # 保留进度文件后原样上抛。
+                    except self._DEVICE_LEVEL_ERRORS:
+                        # 切号闪退与其他设备异常统一交给 Restart / 人工接管：
+                        # 先安排三分钟退避、保留进度，再原样上抛，禁止处理下个账号。
+                        self._retry_account_identity = None
                         self.next_run("MultiDailyAltAcc", success=False)
-                        Script.save_error_log(self)
+                        self._save_recovery_error_log()
                         raise
                     except Exception as e:
+                        # 未知异常后账号状态不再可信，不留给后续调用复用。
+                        self._retry_account_identity = None
                         logger.error(f"Error processing account {accountInfo.character}: {e}")
                         self.config.notifier.push(
                             content=f"{accountInfo.character}-{accountInfo.svr} 任务执行错误\nError: {e}",
@@ -167,6 +161,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 if self._progress is not None:
                     self._progress.clear()
         finally:
+            # 无论成功、失败还是外层恢复接管，都清除本轮临时登录记录。
+            self._retry_account_identity = None
             try:
                 # 本次运行的结束边界：正常结束与异常上抛均会发出，供后端闭合运行段
                 self.emit_stat(StatEvent.RUN_END)
@@ -350,6 +346,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         # 第一步：剔除本阶段已完成的账号（依据持久化进度，而非登录时间推断）
         filtered_accounts = []
         for account_info in self.daily_conf.sup_account_list:
+            # 配置表需要保留编辑中的空行，运行队列必须在读进度和排序前过滤它们。
+            if account_info is None or not account_info.is_valid():
+                logger.warning("跳过账号、角色名或区服名为空的配置")
+                continue
             if not self._should_process_account(account_info):
                 logger.info(f"Filtering out account {account_info.character} (already completed)")
                 continue
@@ -415,6 +415,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     def _process_single_account(self, account_info):
         """处理单个账号的逻辑"""
+        # 旧身份仅作为本次候选，配置校验、截图或识别报错时不能留下可复用记录。
+        retry_identity = self._retry_account_identity
+        self._retry_account_identity = None
+        # 防止直接调用绕过队列校验，在错误角色上执行默认启用的日常任务。
+        if account_info is None or not account_info.is_valid():
+            logger.error("账号、角色名、区服名均必填，跳过存在空项的配置")
+            return False
         # 创建配置对象
         config = self._create_account_config(account_info)
         # 如果没有任何任务被启用，跳过该账号
@@ -433,9 +440,19 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
          
         logger.info("Start processing %s-%s", account_info.character, account_info.svr) 
         
-        # 切换账号
-        if not self._switch_to_account(account_info):
-            return False
+        # 仅当四项身份都相同且新截图仍在庭院时，复用紧邻重试前已经成功的登录。
+        identity = (account_info.account, account_info.character,
+                    account_info.svr, account_info.apple_or_android)
+        reuse_login = retry_identity == identity
+        if reuse_login:
+            self.screenshot()
+            reuse_login = self.appear(self.I_CHECK_MAIN)
+        if not reuse_login:
+            if not self._switch_to_account(account_info):
+                return False
+        else:
+            logger.info("复用当前角色登录，继续未完成子任务：%s-%s",
+                        account_info.character, account_info.svr)
 
         self.emit_stat(
             StatEvent.ACC_START,
@@ -445,8 +462,13 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             tasks=self._enabled_task_keys(config),
         )
 
-        # 执行任务
-        return self._execute_daily_tasks(config, account_info)
+        # 异常后的登录记录必须作废；正常返回 False 的待重试子任务才可保留。
+        self._retry_account_identity = identity
+        try:
+            return self._execute_daily_tasks(config, account_info)
+        except Exception:
+            self._retry_account_identity = None
+            raise
 
     def _create_account_config(self, account_info):
         """创建针对特定账号的配置"""
@@ -671,6 +693,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     def _switch_to_account(self, account_info):
         """切换到指定账号"""
+        # 完整切号开始后旧身份失效，只有调用方确认成功才重新记录。
+        self._retry_account_identity = None
         # 在切换账号前，重置检测记录，避免影响后续账号
         self.device.stuck_record_clear()
         # 切号起点标记：账号耗时（含切号过程与失败重试）从此刻起算
@@ -714,16 +738,24 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         except self._DEVICE_LEVEL_ERRORS as e:
             # _run_with_stat 已判定为设备级异常；这里不得再被宽泛 Exception 吞成 False，
             # 否则 GameStuckError 到不了 script.py 的 task_call('Restart')。
+            self._retry_account_identity = None
             self._emit_account_error(account_info, None, e)
             self._emit_account_end(account_info, err_count=1)
-            Script.save_error_log(self)
+            # 子执行器同样保留原设备异常，诊断归档失败不阻断上层恢复。
+            self._save_recovery_error_log()
             raise
         except Exception as e:
+            # 通用异常虽然会转成 False 返回，但不能把它当成安全的普通子任务重试。
+            self._retry_account_identity = None
             logger.error(f"Error in daily tasks for {account_info.character}: {e}")
             self._emit_account_error(account_info, None, e)
             self._emit_account_end(account_info, err_count=1)
             Script.save_error_log(self)
             return False
+        finally:
+            # 子任务可能吞异常后正常返回或抛 TaskEnd，统一在收尾检查本轮异常标记。
+            if getattr(dff, "_subtask_error_occurred", False):
+                self._retry_account_identity = None
 
     def CreatObjectFromModule(self, task_name: str, **kwargs):
         module_name = 'script_task'
@@ -816,6 +848,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 logger.info("由于未找到寄养卡,已将所有账号的KekkaiUtilize_enable设置为False")
                 self.daily_conf.multi_daily_alt_acc_config.total_KekkaiUtilize_enable = False
             case MSGType.neterror:
+                # 网络错误后的会话状态不确定，重试前必须重新确认登录。
+                self._retry_account_identity = None
                 logger.info("网络错误,准备重试")
                 should_retry = True
             case _:
