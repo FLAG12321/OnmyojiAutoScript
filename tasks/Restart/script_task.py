@@ -1,13 +1,9 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from tasks.Restart.config_scheduler import Scheduler
 from tasks.Restart.login import LoginHandler
-from tasks.Restart.assets import RestartAssets
-from tasks.base_task import BaseTask, Time
-from datetime import datetime, time
 
 from module.logger import logger
 from module.exception import (TaskEnd, RequestHumanTakeover, GameNotRunningError,
@@ -35,36 +31,37 @@ class ScriptTask(LoginHandler):
 
     def app_start(self):
         logger.hr('App start')
-        self.device.app_start()
-        self.app_handle_login()
-        # self.ensure_no_unfinished_campaign()
+        # 首次启动也纳入各平台的登录重试边界，避免启动失败反复回调 Restart。
+        if self.device.is_desktop:
+            self._desktop_start_and_login()
+        else:
+            self.app_handle_login(start_app=True)
 
     def app_restart(self):
         logger.hr('App restart')
         # 桌面分支：客户端可能刚被 OAS 自动启动（已在登录页），直接停掉会白关一次再重开，
         # 只需确保客户端运行并走登录；交互与模拟器不同，隔离在桌面分支
-        if not self.device.is_desktop:
-            self.device.app_stop()
         if self.device.is_desktop:
             self._desktop_start_and_login()
         else:
-            self.device.app_start()
-            self.app_handle_login()
+            self.device.app_stop()
+            # 启动与登录共享重试次数，首次启动失败也不能逃出重试边界。
+            self.app_handle_login(start_app=True)
 
-        # self.config.task_delay(server_update=True)
-        self.set_next_run(task='Restart', success=True, finish=True, server=True)
-        # 如果启用了定时领体力（每天 12-14、20-22 时内各有 20 体力）
-        if self.config.restart.harvest_config.enable_ap:
+        # 仅启用领取时安排每天 12/20 点的体力登录；明确目标时间不再被 server_update 覆盖。
+        harvest = self.config.restart.harvest_config
+        if harvest.enable_ap and harvest.enable:
             now = datetime.now()
-            # 如果时间在00:00-12:00之间则设定时间为当日 12 时
-            if now.time() < time(12, 0):
-                self.custom_next_run(task='Restart', custom_time=Time(12, 0), time_delta=0)
-            # 如果时间在12:00-20:00之间则设定时间为当日 20 时
-            elif now.time() >= time(12, 0) and now.time() < time(20, 0):
-                self.custom_next_run(task='Restart', custom_time=Time(20, 0), time_delta=0)
-            # 如果时间在20:00-23:59之间则设定时间为次日 12 时
+            if now.hour < 12:
+                target = now.replace(hour=12, minute=0, second=0, microsecond=0)
+            elif now.hour < 20:
+                target = now.replace(hour=20, minute=0, second=0, microsecond=0)
             else:
-                self.custom_next_run(task='Restart', custom_time=Time(12, 0), time_delta=1)
+                target = (now + timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+            self.set_next_run(task='Restart', target=target, finish=True, server=False)
+        else:
+            # 不领取体力时保留默认重启计划；每次完成只保存一次调度时间。
+            self.set_next_run(task='Restart', success=True, finish=True, server=True)
 
     def _desktop_start_and_login(self) -> None:
         """桌面模式：启动客户端并登录，客户端没起来就重建，不把异常抛给调度器。
@@ -106,11 +103,13 @@ class ScriptTask(LoginHandler):
             return False
         logger.info("The game server is updating, delay the pending tasks to 9:00")
         logger.warning('Delay pending tasks')
-        # running 中的必然是 Restart
+        # 维护结束当天恢复待执行任务；传 server=False，避免强制运行时间把任务延到次日。
+        target = datetime_now.replace(hour=9, minute=0, second=0, microsecond=0)
         for task in self.config.pending_task:
-            print(task.command)
-            self.set_next_run(task=task.command, target=datetime_now.replace(hour=9, minute=0, second=0, microsecond=0))
-        self.set_next_run(task='Restart', success=True, finish=True, server=True)
+            if task.command != 'Restart':
+                self.set_next_run(task=task.command, target=target, server=False)
+        # Restart 也在维护结束后补登录，不将本次跳过误当作已完成登录。
+        self.set_next_run(task='Restart', target=target, server=False)
         return True
 
 
@@ -122,13 +121,3 @@ if __name__ == '__main__':
     device = Device(config)
     task = ScriptTask(config, device)
     task.app_restart()
-    # task.config.update_scheduler()
-    # task.delay_pending_tasks()
-
-
-
-
-
-
-
-

@@ -1,16 +1,14 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-import random
 from module.base.timer import Timer
-from module.exception import RequestHumanTakeover, GameTooManyClickError, GameStuckError
+from module.exception import RequestHumanTakeover, GameNotRunningError, GameTooManyClickError, GameStuckError
 from module.logger import logger
 from module.atom.click import RuleClick
 from tasks.Component.Costume.costume_base import release_costume_probe_locks
 from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
-from module.atom.click import RuleClick
 import time
 
 # 单次登录流程里容许处理的 MPay 弹窗次数上限。弹窗关得掉却反复重弹，说明客户端登录态
@@ -297,14 +295,18 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
 
         return login_success
 
-    def app_handle_login(self) -> bool:
+    def app_handle_login(self, start_app: bool = False) -> bool:
+        # Restart 可要求在重试内启动游戏；其他调用方仍可直接处理已经打开的登录界面。
         # 桌面客户端的启动、清理和三轮重建统一由 _desktop_start_and_login 管理。
         # 这里若再 stop/start，会在内部重试耗尽后留下一个从未验证的新进程。
         attempts = 1 if self.device.is_desktop else 2
-        for _ in range(attempts):
+        for attempt in range(attempts):
             self.device.stuck_record_clear()
             self.device.click_record_clear()
             try:
+                # 只有真正开始下一轮登录才启动，最后一次失败后不再额外拉起游戏。
+                if start_app or attempt > 0:
+                    self.device.app_start()
                 self._app_handle_login()
                 # 桌面分支：登录成功标记登录态，使 app_is_running 判定为已在游戏中
                 if self.device.is_desktop:
@@ -312,13 +314,12 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 if self.config.restart.harvest_config.enable:
                     self.harvest()
                 return True
-            except (GameTooManyClickError, GameStuckError) as e:
+            except (GameNotRunningError, GameTooManyClickError, GameStuckError) as e:
                 logger.warning(e)
                 if self.device.is_desktop:
                     raise
+                # 最后一轮也清理失败的游戏进程，但启动留给下一轮 try 内执行。
                 self.device.app_stop()
-                self.device.app_start()
-                continue
 
         logger.critical(f'Login failed after {attempts} attempts')
         logger.critical('Onmyoji server may be under maintenance, or you may lost network connection')
@@ -330,6 +331,8 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         :return: 如果没有发现任何奖励后退出
         """
         logger.hr('Harvest')
+        # 各领取项独立遵守配置开关，避免关闭某项后仍被登录收获流程点击。
+        harvest = self.config.restart.harvest_config
         timer_harvest = Timer(5)  # 如果连续5秒没有发现任何奖励，退出
         skip_default = False
         courtyard_affairs_done = False  # 庭院事务只执行一次
@@ -375,44 +378,44 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 continue
 
             # 庭院事务
-            if self.config.restart.harvest_config.enable_courtyard_affairs and not courtyard_affairs_done:
+            if harvest.enable_courtyard_affairs and not courtyard_affairs_done:
                 self.harvest_courtyard_affairs()
                 timer_harvest.reset()
                 courtyard_affairs_done = True
                 continue
             # 勾玉
-            if self.appear_then_click(self.I_HARVEST_JADE, interval=1.5):
+            if harvest.enable_jade and self.appear_then_click(self.I_HARVEST_JADE, interval=1.5):
                 timer_harvest.reset()
                 continue
             # 签到
-            if self.appear_then_click(self.I_HARVEST_SIGN, interval=1.5):
+            if harvest.enable_sign and self.appear_then_click(self.I_HARVEST_SIGN, interval=1.5):
                 self.wait_until_appear(self.I_HARVEST_SIGN_2, wait_time=2)
                 timer_harvest.reset()
                 continue
             # 某些活动的特殊签到，有空看到就删掉
-            if self.appear_then_click(self.I_HARVEST_SIGN_3, interval=0.7):
+            if harvest.enable_sign and self.appear_then_click(self.I_HARVEST_SIGN_3, interval=0.7):
                 timer_harvest.reset()
                 continue
-            if self.appear_then_click(self.I_HARVEST_SIGN_4, interval=1):
+            if harvest.enable_sign and self.appear_then_click(self.I_HARVEST_SIGN_4, interval=1):
                 timer_harvest.reset()
                 continue
-            if self.appear_then_click(self.I_HARVEST_SIGN_2, interval=1.5):
+            if harvest.enable_sign and self.appear_then_click(self.I_HARVEST_SIGN_2, interval=1.5):
                 self.wait_until_appear(self.I_LOGIN_RED_CLOSE, wait_time=2)
                 timer_harvest.reset()
                 continue
             # 999天的签到福袋
-            if self.appear_then_click(self.I_HARVEST_SIGN_999, interval=1.5):
+            if harvest.enable_sign_999 and self.appear_then_click(self.I_HARVEST_SIGN_999, interval=1.5):
                 timer_harvest.reset()
                 continue
             # 判断是否勾选了收取邮件（不收取邮件可以查看每日收获）
-            if not skip_default and self.config.restart.harvest_config.enable_mail and self.harvest_mail():
+            if not skip_default and harvest.enable_mail and self.harvest_mail():
                 timer_harvest.reset()
                 continue
-            if self.appear_then_click(self.I_HARVEST_AP, interval=1, threshold=0.7):
+            if harvest.enable_ap and self.appear_then_click(self.I_HARVEST_AP, interval=1, threshold=0.7):
                 timer_harvest.reset()
                 continue
             # 御魂觉醒加成
-            if self.appear_then_click(self.I_HARVEST_SOUL, interval=1):
+            if harvest.enable_soul and self.appear_then_click(self.I_HARVEST_SOUL, interval=1):
                 timer_harvest.reset()
                 continue
             # 寮包
@@ -504,15 +507,17 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         三个阶段：查找（一轮一次 OCR，未命中则向上滑动重试）→ 选中（点击并用勾选标记验证）
         → 确认（点确认按钮直到列表界面消失）。
 
-        所有失败路径都只记 error 不抛异常，最终一定会走到确认阶段，避免卡在选角界面。
+        显式指定目标时，查找或选中验证失败必须进入登录重试，不能确认到其他角色。
         """
         target_click, target_y = self._find_login_character()
 
-        if target_click is not None:
-            self._ensure_character_selected(target_click, target_y)
+        if target_click is None:
+            if self.character or self.svr:
+                raise GameStuckError(f'Login character not found: {self.character} / {self.svr}')
+        elif not self._ensure_character_selected(target_click, target_y):
+            raise GameStuckError(f'Login character not selected: {self.character} / {self.svr}')
 
-        # 确认登录。目标为空（未指定角色 / 一条都没识别到）时也走这里，登默认高亮的角色，
-        # 与改动前「keyword 为空恒不匹配」的行为一致。
+        # 只有未配置角色时才允许默认登录；已配置角色须通过上面的查找和选中验证。
         while True:
             self.screenshot()
             if self.appear(self.I_LOGIN_SPECIFIC_SERVE):
@@ -547,11 +552,10 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             index = self._match_character_index(texts, self.character, self.svr)
             if index < 0:
                 if texts == last_texts:
-                    # 两轮结果一致说明已滑到底，取当前屏第一条兜底，不中断登录流程
+                    # 两轮结果一致说明已滑到底；返回查找失败，禁止兜底选择别的角色。
                     logger.error('Character %s / svr %s not found after scrolling to end, '
-                                 'fallback to the first one: %s',
-                                 self.character, self.svr, texts[0])
-                    index = 0
+                                 'stop character selection', self.character, self.svr)
+                    return None, None
                 else:
                     last_texts = texts
                     self.swipe(self.S_LOGIN_CHARACTER_LIST_UP)
@@ -572,9 +576,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         """点击目标条目并用勾选标记验证选中态，最多重试 SELECT_CHARACTER_CLICK_RETRY 次。
 
         每轮先验证再点击，所以默认高亮恰好就是目标时会零点击直接通过。
-        验证不通过也只记 error，让调用方继续走确认流程。
+        最后一次点击后也要重新验证；失败返回 False，由调用方进入有界登录重试。
         """
-        for _ in range(SELECT_CHARACTER_CLICK_RETRY):
+        for attempt in range(SELECT_CHARACTER_CLICK_RETRY + 1):
             self.screenshot()
             # RuleImage.match 命中时会把位置回写进 roi_front（module/atom/image.py:166），
             # 所以必须在 appear 返回 True 的同一轮里立刻读，不能跨轮缓存。
@@ -586,6 +590,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 if self._is_select_mark_aligned(mark_y, target_y):
                     logger.info('Target character selected')
                     return True
+            # 多一次验证，但点击次数仍限制为 SELECT_CHARACTER_CLICK_RETRY。
+            if attempt == SELECT_CHARACTER_CLICK_RETRY:
+                break
             self.click(target_click)
             time.sleep(1)
 
