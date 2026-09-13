@@ -81,6 +81,10 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         self.from_account_info = frm
 
     def switchAccount(self):
+        # 在任何截图、退出或点击之前拒绝空白目标，保护仍在运行的当前角色。
+        if not self.to_account_info or not self.to_account_info.is_valid():
+            logger.error("账号、角色名、区服名均必填，跳过存在空项的切号目标")
+            return False
         logger.info("start switchAccount %s-%s", self.to_account_info.character, self.to_account_info.svr)
         # 判断所处界面
         self.screenshot()
@@ -97,12 +101,14 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         # 处于登录界面
         if not self.login(self.to_account_info):
             return False
-        logger.info("%s login suc", self.to_account_info.character)
         # 处理位于登录界面各种奇葩弹窗
         login_handler = LoginHandler(config=self.config, device=self.device)
         login_handler.set_specific_usr(self.to_account_info.character, self.to_account_info.svr)
-        login_handler.app_handle_login()
+        # 选角未识别已返回登录页，交现有账号级三次重试；成功进入庭院后才可复用登录。
+        if not login_handler.app_handle_login(account_retry=True):
+            return False
 
+        logger.info("%s login suc", self.to_account_info.character)
         return True
 
 
@@ -114,7 +120,7 @@ class SwitchAccountOnStart:
         if not switch_config.enable:
             return True
         # 启用了但没填目标账号，不能盲目在错误账号上执行
-        if not account_list or not account_list[0].is_valid():
+        if not account_list or not account_list[0] or not account_list[0].is_valid():
             logger.error("已启用切号但未配置目标账号，中止任务")
             return False
         # 每次都强制重新登录目标账号

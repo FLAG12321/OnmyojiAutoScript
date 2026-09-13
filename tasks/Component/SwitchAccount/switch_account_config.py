@@ -56,7 +56,8 @@ class AccountInfo(BaseModel):
             return account.lower()
 
     def is_valid(self):
-        return self.character!="" and self.character is not None
+        # 角色名、区服名、账号名全部必填；任一项为空或纯空白都必须跳过。
+        return all(value and value.strip() for value in (self.character, self.svr, self.account))
 
 
 class SwitchAccountConfig(ConfigBase):
