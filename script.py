@@ -75,15 +75,8 @@ class Script:
         self.config_event_queue: Queue = None
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
         self.config_name = config_name
-        # Skip first restart
+        # 仅跳过启动时立即到期的首次 Restart；进入等待后应按正常计划执行。
         self.is_first_task = True
-        # Failure count of tasks (legacy; preserved for back-compat references but no longer drives exit)
-        # Key: str, task name, value: int, failure count
-        self.failure_record = {}
-        # Global recovery failure counter (Task 17). Replaces failure_record[task]
-        # for exit decision. Incremented when a full_recovery cycle fails; reset
-        # to 0 after any task succeeds. Exit(1) when >= 3.
-        self.recovery_failure_count = 0
         # 连续页面识别失败（GamePageUnknownError）计数：登录后弹窗链遮挡等偶发
         # 场景下一轮任务重试时常能自愈，给满 3 次机会才重启客户端兜底；
         # 任务正常结束（TaskEnd）即清零。
@@ -404,27 +397,28 @@ class Script:
             if self.state_queue:
                 self.state_queue.put({"schedule": self.config.get_schedule_data()})
 
-            # from module.base.resource import release_resources
-            # if self.config.task.command != 'Alas':
-            #     release_resources(next_task=task.command)
-
             if task.next_run > datetime.now():
                 logger.info(f'Wait until {task.next_run} for task `{task.command}`')
-                # self.is_first_task = False
-                method = self.config.script.optimization.when_task_queue_empty
-                close_game_limit_time = self.config.script.optimization.close_game_wait_duration
-                close_emulator_limit_time = self.config.script.optimization.close_emulator_wait_duration
+                # 已进入正常调度等待，稍后到期的 Restart 不能再按首次启动任务跳过。
+                self.is_first_task = False
+                # 首次访问 self.device 会拉起模拟器；冷启动无到期任务时只能等待。
+                # 只有已经创建过设备，才执行空闲关闭/回庭院与资源释放。
+                device = self.__dict__.get('device')
+                if device is not None:
+                    method = self.config.script.optimization.when_task_queue_empty
+                    close_game_limit_time = self.config.script.optimization.close_game_wait_duration
+                    close_emulator_limit_time = self.config.script.optimization.close_emulator_wait_duration
 
-                if method == 'goto_main':
-                    self._handle_goto_main()
-                elif method == 'close_game':
-                    self._handle_close_game(task, close_game_limit_time)
-                elif method in ['close_emulator_or_goto_main', 'close_emulator_or_close_game']:
-                    self._handle_close_emulator_or(task, close_game_limit_time, close_emulator_limit_time, method)
-                else:
-                    logger.warning(f'Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there')
+                    if method == 'goto_main':
+                        self._handle_goto_main()
+                    elif method == 'close_game':
+                        self._handle_close_game(task, close_game_limit_time)
+                    elif method in ['close_emulator_or_goto_main', 'close_emulator_or_close_game']:
+                        self._handle_close_emulator_or(task, close_game_limit_time, close_emulator_limit_time, method)
+                    elif method != 'stay_there':
+                        logger.warning(f'Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there')
 
-                self.device.release_during_wait()
+                    device.release_during_wait()
 
                 if not self.wait_until(task.next_run):
                     result = self.config.refresh_from_disk("wait_return")
@@ -434,18 +428,16 @@ class Script:
                         logger.critical(f'[{self.config_name}] Config generation changed, stop instance')
                         exit(1)
                     continue
-            else:
-                # 任务已到点：若当前落在该任务的禁止运行时间段内，推迟到区间结束并重新选择任务，
-                # 避免调度层先因游戏未运行触发 Restart 造成顶号（禁止时间段内本不应上号）
-                forbidden_end = self.config.get_forbidden_time_end(task.command)
-                if forbidden_end is not None:
-                    # 解禁时刻叠加随机延时，避免每次都在解禁的整点准点上线
-                    random_delay = self.config.get_task_random_delay(task.command)
-                    if random_delay is not None:
-                        forbidden_end = forbidden_end + random_delay
-                    logger.info(f'Task `{task.command}` 处于禁止运行时间段内，推迟到 {forbidden_end}')
-                    self.config.task_delay(task.command, target=forbidden_end, server=False)
-                    continue
+            # 立即到期和等待后到期都要检查禁止时段，避免等待期间跨入禁用区间后上号。
+            forbidden_end = self.config.get_forbidden_time_end(task.command)
+            if forbidden_end is not None:
+                # 解禁时刻叠加随机延时，避免每次都在解禁的整点准点上线。
+                random_delay = self.config.get_task_random_delay(task.command)
+                if random_delay is not None:
+                    forbidden_end = forbidden_end + random_delay
+                logger.info(f'Task `{task.command}` 处于禁止运行时间段内，推迟到 {forbidden_end}')
+                self.config.task_delay(task.command, target=forbidden_end, server=False)
+                continue
             break
 
         return task.command
@@ -688,6 +680,8 @@ class Script:
             # Skip first restart
             if self.is_first_task and task == 'Restart':
                 logger.info('Skip task `Restart` at scheduler start')
+                # 跳过动作本身也消耗首次标记，防止仅启用 Restart 时被永久跳过。
+                self.is_first_task = False
                 self.config.task_delay(task='Restart', success=True, server=True)
                 self._config_checkpoint("skip_first_restart")
                 continue
@@ -708,20 +702,6 @@ class Script:
             success = self.run(inflection.camelize(task))
             logger.info(f'Scheduler: End task `{task}`')
             self.is_first_task = False
-
-            # Global recovery failure counter (Task 17). Replaces per-task accumulator.
-            if success:
-                if self.recovery_failure_count > 0:
-                    logger.info(
-                        f'Task success, reset recovery_failure_count from {self.recovery_failure_count} to 0'
-                    )
-                self.recovery_failure_count = 0
-            # Note: failure_record[task] still updated for telemetry / GUI inspection,
-            # but no longer drives exit. exit is driven by recovery_failure_count which
-            # accumulates only on full_recovery failures (Task 18).
-            failed = self.failure_record[task] if task in self.failure_record else 0
-            failed = 0 if success else failed + 1
-            self.failure_record[task] = failed
 
             if success:
                 # 任务结束边界：WARM/COLD 刷新并上报 config_state
