@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigamiTask
 from tasks.ActivitySignIn.script_task import ScriptTask as ActivitySignInTask
 from tasks.Component.SchedulingShield import shield_scheduling
+from tasks.EvoZone.script_task import ScriptTask as EvoZoneTask
 from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiTask
 from tasks.MultiTasks.config import SubTaskType
 
@@ -40,6 +41,11 @@ SUB_TASKS: dict[SubTaskType, SubTaskSpec] = {
         ('ActivityShikigami', 'SoulsTidy')),
     SubTaskType.EXPERIENCE_YOUKAI: SubTaskSpec(
         ExperienceYoukaiTask, 'ExperienceYoukai', ('ExperienceYoukai',)),
+    # 觉醒副本：配置全部继承该实例 EvoZone 段（麒麟/层数/次数/换御魂/邀请设置），
+    # 本任务不另开一份参数。run() 结尾的 set_next_run('EvoZone') 必须屏蔽，
+    # 否则每个小号都会去改大号觉醒副本的下次运行时间。
+    SubTaskType.EVO_ZONE: SubTaskSpec(
+        EvoZoneTask, 'EvoZone', ('EvoZone',)),
 }
 
 # Adapter 类在模块导入时建一次；实例每账号新建，保证可变状态不跨账号共享。

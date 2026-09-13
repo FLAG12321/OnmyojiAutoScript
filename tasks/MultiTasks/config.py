@@ -15,6 +15,7 @@ class SubTaskType(str, Enum):
     ACTIVITY_SIGN_IN = 'activity_sign_in'        # 活动签到
     ACTIVITY_SHIKIGAMI = 'activity_shikigami'    # 活动爬塔
     EXPERIENCE_YOUKAI = 'experience_youkai'      # 经验妖怪
+    EVO_ZONE = 'evo_zone'                        # 觉醒副本
 
 
 class AccountSourceType(str, Enum):
