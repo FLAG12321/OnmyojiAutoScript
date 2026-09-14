@@ -34,7 +34,7 @@ main_costume_model = {
         (GameUiAssets, 'I_MAIN_GOTO_SUMMON'): f'I_MAIN_GOTO_SUMMON_{i}',
         (GameUiAssets, 'I_MAIN_GOTO_TOWN'): f'I_MAIN_GOTO_TOWN_{i}',
         (PetsAssets, 'I_PET_HOUSE'): f'I_PET_HOUSE_{i}',
-    } for i in range(1, 15)
+    } for i in range(1, 17)
 }
 
 

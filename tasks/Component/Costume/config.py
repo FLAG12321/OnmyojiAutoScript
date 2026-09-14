@@ -21,6 +21,8 @@ class MainType(str, Enum):
     COSTUME_MAIN_12 = 'costume_main_12'  # 龙吟溯玉
     COSTUME_MAIN_13 = 'costume_main_13'  # 云景阆苑
     COSTUME_MAIN_14 = 'costume_main_14'  # 雪月华庭
+    COSTUME_MAIN_15 = 'costume_main_15'  # 初语谧景·焕新
+    COSTUME_MAIN_16 = 'costume_main_16'  # 狐栖归处
 
 # 结界皮肤
 # 默认套（妖伞结界）的资产在 tasks/KekkaiUtilize/realm/ 下，由 KekkaiUtilizeAssets 持有；
