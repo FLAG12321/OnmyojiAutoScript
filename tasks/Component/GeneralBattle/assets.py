@@ -142,7 +142,7 @@ class GeneralBattleAssets:
 	# 胜利页面标志2 
 	I_WIN_2 = RuleImage(roi_front=(464,276,31,20), roi_back=(226,221,918,169), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_win_2.png")
 	# 点击开始自动战斗(战斗过程界面) 
-	I_PAPER_TOSTART = RuleImage(roi_front=(49,550,40,60), roi_back=(9,531,172,96), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_paper_tostart.png")
+	I_PAPER_TOSTART = RuleImage(roi_front=(49,550,40,61), roi_back=(9,530,174,97), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_paper_tostart.png")
 
 
 	# Image Rule Assets

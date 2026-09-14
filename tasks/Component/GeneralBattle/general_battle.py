@@ -934,12 +934,24 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
     def is_in_real_battle(self, is_screenshot: bool = True):
         """
         判断是否在真正的战斗中(不是战斗准备界面也不是战斗结束界面)
+
+        2026-09-14 换判据：I_BATTLE_INFO 单模板 → I_FRIENDS and I_EXIT。
+        I_BATTLE_INFO 不在 battle_theme_model 的替换表里（该表每套主题只换
+        I_LOCAL / I_EXIT / I_FRIENDS），换过战斗主题后它仍是默认主题的图标：
+        雅乐之邦（costume_battle_1）界面真机实测仅 0.68，低于 0.8 阈值，
+        自动战斗段全程判不出战斗界面，_auto_start 每轮直接 continue、六轮
+        空转后回退手动（2026-09-14 oas1 日志 11:34 / 12:09 两次事故）。
+        I_FRIENDS / I_EXIT 会被主题就地替换成当前主题版本（雅乐之邦版实测
+        0.98），任何主题下都可用。
+        取 AND 不取 OR：I_FRIENDS 单独在准备界面（见 is_in_battle 的 tip）
+        和结算页（实测 0.807）都会误命中，只有叠加结算页失配的 I_EXIT
+        （实测 0.571）才能把这两处排除掉。
         :param is_screenshot:
         :return:
         """
         if is_screenshot:
             self.screenshot()
-        return self.appear(self.I_BATTLE_INFO)
+        return self.appear(self.I_FRIENDS) and self.appear(self.I_EXIT)
 
     def is_in_prepare(self, is_screenshot: bool = True) -> bool:
         """
@@ -1292,7 +1304,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         is_auto_battle_page 是 OR 语义（按钮不在即自动中），主界面/准备页等
         非战斗页按钮天然不在，会被误判"自动中"并误点——真机验证发现任务
         收尾时页面几乎总是已回到主界面，在庭院坐标上连点三次 paper_tostart。
-        必须先确认战斗界面（I_BATTLE_INFO）再做判定与取消。
+        必须先确认战斗界面（is_in_real_battle，判据见其 docstring）再做判定与取消。
         """
         self.screenshot()
         if not self.is_in_real_battle(False):
