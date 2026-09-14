@@ -76,18 +76,28 @@ class ScriptTask(KU, KekkaiActivationAssets):
         if con.pets_enable:
             pets = Pets(self.config, self.device)
             pets.run()
+        # 走到这里说明本次运行没有走过失败收尾，连续失败计数归零
+        self.reset_entry_failure('KekkaiActivation')
         raise TaskEnd('KekkaiActivation')
 
     def realm_entry_failed(self, name: str) -> None:
         """挂卡侧的失败收尾：通知渠道换成挂卡标题，延后与父类一致。"""
-        fail_msg = (f'进入{name}失败, '
-                    f'{int(self.REALM_ENTRY_FAIL_DELAY.total_seconds() // 60)}分钟后再次挂卡')
+        # 连续失败达上限就不再 5 分钟一次地重复，直接推到明天同一时刻
+        if self.record_entry_failure(
+                'KekkaiActivation',
+                self.config.kekkai_activation.activation_config.max_consecutive_failures):
+            fail_msg = f'进入{name}失败, 连续失败已达上限, 明天再试'
+            target = datetime.now() + timedelta(days=1)
+        else:
+            fail_msg = (f'进入{name}失败, '
+                        f'{int(self.REALM_ENTRY_FAIL_DELAY.total_seconds() // 60)}分钟后再次挂卡')
+            target = datetime.now() + self.REALM_ENTRY_FAIL_DELAY
         logger.warning(fail_msg)
         # 与同文件既有的两处写法一致：DAILY 由 DailyAltAcc 嵌套调用时强制指定，
         # 那条路径的失败通知应由 DailyAltAcc 自己出，这里静默
         if not self.config.kekkai_activation.activation_config.card_type == CardType.DAILY:
             self.config.notifier.push(content=fail_msg, title='结界挂卡')
-        self.set_next_run('KekkaiActivation', target=datetime.now() + self.REALM_ENTRY_FAIL_DELAY)
+        self.set_next_run('KekkaiActivation', target=target)
         raise TaskEnd('KekkaiActivation')
 
     @cached_property

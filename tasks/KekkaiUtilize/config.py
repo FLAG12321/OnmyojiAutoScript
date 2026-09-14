@@ -45,6 +45,9 @@ class UtilizeConfig(BaseModel):
     random_delay_enable: bool = Field(default=False, description='是否启用下次上号随机延时')
     random_delay_min: int = Field(default=10, description='随机延时下限，单位分钟')
     random_delay_max: int = Field(default=30, description='随机延时上限，单位分钟')
+    # 连续失败上限：达到后本次直接把下次运行时间推到明天同一时刻，不再 5 分钟
+    # 一次地重复失败；<=0 表示不启用上限（保持原有的 5 分钟重试）
+    max_consecutive_failures: int = Field(default=3, description='连续失败上限，达到后推迟到明天同一时刻；0 表示不启用')
     utilize_enable: bool = Field(default=True, description='是否蹭卡，小号可以选择不蹭卡')
     pets_enable: bool = Field(default=False, description='pets_enable_help')
     guild_ap_enable: bool = Field(default=False, description='收取寄养资源')

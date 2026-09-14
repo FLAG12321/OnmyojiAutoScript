@@ -20,6 +20,7 @@ from tasks.KekkaiUtilize.utils import CardClass
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild, page_guild_realm
 import random
+from tasks.KekkaiUtilize.fail_streak import EntryFailStreak
 from tasks.Pets.script_task import ScriptTask as Pets
 """ 结界蹭卡 """
 
@@ -46,14 +47,32 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     utilized_in_select = False
     # 本次「进寄养」尝试中，育成界面显示已在寄养中（不需要再进寄养界面）
     utilize_already_active = False
+    # 本次运行是否已计入一次进入失败：失败收尾有的 raise TaskEnd 直接结束，有的
+    #（没合适卡）return 后还会走完正常收尾，run() 末尾要靠它区分该不该清计数
+    entry_failed_this_run = False
     msg: list = []
     # 进入结界入口/子界面失败后的延后重试间隔（寄养与挂卡共用）
     REALM_ENTRY_FAIL_DELAY = timedelta(minutes=5)
     # 进入结界子界面（寄养/挂卡）的重试节奏
     REALM_ENTRY_CLICK_MAX = 4    # 每步最多点几次区域
     REALM_ENTRY_ROUND_MAX = 3    # 「回寮 -> 重进结界」最多几轮
+    # 点击区域后等待目标页面出现的上限（秒）：同一坐标在目标页面上往往是关闭
+    # 按钮，抢在页面打开之前重复点击会把刚打开的页面关掉。页面一出现立即继续，
+    # 不必等满整个上限
+    REALM_ENTRY_CLICK_INTERVAL = 3.0
     # 从寮进结界的转场动画时长（秒）：页面判据会在动画中途就成立，等它放完再判皮肤
     REALM_ANIMATION_WAIT = 2.0
+    # 「放置好友寄养」加号按钮的三种状态。育成界面上它是原版亮度；寄养界面打开后
+    # 覆盖层的半透明遮罩会把它压暗（实测 RGB 均值 174,163,145 → 72,68,61，约 41%
+    # 亮度），而两种状态下模板相关度都很高（变暗后仍有 0.857）—— 形状判定分不出来，
+    # 只有亮度能区分。这正是「加号仍能识别、但比原版暗」的由来。
+    UTILIZE_ADD_BRIGHT = 'bright'   # 育成界面原版亮度，可以点
+    UTILIZE_ADD_DIM = 'dim'         # 寄养界面已打开（被遮罩压暗），不能再点
+    UTILIZE_ADD_ABSENT = 'absent'   # 加号不存在，已经在寄养中
+    # 变暗判定阈值：现场区域亮度 / 模板亮度 低于该比例即认为被遮罩压暗
+    UTILIZE_ADD_DIM_RATIO = 0.6
+    # 加号状态连续多少帧保持一致才算稳定（单帧会被转场动画、飘字特效干扰）
+    UTILIZE_ADD_STABLE_FRAMES = 3
 
     def run(self):
         con = self.config.kekkai_utilize.utilize_config
@@ -88,6 +107,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         if con.pets_enable:
             pets = Pets(self.config, self.device)
             pets.run()
+        # 走到这里说明本次运行没有走过失败收尾，连续失败计数归零
+        self.reset_entry_failure('KekkaiUtilize')
         logger.info(self.msg)
         raise TaskEnd(self.msg)
 
@@ -111,15 +132,23 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             # 处理并直接结束任务，不再消耗 utilize_add_count 的剩余次数。
             self.utilize_add_count += 1
             if self.utilize_add_count >= 5:
-                logger.warning('没有合适可以蹭的卡, 5分钟后再次执行蹭卡')
+                # 连续失败达上限就不再 5 分钟一次地重复，直接推到明天同一时刻。
+                # 这里只记失败、不抛 TaskEnd：后面还有收怪、收盒等步骤要走完。
+                if self.record_entry_failure('KekkaiUtilize', con.max_consecutive_failures):
+                    fail_msg = '没有合适可以蹭的卡, 连续失败已达上限, 明天再试'
+                    target = datetime.now() + timedelta(days=1)
+                else:
+                    fail_msg = '没有合适可以蹭的卡, 5分钟后再次执行蹭卡'
+                    target = datetime.now() + timedelta(minutes=5)
+                logger.warning(fail_msg)
                 # 添加消息到列表，以便在TaskEnd时返回
                 from tasks.DailyAltAcc.config import MSGType
                 self.msg.append([MSGType.Utilize, "未找到寄养卡"])
-                self.push_notify(content=f"没有合适可以蹭的卡, 5分钟后再次执行蹭卡")
+                self.push_notify(content=fail_msg)
                 
-                if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
-                    self.config.notifier.push(content=f'没有合适可以蹭的卡, 5分钟后再次执行蹭卡', title='寄养')
-                self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
+                if not con.utilize_rule == UtilizeRule.DAILY:
+                    self.config.notifier.push(content=fail_msg, title='寄养')
+                self.set_next_run(task='KekkaiUtilize', target=target)
 
                 return
 
@@ -337,17 +366,108 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         实际轮数不一定跑满，写死轮数会说谎。
         :param name: 失败位置（'寮' / '寮结界' / '寄养'）
         """
-        fail_msg = (f'进入{name}失败, '
-                    f'{int(self.REALM_ENTRY_FAIL_DELAY.total_seconds() // 60)}分钟后再次执行')
+        con = self.config.kekkai_utilize.utilize_config
+        # 连续失败达上限就不再 5 分钟一次地重复，直接推到明天同一时刻
+        if self.record_entry_failure('KekkaiUtilize', con.max_consecutive_failures):
+            fail_msg = f'进入{name}失败, 连续失败已达上限, 明天再试'
+            target = datetime.now() + timedelta(days=1)
+        else:
+            fail_msg = (f'进入{name}失败, '
+                        f'{int(self.REALM_ENTRY_FAIL_DELAY.total_seconds() // 60)}分钟后再次执行')
+            target = datetime.now() + self.REALM_ENTRY_FAIL_DELAY
         logger.warning(fail_msg)
         from tasks.DailyAltAcc.config import MSGType
         self.msg.append([MSGType.Utilize, fail_msg])
         self.push_notify(content=fail_msg)
-        if not self.config.kekkai_utilize.utilize_config.utilize_rule == UtilizeRule.DAILY:
+        if not con.utilize_rule == UtilizeRule.DAILY:
             self.config.notifier.push(content=fail_msg, title='寄养')
-        self.set_next_run(task='KekkaiUtilize',
-                          target=datetime.now() + self.REALM_ENTRY_FAIL_DELAY)
+        self.set_next_run(task='KekkaiUtilize', target=target)
         raise TaskEnd(self.msg)
+
+    @cached_property
+    def entry_fail_streak(self) -> EntryFailStreak:
+        """连续进入失败计数（按 config 实例分文件落盘）"""
+        return EntryFailStreak(self.config.config_name)
+
+    def record_entry_failure(self, task_name: str, limit: int) -> bool:
+        """记录一次「进入结界/子界面失败」，返回是否已达连续失败上限。
+
+        达上限时由调用方把下次运行时间推到明天；未达上限维持原有的 5 分钟重试。
+        计数必须落盘：失败会结束本次任务，下次跑的是全新实例，内存计数必丢。
+        :param task_name: 任务名（KekkaiUtilize / KekkaiActivation），也是计数文件的键
+        :param limit: 连续失败上限，<=0 表示不启用
+        :return: True 表示已达上限（计数同时归零、重新累计）
+        """
+        self.entry_failed_this_run = True
+        count = self.entry_fail_streak.increase(task_name)
+        if limit <= 0:
+            return False
+        if count >= limit:
+            logger.warning(f'[{task_name}] 连续失败 {count} 次，已达上限 {limit}')
+            self.entry_fail_streak.reset(task_name)
+            return True
+        logger.warning(f'[{task_name}] 连续失败 {count}/{limit} 次')
+        return False
+
+    def reset_entry_failure(self, task_name: str) -> None:
+        """本次运行正常收尾时把连续失败计数归零。
+
+        只在「本次运行没走过失败收尾」时调用：没合适卡那条路径失败后是 return
+        回去继续走完正常收尾的，不能在这里把它的计数清掉。
+        """
+        if self.entry_failed_this_run:
+            return
+        self.entry_fail_streak.reset(task_name)
+
+    @cached_property
+    def utilize_add_brightness(self) -> float:
+        """加号模板图自身的平均亮度，作为「原版亮度」的基准。
+
+        读不到模板图时返回 0，调用处会跳过变暗判定（退化成只看模板匹配）。
+        """
+        import cv2
+        img = cv2.imread(self.I_UTILIZE_ADD.file)
+        if img is None:
+            logger.warning(f'读取加号模板失败: {self.I_UTILIZE_ADD.file}')
+            return 0.0
+        return float(cv2.cvtColor(img, cv2.COLOR_BGR2RGB).mean())
+
+    def utilize_add_state(self) -> str:
+        """判定「放置好友寄养」加号按钮当前的状态。
+
+        加号整个消失是 ABSENT（说明已经在寄养中）；仍在、但亮度掉到原版六成
+        以下是 DIM —— 那是寄养界面已经打开、覆盖层把加号压暗了。此时再点同一
+        坐标会点到覆盖层上、把刚打开的页面关掉，所以调用方必须把 DIM 当作
+        「页面已打开」，而不是「加号还在，继续点」。
+        """
+        if not self.appear(self.I_UTILIZE_ADD):
+            return self.UTILIZE_ADD_ABSENT
+        # appear 命中后 roi_front 已回写为匹配到的位置，按它取区域亮度
+        x, y, w, h = (int(v) for v in self.I_UTILIZE_ADD.roi_front)
+        cur = float(self.device.image[y:y + h, x:x + w].mean())
+        ref = self.utilize_add_brightness
+        if ref > 0 and cur / ref < self.UTILIZE_ADD_DIM_RATIO:
+            return self.UTILIZE_ADD_DIM
+        return self.UTILIZE_ADD_BRIGHT
+
+    def utilize_add_state_stable(self, frames: int = None) -> str | None:
+        """连续 frames 帧状态一致才返回该状态；帧间变化返回 None（状态还在变）。
+
+        device.screenshot() 自带 interval 节流（会阻塞到下一帧），所以循环调用
+        拿到的确实是不同的帧，不是同一张图判多次。
+        """
+        if frames is None:
+            frames = self.UTILIZE_ADD_STABLE_FRAMES
+        state = None
+        for i in range(frames):
+            self.screenshot()
+            cur = self.utilize_add_state()
+            if i == 0:
+                state = cur
+            elif cur != state:
+                logger.warning(f'加号状态帧间不一致（{state} -> {cur}），本次判定不稳定')
+                return None
+        return state
 
     def realm_entry_click(self, region, arrived, max_clicks: int = None) -> bool:
         """在结界界面点 region 区域，直到 arrived() 为真；最多点 max_clicks 次。
@@ -388,6 +508,13 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             # 而 BaseTask.click 未暴露该参数，故连点退避仍会生效（拟人化默认 off，影响面小）。
             self.device.click_record_remove(region)
             self.click(region)
+            # 点击后给页面留出响应时间再判：同一坐标在目标页面上往往是关闭按钮，
+            # 抢在页面打开之前重复点击会把刚打开的页面关掉。页面一出现立即返回。
+            timer = Timer(self.REALM_ENTRY_CLICK_INTERVAL).start()
+            while not timer.reached():
+                self.screenshot()
+                if arrived():
+                    return True
         # 最后一次点击后界面可能已经切过去，再判一次
         self.screenshot()
         return arrived()
@@ -563,10 +690,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         所以保留原有守卫，不随入口区域一起改成盲点。
         :return: 已进入寄养界面返回 True
         """
-        self.screenshot()
-        if not self.appear(self.I_UTILIZE_ADD):
+        state = self.utilize_add_state_stable()
+        if state == self.UTILIZE_ADD_ABSENT:
             logger.warning('No utilize add')
             return False
+        if state == self.UTILIZE_ADD_DIM:
+            # 寄养界面已经开着（加号被覆盖层压暗），直接算到达：再点一次同一坐标
+            # 会点到覆盖层上，把刚打开的页面关掉
+            logger.info('Utilize page already open (add is dimmed), skip clicking')
+            return True
+        # BRIGHT，或状态不稳（None，页面正在变化）：走正常的点击流程
         if not self.realm_entry_click(self._realm_region(self.I_UTILIZE_ADD, 'realm_utilize'),
                                       lambda: self.appear(self.I_U_ENTER_REALM)):
             logger.warning('进入寄养界面失败')
@@ -586,8 +719,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.utilize_already_active = False
         if not self.realm_goto_grown():
             return False
-        self.screenshot()
-        if not self.appear(self.I_UTILIZE_ADD):
+        # 加号连续多帧都看不到才算「已经在寄养中」：单帧漏判会把已寄养误判成
+        # 未寄养，进而去点一个不存在的加号
+        if self.utilize_add_state_stable() == self.UTILIZE_ADD_ABSENT:
             self.utilize_already_active = True
             return True
         return self.grown_goto_utilize()
