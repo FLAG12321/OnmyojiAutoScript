@@ -95,7 +95,7 @@
     "roiFront": "1049,605,60,31",
     "roiBack": "1001,586,152,78",
     "method": "Template matching",
-    "threshold": "0.7",
+    "threshold": 0.7,
     "description": "description"
   },
   {
@@ -110,8 +110,8 @@
   {
     "itemName": "check_mall",
     "imageName": "page_check_mall.png",
-    "roiFront": "147,527,82,82",
-    "roiBack": "147,527,82,82",
+    "roiFront": "330,532,78,60",
+    "roiBack": "303,508,138,109",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -208,11 +208,11 @@
   },
   {
     "itemName": "dlc_exit",
+    "imageName": "dlc_exit.png",
     "roiFront": "450,455,67,31",
     "roiBack": "438,449,99,89",
-    "description": "description",
-    "imageName": "dlc_exit.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   }
 ]

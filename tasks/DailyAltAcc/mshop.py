@@ -71,7 +71,7 @@ class Mshop(Mall, DailyAltAccBase):
                 return True
             if timer.reached():
                 return False
-            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
                 continue
 
     def _buy_medal_black_daruma(self):
@@ -126,7 +126,7 @@ class Mshop(Mall, DailyAltAccBase):
             self.screenshot()
             if retry_count >3:
                 break
-            if self.appear_then_click(self.I_BACK_Y,interval=2):
+            if self.appear_then_click(self.I_BACK_Y,interval=3):
                 retry_count +=1
                 continue
             if not self.appear(self.I_BACK_Y):
