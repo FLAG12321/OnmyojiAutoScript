@@ -2,8 +2,8 @@
   {
     "itemName": "check_main",
     "imageName": "page_check_main.png",
-    "roiFront": "807,108,76,45",
-    "roiBack": "49,98,1033,61",
+    "roiFront": "1051,68,65,83",
+    "roiBack": "49,65,1110,94",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
