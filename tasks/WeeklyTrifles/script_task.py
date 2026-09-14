@@ -7,6 +7,7 @@ from time import sleep
 from module.exception import TaskEnd
 from module.logger import logger
 from module.base.timer import Timer
+from module.device.env import IS_WINDOWS
 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_collection, page_area_boss, page_secret_zones, page_summon, random_click
@@ -28,6 +29,33 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
 
         self.set_next_run(task='WeeklyTrifles', success=True, finish=True)
         raise TaskEnd('WeeklyTrifles')
+
+    @property
+    def is_ldplayer(self) -> bool:
+        """当前设备是否为雷电模拟器（LDPlayer3/4/9）。
+
+        桌面客户端模式、非 Windows 或宿主枚举失败时 device.emulator_instance 为 None，
+        一律返回 False，即保持原有分享行为，不因探测失败剥夺功能。
+        """
+        if not IS_WINDOWS:
+            return False
+        # 延迟导入：emulator_windows 顶层依赖 winreg，只有 Windows 能导入
+        from module.device.platform2.emulator_windows import Emulator
+        instance = self.device.emulator_instance
+        return instance is not None and instance == Emulator.LDPlayerFamily
+
+    def _share_skip_on_ldplayer(self, name: str) -> bool:
+        """命中雷电模拟器时记日志并返回 True，供三个分享方法在入口短路。
+
+        雷电模拟器下微信分享面板弹不出来，而等待分享按钮/二维码的 while 循环都没有超时
+        保护，会直接死循环卡住整个任务，所以三个分享整体不做。
+        守卫放在方法内部而不是调用处：DailyAltAcc 的每周奖励段会绕过 WeeklyTrifles.run()
+        直接调用 _share_collect，放在 run() 里拦不住那条路径。
+        """
+        if self.is_ldplayer:
+            logger.warning(f'LDPlayer detected, skip {name} (share panel unavailable)')
+            return True
+        return False
 
 
     def click_share(self, wechat) -> bool:
@@ -63,6 +91,8 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
         图鉴分享
         :return:
         """
+        if self._share_skip_on_ldplayer('share collect'):
+            return
         logger.hr('Share collect')
         self.ui_get_current_page()
         self.ui_goto(page_collection)
@@ -132,6 +162,8 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
                 if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
                     continue
             logger.info('Back to boss')
+        if self._share_skip_on_ldplayer('share area boss'):
+            return
         logger.hr('Share area boss')
         self.ui_get_current_page()
         self.ui_goto(page_area_boss)
@@ -169,6 +201,8 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
         秘闻分享
         :return:
         """
+        if self._share_skip_on_ldplayer('share secret'):
+            return
         logger.hr('Share secret')
         self.ui_get_current_page()
         self.ui_goto(page_secret_zones)
