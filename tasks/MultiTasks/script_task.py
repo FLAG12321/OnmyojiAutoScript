@@ -92,6 +92,15 @@ class ScriptTask(GameUi):
 
         # 切号成功后创建全新的子任务适配器，确保可变状态不跨账号共享
         adapter = ADAPTERS[sub_task](self.config, self.device)
+        # 注入「当前跑的是哪个账号」的上下文，与 MultiDailyAltAcc 用同一约定。
+        # 子任务据此给产物命名（如觉醒副本的协战截图 screenshots/EvoZone_Screenshots/<角色名>.png）；
+        # 不注入时读取方只会静默退化成配置实例名，导致多账号互相覆盖同一张图。
+        # 现有三个子任务都不混入 StatLogMixin，不读该属性，因此无统计埋点副作用。
+        adapter._stat_ctx = {
+            'acc': account.account,
+            'char': account.character,
+            'svr': account.svr,
+        }
         try:
             adapter.run()
         except TaskEnd as e:
