@@ -5,6 +5,11 @@
 截图由 tasks/DailyAltAcc/alliedteam.py 保存到
 screenshots/Battle_Screenshots_<年_月_日>/<角色名>.png
 
+每行按「昵称  次数  图片名称」输出，并按昵称排序，同一账号的截图相邻。
+昵称取自卡片右上角带勾选标记的那张亲友卡，即当前设成协战式神的那位好友；
+文件名用的是 OAS 配置里的角色名（如 js16瑶光），与游戏里显示的昵称（如
+月宠EVE）对不上，所以要把昵称单独列出来才看得出是谁的号。
+
 用法：
     # 不带参数：识别当天的截图目录
     ./toolkit/python.exe -m dev_tools.count_normal_copy
@@ -51,6 +56,90 @@ O_NORMAL_COPY = RuleOcr(
     keyword="",
     name="normal_copy",
 )
+
+# --------------------------------------------------------- 被勾选亲友卡的昵称
+#
+# 截图文件名是 OAS 的角色名（如 js16瑶光），游戏里显示的是玩家昵称（如 月宠EVE），
+# 两者对不上。这里额外把「被勾选的那张亲友卡」上的昵称读出来，方便人工对账。
+#
+# 版面（基于 1280x720 截图，实测各账号各日期完全一致）：
+#   * 勾选标记是贴在卡片右上角的青色菱形徽章，填充色实测 BGR≈(165,130,0)~(181,146,24)，
+#     即 R 极低、B>G 的强青色。式神立绘里也有青色，但饱和度低得多（R 普遍 >100），
+#     用「R 极低」这一个条件就能把立绘排除干净。
+#   * 昵称写在卡片底部的黑底名条上，名条是深色背景 + 浅色文字，整条 OCR 即可，
+#     且该行带只覆盖黑底，名条下方红色的服务器名（如 砂狐乐园）会被切掉、不会混进来。
+#
+# 只有一张卡被勾选（当前设置成协战式神的那位好友），所以不必判断「第几张」：
+# 找出勾选徽章的横向位置，再取横向离它最近的那条昵称就是同一张卡。
+
+# 搜索勾选徽章的区域（x, y, w, h）：好友/亲友式神列表整体，含第一行卡片及其
+# 右上角徽章位置；再往下的卡片行会被列表底边裁掉，不必扩到全屏
+CHECK_BADGE_SEARCH = (480, 340, 620, 260)
+# 勾选徽章填充色的判定范围
+CHECK_BADGE_MAX_RED = 60            # R 通道上限，立绘的青色 R 普遍 >100，靠这一条就能排除
+CHECK_BADGE_GREEN_RANGE = (100, 180)
+CHECK_BADGE_BLUE_RANGE = (140, 215)  # 并要求 B > G，把偏绿的颜色一并排除
+CHECK_BADGE_MIN_AREA = 40           # 徽章被白色对勾切成两块，单块面积远大于此
+
+# 被勾选卡片底部黑底名条所在的行带（基于 1280x720 截图）
+O_NICKNAME_BAR = RuleOcr(
+    roi=(480, 495, 620, 36),
+    area=(480, 495, 620, 36),
+    mode="Full",
+    method="Default",
+    keyword="",
+    name="nickname_bar",
+)
+
+
+def find_check_badge(image: np.ndarray) -> tuple[int, int] | None:
+    """
+    定位「被勾选的那张亲友卡」右上角的勾选徽章。
+    :param image: 截图
+    :return: 徽章质心的全图坐标 (x, y)，没有勾选标记时返回 None
+    """
+    x, y, w, h = CHECK_BADGE_SEARCH
+    sub = image[y:y + h, x:x + w]
+    b = sub[:, :, 0].astype(int)
+    g = sub[:, :, 1].astype(int)
+    r = sub[:, :, 2].astype(int)
+    mask = ((r < CHECK_BADGE_MAX_RED)
+            & (g >= CHECK_BADGE_GREEN_RANGE[0]) & (g <= CHECK_BADGE_GREEN_RANGE[1])
+            & (b >= CHECK_BADGE_BLUE_RANGE[0]) & (b <= CHECK_BADGE_BLUE_RANGE[1])
+            & (b > g)).astype(np.uint8)
+
+    count, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    # 白色对勾会把菱形徽章切成两块，两块一起取并集才能还原徽章整体
+    hit = [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= CHECK_BADGE_MIN_AREA]
+    if not hit:
+        return None
+    x0 = min(stats[i, cv2.CC_STAT_LEFT] for i in hit)
+    x1 = max(stats[i, cv2.CC_STAT_LEFT] + stats[i, cv2.CC_STAT_WIDTH] for i in hit)
+    y0 = min(stats[i, cv2.CC_STAT_TOP] for i in hit)
+    y1 = max(stats[i, cv2.CC_STAT_TOP] + stats[i, cv2.CC_STAT_HEIGHT] for i in hit)
+    # 统计量都相对搜索区裁剪图，加回搜索区偏移才是全图坐标
+    return (x0 + x1) // 2 + x, (y0 + y1) // 2 + y
+
+
+def ocr_checked_nickname(image: np.ndarray) -> str:
+    """
+    读取被勾选亲友卡上的玩家昵称。
+    :param image: 截图
+    :return: 昵称；没有勾选标记或名条上没识别出文字时返回空串
+    """
+    badge = find_check_badge(image)
+    if badge is None:
+        return ''
+    # detect_and_ocr 的 box 坐标相对名条 ROI 裁剪图，换算成同一坐标系再比
+    badge_x = badge[0] - O_NICKNAME_BAR.roi[0]
+    # 昵称在黑底名条上居中，勾选徽章却贴在卡片右上角，两者横向差约 40px；
+    # 而卡片列间距约 220px，所以「横向中心离徽章最近」能唯一锁定被勾选的那张卡，
+    # 不需要知道它是第几张，也不依赖卡片固定的横向像素位置。
+    results = O_NICKNAME_BAR.detect_and_ocr(image)
+    if not results:
+        return ''
+    nearest = min(results, key=lambda r: abs((r.box[0][0] + r.box[1][0]) / 2 - badge_x))
+    return nearest.ocr_text
 
 
 def resolve_folder(name: str | None) -> Path:
@@ -115,19 +204,29 @@ def main() -> int:
     # 压掉 RuleOcr 内部逐张打印的 logger.attr 日志，只保留本脚本的输出
     logger.setLevel(logging.ERROR)
 
-    print(f'{folder}  共 {len(images)} 张图片')
+    # 先全部识别完再排序输出：按昵称排序能把同一账号的所有截图聚在一起，
+    # 逐个账号核对「今天协战打满了没有」时不用在整份名单里来回找。
+    rows = []
     for path in images:
         image = read_image(path)
         if image is None:
-            print(f'{path.name}  读取失败')
+            rows.append(('未识别', '读取失败', path.name))
             continue
 
         current, _, total = O_NORMAL_COPY.ocr(image)
+        # 昵称取不到时也照常输出次数，用「未勾选」标出来，便于人工发现异常截图
+        nickname = ocr_checked_nickname(image) or '未勾选'
         # total 为 0 说明没有匹配到 x/y 形式的文本，视为识别失败
-        if total == 0:
-            print(f'{path.name}  未识别')
-        else:
-            print(f'{path.name}  {current}/{total}')
+        count = f'{current}/{total}' if total else '未识别'
+        rows.append((nickname, count, path.name))
+
+    # 昵称是中文，没有拼音库，这里按字符串本身排序（码位序），同一昵称必然相邻。
+    # 昵称相同时再按文件名排，保证多次运行输出顺序完全一致，方便前后对比。
+    rows.sort(key=lambda row: (row[0], row[2]))
+
+    print(f'{folder}  共 {len(images)} 张图片')
+    for nickname, count, name in rows:
+        print(f'{nickname}  {count}  {name}')
     return 0
 
 
