@@ -935,23 +935,19 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         """
         判断是否在真正的战斗中(不是战斗准备界面也不是战斗结束界面)
 
-        2026-09-14 换判据：I_BATTLE_INFO 单模板 → I_FRIENDS and I_EXIT。
-        I_BATTLE_INFO 不在 battle_theme_model 的替换表里（该表每套主题只换
-        I_LOCAL / I_EXIT / I_FRIENDS），换过战斗主题后它仍是默认主题的图标：
-        雅乐之邦（costume_battle_1）界面真机实测仅 0.68，低于 0.8 阈值，
-        自动战斗段全程判不出战斗界面，_auto_start 每轮直接 continue、六轮
-        空转后回退手动（2026-09-14 oas1 日志 11:34 / 12:09 两次事故）。
-        I_FRIENDS / I_EXIT 会被主题就地替换成当前主题版本（雅乐之邦版实测
-        0.98），任何主题下都可用。
-        取 AND 不取 OR：I_FRIENDS 单独在准备界面（见 is_in_battle 的 tip）
-        和结算页（实测 0.807）都会误命中，只有叠加结算页失配的 I_EXIT
-        （实测 0.571）才能把这两处排除掉。
+        判据只能用 I_BATTLE_INFO：I_FRIENDS / I_EXIT 在准备界面同样存在
+        （见 is_in_battle 的 tip，2026-09-14 真机复核），只有这个双箭头标识
+        只在战斗过程中出现。
+        2026-09-14 起每套战斗主题都在 battle_theme_model 里登记了自己的
+        I_BATTLE_INFO_N，由 check_costume_battle 就地替换——此前它不随主题
+        替换，换到雅乐之邦后仍匹配默认主题的图（实测 0.68 < 0.8），自动战斗段
+        全程判不出战斗界面、_auto_start 六轮空转后回退手动（oas1 11:34/12:09）。
         :param is_screenshot:
         :return:
         """
         if is_screenshot:
             self.screenshot()
-        return self.appear(self.I_FRIENDS) and self.appear(self.I_EXIT)
+        return self.appear(self.I_BATTLE_INFO) and self.appear(self.I_EXIT)
 
     def is_in_prepare(self, is_screenshot: bool = True) -> bool:
         """

@@ -2262,7 +2262,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
                     wait_minutes = 4 if buff_command in (BUFF_COIN, BUFF_EXP) else 2
-                    if self.wait_battle(wait_time=dtime(minute=wait_minutes)):
+                    try:
+                        battle_started = self.wait_battle(wait_time=dtime(minute=wait_minutes))
+                    finally:
+                        # 一离开候战房间就清位，不能等战斗/结算返回后再清；
+                        # 否则师父结算较慢或异常时，徒弟会拿上一轮的 True 提前开战。
+                        self._md_clear_master_in_room()
+                    if battle_started:
                         # 按同步指令选择战斗方式（类型不再依赖 OCR 识别）
                         if task == TASK_GUARD:
                             # 守护历练：始终正常完成战斗
@@ -2288,10 +2294,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                         elif task == TASK_STONE:
                             # 石距：始终进入后退出
                             self.master_run_battle_back_stone(config=GeneralBattleConfig())
-                    # 已经离开房间（开战 / 房间销毁 / 等待超时）：复位状态位，
-                    # 并把「等下一场战斗」的标记重新挂上——设备层给它的窗口是
+                    # 战斗处理完成或候战已结束，把「等下一场战斗」的标记重新挂上，
+                    # 房间状态已在候战结束时复位；设备层给等待标记的窗口是
                     # 300 秒（空集只有 60 秒），随后由空闲续期接管
-                    self._md_clear_master_in_room()
                     wait_out.reset()
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -2345,75 +2350,72 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
 
     def master_run_exp_battle_back(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
         """
-        经验妖怪进入战斗后先打开退出确认框，等待O_KILL_CNT识别数字达到30再确认退出
+        经验妖怪击杀数达到30后退出；失败视为退出成功，胜利沿用徒弟的判定与点击处理。
         :param config:
         :return:
         """
-        # 先点击准备进入战斗，保持师父模式原有“进入后退出”前置行为
+        # 先点击准备，后续补点与退出、结算共用循环，避免固定等待期间漏过胜利。
         self.wait_until_appear_then_click(self.I_PREPARE_HIGHLIGHT)
-        prepare_timeout = Timer(5).start()
-        while 1:
-            self.screenshot()
-            if prepare_timeout.reached():
-                logger.warning(f"Timeout while waiting for {self.I_PREPARE_HIGHLIGHT.name}")
-                break
-            if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1):
-                continue
         logger.info(f"Click {self.I_PREPARE_HIGHLIGHT.name}")
-        # 进入真实战斗后先点击退出键，让界面停在退出确认框，等击杀数达标后立刻确认退出
+        # OCR 计时从退出框出现开始；达标后锁定退出意图，后续只重试确认、不再读数。
+        wait_ocr_timer = None
+        exit_requested = False
+        settlement_started = False
         while 1:
             self.screenshot()
-            # 先查退出确认弹窗再点返回：弹窗弹出后 I_EXIT 在背后仍可匹配，
-            # 单轮耗时>=interval 时旧顺序会每轮 continue 饿死 break（慢节奏死循环）
-            if self.appear(self.I_EXIT_ENSURE):
-                break
-            if self.appear_then_click(self.I_EXIT, interval=1.5):
+
+            # 胜败结算优先于退出框：最后一波可能在 OCR 或确认点击期间直接打完。
+            result = None
+            for target in (self.I_DE_WIN, self.I_EXP_WIN, self.I_FALSE):
+                if self.appear(target):
+                    result = target
+                    break
+            if result is not None:
+                settlement_started = True
+                # 失败页表示主动退出成功；胜利使用徒弟经验流程的两个模板，
+                # 同样点击到页面消失，两条路径都按本场成功处理。
+                if self.appear_then_click(result, interval=1):
+                    if result is self.I_FALSE:
+                        logger.info("[经验妖怪] 已成功退出战斗，处理失败页")
+                    else:
+                        logger.info(f"[经验妖怪] 战斗胜利，按徒弟胜利逻辑处理: {result.name}")
                 continue
-        logger.info(f"Click {self.I_EXIT.name}")
-
-        # 使用O_KILL_CNT识别经验妖怪战斗中的击杀数量，达到30后点击确认退出
-        wait_ocr_timer = Timer(120).start()
-        while not wait_ocr_timer.reached():
-            self.screenshot()
-            try:
-                value = self.O_KILL_CNT.ocr_digit(self.device.image)
-            except Exception as e:
-                logger.warning(f"[经验妖怪] O_KILL_CNT识别异常: {e}")
-                value = 0
-            logger.info(f"[经验妖怪] 击杀数量: {value}/30")
-            if value >= 30:
-                logger.info("[经验妖怪] 击杀数量已达到30，确认退出战斗")
-                self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5)
-                break
-            sleep(1)
-        else:
-            logger.warning("[经验妖怪] 等待OCR数字达到30超时，确认退出战斗")
-            self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5)
-
-        # 等待退出结果，并处理失败确认
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_CHECK_MAIN):
+            # 胜败页面消失后等待返回庭院或组队，再交回跟随流程接收下一次邀请。
+            if self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_TEAM):
                 return True
-            # 先查失败确认框再点返回确认：I_EXIT_ENSURE 弹出后 I_FALSE 在其后可同屏共存，
-            # 同理先 break 再点，避免慢节奏下饿死 break
-            if self.appear(self.I_FALSE):
-                break
-            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5):
+            if settlement_started:
                 continue
-        logger.info(f"Click {self.I_EXIT_ENSURE.name}")
 
-        # 点击失败确认
-        self.wait_until_appear(self.I_FALSE)
-        while 1:
-            self.screenshot()
-            if self.appear_then_click(self.I_FALSE, interval=1.5):
+            # 先检查退出框，避免背后的返回按钮仍可匹配而反复点击；准备页只做补点。
+            if not self.appear(self.I_EXIT_ENSURE):
+                if self.appear(self.I_PREPARE_HIGHLIGHT):
+                    # 补点受节流时也仍在准备页，不能因此落到返回按钮。
+                    self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=1)
+                    continue
+                self.appear_then_click(self.I_EXIT, interval=1.5)
                 continue
-            if not self.appear(self.I_FALSE):
-                break
-        logger.info(f"Click {self.I_FALSE.name}")
 
-        return True
+            if wait_ocr_timer is None:
+                wait_ocr_timer = Timer(120).start()
+            if not exit_requested:
+                # 保留识别超时后的退出兜底，但胜利页面始终由本轮开头优先接管。
+                if wait_ocr_timer.reached():
+                    logger.warning("[经验妖怪] 等待OCR数字达到30超时，确认退出战斗")
+                    exit_requested = True
+                else:
+                    try:
+                        value = self.O_KILL_CNT.ocr_digit(self.device.image)
+                    except Exception as e:
+                        logger.warning(f"[经验妖怪] O_KILL_CNT识别异常: {e}")
+                        value = 0
+                    logger.info(f"[经验妖怪] 击杀数量: {value}/30")
+                    if value >= 30:
+                        logger.info("[经验妖怪] 击杀数量已达到30，确认退出战斗")
+                        exit_requested = True
+            if exit_requested:
+                self.appear_then_click(self.I_EXIT_ENSURE, interval=1.5)
+            else:
+                sleep(1)
 
     def master_run_battle_back_stone(self, config: GeneralBattleConfig = None, exit_four: bool = False) -> bool:
         """

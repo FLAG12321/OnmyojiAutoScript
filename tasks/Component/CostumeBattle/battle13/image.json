@@ -52,5 +52,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "失败"
+  },
+  {
+    "itemName": "battle_info_13",
+    "imageName": "battle13_battle_info_13.png",
+    "roiFront": "230,12,37,39",
+    "roiBack": "210,1,148,72",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "战斗信息标识"
   }
 ]

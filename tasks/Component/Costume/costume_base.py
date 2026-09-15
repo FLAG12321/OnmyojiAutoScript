@@ -55,6 +55,11 @@ for i in range(1, 14):
         'I_LOCAL': f'I_LOCAL_{i}',
         'I_EXIT': f'I_EXIT_{i}',
         'I_FRIENDS': f'I_FRIENDS_{i}',
+        # 战斗信息标识：is_in_real_battle 的唯一判据。不能用 I_FRIENDS/I_EXIT
+        # 代替——那两个在准备界面同样存在，判不出「真正的战斗中」。而这张图
+        # 只在战斗过程中出现，图案却随主题变，所以必须逐套登记，否则换主题后
+        # 仍是默认主题的图而失配（雅乐之邦实测 0.68 < 0.8）。
+        'I_BATTLE_INFO': f'I_BATTLE_INFO_{i}',
     }
     if i == 8:  # 特殊处理第8项
         entry.update({
@@ -778,6 +783,11 @@ class CostumeBase:
         logger.info(f'Switch battle theme {battle_type}')
         costume_battle_assets = CostumeBattleAssets()
         for key, value in battle_theme_model[battle_type].items():
+            if not hasattr(costume_battle_assets, value):
+                # 尚未采集完成的资产，跳过（沿用 shikigami 链的写法）。
+                # I_BATTLE_INFO 要逐套截图，未采的主题在 assets.py 里还没有
+                # 对应属性，这里跳过可让用户分批采而不必一次采齐 13 套。
+                continue
             assert_value: RuleImage = getattr(costume_battle_assets, value)
             # 绿标的坐标点范围不变
             if key == 'I_LOCAL':

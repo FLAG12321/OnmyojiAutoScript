@@ -25,5 +25,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "指针"
+  },
+  {
+    "itemName": "battle_info_9",
+    "imageName": "battle9_battle_info_9.png",
+    "roiFront": "230,12,37,39",
+    "roiBack": "210,1,148,72",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "战斗信息标识"
   }
 ]
