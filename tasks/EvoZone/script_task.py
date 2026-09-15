@@ -5,10 +5,13 @@ from time import sleep
 from datetime import time, datetime, timedelta
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.GeneralBuff.general_buff import GeneralBuff
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
+from tasks.Component.SwitchHelpShikigami import SwitchHelpShikigami
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_awake_zones, page_shikigami_records
 from tasks.EvoZone.assets import EvoZoneAssets
@@ -16,8 +19,13 @@ from tasks.EvoZone.config import EvoZone, UserStatus, KirinType
 from module.logger import logger
 from module.exception import TaskEnd
 
+# 需要「准备界面切换援助式神」的次数标记：该值来自游戏侧的好友协战计数玩法
+# （每天固定 13 场），不是可调阈值，所以按字面量比较而非抽成配置项。
+HELP_SHIKIGAMI_LIMIT_COUNT = 13
 
-class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, EvoZoneAssets, SwitchSoul):
+
+class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
+                 GeneralRoom, GameUi, EvoZoneAssets, SwitchSoul):
 
     def run(self) -> bool:
 
@@ -63,6 +71,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.open_buff()
             self.awake(is_open=False)
             self.close_buff()
+        # 13 场账号：战斗结束后保存好友协战次数截图，供人工核对协战是否打满
+        if config.evo_zone_config.limit_count == HELP_SHIKIGAMI_LIMIT_COUNT:
+            self.save_friend_help_screenshot()
         # 下一次运行时间
         if success:
             self.set_next_run('EvoZone', finish=True, success=True)
@@ -271,6 +282,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.ui_goto(page_main)
         return True
 
+    def battle_before(self, buff: BuffClass | list[BuffClass], config: GeneralBattleConfig,
+                      timeout: float = 5) -> bool:
+        """战斗前设置分发。
+
+        只在显式启用（enable_help_shikigami_switch）时走「准备界面切换援助式神」
+        流程，其余一律交回通用战斗准备的原有实现——未启用时行为与改动前完全一致。
+        """
+        if self._need_switch_help_shikigami:
+            return self.battle_before_switch_help(buff, config, timeout)
+        return super().battle_before(buff, config, timeout)
+
     def run_alone(self):
         logger.info('Start run alone')
         self.ui_get_current_page()
@@ -278,7 +300,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.evozone_enter()
         layer = self.config.evo_zone.evo_zone_config.layer
         self.check_layer(layer)
-        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable)
+        # 次数为 13 的账号：改为在准备界面切换援助式神，因此必须先解锁阵容
+        # （锁定状态下准备界面无法切换援助式神）。其余次数维持原有的按配置锁定。
+        if self.config.evo_zone.evo_zone_config.limit_count == HELP_SHIKIGAMI_LIMIT_COUNT:
+            self.check_lock(False)
+            self.enable_help_shikigami_switch()
+        else:
+            self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable)
 
         def is_in_evozone(screenshot=False) -> bool:
             if screenshot:
@@ -332,7 +360,7 @@ if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('oas1')
+    c = Config('QMUMU3')
     d = Device(c)
     t = ScriptTask(c, d)
 
