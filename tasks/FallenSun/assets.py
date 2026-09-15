@@ -28,7 +28,7 @@ class FallenSunAssets:
 	# List Rule Assets
 	# 这个是御魂界面选择不同层数的 
 	L_LAYER_LIST = RuleList(folder="./tasks/FallenSun/res", direction="vertical", mode="ocr", roi_back=(129,104,79,574), size=(31, 103), 
-					 array=["壹", "贰", "叁", "日"])
+					 array=["壹层", "贰层", "叁层", "日蚀"])
 
 
 	# Ocr Rule Assets

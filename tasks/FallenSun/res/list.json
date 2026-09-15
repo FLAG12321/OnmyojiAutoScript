@@ -6,19 +6,19 @@
   "description": "这个是御魂界面选择不同层数的",
   "list": [
     {
-      "itemName": "壹",
+      "itemName": "壹层",
       "roiFront": "130,109,31,103"
     },
     {
-      "itemName": "贰",
+      "itemName": "贰层",
       "roiFront": "130,212,31,103"
     },
     {
-      "itemName": "叁",
+      "itemName": "叁层",
       "roiFront": "130,315,31,103"
     },
     {
-      "itemName": "日",
+      "itemName": "日蚀",
       "roiFront": "130,418,31,103"
     }
   ]

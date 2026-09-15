@@ -6,43 +6,43 @@
   "description": "这个是觉醒界面选择不同层数的",
   "list": [
     {
-      "itemName": "壹",
+      "itemName": "壹层",
       "roiFront": "130,109,31,103"
     },
     {
-      "itemName": "贰",
+      "itemName": "贰层",
       "roiFront": "130,212,31,103"
     },
     {
-      "itemName": "叁",
+      "itemName": "叁层",
       "roiFront": "130,315,31,103"
     },
     {
-      "itemName": "肆",
+      "itemName": "肆层",
       "roiFront": "130,418,31,103"
     },
     {
-      "itemName": "伍",
+      "itemName": "伍层",
       "roiFront": "130,521,31,103"
     },
     {
-      "itemName": "陆",
+      "itemName": "陆层",
       "roiFront": "130,610,31,103"
     },
     {
-      "itemName": "柒",
+      "itemName": "柒层",
       "roiFront": "130,610,31,103"
     },
     {
-      "itemName": "捌",
+      "itemName": "捌层",
       "roiFront": "130,610,31,103"
     },
     {
-      "itemName": "玖",
+      "itemName": "玖层",
       "roiFront": "130,610,31,103"
     },
     {
-      "itemName": "拾",
+      "itemName": "拾层",
       "roiFront": "130,610,31,103"
     }
   ]
