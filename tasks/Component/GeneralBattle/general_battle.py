@@ -212,7 +212,17 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
     # 奖励行挖出禁区并作为「仍在奖励页」的第二判据。结算页没有标准三行奖励
     # 网格的任务（如本期活动的卷轴面板结算）应覆盖为 False——检测恒为空，
     # 白白消耗每帧 60~150ms，且兜底判据恒 False 无意义；此时禁区只剩常驻预设。
+    # 同一任务内不同结算画面形态不同的，覆盖 reward_grid_detect_enabled 按画面分派。
     REWARD_GRID_DETECT = True
+
+    def reward_grid_detect_enabled(self) -> bool:
+        """本帧是否做奖励框检测（禁区的动态部分）。
+
+        默认直接取类属性 REWARD_GRID_DETECT。需要按**结算画面**分派的任务覆盖
+        本方法——同一个活动里 boss 结算是标准三行奖励网格、普通结算走卷轴面板，
+        而 REWARD_GRID_DETECT 只是任务级开关，粒度不够。类属性仍作为默认值保留。
+        """
+        return self.REWARD_GRID_DETECT
 
     def reward_hot(self):
         """本任务的热区形状覆盖（None = 通用校准值，真人实采反推，见 reward_frame）。
@@ -268,17 +278,17 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         不依赖检测就一定安全。
 
         同一帧只检测一次：检测出的奖励行既用来挖禁区，也作为「仍在奖励页」的
-        第二判据缓存下来（见 reward_grid_appear）。任务覆盖 REWARD_GRID_DETECT
+        第二判据缓存下来（见 reward_grid_appear）。reward_grid_detect_enabled
         为 False 时跳过检测（无标准奖励网格的结算页），本方法退化为纯静态分区。
         """
         if getattr(self, '_reward_safe_rules', None) is not None:
             return self._reward_safe_rules
 
         try:
-            # 任务级开关（REWARD_GRID_DETECT）：False 时跳过奖励框检测，禁区只剩
-            # 常驻预设（见该属性注释）——本期活动结算页无标准奖励网格的任务用
+            # 奖励框检测开关（reward_grid_detect_enabled）：关闭时跳过检测、
+            # 禁区只剩常驻预设——无标准奖励网格的结算页用
             rows = (get_detector().detect(self.device.image)
-                    if self.REWARD_GRID_DETECT else [])
+                    if self.reward_grid_detect_enabled() else [])
             rules = safe_click_rules(self.device.image,
                                      forbidden_preset=self.reward_forbidden(),
                                      detector=FrozenRowsDetector(rows),
