@@ -38,7 +38,7 @@ main_costume_model = {
         (GameUiAssets, 'I_MAIN_GOTO_SUMMON'): f'I_MAIN_GOTO_SUMMON_{i}',
         (GameUiAssets, 'I_MAIN_GOTO_TOWN'): f'I_MAIN_GOTO_TOWN_{i}',
         (PetsAssets, 'I_PET_HOUSE'): f'I_PET_HOUSE_{i}',
-    } for i in range(1, 17)
+    } for i in range(1, 18)
 }
 
 
@@ -345,9 +345,9 @@ _realm_probe_warned = False
 # （I_MAIN_GOTO_* / I_PET_HOUSE），就会点错位置；这几张月亮图只作判据与模板，从不被点击。
 _MAIN_PROBE_DEFAULT = 'I_CHECK_MAIN_DEFAULT'
 _MAIN_PROBE_NAME = 'I_CHECK_MAIN_{i}'
-# 与 main_costume_model 的 range(1, 17) 是同一份「有几套」的事实的第二处副本：漏改会静默
+# 与 main_costume_model 的 range(1, 18) 是同一份「有几套」的事实的第二处副本：漏改会静默
 # 少一套候选（那套皮肤永远探不到），取舍同 theme_costume_model 上方那段注释。
-_MAIN_PROBE_MAX = 16
+_MAIN_PROBE_MAX = 17
 
 # 月亮命中之后，再用该套的 4 张 goto 资产（探索 / 召唤 / 町中 / 宠物屋）复核一遍：
 # 至少要有 _MAIN_CONFIRM_MIN 张认得出，才认这次命中。
