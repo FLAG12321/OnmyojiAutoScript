@@ -284,7 +284,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                     continue
             while 1:
                 self.screenshot()
-                if self.appear(page_main.check_button):
+                if self.ui_page_appear(page_main):
                     break
                 if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=1):
                     continue

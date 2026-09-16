@@ -11,6 +11,11 @@ class CostumeAssets:
 
 
 	# Image Rule Assets
+	# 默认庭院的皮肤探针模板（出厂态的月亮+天空）。独立资产，不参与 main_costume_model 的替换 
+	I_CHECK_MAIN_DEFAULT = RuleImage(roi_front=(1043,107,73,44), roi_back=(49,65,1110,94), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main/main_check_main_default.png")
+
+
+	# Image Rule Assets
 	# description 
 	I_CHECK_MAIN_1 = RuleImage(roi_front=(1049,146,48,55), roi_back=(880,119,271,100), threshold=0.8, method="Template matching", file="./tasks/Component/Costume/main1/main1_check_main_1.png")
 	# description 
@@ -103,7 +108,7 @@ class CostumeAssets:
 
 	# Image Rule Assets
 	# 庭院特征图 
-	I_CHECK_MAIN_16 = RuleImage(roi_front=(844,125,60,67), roi_back=(49,98,1034,112), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main16/main16_check_main_16.png")
+	I_CHECK_MAIN_16 = RuleImage(roi_front=(844,125,60,67), roi_back=(49,98,1034,112), threshold=0.8, method="Template matching", file="./tasks/Component/Costume/main16/main16_check_main_16.png")
 	# 探索入口 
 	I_MAIN_GOTO_EXPLORATION_16 = RuleImage(roi_front=(728,227,26,57), roi_back=(308,103,868,208), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16.png")
 	# 召唤入口 

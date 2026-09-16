@@ -29,7 +29,11 @@ from tasks.Restart.assets import RestartAssets
 # hasattr(self, ...) 作用在 Pets 任务实例上才换到的（见本任务「关键设计选择」）。
 main_costume_model = {
     getattr(MainType, f"COSTUME_MAIN_{i}"): {
-        (GameUiAssets, 'I_CHECK_MAIN'): f'I_CHECK_MAIN_{i}',
+        # 这里**刻意没有** (GameUiAssets, 'I_CHECK_MAIN')：它已经换成皮肤无关的共用判据
+        # （庭院右侧的活动图标），不随皮肤变，也不该被 replace_img 改写——否则一次误判
+        # 就会打掉 page_main 的判据，2026-09-15 的 GamePageUnknownError 就是这么来的。
+        # 各套皮肤那张月亮图还在（I_CHECK_MAIN_{i}），但只当皮肤探测的模板用，
+        # 模板来源见 _MAIN_PROBE_DEFAULT。
         (GameUiAssets, 'I_MAIN_GOTO_EXPLORATION'): f'I_MAIN_GOTO_EXPLORATION_{i}',
         (GameUiAssets, 'I_MAIN_GOTO_SUMMON'): f'I_MAIN_GOTO_SUMMON_{i}',
         (GameUiAssets, 'I_MAIN_GOTO_TOWN'): f'I_MAIN_GOTO_TOWN_{i}',
@@ -194,7 +198,7 @@ def _ensure_default_main_snapshot() -> None:
     for target in _MAIN_TARGETS:
         asset_cls, attr = target
         # 目标类没有该属性时静默跳过，与 replace_img 的处理保持一致
-        # （正常情况下 5 个 key 都齐：4 个在 GameUiAssets，I_PET_HOUSE 在 PetsAssets）
+        # （正常情况下 4 个 key 都齐：3 个在 GameUiAssets，I_PET_HOUSE 在 PetsAssets）
         if not hasattr(asset_cls, attr):
             continue
         snap[target] = _snapshot(getattr(asset_cls, attr))
@@ -291,12 +295,20 @@ def _ensure_default_realm_snapshot() -> None:
 #
 # 缓存的理由不是「CostumeAssets() 很贵」——那 70 个 RuleImage 是类属性、import 期建
 # 一次，new 一个空实例很廉价且不丢 _image 缓存（实测 CostumeAssets().I_CHECK_MAIN_5
-# is CostumeAssets().I_CHECK_MAIN_5 为 True）。真正的理由是默认套的候选必须靠
-# _rebuild(快照) 新建对象（活对象已被就地改写），不缓存就每轮探测都要重新 imdecode
-# 一次默认模板；顺带也省掉每轮对映射表的 hasattr/getattr 扫描。
+# is CostumeAssets().I_CHECK_MAIN_5 为 True）。真正的理由是**卷轴与结界**的默认套候选
+# 必须靠 _rebuild(快照) 新建对象（活对象已被就地改写），不缓存就每轮探测都要重新
+# imdecode 一次默认模板；顺带也省掉每轮对映射表的 hasattr/getattr 扫描。
+#
+# 庭院那张表没有这层顾虑：它的模板来源已独立（见 _MAIN_PROBE_DEFAULT），是永久出厂态、
+# 不会被 replace_img 动的独立资产，直接引用即可。
 _probe_table_main: dict | None = None
 _probe_table_theme: dict | None = None
 _probe_table_realm: dict | None = None
+# 庭院复核表：{ 皮肤类型: 该套 4 张 goto 资产的**副本** }，与 _probe_table_main 同键。
+# 必须是副本：这 4 张对应的活资产是要被点击的目标，而 RuleImage.match() 命中会写
+# roi_front（module/atom/image.py:166-168），探针直接拿活对象去匹配就会把它写脏，
+# 随后 replace_img 又把脏 roi_front 拷进 GameUiAssets，点击落点跟着探测那次匹配跑偏。
+_probe_confirm_main: dict | None = None
 
 # 探测节流。Timer 未 start 时 _current == 0，reached() 恒为 True，所以新建即「已到点」，
 # 首次探测不被拦；零命中后 reset() 才真正开始计时。
@@ -320,10 +332,37 @@ _probe_warned = False
 # 那个把后探的那个的告警吞掉，而且文案分不出是哪个探针零命中、该去补哪套皮肤的图。
 _realm_probe_warned = False
 
-# 庭院探测只用一个 key。RuleImage.match() 命中时会写 roi_front，而 I_MAIN_GOTO_* /
-# I_PET_HOUSE 是要被点击的，被探测写脏会点错位置；I_CHECK_MAIN 只用于状态判定
-# （page_main.check_button 与十余处 appear 检查），从不被点击。
-_MAIN_PROBE_KEY = (GameUiAssets, 'I_CHECK_MAIN')
+# 庭院探测的模板名。**不再从 main_costume_model 取**：那张表里的 (GameUiAssets,'I_CHECK_MAIN')
+# 已经换成皮肤无关的「活动」图标，拿它当模板会让默认套变成「匹配所有庭院」的通配符——
+# 配置说 5 号、实际也是 5 号时会被默认套抢先命中，把 goto 资产换回出厂值，导航全废。
+#
+# 默认套用 CostumeAssets.I_CHECK_MAIN_DEFAULT（出厂态的月亮+天空），第 N 套用
+# CostumeAssets.I_CHECK_MAIN_{N}。两类都是**永久出厂态**：main_costume_model 里已经没有它们，
+# replace_img 再也改不到，所以不必像卷轴/结界那样靠出厂快照 _rebuild，直接引用资产对象即可。
+#
+# 沿用旧约束：模板必须选「从不被点击」的资产。RuleImage.match() 命中时会写 roi_front
+# （module/atom/image.py:166-168），被探测写脏的资产若同时是要点击的目标
+# （I_MAIN_GOTO_* / I_PET_HOUSE），就会点错位置；这几张月亮图只作判据与模板，从不被点击。
+_MAIN_PROBE_DEFAULT = 'I_CHECK_MAIN_DEFAULT'
+_MAIN_PROBE_NAME = 'I_CHECK_MAIN_{i}'
+# 与 main_costume_model 的 range(1, 17) 是同一份「有几套」的事实的第二处副本：漏改会静默
+# 少一套候选（那套皮肤永远探不到），取舍同 theme_costume_model 上方那段注释。
+_MAIN_PROBE_MAX = 16
+
+# 月亮命中之后，再用该套的 4 张 goto 资产（探索 / 召唤 / 町中 / 宠物屋）复核一遍：
+# 至少要有 _MAIN_CONFIRM_MIN 张认得出，才认这次命中。
+#
+# 为什么要复核：月亮是**皮肤锚点**（区分度最好，实测真命中那套 0.92~0.99、其余套 ≤0.73），
+# 但这 4 张才是真正要被点击、真正会因为皮肤不符而点不动的图。月亮孤零零命中、四张 goto
+# 图集体不认，正是 2026-09-15 那次误判的形态。
+#
+# 门槛取 2 的依据（离线复现：7 张已知皮肤真值帧，对比「配置=真值」与「配置错时能否
+# 纠回真值」两个指标）：
+#   真命中那套的过阈值张数**最低是 2**——默认套在 08:53 那帧只有 2（探索 0.922 / 町中
+#   0.863 过，召唤 0.797 差 0.003、宠物屋 0.378 不过）。取 3 会把默认套整批挡掉
+#   （配置=真值 从 7/7 掉到 6/7）；取 0/1/2 在现有语料上结果完全一致（7/7、纠错 18/21），
+#   所以取 2：最严，又不伤真命中。
+_MAIN_CONFIRM_MIN = 2
 
 # 结界探测同理只取页锚点这一个 key。映射表里另外两项是 RuleClick（两个点击区域），
 # 它们没有模板图、进不了候选表——而且 C_REALM_* 也不该被 match() 写脏。
@@ -331,8 +370,8 @@ _REALM_PROBE_KEY = (KekkaiUtilizeAssets, 'I_REALM_PAGE')
 
 
 def _ensure_probe_tables() -> None:
-    """惰性构建庭院/卷轴/结界探测候选表，只做一次。"""
-    global _probe_table_main, _probe_table_theme, _probe_table_realm
+    """惰性构建庭院/卷轴/结界的探测候选表与庭院复核表，只做一次。"""
+    global _probe_table_main, _probe_table_theme, _probe_table_realm, _probe_confirm_main
     if _probe_table_main is not None:
         return
     _ensure_default_main_snapshot()
@@ -346,14 +385,28 @@ def _ensure_probe_tables() -> None:
     realm_assets = CostumeRealmAssets()
 
     main_table: dict = {}
-    # 默认套：活对象已被就地改写，只能从出厂快照重建；建一次后缓存住，别每次探测都重读盘
-    if _MAIN_PROBE_KEY in _default_main_snapshot:
-        main_table[MainType.COSTUME_MAIN] = [_rebuild(_default_main_snapshot[_MAIN_PROBE_KEY])]
-    for main_type, model in main_costume_model.items():
-        value = model.get(_MAIN_PROBE_KEY)
+    # 默认套：模板是独立资产（_MAIN_PROBE_DEFAULT），直接用，不必再从出厂快照重建
+    if hasattr(costume_assets, _MAIN_PROBE_DEFAULT):
+        main_table[MainType.COSTUME_MAIN] = [getattr(costume_assets, _MAIN_PROBE_DEFAULT)]
+    for i in range(1, _MAIN_PROBE_MAX + 1):
+        value = _MAIN_PROBE_NAME.format(i=i)
         # 皮肤资产还没采集的套直接不进表，探测不会为它花时间
-        if value and hasattr(costume_assets, value):
-            main_table[main_type] = [getattr(costume_assets, value)]
+        if hasattr(costume_assets, value):
+            main_table[getattr(MainType, f'COSTUME_MAIN_{i}')] = [getattr(costume_assets, value)]
+
+    # 复核表：每套的 4 张 goto 资产，用 main_costume_model 的 value 名去 CostumeAssets 上取副本。
+    # 默认套没有映射条目，它的 4 张从出厂快照重建（活对象已被就地改写）。
+    confirm_table: dict = {}
+    default_confirm = [_rebuild(_default_main_snapshot[t])
+                       for t in _MAIN_TARGETS if t in _default_main_snapshot]
+    if default_confirm:
+        confirm_table[MainType.COSTUME_MAIN] = default_confirm
+    for main_type, model in main_costume_model.items():
+        rules = [_rebuild(_snapshot(getattr(costume_assets, v)))
+                 for v in model.values() if hasattr(costume_assets, v)]
+        # 一张都没采到就不进表 —— 探测时按「无法复核」放行，退回纯月亮判断
+        if rules:
+            confirm_table[main_type] = rules
 
     theme_table: dict = {}
     # 卷轴一套两张（收起态 + 展开态），任一命中即算该套命中
@@ -380,6 +433,7 @@ def _ensure_probe_tables() -> None:
     _probe_table_main = main_table
     _probe_table_theme = theme_table
     _probe_table_realm = realm_table
+    _probe_confirm_main = confirm_table
 
 
 def _ordered_candidates(table: dict, configured):
@@ -432,7 +486,7 @@ def reset_costume_module_state() -> None:
     """
     global _default_main_snapshot, _default_theme_snapshot, _default_realm_snapshot
     global _applied_main, _applied_theme, _applied_realm
-    global _probe_table_main, _probe_table_theme, _probe_table_realm
+    global _probe_table_main, _probe_table_theme, _probe_table_realm, _probe_confirm_main
     global _main_probe_locked, _theme_probe_locked, _realm_probe_locked
     global _probe_warned, _realm_probe_warned
     _default_main_snapshot = None
@@ -444,6 +498,7 @@ def reset_costume_module_state() -> None:
     _probe_table_main = None
     _probe_table_theme = None
     _probe_table_realm = None
+    _probe_confirm_main = None
     _main_probe_locked = False
     _theme_probe_locked = False
     _realm_probe_locked = False
@@ -589,17 +644,38 @@ class CostumeBase:
         _applied_theme = theme_type
 
     def probe_costume_main(self) -> MainType | None:
-        """在当前截图上轮询庭院候选，返回第一个命中的皮肤类型，都不中返回 None。
+        """在当前截图上轮询庭院候选，返回第一个**通过复核**的皮肤类型，都不中返回 None。
+
+        两级判断：先看月亮模板（皮肤锚点，区分度最好），命中后再用该套的 4 张 goto 资产复核
+        （门槛见 _MAIN_CONFIRM_MIN）。复核不过是**继续往下扫**，不是就此放弃——月亮在某套上
+        偶然过线、而那一套的 goto 图集体不认时，下一套才是真命中的机会。
 
         只读 self.device.image，不重新截图——调用方刚取的那一帧就是判定依据。
         """
         _ensure_probe_tables()
         configured = self.config.model.global_game.costume_config.costume_main_type
         for main_type, assets in _ordered_candidates(_probe_table_main, configured):
-            for asset in assets:
-                if self.appear(asset):
-                    return main_type
+            if not any(self.appear(asset) for asset in assets):
+                continue
+            if not self._confirm_main_candidate(main_type):
+                continue
+            return main_type
         return None
+
+    def _confirm_main_candidate(self, main_type: MainType) -> bool:
+        """用该套的 4 张 goto 资产复核月亮模板的这次命中。
+
+        用的必须是**副本**（见 _probe_confirm_main 的说明）：这几张对应的活资产是要被点击
+        的目标，拿活对象来匹配会把它的 roi_front 写脏，随后 replace_img 又把这个脏值拷进
+        GameUiAssets，点击落点就跟着探测那一次匹配跑偏了。
+
+        该套一张 goto 图都没采集到（复核表里没有它）时**放行**：没有复核依据就不能据此否决，
+        退回纯月亮判断，与引入复核之前的行为一致。
+        """
+        rules = (_probe_confirm_main or {}).get(main_type) or []
+        if not rules:
+            return True
+        return sum(1 for rule in rules if self.appear(rule)) >= _MAIN_CONFIRM_MIN
 
     def probe_costume_theme(self) -> ThemeType | None:
         """在当前截图上轮询卷轴候选。一套两张（收起态 / 展开态），任一张命中即算命中。"""
@@ -734,11 +810,18 @@ class CostumeBase:
         不能简单串两个 try_detect_costume_*：它们各自会 reset 节流，先跑的那个命中后
         会把后跑的那个挡在窗口外。这里只判一次节流，两个都探到。
 
-        调用方（login）拿到 True 的正确用法是 `continue` 重新截图判定，让修正后的
-        I_CHECK_MAIN 在下一帧被 courtyard_mark 正常匹配到 —— **不要把返回值直接当成
-        「在庭院」的证据**：探针受 2s 节流 + 成功即锁，只在命中那一帧为真，而
-        courtyard_timer 要求连续 2.5s 为真（login.py:217-219 任何一帧为假就 clear），
-        拿单帧真去撑连续确认会把计时反复清掉，正好复现它要修的死循环。
+        调用方拿到 True 的正确用法是重新截图重判（`continue`），让刚换上的资产在下一帧
+        生效 —— **不要把返回值直接当成「在庭院」的证据**：探针受 2s 节流 + 成功即锁，
+        只在命中那一帧为真。
+
+        触发点在**导航失败**那一支（game_ui.py 的 `_execute_path`）：庭院入口那几张图
+        随皮肤变，与配置不符就点不动，那正是它唯一还能帮上忙的场合。登录期**刻意不探**
+        ——庭院判据已皮肤无关（活动图标 / 加成按钮），那里探不出有价值的东西，反而会在
+        「进入游戏」过渡帧上盲扫 16 张月亮模板而误判（15/16 号阈值 0.7 且搜索窗近全屏，
+        2026-09-15 事故的起点就是它）。
+
+        已知残留：命中即锁，而锁只在下次登录的 release_costume_probe_locks() 里解。
+        所以一次误判之后，后续导航失败也修不回来，得等下一次登录。
         """
         global _main_probe_locked, _theme_probe_locked, _probe_warned
         if not _probe_timer.reached():

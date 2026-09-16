@@ -141,8 +141,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         :return:
         """
         logger.hr('App login')
-        # 这次登录可能落到另一个号上，之前锁定的庭院/卷轴皮肤对它不一定成立，先解锁；
-        # 本次登录里的探测（下方 courtyard_mark 全假时）会重新锁定。
+        # 这次登录可能落到另一个号上，之前锁定的庭院/卷轴皮肤对它不一定成立，先解锁。
+        # 本次登录里已经不再探测（见下方 courtyard_mark 那段），解锁是为了让**导航失败**
+        # 时的探测能对新号重新生效。
         # 放在这个私有函数开头而不是 app_handle_login()：后者的重试循环在函数体内，
         # 放外面只解锁一次，第二轮重试会带着上一轮的锁状态进来。
         release_costume_probe_locks()
@@ -205,23 +206,25 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             # 正常画面被判成「不是庭院」，计时被自己的卷轴动作反复清掉，确认永远走不完。
             #
             # I_CHECK_MAIN 是 page_main 的 check_button，本身就是「在庭院」的权威判据，
-            # 且不随卷轴皮肤变——卷轴换皮后上面两个 I_LOGIN_SCROOLL_* 会一起失效，只靠
-            # 闲庭与式神录两路缺口太大，加上它才补得住。
+            # 且既不随卷轴皮肤变也不随庭院皮肤变（活动图标 / 加成按钮都是固定 UI）——
+            # 卷轴换皮后上面两个 I_LOGIN_SCROOLL_* 会一起失效，只靠闲庭与式神录两路
+            # 缺口太大，加上它才补得住。
             #
             # 一律不传 interval：判定的是画面状态而非点击节流，带上会让静默期内的每一帧
             # 都误判成非庭院；桌面端截图间隔可低到 0.05s，这种漏判会让确认永远走不完。
             courtyard_mark = (self.appear(self.I_CHECK_MAIN)
+                              or self.appear(self.I_MAIN_BUFF)
                               or self.appear(self.I_MAIN_GOTO_SHIKIGAMI_RECORDS)
                               or self.appear(self.I_LOGIN_SCROOLL_OPEN)
                               or self.appear(self.I_LOGIN_SCROOLL_CLOSE)
                               or self.appear(self.I_LOGIN_COURTYARD))
-            # 一个证据都没命中：可能是庭院皮肤与配置不符，I_CHECK_MAIN 匹配不上。
-            # 跑一次探测**只为修资产**，修好就 continue 让下一帧用修正后的 I_CHECK_MAIN
-            # 重新判定——不能把探测的返回值直接当 courtyard 证据：它只在命中那一帧为真，
-            # 而 courtyard_timer 要求连续 2.5s，拿单帧真去撑会把计时反复清掉。
-            if not courtyard_mark and self.try_detect_costume():
-                logger.info('Costume fixed by probe, re-check courtyard next frame')
-                continue
+            # 这里**不再跑皮肤探针**。原先写的是「一个证据都没命中 → 试试探测皮肤」，但
+            # 「还没走到庭院」和「庭院判据坏了」在这一屏上长得一模一样，而这个循环从切
+            # 角色的那一帧就开始跑，于是探针必被调用、还会在「进入游戏」过渡帧上盲扫
+            # 16 张月亮模板而误判（2026-09-15 两次事故的起点就是它）。
+            # 判据换成皮肤无关的活动图标与加成按钮之后，「认不出庭院」只剩「没到庭院」
+            # 这一种成因，探针在这里收益为零、风险照旧，故整块删掉。
+            # 皮肤纠正改由导航失败时触发（game_ui.py 的 _execute_path）。
             courtyard = courtyard_mark
             # 已看到庭院即可停掉屏幕旋转检测，不必等二次确认通过
             if courtyard:

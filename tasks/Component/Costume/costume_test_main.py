@@ -13,8 +13,10 @@ from module.base.timer import Timer
 from module.logger import logger
 from module.server.i18n import Addition, I18n
 
+from tasks.Component.Costume.assets import CostumeAssets
 from tasks.Component.Costume.config import MainType
-from tasks.Component.Costume.costume_base import release_costume_probe_locks
+from tasks.Component.Costume.costume_base import (release_costume_probe_locks,
+                                                  _MAIN_PROBE_DEFAULT, _MAIN_PROBE_NAME)
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
@@ -49,8 +51,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, PetsAssets):
             logger.info(f'当前庭院皮肤：{self._name_of(detected)}')
 
         # 五个资源都在庭院这一屏上，逐个检测即可，不需要点击
+        # check_main 这一行要用**皮肤探针的模板**，不能用 GameUiAssets.I_CHECK_MAIN：
+        # 后者已经换成皮肤无关的活动图标，在任何庭院上都命中，测不出这套皮肤的图采没采好。
         targets = [
-            (f'check_main{suffix}', self.I_CHECK_MAIN),
+            (f'check_main{suffix}', self._probe_template_of(detected)),
             (f'main_goto_town{suffix}', self.I_MAIN_GOTO_TOWN),
             (f'main_goto_exploration{suffix}', self.I_MAIN_GOTO_EXPLORATION),
             (f'main_goto_summon{suffix}', self.I_MAIN_GOTO_SUMMON),
@@ -78,6 +82,20 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, PetsAssets):
             if timer.reached():
                 break
         return frames, counts
+
+    @staticmethod
+    def _probe_template_of(detected: MainType | None):
+        """取该套皮肤在庭院探针里当模板用的那张图（CostumeAssets 上、永久出厂态的那张）。
+
+        名字与 costume_base 的 _MAIN_PROBE_DEFAULT / _MAIN_PROBE_NAME 对应，是同两个名字的
+        第三处副本；零命中时退回默认套模板，只为让汇总表有东西可打。
+        """
+        name = _MAIN_PROBE_DEFAULT
+        if detected is not None and detected is not MainType.COSTUME_MAIN:
+            _, _, number = detected.value.rpartition('_')
+            if number.isdigit():
+                name = _MAIN_PROBE_NAME.format(i=number)
+        return getattr(CostumeAssets(), name)
 
     @staticmethod
     def _suffix_of(detected: MainType | None) -> str:

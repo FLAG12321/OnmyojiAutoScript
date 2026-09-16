@@ -2,11 +2,20 @@
   {
     "itemName": "check_main",
     "imageName": "page_check_main.png",
-    "roiFront": "1043,107,73,44",
-    "roiBack": "49,65,1110,94",
+    "roiFront": "1186,142,40,35",
+    "roiBack": "1166,122,80,75",
     "method": "Template matching",
-    "threshold": 0.7,
-    "description": "description"
+    "threshold": 0.8,
+    "description": "庭院判据（右侧「活动」入口图标）。皮肤无关，故不列入 main_costume_model 的替换项"
+  },
+  {
+    "itemName": "main_buff",
+    "imageName": "page_main_buff.png",
+    "roiFront": "365,32,22,48",
+    "roiBack": "345,12,62,88",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "庭院判据的第二个锚点（左上「加成」按钮），兜住「活动」入口没开时的画面"
   },
   {
     "itemName": "main_scroll_close",

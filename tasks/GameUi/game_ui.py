@@ -213,8 +213,9 @@ class GameUi(BaseTask, GameUiAssets):
                         raise GameNotRunningError("Login page detected")
                     # 在庭院却认不出卷轴本身：卷轴换皮后两张 I_LOGIN_SCROOLL_* 一起失效，
                     # 而 I_CHECK_MAIN 不随卷轴变、庭院照样判得出来。不在这里补一次探测，
-                    # 卷轴皮肤与配置不符就永远发现不了 —— login 那边的探测要求 courtyard_mark
-                    # 为假才跑，而庭院认得出时它根本不触发。
+                    # 卷轴皮肤与配置不符就永远发现不了 —— 登录期已经不探（见 login.py 的
+                    # courtyard_mark 段），而庭院判据皮肤无关，导航失败那条路也不会因为
+                    # 卷轴不符而走到（卷轴不参与页面识别，认不出它照样在 page_main）。
                     # 探到就重截一帧重判，让修正后的卷轴资产立刻生效（探针自带节流与锁）。
                     # 只挂 page_main：卷轴开合不参与页面识别，庭院一律判成 page_main，
                     # page_theme 只做导航中转、永远不会由这里返回。
@@ -227,8 +228,11 @@ class GameUi(BaseTask, GameUiAssets):
                     return page
             if redetect:
                 continue
-            # ── 全页扫描全落空：可能是庭院皮肤与配置不符，I_CHECK_MAIN 匹配不上 ──
-            # 探到哪套就套用哪套（并回写配置），page_main 立刻恢复可用。
+            # ── 全页扫描全落空 ──
+            # 庭院判据已皮肤无关（活动图标 / 加成按钮），「认不出庭院」不再由皮肤引起，
+            # 所以这一支**不再是皮肤修复的主路径**（那条挪到了 _execute_path 的导航失败
+            # 分支）。留着的是它的另一层作用：把画面当作庭院，让 page_main 的 additional
+            # 去关掉盖住整屏的弹窗。
             # 位置要在下面 _try_back_main_shortcut / try_close_unknown_page 之前——
             # 那两支会重置 timeout 并可能把画面导离庭院。也不能再往前挪到页面循环之前，
             # 那会让每一轮都白跑一次探测。
@@ -448,6 +452,16 @@ class GameUi(BaseTask, GameUiAssets):
                     break
             else:
                 logger.warning(f'Failed recognize {button} on {current_page}')
+                # 人在庭院却点不动跳转按钮：最可能的原因是这几张图与配置的皮肤不符
+                # （庭院入口的 I_MAIN_GOTO_* / I_PET_HOUSE 都随皮肤变），6 秒里一个
+                # 点击都发不出。这是解耦之后**唯一**的皮肤纠正时机——登录期不再探，
+                # 而庭院判据已皮肤无关，「全页扫描落空」那条路不会再因为皮肤不符而走到。
+                # 探到就直接放弃这一轮：check_costume_main 刚把这几张图换掉，
+                # 必须重新截图重走一遍路径才用得上新模板，在同一帧上继续没有意义。
+                # 交回给 ui_goto 的重试循环即可，它下一轮就会带新资产重进 _execute_path。
+                if current_page == page_main and self.try_detect_costume():
+                    logger.info('Costume main assets fixed by probe, retry navigation')
+                    return False
                 # 卷轴皮肤未采集时两张图都认不出 → 卷轴展不开 → 底部那排入口不出现 →
                 # 目标页进不去，形成死循环。展开区域是固定坐标、不依赖任何一张图，
                 # 是「未知皮肤」这种情况下唯一的突破口。

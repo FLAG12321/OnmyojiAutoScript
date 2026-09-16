@@ -5,7 +5,7 @@
     "roiFront": "844,125,60,67",
     "roiBack": "49,98,1034,112",
     "method": "Template matching",
-    "threshold": 0.7,
+    "threshold": 0.8,
     "description": "庭院特征图"
   },
   {

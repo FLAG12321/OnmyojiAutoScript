@@ -68,8 +68,10 @@ class GameUiAssets:
 
 
 	# Image Rule Assets
-	# description 
-	I_CHECK_MAIN = RuleImage(roi_front=(1043,107,73,44), roi_back=(49,65,1110,94), threshold=0.7, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
+	# 庭院判据（右侧「活动」入口图标）。皮肤无关，故不列入 main_costume_model 的替换项 
+	I_CHECK_MAIN = RuleImage(roi_front=(1186,142,40,35), roi_back=(1166,122,80,75), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_main.png")
+	# 庭院判据的第二个锚点（左上「加成」按钮），兜住「活动」入口没开时的画面 
+	I_MAIN_BUFF = RuleImage(roi_front=(365,32,22,48), roi_back=(345,12,62,88), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_buff.png")
 	# 庭院卷轴关闭标识 
 	I_MAIN_SCROLL_CLOSE = RuleImage(roi_front=(1181,634,28,39), roi_back=(1162,595,77,112), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_main_scroll_close.png")
 	# description 

@@ -61,7 +61,14 @@ page_exploration = Page(G.I_CHECK_EXPLORATION)
 page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
 page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
 # Main Home 主页
-page_main = Page(G.I_CHECK_MAIN)
+# check_button 是**列表**：两个锚点都是皮肤无关的固定 UI，任一命中即算在庭院。
+#   活动图标（I_CHECK_MAIN）—— 主判据。它在右侧，不被顶部的同心队横幅遮挡，
+#       所以二十多处 appear(I_CHECK_MAIN) 的「回庭院」判定也跟着受益。
+#   加成按钮（I_MAIN_BUFF）—— 兜底。活动入口没开（无进行中的活动）时右侧没有那张图，
+#       而加成按钮是核心 UI、一直挂着；它唯一的缺口是被同心队横幅盖住
+#       （实测那批帧上它只有 0.335~0.369），正好由活动图标补上。
+# 两者都**不随庭院皮肤变**，所以既不该进 main_costume_model 的替换表，也不能拿皮肤图当判据。
+page_main = Page([G.I_CHECK_MAIN, G.I_MAIN_BUFF])
 # 卷轴收起时庭院上只剩这四样要处理的。展开/收起卷轴不在 additional 里——
 # 那是「前往 page_theme / 回到 page_main」的页面跳转，由下面的 link 承担。
 page_main.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE]
@@ -85,8 +92,10 @@ page_theme.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, Res
 # 卷轴已经展开时这一步就没有可点的东西，由 _execute_path 的「跳转按钮不在、目标页已可见」
 # 判据提前收工，不会再空等满 6 秒。
 page_main.link(button=RestartAssets.I_LOGIN_SCROOLL_CLOSE, destination=page_theme)
-# 回庭院反过来用点击区域：从展开态点卷轴收起，区域点击不依赖任何一张卷轴图。
-page_theme.link(button=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA, destination=page_main)
+# 回庭院用同一张图、同一条规则：卷轴状态只朝「展开」方向走（收起态一定要打开，展开态绝不
+# 能收起）。收起图只在收起态匹配，展开态一下都点不出去，于是走上面那条「目标页已可见」的
+# 判据直接收工；而那块点击区域是 toggle、与状态无关，放这里会在展开态把卷轴收回去。
+page_theme.link(button=RestartAssets.I_LOGIN_SCROOLL_CLOSE, destination=page_main)
 # 召唤summon
 page_summon = Page(G.I_CHECK_SUMMON)
 page_summon.additional = [G.O_SUMMON_BACK_Y, G.I_SUMMON_BACK_R,G.I_SUMMON_BACK_TICKET]
