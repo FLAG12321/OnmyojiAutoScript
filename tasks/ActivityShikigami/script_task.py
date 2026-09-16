@@ -312,15 +312,24 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
 
         self.ui_click(self.I_UI_BACK_YELLOW, stop=self.I_TO_BATTLE_MAIN, interval=1)
     def _run_boss(self):
-        def start_battle():
+        def start_battle() -> bool:
+            """尝试进入并打完一场 boss 战。
+
+            :return: True = 已跑完一场（战斗流程内被上层接管也算）；
+                     False = 点满次数仍未进入战斗
+            """
             click_times, max_times = 0, random.randint(2, 4)
+            # 墙钟兜底：click_times 只在真正点到入场按钮时才递增，若按钮文字一闪
+            # 而过（OCR 时有时无）就永远点不上，原来会在里面零输入空转到 device
+            # 的 stuck 计时器（60s）抛 GameStuckError。20s 是入场动画的宽松上限
+            enter_timer = Timer(20).start()
             while 1:
                 self.screenshot()
                 if self.is_in_battle(False):
                     break
-                if click_times >= max_times:
+                if click_times >= max_times or enter_timer.reached():
                     logger.warning(f'Climb {self.climb_type} cannot enter, maybe already end, try next')
-                    return
+                    return False
                 if (self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or
                         self.appear_then_click(self.I_UI_CONFIRM, interval=1) ):
                     continue
@@ -330,6 +339,7 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                     continue
             # 运行战斗
             self.run_general_battle(config=self.get_general_battle_conf())
+            return True
         """
         更新前请先看 ./README.md
         """
@@ -339,6 +349,13 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                        stop=self.I_CHECK_BATTLE_BOSS, interval=1)
         logger.hr(f'Start run climb type BOSS')
         ocr_limit_timer = Timer(1).start()
+        # 连续进不去战斗的次数：入口消失（活动结束）时靠它收口，不再无限重试。
+        # start_battle 自身最多耗 20s，2 次即 40s 的尝试余量
+        enter_fail, max_enter_fail = 0, 2
+        # 「既不在战斗、也看不到入场按钮」的连续时长上限（秒）。正常换页/开场动画
+        # 几秒内就恢复；超过说明停在未知页面，再空转只会把 device 的 stuck 计时器
+        # 拖炸。取 20s < 60s，保证在被 device 判死之前先由本循环收口
+        idle_timer = Timer(20).start()
         while 1:
             self.screenshot()
             #self.put_status()
@@ -346,9 +363,29 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             if not ocr_limit_timer.reached():
                 continue
             ocr_limit_timer.reset()
-            if not self.ocr_appear(self.O_FIRE2):
-                self.appear_then_click(self.I_CHECK_BATTLE_MAIN, interval=4)
+            # 已在真正的战斗中：点入场按钮到战斗界面出现之间有进场动画，
+            # start_battle 那几帧的 is_in_battle 可能判否并误报"进不去"——
+            # 但票已经扣了，这场不能丢，直接接战斗流程。安全性与正常入场一致：
+            # battle_before 首判就是 is_in_real_battle，已在战斗中会立即返回、
+            # 不发任何点击。若这里不查战斗状态，本循环既看不到 FIRE2 又不产生
+            # 输入，会把 device 的 stuck 计时器（60s）拖炸成 GameStuckError
+            # （2026-09-16 oas1 22:14 实测：整场 boss 战都在空转，日志刷屏
+            #  [FIRE2]: No text detected in ROI，60s 后 Wait too long）
+            if self.is_in_real_battle(False):
+                idle_timer.reset()
+                enter_fail = 0
+                self.run_general_battle(config=self.get_general_battle_conf())
                 continue
+            if not self.ocr_appear(self.O_FIRE2):
+                # 点 boss 主页返回；注意 appear_then_click 的返回值不能当"模板不在"
+                # 用——interval 没到时它不查模板直接返回 False。所以这里只按
+                # 「持续多久没恢复」判超时，不看这一句的返回值
+                self.appear_then_click(self.I_CHECK_BATTLE_MAIN, interval=4)
+                if idle_timer.reached():
+                    logger.warning('boss 界面既不在战斗也看不到入场按钮, stop this climb')
+                    break
+                continue
+            idle_timer.reset()
             #  --------------------------------------------------------------
             #self.lock_team(self.conf.general_battle)
             if not self.check_tickets_enough():
@@ -357,7 +394,15 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             if self.conf.general_climb.random_sleep:
                 random_sleep(probability=0.2)
             if start_battle():
+                enter_fail = 0
                 continue
+            # 进不去：入口可能已消失（活动结束）。原实现是 `if start_battle(): continue`，
+            # 而 start_battle 没有返回值（恒 None）→ 这个分支永远不成立 → 一直重进，
+            # 连入口都没了也停不下来。连续几次进不去就交上层 switch_next 换玩法
+            enter_fail += 1
+            if enter_fail >= max_enter_fail:
+                logger.warning(f'Climb {self.climb_type} 连续 {max_enter_fail} 次无法进入, stop this climb')
+                break
 
     def _run_ap20(self):
         """
