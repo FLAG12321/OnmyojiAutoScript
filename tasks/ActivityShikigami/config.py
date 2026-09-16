@@ -96,6 +96,17 @@ class GeneralBattleConfig(BaseModel):
         from tasks.Component.GeneralBattle.config_general_battle import segment_count_normalize
         return segment_count_normalize(v)
 
+    # boss 战提前退出：战斗中 OCR 读「当前成绩」，达到阈值就主动退出战斗。
+    # 退出后走常规结算（本期 boss 无失败页），胜利页/奖励页交 battle_wait 既有分支处理。
+    # 与上面的自动战斗段同时开启时**以段优先**：段内是强制零输入（见 script_task
+    # 文件头注释），退出点击插不进去，所以段执行期间不提前退出；段结束后的手动
+    # 战斗（battle_wait 接管）照常生效。
+    enable_boss_early_exit: bool = Field(
+        default=False, description='boss爬塔是否启用提前退出(当前成绩达到阈值即退出战斗)')
+    # 阈值 <= 0 视为不启用（fail-closed：避免"开了开关但阈值没填"变成静默失效）
+    boss_early_exit_score: int = Field(
+        default=0, description='当前成绩达到该值即退出boss战斗, 0表示不启用')
+
 
 class ActivityShikigami(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)

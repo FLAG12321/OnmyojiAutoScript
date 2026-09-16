@@ -95,7 +95,7 @@ class ActivityShikigamiAssets:
 	# 进入主要的战斗界面 
 	I_TO_BATTLE_MAIN = RuleImage(roi_front=(325,178,70,96), roi_back=(270,106,159,246), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_main.png")
 	# 点击进入boss战斗页面 
-	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1113,258,34,122), roi_back=(1075,169,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
+	I_TO_BATTLE_BOSS = RuleImage(roi_front=(125,439,53,72), roi_back=(63,306,161,284), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/to_battle_boss.png")
 	# description 
 	I_CHECK_BATTLE_MAIN = RuleImage(roi_front=(148,17,135,39), roi_back=(78,5,260,107), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/check_battle_main.png")
 	# description 
@@ -153,9 +153,11 @@ class ActivityShikigamiAssets:
 	# 进入100体活动标识 
 	O_ENTER_AP100 = RuleOcr(roi=(73,98,95,32), area=(5,79,256,108), mode="Single", method="Default", keyword="将魂试炼", name="enter_ap100")
 	# description 
-	O_FIRE2 = RuleOcr(roi=(1142,589,96,50), area=(1167,601,35,27), mode="Single", method="Default", keyword="挑战", name="fire2")
+	O_FIRE2 = RuleOcr(roi=(1127,590,96,50), area=(1121,582,107,83), mode="Single", method="Default", keyword="挑战", name="fire2")
 	# 五倍券数量 
 	O_REMAIN_X5 = RuleOcr(roi=(936,14,104,34), area=(935,10,107,44), mode="DigitCounter", method="Default", keyword="", name="remain_x5")
+	# boss战斗当前成绩 
+	O_BOSS_SCORE = RuleOcr(roi=(955,113,274,46), area=(955,113,274,46), mode="Digit", method="Default", keyword="", name="boss_score")
 
 
 	# Click Rule Assets

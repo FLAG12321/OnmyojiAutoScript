@@ -48,6 +48,18 @@ AUTO_BATTLE_STUCK_REFRESH_S = 120
 # 爬塔自动模式的慢战斗（全屏技能动画）实测可达 60s+，3 分钟是宽松上限
 AUTO_BATTLE_BATTLE_TIMEOUT_S = 180
 
+# boss 提前退出的成绩识别间隔（秒）：battle_wait 单轮约 1~2s，不节流等于每轮
+# 都跑一次成绩 OCR。成绩是秒级滚动更新的，4s 的粒度足够——阈值是「打到多少分
+# 就不打了」，早一两秒退出没有收益，反而更容易在多退一次点击上出错。
+BOSS_EARLY_EXIT_SCAN_INTERVAL_S = 4
+
+# boss 提前退出的成绩确认帧数：首帧读到达标后还要连读 N-1 帧，N 帧全达标才真退出。
+# 单帧 OCR 误读（数字滚动的那一瞬、模板被技能特效压住）可能读出一个远超真值的
+# 数，只凭一帧就退出会误退——多打几帧确认能把这个风险压掉，代价是退出晚约 1s。
+# 确认阶段是**帧连续**的，不走 4s 节流：三帧摊成 12s 会让退出晚十几秒，与节流
+# 「只是省开销、不延后决策」的初衷相反。
+BOSS_EARLY_EXIT_CONFIRM_FRAMES = 3
+
 
 def _prepare_image_for_ocr(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
     image_copy = image.copy()
@@ -167,10 +179,22 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
     # 20 次计数，段跨 entry 时主循环的切入口逻辑在段内（零输入）不可控；
     # pass_monopoly/season_boss 玩法特殊——这三类 remaining 传 None 静默跳过
     AUTO_SEG_CLIMB_TYPES = ('pass', 'ap', 'boss')
-    # 暂时关闭结算奖励框检测（2026-09-09）：本期活动结算走卷轴面板而非标准三行
-    # 奖励网格，检测恒为空（实测每帧白跑 60~150ms），禁区由 FORBIDDEN_ACTIVITY
-    # 的卷轴面板矩形静态兜住即可。活动切回带标准网格的版本时改回 True。
+    # 结算奖励框检测：本任务按**画面**分派（见 reward_grid_detect_enabled），
+    # 类属性只作默认值。普通爬塔结算走卷轴面板，无标准三行网格，检测恒为空
+    # （实测每帧白跑 60~150ms），禁区由 FORBIDDEN_ACTIVITY 的卷轴面板矩形
+    # 静态兜住；boss 结算是标准三行网格，故默认关闭、boss 单独开启。
     REWARD_GRID_DETECT = False
+
+    def reward_grid_detect_enabled(self) -> bool:
+        """boss 结算页有标准三行奖励网格，其余爬塔结算没有。
+
+        pass/ap 走卷轴面板结算（2026-09-09 起检测关闭，由 FORBIDDEN_ACTIVITY
+        的 act_panel 静态兜住）；boss 结算是标准三行网格，2026-09-16 实测
+        3 行命中、落点分布与关闭时同为 0% 压奖励格，开启后额外拿到
+        reward_grid_appear 这个「仍在奖励页」判据——battle_wait 的
+        settlement_click_grid 兜底与自动段的 _settle_appear 都吃它。
+        """
+        return self.climb_type == 'boss'
 
     def __init__(self, config, device):
         super().__init__(config, device)
@@ -438,6 +462,87 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         # 运行战斗
         self.run_general_battle(config=self.get_general_battle_conf())
 
+    # ---------------------------------------------------------------- boss 提前退出
+    # 战斗中读「当前成绩」OCR，连续 BOSS_EARLY_EXIT_CONFIRM_FRAMES 帧达标就主动点
+    # 左上角退出战斗。资产 O_BOSS_SCORE 由 fire/ocr.json 的 boss_score 生成；
+    # 未采集时静默禁用（只告警一次），便于先落地逻辑框架、资产后补。
+    def boss_early_exit_ready(self) -> bool:
+        """boss 提前退出是否生效：玩法是 boss + 开关开 + 阈值有效 + 资产已采。
+
+        每场战斗判一次，任一条不满足都按不启用处理。
+        """
+        if self.climb_type != 'boss':
+            return False
+        gb_conf = self.conf.general_battle
+        if not gb_conf.enable_boss_early_exit:
+            return False
+        if gb_conf.boss_early_exit_score <= 0:
+            self._boss_early_exit_warn('阈值 <= 0')
+            return False
+        if getattr(self, 'O_BOSS_SCORE', None) is None:
+            self._boss_early_exit_warn('缺少 O_BOSS_SCORE 资产（见 fire/ocr.json 的 boss_score）')
+            return False
+        return True
+
+    def _boss_early_exit_warn(self, reason: str) -> None:
+        """同一任务实例只告警一次，避免每场战斗刷屏。"""
+        if getattr(self, '_boss_early_exit_warned', False):
+            return
+        self._boss_early_exit_warned = True
+        logger.warning(f'boss 提前退出已开启但{reason}，本次按不启用处理')
+
+    def boss_early_exit_trigger(self) -> bool:
+        """读「当前成绩」，连续 BOSS_EARLY_EXIT_CONFIRM_FRAMES 帧达标才主动退出战斗。
+
+        首帧用调用方已经截好的画面，之后每帧自己再截一次——所以三帧是**紧邻**的
+        连续帧（约 1s），不是摊在 4s 节流上的三次。任一帧未达标就立刻放弃、
+        退回节流轮询：成绩只增不减，但不达标说明这一帧读到的数字不可信
+        （OCR 误读 / 特效遮挡），宁可多打一场也不误退。
+
+        本方法自身不做**节流**，调用方负责配速（battle_wait 用
+        BOSS_EARLY_EXIT_SCAN_INTERVAL_S 的计时器压到每 4s 一次）——新增调用点时
+        记得一并节流，否则会变成逐帧 OCR。
+
+        :return: True = 本场已发起退出；False = 未达标，继续打
+        """
+        threshold = self.conf.general_battle.boss_early_exit_score
+        for i in range(BOSS_EARLY_EXIT_CONFIRM_FRAMES):
+            if i:
+                # 第 2、3 帧重新截图；第 1 帧沿用调用方刚截的画面，不重复截
+                self.screenshot()
+            score = self.O_BOSS_SCORE.ocr(self.device.image)
+            # OCR 失败返回 0，一并当作未达标
+            if not score or score < threshold:
+                return False
+        logger.info(f'Boss score {score} >= {threshold} '
+                    f'in {BOSS_EARLY_EXIT_CONFIRM_FRAMES} frames, quit battle early')
+        self.quit_boss_battle()
+        return True
+
+    def quit_boss_battle(self, timeout: float = 20) -> None:
+        """战斗中主动退出：点左上角退出 → 确认弹窗走通用 I_EXIT_ENSURE。
+
+        只负责把「退出 + 确认」点完，不处理结算——退出后的胜利页/奖励页由
+        调用方 battle_wait 的既有分支接手（本期 boss 无失败页）。确认已发出后
+        不再重复点退出：胜利页有约 1s 的入场动画，那期间退出的判据全不命中，
+        继续点会落在新画面上。
+        超时则告警退出，交 battle_wait 循环与 stuck 兜底。
+        """
+        timeout_timer = Timer(timeout).start()
+        confirmed = False
+        while not timeout_timer.reached():
+            self.screenshot()
+            # 已离开战斗（出了结算页 / 回到挑战主页）就交回上层
+            if (self.appear(self.I_WIN) or self.appear(self.I_WIN_2)
+                    or self.appear(self.I_FALSE) or self.ocr_appear(self.O_FIRE2)):
+                return
+            if self.appear_then_click(self.I_EXIT_ENSURE, interval=1):
+                confirmed = True
+                continue
+            if not confirmed and self.appear_then_click(self.I_EXIT, interval=2):
+                continue
+        logger.warning('Quit boss battle timeout, hand back to battle_wait')
+
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         # 通用战斗结束判断
         self.device.stuck_record_add("BATTLE_STATUS_S")
@@ -448,14 +553,21 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             btn.name = "BATTLE_RANDOM"
         fire_ocr = {'boss': self.O_FIRE2, 'ap20': self.O_FIRE_AP20}.get(self.climb_type, self.O_FIRE)
         ok_cnt, max_retry = 0, 5
+        # boss 提前退出：每场判一次是否生效；本场已发起过退出就不再触发
+        boss_exit_ready = self.boss_early_exit_ready()
+        boss_quit_done = False
+        # 成绩 OCR 的节流器（见 BOSS_EARLY_EXIT_SCAN_INTERVAL_S）：start 在本场
+        # 开头，所以首轮不识别、第 4s 起每 4s 一次
+        boss_score_timer = Timer(BOSS_EARLY_EXIT_SCAN_INTERVAL_S).start()
         while 1:
             sleep(random.uniform(0.5, 1.5))
             self.screenshot()
             # 达到最大重试次数则直接交给上层处理
             if ok_cnt > max_retry:
                 break
-            # 识别到挑战说明已经退出战斗
-            if ok_cnt > 0 and self.ocr_appear(fire_ocr):
+            # 识别到挑战说明已经退出战斗。boss 提前退出可能直接落回挑战主页
+            # （不经结算页），那时 ok_cnt 仍为 0，靠 boss_quit_done 一并放行
+            if (ok_cnt > 0 or boss_quit_done) and self.ocr_appear(fire_ocr):
                 return True
             # 战斗失败
             if self.appear(self.I_FALSE):
@@ -482,6 +594,18 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 logger.info('Win battle')
                 ok_cnt += 1
                 continue
+            # 走到这里说明这一帧既没失败、也没出结算页 —— 仍在战斗中，才考虑提前退出。
+            # is_in_real_battle 每轮都过（两次模板匹配，便宜）：准备页/过渡动画上读到的
+            # 「当前成绩」不可信，而退出点击本身有误触风险，只在真正的战斗过程界面上才发。
+            # 真正要节流的是后面的成绩 OCR（几十毫秒级），由 boss_score_timer 压到
+            # 每 BOSS_EARLY_EXIT_SCAN_INTERVAL_S 秒一次。两者顺序不能颠倒：短路后
+            # 不满足战斗界面时不去碰计时器，否则守卫失败也会吃掉一个识别窗口。
+            if ok_cnt == 0 and boss_exit_ready and not boss_quit_done:
+                if (self.is_in_real_battle(False)
+                        and boss_score_timer.reached_and_reset()
+                        and self.boss_early_exit_trigger()):
+                    boss_quit_done = True
+                    continue
             # 已经不在战斗中了, 且奖励也识别过了, 则随机点击
             # if ok_cnt > 0 and not self.is_in_battle(False):
             #     self.random_reward_click(exclude_click=[self.C_RANDOM_BOTTOM])
@@ -752,6 +876,8 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         - 配置未开或类型不接：None（组件层静默跳过，双保险之一）
         - 五倍消耗期间（一场抵 5 张门票）：场次与门票口径错配会导致超额多打，
           fail-closed 禁用（与 Orochi 五倍券同策略），五倍关闭后自动恢复
+        - boss 提前退出同时开启时以段优先：两者不互斥、段照跑；段内强制零输入
+          （见文件头 AUTO_BATTLE_* 注释）故不提前退出，段后的手动战斗照常生效
         - 场次口径对齐序言计数时序：调用发生在父类序言 current_count += 1 之前，
           limit - current_count 即"本场 + 未来"剩余场数
         :return: 剩余场次 or None（不启用）
@@ -761,6 +887,13 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             return None
         if self.climb_type not in self.AUTO_SEG_CLIMB_TYPES:
             return None
+        # boss 提前退出与自动段同时开启时以段优先（2026-09-16 用户指定）：段内是
+        # 强制零输入，退出点击插不进去，所以段执行期间提前退出不生效；触发点在
+        # battle_wait（位于段之外），段结束后的手动战斗照常生效。这里只提示一次，
+        # 免得以为提前退出坏了
+        if self.boss_early_exit_ready() and not getattr(self, '_boss_early_exit_seg_noted', False):
+            self._boss_early_exit_seg_noted = True
+            logger.info('boss 自动段与提前退出同时开启：段优先——段内零输入不提前退出，段后手动战斗照常生效')
         # 五倍消耗 fail-closed：告警只在首次触发时打一次，避免每场刷屏
         if self._x5_active:
             if not getattr(self, '_auto_seg_x5_blocked', False):
@@ -906,10 +1039,10 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             模板认的是具体图案（胜利鼓/失败/领奖图标），活动副本的奖励底色
             或结算动画中间帧可能全部失配——失配时段内看不到"结算页出现"，
             游戏自动翻进下一场后不会记次，段会卡死在等待结算。
-            本期活动结算走卷轴面板（无标准三行网格），且 REWARD_GRID_DETECT
-            已关闭、reward_grid_appear 恒 False——I_A_REWARD（卷轴顶部
-            "获得奖励"标题标识，2026-09-09 新增资产）补上这个判据缺口，
-            与奖励内容无关。
+            本期活动普通结算走卷轴面板（无标准三行网格），reward_grid_appear
+            在其中恒 False——I_A_REWARD（卷轴顶部"获得奖励"标题标识，2026-09-09
+            新增资产）补上这个判据缺口，与奖励内容无关；boss 结算有标准网格，
+            该判据由 reward_grid_detect_enabled 单独开启，两者互补。
             """
             return (self.win_appear(threshold=0.8)
                     or self.appear(self.I_FALSE, threshold=0.8)
