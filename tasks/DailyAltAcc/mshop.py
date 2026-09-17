@@ -257,7 +257,7 @@ class Mshop(Mall, DailyAltAccBase):
         规则沿用原 InfoFilter，另外补上两类新货：
 
         - 金币价的大蛇的逆鳞 / 逢魔之魂：一律要
-        - 勾玉价的御行达摩碎片：只要 0<价<45、70<价<96、价>=120 三段
+        - 勾玉价的御行达摩碎片：只要 20<价<45、70<价<96、价>=120 三段
         - 神秘符咒（蓝票）：价格 50~60（含端点）
         - 御行达摩（黑蛋）：只要判定为黑蛋就要，不看价格
 
@@ -272,7 +272,7 @@ class Mshop(Mall, DailyAltAccBase):
             return True
         # 勾玉价的御行达摩碎片，只要特定的三段价格区间
         if coin == CoinType.jade and goods == GoodsType.skill_shard:
-            return 0 < price < 45 or 70 < price < 96 or price >= 120
+            return 20 < price < 45 or 70 < price < 96 or price >= 120
         # 神秘符咒（蓝票），50~60 才推
         if goods == GoodsType.mystery_amulet:
             return 50 <= price <= 60

@@ -60,6 +60,11 @@ BOSS_EARLY_EXIT_SCAN_INTERVAL_S = 4
 # 「只是省开销、不延后决策」的初衷相反。
 BOSS_EARLY_EXIT_CONFIRM_FRAMES = 3
 
+# boss 主循环「既不在战斗、也看不到入场按钮」的空转上限（秒）。正常换页/开场
+# 动画几秒内就恢复；超过说明停在未知页面，再空转只会把 device 的 stuck 计时器
+# （60s）拖炸。必须明显小于 60s，保证收口权在本循环而不是 GameStuckError
+BOSS_IDLE_TIMEOUT_S = 45
+
 
 def _prepare_image_for_ocr(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
     image_copy = image.copy()
@@ -352,10 +357,14 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
         # 连续进不去战斗的次数：入口消失（活动结束）时靠它收口，不再无限重试。
         # start_battle 自身最多耗 20s，2 次即 40s 的尝试余量
         enter_fail, max_enter_fail = 0, 2
-        # 「既不在战斗、也看不到入场按钮」的连续时长上限（秒）。正常换页/开场动画
-        # 几秒内就恢复；超过说明停在未知页面，再空转只会把 device 的 stuck 计时器
-        # 拖炸。取 20s < 60s，保证在被 device 判死之前先由本循环收口
-        idle_timer = Timer(20).start()
+        # 「既不在战斗、也看不到入场按钮」的空转计时（见 BOSS_IDLE_TIMEOUT_S）。
+        # 这是**挂钟**计时器，而本循环会被 run_general_battle 阻塞整场战斗
+        # （约 2 分钟）——那期间循环不跑、没有任何 reset，计时器却照走。
+        # 所以每个阻塞点返回后必须显式 reset，否则整场战斗的时长会被一次性
+        # 记成「界面空转」：战斗结束后的第一帧只要没读到「挑战」就立刻判定
+        # 超时、停掉整个爬塔（2026-09-17 oas1 10:08:58 实测，当时刚打完第 11
+        # 场，BATTLE1_EXIT_1 退出后回到主页读到「战」即误停）
+        idle_timer = Timer(BOSS_IDLE_TIMEOUT_S).start()
         while 1:
             self.screenshot()
             #self.put_status()
@@ -372,11 +381,16 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             # （2026-09-16 oas1 22:14 实测：整场 boss 战都在空转，日志刷屏
             #  [FIRE2]: No text detected in ROI，60s 后 Wait too long）
             if self.is_in_real_battle(False):
-                idle_timer.reset()
                 enter_fail = 0
                 self.run_general_battle(config=self.get_general_battle_conf())
+                # 阻塞点：战斗整场都在上面这句里面，返回即重置空转计时
+                idle_timer.reset()
                 continue
-            if not self.ocr_appear(self.O_FIRE2):
+            # 严格判据（appear = result == '挑战'）会被 OCR 丢字判否：这块按钮
+            # 常被读成「战」「挑」半个词（2026-09-17 实测 24 个可见帧里 10 帧
+            # 如此）。丢字帧上按钮明明在屏幕上，按「不存在」处理只会让空转计时
+            # 白白累积，所以再问一次宽松判据（ROI 里有没有字）
+            if not self.ocr_appear(self.O_FIRE2) and not self.boss_fire_text_present():
                 # 点 boss 主页返回；注意 appear_then_click 的返回值不能当"模板不在"
                 # 用——interval 没到时它不查模板直接返回 False。所以这里只按
                 # 「持续多久没恢复」判超时，不看这一句的返回值
@@ -393,7 +407,12 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
                 break
             if self.conf.general_climb.random_sleep:
                 random_sleep(probability=0.2)
-            if start_battle():
+            # start_battle 自带 20s 墙钟（enter_timer）负责「点了但进不去」，
+            # 它的耗时（正常进场也有 5~10s）不该算进本循环的界面空转，
+            # 返回即重置，无论成没成
+            entered = start_battle()
+            idle_timer.reset()
+            if entered:
                 enter_fail = 0
                 continue
             # 进不去：入口可能已消失（活动结束）。原实现是 `if start_battle(): continue`，
@@ -403,6 +422,20 @@ class ScriptTask(StateMachine, GameUi, BaseActivity, SwitchSoul, PassMonopolyMix
             if enter_fail >= max_enter_fail:
                 logger.warning(f'Climb {self.climb_type} 连续 {max_enter_fail} 次无法进入, stop this climb')
                 break
+
+    def boss_fire_text_present(self) -> bool:
+        """boss 主循环的宽松「入场按钮还在」判据：ROI 里读得到任何文本即真。
+
+        ocr_appear 对 O_FIRE2 走的是严格等值（appear = result == '挑战'），
+        而这块按钮的 OCR 会丢字——2026-09-17 实测 24 个按钮可见帧里 10 帧
+        只读到「战」「挑」半个词。丢字帧上按钮确实在屏幕上，此时若按
+        「不存在」处理，空转计时器会平白累积到 BOSS_IDLE_TIMEOUT_S 而误停爬塔。
+        这里只问「ROI 里有没有字」，不问那字是不是「挑战」。
+
+        O_FIRE2.ocr_single_line 按 ROI 裁剪后走单行识别，低于置信阈值的
+        结果返回空串，因此空串即「没读到可信文本」。
+        """
+        return bool(self.O_FIRE2.ocr_single_line(self.device.image))
 
     def _run_ap20(self):
         """
