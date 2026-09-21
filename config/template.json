@@ -7,9 +7,9 @@
       "handle": "",
       "desktop_game_path": "",
       "package_name": "auto",
-      "screenshot_method": "auto",
+      "screenshot_method": "nemu_ipc",
       "control_method": "minitouch",
-      "adb_restart": false,
+      "adb_restart": true,
       "emulatorinfo_type": "auto",
       "emulatorinfo_name": "",
       "emulatorinfo_path": "",
@@ -51,7 +51,7 @@
       "reset_task_datetime": "2023-01-01 00:00:00"
     },
     "harvest_config": {
-      "enable": true,
+      "enable": false,
       "enable_courtyard_affairs": true,
       "enable_jade": true,
       "enable_sign": true,
