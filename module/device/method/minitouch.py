@@ -162,9 +162,15 @@ MINITOUCH_RECOVERY_WS_CONNECT_TIMEOUT_S = 3.0
 MINITOUCH_RECOVERY_WS_READY_TIMEOUT_S = 1.0
 MINITOUCH_RECOVERY_WS_CLOSE_TIMEOUT_S = 1.0
 MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S = 3.0
+# B1 恢复的 ATX 停启段独立预算：不与 forward/握手共享同一 deadline。若共用，网络
+# 抖动下两次 adb shell 往返可能吃光整段预算，让本可成功的握手必然超时。
+# 取值有意放宽：ATX 停启走两次 adb shell 往返，是全流程中最慢的一段，而恢复失败
+# 即实例停摆，代价远高于多等几秒。
+MINITOUCH_RECOVERY_ATX_RESTART_TIMEOUT_S = 10.0
 MINITOUCH_RECOVERY_TCP_LINE_TIMEOUT_S = 1.0
-# B0 首连握手 EOF 后经 atx-agent 拉起 minitouch 服务的整体预算
-# （临时 forward 创建 + 状态查询 + POST 启动 + running 轮询）
+# 握手读到 EOF 后经 atx-agent 拉起 minitouch 服务的整体预算，首连与 B1 共用
+# （临时 forward 创建 + 状态查询 + POST 启动 + running 轮询）。这段独立起算，
+# 不与 forward/握手段共享 deadline，否则会被其剩余预算截断在半途。
 MINITOUCH_SERVICE_ENSURE_TIMEOUT_S = 5.0
 # 单批 WebSocket 投递的墙钟上限，避免 send() 阻塞时永远无法进入 B1 接管。
 MINITOUCH_WS_SEND_TIMEOUT_S = 1.0
@@ -213,8 +219,26 @@ def _recovery_remaining(deadline):
     return remaining
 
 
-def _run_adb_recovery_command(device, args, deadline, stage):
-    """用可终止的 adb 子进程执行恢复命令，保证超时后不会留下后台 I/O。"""
+def _adb_listener_missing(exc):
+    """判定 adb 的报错是否为「该 listener 不存在」。
+
+    实测输出形如 ``adb.exe: error: listener 'tcp:20529' not found``（退出码 1）。
+    stderr 未开 text=True 时是 bytes，统一解码后再做子串匹配。
+    """
+    stderr = exc.stderr
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode('utf-8', 'replace')
+    return 'not found' in (stderr or '')
+
+
+def _run_adb_recovery_command(device, args, deadline, stage, tolerate_missing_listener=False):
+    """用可终止的 adb 子进程执行恢复命令，保证超时后不会留下后台 I/O。
+
+    tolerate_missing_listener 只给 ``forward --remove`` 用：该步骤的目标是
+    「确保目标 forward 不存在」，listener 本就不存在即目标已达成，属幂等成功。
+    把它当失败会在最需要容错的时刻——socket 刚被中止、adb 侧 forward 记录已经
+    消失——把一次可自愈的断连升级成 RequestHumanTakeover。
+    """
     timeout = _recovery_remaining(deadline)
     try:
         subprocess.run(
@@ -226,7 +250,11 @@ def _run_adb_recovery_command(device, args, deadline, stage):
             # 无控制台宿主（pythonw 启动的 server/GUI）下抑制 adb 的 cmd 窗口闪烁
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0,
         )
-    except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError) as exc:
+    except subprocess.CalledProcessError as exc:
+        if tolerate_missing_listener and _adb_listener_missing(exc):
+            return
+        raise _MinitouchRecoveryFailed(f'{stage} failed') from exc
+    except (subprocess.TimeoutExpired, OSError) as exc:
         raise _MinitouchRecoveryFailed(f'{stage} failed') from exc
 
 
@@ -949,22 +977,23 @@ class Minitouch(Connection):
         # 已发生输入的 B1 恢复还要先重启 ATX 并验证 PID 改变；首次开档时
         # uiautomator2 刚完成 ATX 初始化，不能再次 stop/start，否则 minitouch
         # 服务可能尚未重新挂载，首个点击会在握手超时后被误判为人工接管。
-        # deadline 从恢复入口开始计时，避免前置 ATX/forward 操作不计入预算。
-        if deadline is None:
-            deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
-        _recovery_remaining(deadline)
         if restart_atx:
+            # ATX 停启单独计时，不与 forward/握手共享 deadline
+            atx_deadline = time.monotonic() + MINITOUCH_RECOVERY_ATX_RESTART_TIMEOUT_S
             atx_agent_path = '/data/local/tmp/atx-agent'
             _run_adb_recovery_command(
-                self, ['shell', atx_agent_path, 'server', '--stop'], deadline, 'tcp-restart-atx-stop')
+                self, ['shell', atx_agent_path, 'server', '--stop'], atx_deadline, 'tcp-restart-atx-stop')
             _run_adb_recovery_command(
                 self,
                 ['shell', atx_agent_path, 'server', '--nouia', '-d', '--addr', '127.0.0.1:7912'],
-                deadline,
+                atx_deadline,
                 'tcp-restart-atx-start',
             )
         else:
             logger.info('Skip ATX restart for first minitouch connection')
+        if deadline is None:
+            # forward 增删与三行握手共用这段预算，从 ATX 恢复结束之后起算
+            deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
         _recovery_remaining(deadline)
         # 使用 adb CLI 的 --list/创建命令，两个 subprocess 都有真实 timeout；
         # 不调用 adbutils.forward() 的无 timeout 控制连接。冷启动时旧进程可能仍
@@ -1009,6 +1038,7 @@ class Minitouch(Connection):
                     ['forward', '--remove', f'tcp:{stale_port}'],
                     deadline,
                     'tcp-forward-remove',
+                    tolerate_missing_listener=True,
                 )
                 _recovery_remaining(deadline)
             port = random_port(self.config.FORWARD_PORT_RANGE)
@@ -1025,6 +1055,7 @@ class Minitouch(Connection):
                     ['forward', '--remove', f'tcp:{self._minitouch_port}'],
                     deadline,
                     'tcp-forward-remove',
+                    tolerate_missing_listener=True,
                 )
                 _recovery_remaining(deadline)
             # B1 已发生输入后只复用当前 session 之外的可观察 forward；若没有，
@@ -1060,26 +1091,32 @@ class Minitouch(Connection):
                 client.close()
                 raise
 
-        if old_pid is None:
-            # 首次开档：先试一次握手；EOF（连接立即关闭）说明设备侧 minitouch
-            # 没在监听（u2 3.x 不再负责拉起它），经 atx-agent 服务接口拉起后重试
+        def handshake_ensuring_service():
+            """握手一次；读到 EOF 时经 atx-agent 拉起设备侧 minitouch 后重试一次。
+
+            两条路径都会撞上「TCP 连得上、设备侧却没人监听」：首连时 u2 3.x 不再
+            负责拉起 minitouch；B1 恢复开头的 ATX 重启又会连带走掉作为 atx-agent
+            子进程的 minitouch（2026-09-20 现场：EOF 后无补救，直接人工接管）。
+            """
+            nonlocal deadline
             try:
-                client, max_x, max_y, new_pid = connect_and_handshake()
+                return connect_and_handshake()
             except _MinitouchRecoveryFailed as exc:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise
                 logger.info(
-                    'Minitouch first connection handshake failed, '
+                    'Minitouch handshake failed, '
                     f'ensuring device-side minitouch service: {exc}'
                 )
-                ensure_deadline = time.monotonic() + min(
-                    MINITOUCH_SERVICE_ENSURE_TIMEOUT_S, remaining)
-                self._ensure_humanized_minitouch_service_started(ensure_deadline)
-                # 服务拉起后 socket 才真正监听，重新走一次完整握手
-                client, max_x, max_y, new_pid = connect_and_handshake()
-        else:
-            client, max_x, max_y, new_pid = connect_and_handshake()
+                # 拉起服务自成一段预算：它要建临时 forward、走 HTTP GET/POST 并
+                # 轮询到 running，耗时量级与握手不同。若沿用 forward/握手段的剩余
+                # 预算，会在半途被掐死，且拉起后重试握手也拿不到时间。
+                self._ensure_humanized_minitouch_service_started(
+                    time.monotonic() + MINITOUCH_SERVICE_ENSURE_TIMEOUT_S)
+                # 服务拉起后 socket 才真正监听，重新走一次完整握手（同样重新起算，
+                # 不沿用已被拉起段耗尽的旧 deadline）
+                deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
+                return connect_and_handshake()
+
+        client, max_x, max_y, new_pid = handshake_ensuring_service()
 
         self._minitouch_port = port
         self._minitouch_client = client
@@ -1089,7 +1126,10 @@ class Minitouch(Connection):
         self.__dict__['minitouch_builder'] = CommandBuilder(self)
 
     def _ensure_humanized_minitouch_service_started(self, deadline):
-        """B0 首连握手 EOF 时，经 atx-agent 的 /services/minitouch 拉起设备侧进程。
+        """握手读到 EOF 时，经 atx-agent 的 /services/minitouch 拉起设备侧进程。
+
+        两个调用场景：首连（u2 3.x 不再负责拉起 minitouch）与 B1 恢复（开头的
+        ATX 重启会连带走掉作为其子进程的 minitouch）。
 
         背景（2026-09-08 实测，MuMu12 / Android 12）：uiautomator2 3.x 的
         check_install() 只检查 atx-agent 与测试 APK，不检查 minitouch 二进制，
@@ -1136,6 +1176,7 @@ class Minitouch(Connection):
                     ['forward', '--remove', f'tcp:{atx_port}'],
                     deadline,
                     'tcp-atx-forward-remove',
+                    tolerate_missing_listener=True,
                 )
             except _MinitouchRecoveryFailed:
                 pass
@@ -1386,8 +1427,9 @@ class Minitouch(Connection):
             else:
                 old_pid = self._minitouch_pid
                 del_cached_property(self, 'minitouch_builder')
-                deadline = time.monotonic() + MINITOUCH_RECOVERY_TCP_CONNECT_TIMEOUT_S
-                self._recover_humanized_minitouch_tcp(old_pid, deadline=deadline)
+                # 不在此处起算 deadline：_recover_humanized_minitouch_tcp 会在 ATX
+                # 停启段结束后才为 forward/握手起算预算（两段预算互相独立）。
+                self._recover_humanized_minitouch_tcp(old_pid)
         except RequestHumanTakeover:
             raise
         except Exception as exc:
