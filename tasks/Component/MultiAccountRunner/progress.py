@@ -7,7 +7,8 @@
 
 由 tasks/Component/MultiAccountRunner/progress.py 提供通用实现，各任务经
 tasks/MultiDailyAltAcc/progress.py 等薄封装固定自己的 task_name 后使用：
-进度文件名 {task_name}_progress_{config_name}.json，异常归档文件
+进度文件名 {task_name}_progress_{config_name}.json，进度快照
+{task_name}_progress_{config_name}.json.bak，异常归档文件
 {task_name}_errors_{config_name}.json，每个配置实例一份，互不干扰。
 """
 import json
@@ -45,12 +46,27 @@ def _write_json_atomic(path: Path, data: dict) -> None:
 
     进度文件与异常归档文件共用：直接覆写时进程被杀会留下截断 JSON，
     os.replace 在 Windows 上对已存在目标是原子替换，可消除该窗口。
+    再补一次 fsync：停电/断电时 NTFS 会先把元数据提交，数据块可能还在缓存里，
+    只靠 replace 仍会留下「文件名对、内容截断或全零」的半成品文件。
+
+    写失败（序列化异常、磁盘错误）时顺手删掉半截的 tmp，不在磁盘上留孤儿；
+    进程被强杀留下的 tmp 由下一次写同一路径覆盖，或由 clear() 一并清理。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix('.json.tmp')
-    with open(tmp_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, path)
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        # 清理半截 tmp；连清理都失败也不能顶掉原始异常（调用方按各自语义处理）
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 class ProgressStore:
@@ -64,6 +80,10 @@ class ProgressStore:
         self.task_name = task_name
         self.config_name = config_name
         self.path = Path(base_dir) / f'{task_name}_progress_{config_name}.json'
+        # 快照文件：主文件每次成功落盘后同步写一份，主文件损坏时回退用它。
+        # 停电/强杀可能让最后一次落盘留下截断或全零的 JSON，没有快照就只剩
+        # 「按无进度全量重跑」一条路，已完成的账号与同心战斗场次全部白打。
+        self.backup_path = Path(f'{self.path}.bak')
         # 异常归档文件：failed/skipped 迁移的按天留痕，独立于阶段生命周期，
         # 进度文件被 clear()/重建后仍可回查当天所有没有正常结束的子任务
         self.error_path = Path(base_dir) / f'{task_name}_errors_{config_name}.json'
@@ -71,23 +91,45 @@ class ProgressStore:
 
     # ---------- 底层读写 ----------
 
+    @staticmethod
+    def _read_json(path: Path) -> dict | None:
+        """读取一份 JSON 进度文件；文件不存在或不可解析都返回 None。"""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return None
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logger.warning(f'进度文件不可解析: {path} ({e})')
+            return None
+        return data if isinstance(data, dict) else None
+
     def _load(self) -> dict:
-        """读取进度文件；不存在或损坏都返回空字典（当作无进度处理）。"""
+        """读取进度文件；不存在或损坏都返回空字典（当作无进度处理）。
+
+        主文件**存在但损坏**时先回退快照：停电/断电可能让最后一次落盘留下截断
+        或全零的 JSON，此时直接按无进度重跑会把已完成的账号整个重做一遍。
+        主文件**不存在**时不看快照——删除进度文件是 README 写明的「强制全量
+        重跑」手法，不能被一份陈旧快照悄悄复活。
+        """
         if not self.path.exists():
             return {}
-        try:
-            with open(self.path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, OSError, ValueError) as e:
-            logger.warning(f'进度文件损坏，将按无进度全量重跑: {e}')
-            return {}
+        data = self._read_json(self.path)
+        if data is not None:
+            return data
+        backup = self._read_json(self.backup_path)
+        if backup is not None:
+            logger.warning(f'进度文件损坏，已从快照恢复: {self.backup_path}')
+            return backup
+        logger.warning('进度文件损坏且快照不可用，将按无进度全量重跑')
+        return {}
 
     def _save(self) -> None:
         """保存进度；写失败只记日志，绝不阻断任务执行。
 
         原子写的动机见 _write_json_atomic：同心战斗每打一场就落盘一次，
         截断 JSON 会让 _load() 按无进度全量重跑导致重复领奖。
+        主文件落盘成功后再补写一份快照，供 _load() 在下次损坏时回退。
         """
         try:
             _write_json_atomic(self.path, self._data)
@@ -95,6 +137,12 @@ class ProgressStore:
             # TypeError/ValueError：extra 混入不可序列化对象时 json.dump 抛出，
             # 同样只记日志——进度丢一次没关系，炸掉任务流程才是事故
             logger.warning(f'进度文件写入失败，本次进度未持久化: {e}')
+            return
+        try:
+            _write_json_atomic(self.backup_path, self._data)
+        except (OSError, TypeError, ValueError) as e:
+            # 主文件已经写好了，快照失败只损失损坏回退能力，不影响本轮继续
+            logger.warning(f'进度快照写入失败，本次未更新快照: {e}')
 
     def _is_stale(self, data: dict) -> bool:
         """判断进度是否因长期停机而过期。时间字段异常时同样视为过期。"""
@@ -190,12 +238,20 @@ class ProgressStore:
         return True
 
     def clear(self) -> None:
-        """删除进度文件。任务成功并安排下一阶段后调用。"""
+        """删除进度文件、快照与残留的 tmp。任务成功并安排下一阶段后调用。
+
+        快照必须一起删：本轮进度已作废，留着它只会让下一轮意外回退到旧进度。
+        tmp 是写入中途被强杀留下的半截文件，收尾时一并清掉——注意 with_suffix
+        只替换最后一段后缀，所以主文件的是 x.json.tmp、快照的是 x.json.json.tmp。
+        """
         self._data = {}
-        try:
-            self.path.unlink(missing_ok=True)
-        except OSError as e:
-            logger.warning(f'进度文件删除失败: {e}')
+        for path in (self.path, self.backup_path,
+                     self.path.with_suffix('.json.tmp'),
+                     self.backup_path.with_suffix('.json.tmp')):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning(f'进度文件删除失败: {path} ({e})')
 
     # ---------- 账号级 ----------
 
