@@ -5,10 +5,19 @@
 截图由 tasks/DailyAltAcc/alliedteam.py 保存到
 screenshots/Battle_Screenshots_<年_月_日>/<角色名>.png
 
-每行按「昵称  次数  图片名称」输出，并按昵称排序，同一账号的截图相邻。
 昵称取自卡片右上角带勾选标记的那张亲友卡，即当前设成协战式神的那位好友；
 文件名用的是 OAS 配置里的角色名（如 js16瑶光），与游戏里显示的昵称（如
 月宠EVE）对不上，所以要把昵称单独列出来才看得出是谁的号。
+
+输出按昵称分组校验，分「已完成 / 未完成 / 异常」三段：
+
+* 同一昵称下的所有截图算同一个角色，次数合计 >= GROUP_COPY_PASS(50) 即为已完成；
+* 单张次数 >= SINGLE_COPY_PASS(13) 才算这张达标。合计达标但个别账号没打够时，
+  把没打够的那几张列在该角色下面；合计不达标则把该角色全部截图都列出来，
+  便于区分是缺账号还是次数不够；
+* 昵称没识别出来的截图无法归组，统一放到最后单独列出。
+
+每行格式为「昵称  次数/状态  总次数或图片名称」。
 
 用法：
     # 不带参数：识别当天的截图目录
@@ -24,8 +33,10 @@ import argparse
 import logging
 import re
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import cv2
 import numpy as np
@@ -45,6 +56,70 @@ SCREENSHOT_PREFIX = 'Battle_Screenshots_'
 
 # 形如 2026_08_02 的日期参数
 DATE_PATTERN = re.compile(r'\d{4}_\d{2}_\d{2}')
+
+# 校验线：单张截图的「普通副本」次数不低于此值才算这张达标
+SINGLE_COPY_PASS = 13
+# 同一昵称下所有截图的次数合计不低于此值，才算该角色已完成
+GROUP_COPY_PASS = 50
+
+# 输出排版：明细行整体缩进 INDENT，组行在昵称后补等宽空格，使两行的第二列对齐
+INDENT = '  '
+SEP = '  '
+# 分节标题行右侧的横线个数。制表横线 U+2500 的 East Asian Width 是「Ambiguous」，
+# 中文终端普遍按 2 列渲染，所以数量按 2 列/个折算——只影响观感，不影响列对齐
+SECTION_DASHES = 17
+# 标题补到该显示宽度，三段的分隔线才会一样长
+SECTION_TITLE_WIDTH = 6
+
+
+class Shot(NamedTuple):
+    """单张截图的识别结果。"""
+    filename: str
+    count: int | None   # 「普通副本」次数，未识别时为 None（按 0 计入合计）
+    text: str           # 展示用文本，如「13/15」或「未识别」
+
+    @property
+    def passed(self) -> bool:
+        """单张是否达标：识别到次数且不低于 SINGLE_COPY_PASS。"""
+        return self.count is not None and self.count >= SINGLE_COPY_PASS
+
+
+def display_width(text: str) -> int:
+    """
+    计算字符串在终端里占用的列数。中文等东亚宽字符占 2 列，直接用 len() 补空格会错位。
+    :param text: 待计算的文本
+    :return: 显示宽度
+    """
+    return sum(2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1 for ch in text)
+
+
+def pad(text: str, width: int) -> str:
+    """
+    按显示宽度右侧补空格。
+    :param text: 待补齐的文本
+    :param width: 目标显示宽度
+    :return: 补齐后的文本；文本本身已超宽时原样返回
+    """
+    return text + ' ' * max(0, width - display_width(text))
+
+
+def section(title: str) -> str:
+    """
+    生成分节标题行，右侧用横线补足便于扫读。
+    :param title: 分节名，如「已完成」
+    :return: 标题行文本
+    """
+    return f'─── {pad(title, SECTION_TITLE_WIDTH)} ' + '─' * SECTION_DASHES
+
+
+def group_order(item: tuple[str, list[Shot], int]) -> tuple[int, str]:
+    """
+    分组排序键：总次数降序（余量大的角色排前面），同次数再按昵称升序，保证多次运行输出一致。
+    :param item: (昵称, 截图列表, 总次数)
+    :return: 排序键
+    """
+    return -item[2], item[0]
+
 
 # 「每日协战次数」区块中「普通副本13/15」所在的固定 ROI（基于 1280x720 截图）
 # DigitCounter 模式的后处理会剔除中文，只保留数字和斜杠，因此 ROI 可以把「普通副本」一起框进来
@@ -204,29 +279,84 @@ def main() -> int:
     # 压掉 RuleOcr 内部逐张打印的 logger.attr 日志，只保留本脚本的输出
     logger.setLevel(logging.ERROR)
 
-    # 先全部识别完再排序输出：按昵称排序能把同一账号的所有截图聚在一起，
-    # 逐个账号核对「今天协战打满了没有」时不用在整份名单里来回找。
-    rows = []
+    # 先全部识别完再分组：同一昵称下的截图对应同一个协战式神，
+    # 逐角色核对「今天这个角色被协战够了没有」时不用在整份名单里来回找。
+    groups: dict[str, list[Shot]] = {}
+    # 昵称没识别出来的截图无法归组，单独攒起来放到最后
+    anomalies: list[tuple[str, str, str]] = []
     for path in images:
         image = read_image(path)
         if image is None:
-            rows.append(('未识别', '读取失败', path.name))
+            anomalies.append(('读取失败', '读取失败', path.name))
             continue
 
         current, _, total = O_NORMAL_COPY.ocr(image)
-        # 昵称取不到时也照常输出次数，用「未勾选」标出来，便于人工发现异常截图
-        nickname = ocr_checked_nickname(image) or '未勾选'
-        # total 为 0 说明没有匹配到 x/y 形式的文本，视为识别失败
-        count = f'{current}/{total}' if total else '未识别'
-        rows.append((nickname, count, path.name))
+        # total 为 0 说明没有匹配到 x/y 形式的文本，视为识别失败，按 0 计入合计
+        count = current if total else None
+        text = f'{current}/{total}' if total else '未识别'
+        nickname = ocr_checked_nickname(image)
+        # 昵称取不到就无法判断属于哪个角色，把这张连同次数一起当异常输出
+        if not nickname:
+            anomalies.append(('未勾选', text, path.name))
+            continue
+        # 昵称按字符串精确分组：「瑶光」与「瑤光」是两个人，不合并；
+        # images 本身按文件名排过序，所以每组的截图顺序也是稳定的
+        groups.setdefault(nickname, []).append(Shot(path.name, count, text))
 
-    # 昵称是中文，没有拼音库，这里按字符串本身排序（码位序），同一昵称必然相邻。
-    # 昵称相同时再按文件名排，保证多次运行输出顺序完全一致，方便前后对比。
-    rows.sort(key=lambda row: (row[0], row[2]))
+    finished: list[tuple[str, list[Shot], int]] = []
+    unfinished: list[tuple[str, list[Shot], int]] = []
+    for nickname, shots in groups.items():
+        # 未识别的截图按 0 计入合计：读不到就当成没打，宁可让人工回头翻截图
+        total_count = sum(shot.count or 0 for shot in shots)
+        (finished if total_count >= GROUP_COPY_PASS else unfinished).append(
+            (nickname, shots, total_count))
+    finished.sort(key=group_order)
+    unfinished.sort(key=group_order)
+
+    # 先算出两列的显示宽度再输出，三段之间才能列对齐
+    nick_w = max((display_width(nickname)
+                  for nickname, _, _ in finished + unfinished), default=0)
+    nick_w = max(nick_w, max((display_width(label) for label, _, _ in anomalies), default=0))
+    col_w = max((display_width(text) for text in
+                 ['已完成', '未完成']
+                 + [shot.text for _, shots, _ in finished + unfinished for shot in shots]
+                 + [text for _, text, _ in anomalies]), default=0)
+
+    def row(nickname: str, second: str, tail: str, indent: bool = False) -> str:
+        """拼一行输出。明细行整体缩进 INDENT，因此未缩进的行要在昵称后补等宽空格才对齐。"""
+        if indent:
+            return f'{INDENT}{pad(nickname, nick_w)}{SEP}{pad(second, col_w)}{SEP}{tail}'
+        return (f'{pad(nickname, nick_w + display_width(INDENT))}'
+                f'{SEP}{pad(second, col_w)}{SEP}{tail}')
 
     print(f'{folder}  共 {len(images)} 张图片')
-    for nickname, count, name in rows:
-        print(f'{nickname}  {count}  {name}')
+    print(f'已完成 {len(finished)} 组 / 未完成 {len(unfinished)} 组 / 异常 {len(anomalies)} 张')
+
+    print(section('已完成'))
+    if not finished:
+        print('（无）')
+    for nickname, shots, total_count in finished:
+        print(row(nickname, '已完成', str(total_count)))
+        # 合计达标但个别账号没打够时，把这几张列在该角色下面，便于回头补次数
+        for shot in shots:
+            if not shot.passed:
+                print(row(nickname, shot.text, shot.filename, indent=True))
+
+    print(section('未完成'))
+    if not unfinished:
+        print('（无）')
+    for nickname, shots, total_count in unfinished:
+        print(row(nickname, '未完成', str(total_count)))
+        # 没达标就列出该角色全部截图，便于区分是缺账号还是次数不够
+        for shot in shots:
+            print(row(nickname, shot.text, shot.filename, indent=True))
+
+    print(section('异常'))
+    if not anomalies:
+        print('（无）')
+    for label, text, filename in anomalies:
+        print(row(label, text, filename))
+
     return 0
 
 
