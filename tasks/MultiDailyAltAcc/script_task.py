@@ -78,7 +78,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             # 加载配置，获取returngift_enable状态
             self.daily_conf = self.config.multi_daily_alt_acc
             base_config = self.daily_conf.multi_daily_alt_acc_config
-            self._task_plan = load_task_plan()
+            # 关闭自动轮转时不依赖 task_plan.json（任务集与运行时间都由手动开关
+            # 和通用调度器决定），因此不读取——plan 文件损坏也不影响该模式
+            self._task_plan = None if self._task_rotation_disabled() else load_task_plan()
             self._normal_plan_phase = self._current_normal_plan_phase(base_config)
             # 单用途轮运行前过滤：回礼/同心轮只做本任务，屏蔽用户手动勾选的其他
             # 一切任务。屏蔽值随收尾落盘（与物化同哲学），且保证接续重试时
@@ -484,20 +486,27 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         # 例外：同心战斗/回礼是轮次身份开关（total 决定 next_run 分流到哪个
         # 阶段），不能物化——它们的 plan 勾选（single_purpose 段）只能在运行时
         # AND：关了就整轮空跑（所有账号 skip，轮次正常完成、照常排下一阶段）。
-        plan = self._get_task_plan()
-        single_purpose_on = lambda key: plan.enabled("single_purpose", key)
+        # 关闭自动轮转后没有轮转可言，回礼/同心战斗降级为普通任务，plan 不参与。
+        if self._task_rotation_disabled():
+            config.alliedteam_battle_enable = (base_config.total_alliedteam_battle_enable
+                                               and account_info.alliedteam_battle_enable)
+            config.returngift_enable = (base_config.total_returngift_enable
+                                        and account_info.returngift_enable)
+        else:
+            plan = self._get_task_plan()
+            single_purpose_on = lambda key: plan.enabled("single_purpose", key)
+            config.alliedteam_battle_enable = (base_config.total_alliedteam_battle_enable
+                                               and single_purpose_on("alliedteam_battle")
+                                               and account_info.alliedteam_battle_enable)
+            config.returngift_enable = (base_config.total_returngift_enable
+                                        and single_purpose_on("returngift")
+                                        and account_info.returngift_enable)
 
-        config.alliedteam_battle_enable = (base_config.total_alliedteam_battle_enable
-                                           and single_purpose_on("alliedteam_battle")
-                                           and account_info.alliedteam_battle_enable)
         config.alliedteam_ap_enable = base_config.total_alliedteam_ap_enable and account_info.alliedteam_ap_enable
         config.mail_enable = base_config.total_mail_enable and account_info.mail_enable
         config.donatejade_enable = base_config.total_donatejade_enable and account_info.donatejade_enable
         config.courtyard_enable = base_config.total_courtyard_enable and account_info.courtyard_enable
         config.cooperation_enable = base_config.total_cooperation_enable and account_info.cooperation_enable
-        config.returngift_enable = (base_config.total_returngift_enable
-                                    and single_purpose_on("returngift")
-                                    and account_info.returngift_enable)
         config.weekaward_enable = base_config.total_weekaward_enable and account_info.weekaward_enable
         config.mysteryshop_enable = base_config.total_mysteryshop_enable and account_info.mysteryshop_enable
         config.kekkaiActivation_enable = base_config.total_kekkaiActivation_enable and account_info.kekkaiActivation_enable
@@ -514,6 +523,15 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
         return config
 
+    def _task_rotation_disabled(self) -> bool:
+        """「关闭任务自动轮转」开关：开启后不做时间轮转（字段说明见 config.py）。
+
+        关闭时全流程走原有的早/晚轮 + 回礼轮 + 同心战斗轮轮转。
+        读不到配置（如测试替身没有该字段）时按未开启处理，保持既有行为。
+        """
+        config = getattr(self.daily_conf, 'multi_daily_alt_acc_config', None)
+        return bool(getattr(config, 'disable_task_rotation', False))
+
     def _get_task_plan(self) -> TaskPlan:
         plan = getattr(self, "_task_plan", None)
         if plan is None:
@@ -526,6 +544,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
         phase 现只喂 phase_flags_of 做进度重建分组，不再参与运行时任务过滤
         （过滤已在排程物化时完成）。"""
+        if self._task_rotation_disabled():
+            # 关闭自动轮转后没有阶段概念，进度分组只靠开关快照
+            return None
         if base_config.total_returngift_enable or base_config.total_alliedteam_battle_enable:
             return None
         if 5 <= self.start_time.hour < 18:
@@ -573,7 +594,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         执行内容）。手动勾选本就是一次性行为，被单用途轮屏蔽即消费完毕。
         回礼轮的勾协/神秘商店是排程决策类：晚轮（_schedule_evening）已按
         plan.returngift 勾选（商店另带星期门控）写好 total_*，过滤照单执行。
+        关闭自动轮转后不存在单用途轮：全部开关都是普通任务，不做屏蔽。
         """
+        if self._task_rotation_disabled():
+            return
         if base_config.total_returngift_enable:
             # 勾协/商店放行值固定 True：total 本身就是排程决策结果
             allowed = {total for total, plan_key in self._RETURNGIFT_ALLOW
@@ -1204,7 +1228,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         """设置下一次运行时间"""
         start_time = self.start_time  # 使用任务开始时间而不是当前时间
         if success:
-            if self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
+            if self._task_rotation_disabled():
+                # 关闭自动轮转：不做任何阶段排程与开关改写，下次运行交给通用调度器
+                self._schedule_by_scheduler()
+            elif self.daily_conf.multi_daily_alt_acc_config.total_returngift_enable:
                 self._schedule_alliedteam_after_returngift()
             elif self.daily_conf.multi_daily_alt_acc_config.total_alliedteam_battle_enable:
                 # 同心战斗模式：不分时段，完成后直接走凌晨后流程（6:05执行上午任务）
@@ -1231,6 +1258,24 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         self.daily_conf.multi_daily_alt_acc_config.total_trialbattle_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_summon_up_enable = False
         self.daily_conf.multi_daily_alt_acc_config.total_publish_sr_enable = False
+
+    def _schedule_by_scheduler(self):
+        """关闭自动轮转模式的收尾：下次运行完全交给通用调度器。
+
+        不传 target，next_run = start_time + Scheduler.success_interval（默认 1 天），
+        运行节奏由用户在调度器面板自行约束；失败仍走 next_run(success=False) 的
+        3 分钟重试与进度接续，不经本方法。四个 _schedule_* 阶段方法一个都不调用，
+        因此 total_* 一个都不改写——它们只由用户手动维护。
+
+        一次性开关（种树/试炼/UP召唤/发布SR）仍在这里清零：它们本就只跑一轮，
+        与时间轮转无关，保留「只由用户手动开启、运行一次后自动关闭」的既有语义。
+        """
+        # task_delay 会先 reload；先写内存中的 next_run，最后与开关一起原子落盘
+        self.set_next_run("MultiDailyAltAcc", success=True, persist=False)
+        self.daily_conf = self.config.model.multi_daily_alt_acc
+        self._reset_one_shot_flags()
+        self.config.model.multi_daily_alt_acc = self.daily_conf
+        self.save_config()
 
     def _schedule_normal_day(self, start_time: datetime):
         """安排白天的运行时间"""

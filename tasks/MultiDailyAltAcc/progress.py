@@ -172,13 +172,16 @@ class ProgressStore(_BaseProgressStore):
         return super().ensure_phase(phase_flags, phase_id)
 
 
-# 参与阶段判定的开关白名单：只收 _schedule_* 会改写的键。
+# 参与阶段判定的开关白名单：收 _schedule_* 会改写的键，外加「关闭任务自动轮转」
+# 这个模式开关——切换它等于换一整套执行内容，必须让进度重建而不是接续。
 # 显式白名单而非 startswith('total_')，因为 total_KekkaiUtilize_enable 会在
 # 运行期被 MSGType.Utilize（未找到寄养卡）改写并落盘——若纳入快照，另一账号
 # 失败重调度时会被误判成新阶段，重建进度导致已完成账号全部重跑、重复领奖。
 # total_donatejade_enable / total_kekkaiActivation_enable 是静态用户配置，
 # 不随阶段变化，同样排除。
 PHASE_FLAG_KEYS = (
+    # 模式开关：切换即换一套执行内容，纳入快照保证重建而非接续
+    'disable_task_rotation',
     'total_alliedteam_battle_enable',
     'total_alliedteam_ap_enable',
     'total_returngift_enable',
@@ -201,6 +204,8 @@ def phase_flags_of(base_config, task_plan_phase: str | None = None) -> dict:
     这些键由 _schedule_normal_day / _schedule_evening / _schedule_after_midnight /
     _schedule_alliedteam_after_returngift 在成功收尾时改写，因此快照变化恰好
     等价于「任务已分配下一次要做什么」，正是进度失效的边界。
+    唯一的例外是 disable_task_rotation：它不在自动轮转的写入面上，而是用户在
+    轮次间隙手动切换的模式开关，同样让「本轮做什么」整体失效。
     need_login / need_login_time 已删除，账号完成与否完全由进度文件判定。
     """
     flags = {name: getattr(base_config, name, None) for name in PHASE_FLAG_KEYS}

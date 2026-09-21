@@ -36,6 +36,10 @@ class ExtendedAccountInfo(AccountInfo):
 class MultiDailyAltAccConfig(ConfigBase):
     # 小号数
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
+    # 关闭任务自动轮转：开启后不再做时间轮转（早晚轮 plan 物化、回礼轮/同心战斗轮
+    # 阶段切换全部停用），下面的 total_* 开关只按用户手动勾选执行，下次运行时间
+    # 沿用通用调度器的成功间隔。默认关闭＝维持原有的时间轮转行为。
+    disable_task_rotation: bool = Field(default=False, description='关闭任务自动轮转：勾选后不随时间轮转任务，总开关只按手动勾选执行，运行时间沿用调度器设置')
     total_alliedteam_battle_enable: bool = Field(default=False, description='同心寮三十,建议单独开启（单独开启）')
     total_alliedteam_ap_enable: bool = Field(default=True, description='补充同心体力')
     total_donatejade_enable: bool = Field(default=True, description='捐勾')
