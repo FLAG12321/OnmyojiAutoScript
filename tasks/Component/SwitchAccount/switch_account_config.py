@@ -1,7 +1,24 @@
-from pydantic import Field, BaseModel
+import unicodedata
+
+from pydantic import Field, BaseModel, field_validator
 
 from tasks.Component.config_base import DateTime, ConfigBase
 from module.logger import logger
+
+
+def clean_text(value):
+    """剔除不可见字符并去掉首尾空白。
+
+    配置值来自 GUI 粘贴，常混入 \\r\\n 这类控制字符或零宽字符（BOM 等）。它们看不见，
+    却会让字符串比较失败，也会让 acc_key 生成两个不同的进度条目、把 [STAT] 日志写脏。
+    只删 Cc（控制）与 Cf（格式）两类不可见字符，名字中间的普通空格保留。
+    """
+    if not isinstance(value, str):
+        return value
+    return ''.join(
+        ch for ch in value if unicodedata.category(ch) not in ('Cc', 'Cf')
+    ).strip()
+
 
 class AccountInfo(BaseModel):
     """
@@ -20,6 +37,12 @@ class AccountInfo(BaseModel):
     apple_or_android: bool = Field(default=True, description="apple_or_android_help")
     # 上一次执行成功的时间 ,防止出错时重复登录浪费时间
     last_complete_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"), description="last_complete_time_help")
+
+    @field_validator('character', 'svr', 'account', 'account_alias', mode='before')
+    @classmethod
+    def clean_text_fields(cls, v):
+        """四个文本字段构造时统一清洗，保存时随之写回干净值。"""
+        return clean_text(v)
 
     def is_account_alias(self, ocr_account):
         tmp_account = AccountInfo.preprocessAccount(self.account)

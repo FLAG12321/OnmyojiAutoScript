@@ -188,7 +188,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         """
               需保证账号已登录 且处于登录界面
         @param characterName:
-        @param svrName: 角色未命中时，复用本帧 OCR 结果查找区服
+        @param svrName: 区服名在同一屏里唯一，优先按它定位；未命中才回落角色名
         @return:
         @rtype:
         """
@@ -242,7 +242,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             empty_ocr_count = 0
             bottomCharacterTexts = self._bottom_ocr_texts(ocrRes)
             ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
-            # 本帧只识别一次列表，先查角色名，未命中再从同一份结果查区服名。
+            # 本帧只识别一次列表，先查区服名，未命中再从同一份结果查角色名。
             index = find_character_index(ocrRes, characterName, svrName)
             if index is not None:
                 tmp = self.O_SA_SELECT_SVR_CHARACTER_LIST

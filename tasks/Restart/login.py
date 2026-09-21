@@ -473,7 +473,7 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     @staticmethod
     def _match_character_index(ocr_results: list, character: str, svr: str, *,
                                legacy_either: bool = False) -> int:
-        """共用一帧 OCR，角色优先、区服兜底；缺失返回 -1。"""
+        """共用一帧 OCR，区服优先、角色兜底；缺失返回 -1。"""
         index = find_character_index(ocr_results, character, svr,
                                      legacy_either=legacy_either)
         return index if index is not None else -1
