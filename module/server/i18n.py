@@ -8,6 +8,13 @@ from module.logger import logger
 # handle 与 leader_instance 都由运行环境动态枚举，不应把候选值写进翻译表。
 DYNAMIC_ENUM_FIELDS = frozenset({'handle', 'leader_instance'})
 
+# 整组条目都由运行环境现算的参数组：组内条目的 name 是用户实例名的哈希
+# （config_<sha256>），description 里还带明文实例名与账号数量
+# （如「某个实例名 账号总数：42」）。收进翻译表等于把用户数据写进随仓库分发的
+# assets/i18n/zh-CN.json，且用户每新增一个实例就追加一批既无法复用、也无法
+# 自动清理的条目。组名本身仍是稳定 key（前端要显示分组标题），故只跳过组内条目。
+DYNAMIC_ITEM_GROUPS = frozenset({'account_config_selection'})
+
 
 class Addition:
     # 补充翻译目录（下发给 OASX 的翻译源），类属性便于测试替换路径。
@@ -71,6 +78,9 @@ class I18n(Addition):
                     task_args = script_task_fn(task_name)
                     for arg_group, items in task_args.items():
                         keys.add(arg_group)
+                        # 动态参数组只收组名，组内条目含用户实例名与账号数量
+                        if arg_group in DYNAMIC_ITEM_GROUPS:
+                            continue
                         for item in items:
                             # 前端 ArgumentModel.title 取的是 name 字段（不是 title）
                             keys.add(item['name'])

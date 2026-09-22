@@ -83,7 +83,7 @@ class MultiTasksConfig(ConfigBase):
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
     # 仅 account_source=characters 生效
     account_characters: str = Field(
-        default='', description='要执行的角色名，仅用英文逗号 , 分隔，例如 js1瑶光,js2瑶光')
+        default='', description='要执行的角色名，仅用英文逗号 , 分隔，例如 张三,李四')
 
 
 class MultiTasks(ConfigBase):
