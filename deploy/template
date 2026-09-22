@@ -26,14 +26,19 @@ Deploy:
   # ==========================================================================
   Git:
     # URL of AzurLaneAutoScript repository
-    # [CN user] Use 'https://gitee.com/flag12321/OnmyojiAutoScript' for faster and more stable download
+    # [CN user] Use 'https://gitcode.com/FLAG12321/OnmyojiAutoScript' for faster and more stable download
     # [Other] Use 'https://github.com/FLAG12321/OnmyojiAutoScript'
     #
     # 本项必须与 git remote origin 一致：ensure_origin()（module/server/updater.py）
     # 每次更新都读本项，与实际 origin 不一致就 `remote set-url` 覆盖 origin。
     # 所以手工改过的 origin 会在下次更新时被本项复原——要换远端请改这里，
     # 而不是只改 git remote。开发者应填自己 fork 的地址。
-    Repository: https://gitee.com/flag12321/OnmyojiAutoScript.git
+    #
+    # 国内镜像有两个，内容都是本 fork 的同步副本，可互换（都在 gitcode/gitee 上
+    # 与 GitHub 同名分支同 tag，clone 后 `git remote set-url origin <另一个>` 即可换）：
+    #   - gitcode（本项默认）：https://gitcode.com/FLAG12321/OnmyojiAutoScript.git
+    #   - gitee：              https://gitee.com/flag12321/OnmyojiAutoScript.git
+    Repository: https://gitcode.com/FLAG12321/OnmyojiAutoScript.git
     # Branch of Alas
     # [Developer] Use 'dev', 'app', etc, to try new features
     # [Other] Use 'run_now_2', the stable branch
