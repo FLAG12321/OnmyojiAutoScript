@@ -4,7 +4,7 @@
 进入结界/子界面失败会 raise TaskEnd 结束本次任务、实例随之销毁，所以计数必须
 落盘：下次运行的是全新实例，内存里的计数必丢。
 
-按 config 实例分文件，多实例（oas1 / 大号 / QMUMU1 ...）各自独立计数、互不干扰。
+按 config 实例分文件，多实例（oas1 / oas2 / oas3 ...）各自独立计数、互不干扰。
 """
 import json
 from pathlib import Path

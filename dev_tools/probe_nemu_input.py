@@ -8,8 +8,8 @@ nemu_ipc.py 里已有 nemu_input_event_touch_down/up 接口但未注册为控制
   2) 连续 down 不同坐标是否被解释为滑动（MOVE），轨迹坐标是否连续平滑；
   3) 每次 down 调用的 IPC 往返延迟是多少（决定滑动能否做到 ~10ms 级步进）。
 
-用法（QMUMU1 已开机且 adb 可连）：
-    ./toolkit/python.exe -m dev_tools.probe_nemu_input --serial 192.168.1.211:5555 \
+用法（目标实例已开机且 adb 可连）：
+    ./toolkit/python.exe -m dev_tools.probe_nemu_input --serial 127.0.0.1:5555 \
         --nemu-folder "I:/Program Files/Netease/MuMu"
 
 产物：log/nemu_probe/<时间戳>/ 下的截图与 getevent 解析报告。
@@ -158,7 +158,7 @@ def analyze(window_lines, title, report):
 
 def main():
     parser = argparse.ArgumentParser(description='nemu_ipc 输入通道探针')
-    parser.add_argument('--serial', default='192.168.1.211:5555', help='QMUMU1 的 adb serial')
+    parser.add_argument('--serial', default='127.0.0.1:5555', help='目标实例的 adb serial')
     parser.add_argument('--nemu-folder', default=r'I:\Program Files\Netease\MuMu', help='MuMu 安装目录')
     args = parser.parse_args()
 

@@ -1370,7 +1370,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('QMUMU4')
+    c = Config('oas1')
     d = Device(c)
     t = ScriptTask(c, d)
     """ t.daily_conf = t.config.daily 

@@ -426,7 +426,7 @@ class NemuIpcImpl:
         """
         坐标透传（恒等）。
 
-        实测依据（QMUMU1, MuMu nx_device 12.0, 横屏 1280x720, 2026-08-27 探针）：
+        实测依据（实例A, MuMu nx_device 12.0, 横屏 1280x720, 2026-08-27 探针）：
         DLL 参数本身就是屏幕坐标——DLL 内部映射 kernel=(720-b, a) 写入竖屏触摸面板
         "Xiaomi Input"(X∈[0,720], Y∈[0,1280])，框架按 viewport orientation=1 旋转回
         横屏后恰好还原为 (a, b)。原 ALAS 继承的旋转 (height-y, x) 是给竖屏场景用的，

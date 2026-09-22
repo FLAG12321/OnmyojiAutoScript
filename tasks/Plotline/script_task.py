@@ -1049,7 +1049,7 @@ if __name__ == '__main__':
 
     # SimplePatch.patch()
 
-    c = Config('QMUMU1')
+    c = Config('oas1')
     d = Device(c)
     self = ScriptTask(c, d)
     self.screenshot()

@@ -13,9 +13,10 @@ from datetime import datetime
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # ===== 配置 =====
-ENDPOINT = "http://192.168.1.33:3000"
-ACCESS_TOKEN = "Lu1122"
-GROUP_ID = 1045504603
+# 按你自己机器的 NapCat 部署填写；令牌与群号属于私密信息，不要提交进仓库
+ENDPOINT = "http://127.0.0.1:3000"
+ACCESS_TOKEN = ""         # NapCat 的 access_token，留空则不发送 Authorization 头
+GROUP_ID = 0              # 目标 QQ 群号
 CREATE_SENDER_ID = 0      # 道馆创建关键词发送者QQ, 0=不限制
 AT_ALL_SENDER_ID = 0      # @全体成员发送者QQ, 0=不限制(默认跟随CREATE_SENDER_ID)
 # ================

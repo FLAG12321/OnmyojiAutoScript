@@ -56,7 +56,7 @@ class SwitchHelpShikigami(SwitchHelpShikigamiAssets):
         原 O_FIND_SHIKIGAMI_HELP（keyword="15"）在准备界面上并不存在 "15" 整串
         文本，实际一直靠 FULL 模式的「keyword 任一单字命中」降级匹配到式神卡旁的
         "N/15" 标签——位置碰巧正确所以平时能用。但候选列表里没有该标签时
-        （09-01 js52、09-06 js44 两次事故），单字降级会误中 "9999991" 等垃圾串，
+        （09-01 角色A、09-06 角色B 两次事故），单字降级会误中 "9999991" 等垃圾串，
         锚点偏移 500+px，从错误位置滑动导致援助式神未上场、全天场次好友协战 0 计数。
         这里改为直接遍历 OCR 候选，严格按 \\d+/15 匹配协战标签（坐标换算
         与 Full.ocr_full 保持一致，见 module/ocr/sub_ocr.py），匹配不到返回

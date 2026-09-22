@@ -139,7 +139,7 @@ class SummonUp(DailyAltAccBase):
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
-    c = Config('QMUMU1')
+    c = Config('oas1')
     d = Device(c)
     self = SummonUp(c, d)
     self.screenshot()

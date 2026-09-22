@@ -1,9 +1,11 @@
 """测试 NapCat get_group_msg_history 翻页行为"""
 import requests, json
 
-endpoint = 'http://192.168.1.8:3000'
-headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer Lu1122'}
-group_id = 1045504603
+# 按你自己机器的 NapCat 部署填写；令牌与群号属于私密信息，不要提交进仓库
+token = ''
+endpoint = 'http://127.0.0.1:3000'
+headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'}
+group_id = 0
 
 def fetch_page(message_seq=0, count=5):
     body = {'group_id': group_id, 'message_seq': message_seq, 'count': count}

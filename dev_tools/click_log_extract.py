@@ -12,8 +12,8 @@
 只提取 Click 行（左键点击）；long_click / Swipe 行不在本组件对照范围内。
 
 用法：
-    toolkit/python.exe -m dev_tools.click_log_extract log/2026-08-20_QMUMU1.txt
-    toolkit/python.exe -m dev_tools.click_log_extract log/2026-08-20_QMUMU*.txt --resolution 540p
+    toolkit/python.exe -m dev_tools.click_log_extract log/2026-08-20_oas1.txt
+    toolkit/python.exe -m dev_tools.click_log_extract log/2026-08-20_oas*.txt --resolution 540p
 
 输出：log/click_monitor/<输入文件名去扩展名>_script.jsonl
 """
