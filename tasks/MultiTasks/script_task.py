@@ -101,6 +101,11 @@ class ScriptTask(GameUi):
             'char': account.character,
             'svr': account.svr,
         }
+        # 注入账号级场次进度：计数型子任务（觉醒副本）逐场落盘，任务被中断后
+        # 重跑能从断点接续剩余场次；键同样按账号取，否则多账号会共用一份计数。
+        # 不读进度的子任务拿到也无副作用（它们不访问这两个属性）。
+        adapter._progress = self._progress
+        adapter._progress_key = acc_key(account.account, account.character, account.svr)
         try:
             adapter.run()
         except TaskEnd as e:
