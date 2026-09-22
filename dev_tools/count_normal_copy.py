@@ -43,6 +43,8 @@ import numpy as np
 
 from module.atom.ocr import RuleOcr
 from module.logger import logger
+from module.ocr import models
+from module.ocr.rapid_ocr import ensure_backend_loaded
 
 # 项目根目录，本文件位于 dev_tools/ 下，向上一级即根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -258,6 +260,28 @@ def main() -> int:
             sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         except (AttributeError, OSError):
             pass
+
+    # 纯本地识别，不依赖 OCR RPC 服务，本工具可以在没开 server/脚本时直接跑。
+    #
+    # 两步的顺序不能颠倒，原因各不相同：
+    #
+    # 1. 先加载 onnxruntime。pyzmq 一旦先进入 sys.modules，onnxruntime 的原生
+    #    DLL 就必然初始化失败（ImportError: DLL load failed，详见 rapid_ocr
+    #    .ensure_backend_loaded 的说明）。工具的 import 链本身是干净的，这里
+    #    只是把「ORT 先就位」变成显式保证。
+    # 2. 再把模型入口钉死到本地版本。默认的 get_ocr_model 会按部署配置的
+    #    UseOcrServer 去连 127.0.0.1:22268，服务没开时要连等 3 次
+    #    CONNECT_RETRY(每次 10 秒心跳超时) 才降级，最后仍然回落到本地。
+    #    直接从源头改，省掉这段空等，也顺带把 import zerorpc(pyzmq) 这条
+    #    会污染 ORT 的路径整个绕开。
+    #
+    # 注意不要用 State.deploy_config.UseOcrServer = False 代替第 2 步：
+    # DeployConfig.__setattr__ 对配置段内的大写键会直接 write() 落盘
+    # （module/server/config.py:50），那样等于永久改了用户的 deploy.yaml。
+    if not ensure_backend_loaded():
+        print('onnxruntime 后端不可用，无法进行本地 OCR')
+        return 1
+    models.get_ocr_model = models.get_local_ocr_model
 
     parser = argparse.ArgumentParser(description='识别协战截图中「普通副本 x/15」的次数')
     parser.add_argument('folder', nargs='?', default=None,
