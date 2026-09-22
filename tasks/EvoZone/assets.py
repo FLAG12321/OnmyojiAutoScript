@@ -31,6 +31,8 @@ class EvoZoneAssets:
 	I_WATER_KIRIN = RuleImage(roi_front=(734,130,183,299), roi_back=(689,62,273,511), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/water_kirin.png")
 	# 雷麒麟进入 
 	I_LIGHTNING_KIRIN = RuleImage(roi_front=(1037,120,180,237), roi_back=(1002,87,245,461), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/lightning_kirin.png")
+	# 购买体力弹窗关闭按钮 
+	I_EVOZONE_BUY_AP_CLOSE = RuleImage(roi_front=(912,175,46,41), roi_back=(862,125,146,141), threshold=0.8, method="Template matching", file="./tasks/EvoZone/o/evozone_buy_ap_close.png")
 
 
 	# List Rule Assets
