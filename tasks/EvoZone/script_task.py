@@ -14,6 +14,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.SwitchHelpShikigami import SwitchHelpShikigami
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_awake_zones, page_shikigami_records
+from tasks.Utils.optional_ability import run_friend_interact
 from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.EvoZone.config import EvoZone, UserStatus, KirinType
 from module.logger import logger
@@ -74,6 +75,7 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
         # 13 场账号：战斗结束后保存好友协战次数截图，供人工核对协战是否打满
         if config.evo_zone_config.limit_count == HELP_SHIKIGAMI_LIMIT_COUNT:
             self.save_friend_help_screenshot()
+            run_friend_interact(self)
         # 下一次运行时间
         if success:
             self.set_next_run('EvoZone', finish=True, success=True)

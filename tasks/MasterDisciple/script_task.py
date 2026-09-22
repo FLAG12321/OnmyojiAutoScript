@@ -47,6 +47,7 @@ from tasks.Restart.assets import RestartAssets
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.RichMan.assets import RichManAssets
 from tasks.DailyAltAcc.assets import DailyAltAccAssets
+from tasks.Utils.optional_ability import run_friend_interact
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -1711,6 +1712,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
         else:
             # 探索正常结束（含超时退出）：导航好友协战次数页截图存证，与同心协战一致
             self._save_exploration_evidence()
+            run_friend_interact(self)
         finally:
             # 恢复原始方法
             solo_exploration.battle_wait = original_battle_wait
