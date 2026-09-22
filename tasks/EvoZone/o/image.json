@@ -88,5 +88,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "雷麒麟进入"
+  },
+  {
+    "itemName": "evozone_buy_ap_close",
+    "imageName": "evozone_buy_ap_close.png",
+    "roiFront": "912,175,46,41",
+    "roiBack": "862,125,146,141",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "购买体力弹窗关闭按钮"
   }
 ]

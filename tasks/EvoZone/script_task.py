@@ -24,9 +24,18 @@ from module.exception import TaskEnd
 # （每天固定 13 场），不是可调阈值，所以按字面量比较而非抽成配置项。
 HELP_SHIKIGAMI_LIMIT_COUNT = 13
 
+# 场次进度在 ProgressStore 里的子任务键。同心战斗用默认的 'alliedteam'，
+# 两者可能共用同一个 store 的 tasks 命名空间，键必须区分开，否则同一账号的
+# 两种计数会互相覆盖。
+BATTLE_TASK_KEY = 'evo_zone'
+
 
 class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
                  GeneralRoom, GameUi, EvoZoneAssets, SwitchSoul):
+    # 场次进度存储与当前账号的键。**只由 MultiTasks 注入**——接续是多账号批量
+    # 执行的诉求，单实例直跑始终保持 None，既不做恢复也不回写任何进度文件。
+    _progress = None
+    _progress_key: str = None
 
     def run(self) -> bool:
 
@@ -295,6 +304,38 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             return self.battle_before_switch_help(buff, config, timeout)
         return super().battle_before(buff, config, timeout)
 
+    def _restore_battle_count(self) -> int:
+        """从进度文件恢复已完成场次到 current_count（同心战斗同款接续）。
+
+        必须在战斗循环之前调用：恢复后 current_count 已是历史场次，
+        run_general_battle 序言的 +1 与循环的次数上限判断天然只打剩余场次。
+        未注入 store（单实例直跑）时保持 0，行为与改动前一致。
+        """
+        progress = getattr(self, '_progress', None)
+        key = getattr(self, '_progress_key', None)
+        if progress is None or not key:
+            return 0
+        try:
+            done = progress.get_battle_count(key, BATTLE_TASK_KEY)
+        except Exception:
+            logger.exception('读取觉醒副本场次失败，从 0 开始')
+            return 0
+        if done > 0:
+            logger.info(f'觉醒副本接续：已完成 {done} 场')
+            self.current_count = done
+        return done
+
+    def _persist_battle_count(self) -> None:
+        """每完成一场立刻回写，保证中断后能接续剩余场次。"""
+        progress = getattr(self, '_progress', None)
+        key = getattr(self, '_progress_key', None)
+        if progress is None or not key:
+            return
+        try:
+            progress.add_battle_count(key, 1, BATTLE_TASK_KEY)
+        except Exception:
+            logger.exception('回写觉醒副本场次失败')
+
     def run_alone(self):
         logger.info('Start run alone')
         self.ui_get_current_page()
@@ -310,11 +351,16 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
         else:
             self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable)
 
+        # 中断接续：从上次已打场次继续；已打满时循环首轮即退出，不再点挑战
+        self._restore_battle_count()
+
         def is_in_evozone(screenshot=False) -> bool:
             if screenshot:
                 self.screenshot()
             return self.appear(self.I_EVOZONE_FIRE)
 
+        # 体力不足提前结束的标记：置位后关掉弹窗跳出战斗循环，走原有收尾流程
+        ap_exhausted = False
         while 1:
             self.screenshot()
 
@@ -335,12 +381,33 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             # 点击挑战
             while 1:
                 self.screenshot()
+                # 体力不足时游戏会弹出「购买体力」对话框，而挑战按钮在弹窗后面
+                # 依然可见——下面那条否定式的退出条件永远不成立，继续点挑战只会
+                # 反复撞弹窗，直到 12 次点击触发 GameTooManyClickError 把任务炸掉。
+                # 所以必须在点之前判：识别到就关窗并跳过本账号剩余场次，
+                # 交给收尾流程去截好友协战次数图。
+                if self.appear(self.I_EVOZONE_BUY_AP_CLOSE):
+                    ap_exhausted = True
+                    break
+
                 if self.appear_then_click(self.I_EVOZONE_FIRE, interval=1):
                     pass
 
                 if not self.appear(self.I_EVOZONE_FIRE):
                     self.run_general_battle(config=self.config.evo_zone.general_battle_config)
+                    # 本场结束立刻落盘，中断后可从这里接续
+                    self._persist_battle_count()
                     break
+
+            if ap_exhausted:
+                # 关窗点到 X 消失为止；真关不掉时由设备层的连续点击判定升级到
+                # 既有恢复链路，不在这里静默空转
+                self.ui_click_until_disappear(self.I_EVOZONE_BUY_AP_CLOSE, interval=1)
+                logger.warning(
+                    f'体力不足：已打 {self.current_count}/{self.limit_count} 场，'
+                    f'已关闭购买体力弹窗并跳过本账号剩余场次'
+                )
+                break
 
         # 回去
         while 1:
