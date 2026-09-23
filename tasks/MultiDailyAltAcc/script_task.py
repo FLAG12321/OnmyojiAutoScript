@@ -1095,7 +1095,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     @classmethod
     def _build_summary_content(cls, coops, completed_at=None, show_account=False,
                                show_system=True, mshops=None) -> str:
-        """按固定 7 类顺序格式化协作汇总文本，并在末尾追加神秘商店段落。
+        """按固定 10 类顺序格式化协作汇总文本，并在末尾追加神秘商店段落。
 
         show_system=True 时显示平台（安卓/iOS，取自 apple_or_android 字段）；
         show_account=True 时在角色行尾追加账号/邮箱（account 原值）。
@@ -1208,15 +1208,29 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     @staticmethod
     def _coop_category_order():
-        """固定 7 个展示类别（含匹配规则），顺序：现世勾协/现世体协/普通勾协/普通体协/狗粮/猫粮/金币。"""
+        """固定 10 个展示类别（含匹配规则），顺序：
+        现世勾协/现世体协/现世狗粮/现世猫粮/现世金币/普通勾协/普通体协/狗粮/猫粮/金币。
+
+        现世类整体排在前面，与改造前「现世勾协先于普通勾协」的顺序一致。
+        普通类的匹配必须显式排除 real：狗粮/猫粮/金币改造后也会带 real=True，
+        不排除的话一条现世金币协作会同时落进「现世金币协作」和「金币协作」两段。
+        旧记录没有 real 字段时 bool(None) 为 False，仍归入普通类，兼容不变。
+        """
         return [
             ("现世勾协", lambda r: r.get("type") == "jade" and bool(r.get("real"))),
             ("现世体协", lambda r: r.get("type") == "sushi" and bool(r.get("real"))),
+            ("现世狗粮协作", lambda r: r.get("type") == "food"
+                and r.get("food_kind") == "dog" and bool(r.get("real"))),
+            ("现世猫粮协作", lambda r: r.get("type") == "food"
+                and r.get("food_kind") == "cat" and bool(r.get("real"))),
+            ("现世金币协作", lambda r: r.get("type") == "gold" and bool(r.get("real"))),
             ("普通勾协", lambda r: r.get("type") == "jade" and not bool(r.get("real"))),
             ("普通体协", lambda r: r.get("type") == "sushi" and not bool(r.get("real"))),
-            ("狗粮协作", lambda r: r.get("type") == "food" and r.get("food_kind") == "dog"),
-            ("猫粮协作", lambda r: r.get("type") == "food" and r.get("food_kind") == "cat"),
-            ("金币协作", lambda r: r.get("type") == "gold"),
+            ("狗粮协作", lambda r: r.get("type") == "food"
+                and r.get("food_kind") == "dog" and not bool(r.get("real"))),
+            ("猫粮协作", lambda r: r.get("type") == "food"
+                and r.get("food_kind") == "cat" and not bool(r.get("real"))),
+            ("金币协作", lambda r: r.get("type") == "gold" and not bool(r.get("real"))),
         ]
 
     def save_config(self):

@@ -110,12 +110,10 @@ class DailyAltAccAssets:
 	# Image Rule Assets
 	# description 
 	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_page_account.png")
-	# description 
-	I_REAL_FLAG_1 = RuleImage(roi_front=(458,293,29,31), roi_back=(143,129,65,240), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_real_flag_1.png")
-	# description 
-	I_REAL_FLAG_2 = RuleImage(roi_front=(457,292,32,34), roi_back=(443,128,67,200), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_real_flag_1.png")
-	# description 
-	I_REAL_FLAG_3 = RuleImage(roi_front=(455,291,35,37), roi_back=(741,129,68,240), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_real_flag_1.png")
+	# 现世协作的「享」标记；整块协作板批量搜索，槽位由 get_cooperation_info 按 x 归位 
+	I_REAL_FLAG = RuleImage(roi_front=(159,293,29,31), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_real_flag_1.png")
+	# 普通协作的「协」标记；与「享」同槽位互斥，同样整板批量搜索 
+	I_NORMAL_FLAG = RuleImage(roi_front=(154,288,34,33), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_normal_flag.png")
 	# description 
 	I_NET_CHECK = RuleImage(roi_front=(121,130,334,487), roi_back=(119,129,336,489), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/net_check.png")
 	# description 

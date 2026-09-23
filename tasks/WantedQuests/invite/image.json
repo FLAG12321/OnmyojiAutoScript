@@ -268,5 +268,59 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "从左到右第三个协作任务的类型"
+  },
+  {
+    "itemName": "wq_invite",
+    "imageName": "invite_wq_invite_1.png",
+    "roiFront": "137,361,39,47",
+    "roiBack": "130,110,1022,508",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "协作邀请按钮(整块协作板批量搜索用);与上面带 _1/_2/_3 后缀的固定条目是不同对象,后者归 WantedQuests 用"
+  },
+  {
+    "itemName": "wq_cooperation_type_jade",
+    "imageName": "wq_cooperation_type_jade.png",
+    "roiFront": "195,505,180,90",
+    "roiBack": "130,110,1022,508",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "勾玉协作奖励图标(整块协作板批量搜索用)"
+  },
+  {
+    "itemName": "wq_cooperation_type_dog_food",
+    "imageName": "wq_cooperation_type_dog_food.png",
+    "roiFront": "195,505,180,90",
+    "roiBack": "130,110,1022,508",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "狗粮协作奖励图标(整块协作板批量搜索用)"
+  },
+  {
+    "itemName": "wq_cooperation_type_cat_food",
+    "imageName": "wq_cooperation_type_cat_food.png",
+    "roiFront": "195,505,180,90",
+    "roiBack": "130,110,1022,508",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "猫粮协作奖励图标(整块协作板批量搜索用)"
+  },
+  {
+    "itemName": "wq_cooperation_type_sushi",
+    "imageName": "wq_cooperation_type_sushi.png",
+    "roiFront": "195,505,180,90",
+    "roiBack": "130,110,1022,508",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "体力协作奖励图标(整块协作板批量搜索用)"
+  },
+  {
+    "itemName": "wq_cooperation_type_gold",
+    "imageName": "wq_cooperation_type_gold.png",
+    "roiFront": "195,505,180,90",
+    "roiBack": "130,110,1022,508",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "金币协作奖励图标(整块协作板批量搜索用)"
   }
 ]

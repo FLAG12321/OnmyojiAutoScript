@@ -80,6 +80,18 @@ class WantedQuestsAssets:
 	I_WQ_COOPERATION_TYPE_CAT_FOOD_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_cat_food.png")
 	# 从左到右第三个协作任务的类型 
 	I_WQ_COOPERATION_TYPE_SUSHI_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
+	# 协作邀请按钮(整块协作板批量搜索用);与上面带 _1/_2/_3 后缀的固定条目是不同对象,后者归 WantedQuests 用 
+	I_WQ_INVITE = RuleImage(roi_front=(137,361,39,47), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1.png")
+	# 勾玉协作奖励图标(整块协作板批量搜索用) 
+	I_WQ_COOPERATION_TYPE_JADE = RuleImage(roi_front=(195,505,180,90), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
+	# 狗粮协作奖励图标(整块协作板批量搜索用) 
+	I_WQ_COOPERATION_TYPE_DOG_FOOD = RuleImage(roi_front=(195,505,180,90), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_dog_food.png")
+	# 猫粮协作奖励图标(整块协作板批量搜索用) 
+	I_WQ_COOPERATION_TYPE_CAT_FOOD = RuleImage(roi_front=(195,505,180,90), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_cat_food.png")
+	# 体力协作奖励图标(整块协作板批量搜索用) 
+	I_WQ_COOPERATION_TYPE_SUSHI = RuleImage(roi_front=(195,505,180,90), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
+	# 金币协作奖励图标(整块协作板批量搜索用) 
+	I_WQ_COOPERATION_TYPE_GOLD = RuleImage(roi_front=(195,505,180,90), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_gold.png")
 
 
 	# Ocr Rule Assets

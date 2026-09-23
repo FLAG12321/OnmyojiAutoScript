@@ -2,9 +2,12 @@
 import re
 import time
 from typing import List
+
+from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
+from tasks.DailyAltAcc.assets import DailyAltAccAssets
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.WantedQuests.config import CooperationType
@@ -29,22 +32,102 @@ def _parse_real_cooperation_monster(raw_text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-# RuleImage.match() 会将成功匹配的实际位置写回 roi_front。普通邀请按钮的
-# 初始 roi_front 即其基准位置，须在第一次匹配前保存，避免后续匹配覆盖基准。
-NORMAL_COOPERATION_ANCHOR_REFERENCE = {
-    index: tuple(getattr(WantedQuestsAssets, f"I_WQ_INVITE_{index + 1}").roi_front[:2])
-    for index in range(3)
-}
-
-# 现世“享”标记在旧资源中仅 roi_back 是可靠搜索区域；这里保存与前两张
-# 现世体协卡位对齐的实际匹配左上角，均由真实截图校准。
-REAL_COOPERATION_ANCHOR_REFERENCE = {
-    0: (159, 293),
-    1: (458, 293),
-}
+# ---- 协作板单区域批量识别常量 ----
+# 三张卡片所在的整块区域，与 I_NET_NORMAL_FLAG 的 roi_back 一致。8 个模板共用这
+# 一个搜索区域：实测该区域、更小的卡片区、乃至全屏，三者结果逐条完全一致。
+COOP_CARD_BAND = (130, 110, 1022, 508)
+# 锚点（协/享/邀请）的槽位基准 x。协/享 是同一槽位的互斥标记，实测标称左上角为
+# 槽1=154 / 槽2=453 / 槽3=752，槽间距精确 299（协字 bbox 158→457→752 验证）。
+# 邀请按钮的标称 x 是 137/462/754，与标记不同位，偏差由归位容差吸收。
+COOP_ANCHOR_SLOT_X = (154, 453, 752)
+# 锚点标称 y：协 288 / 享 293，同一条水平带
+COOP_ANCHOR_SLOT_Y = 288
+# 类型图标的槽位基准 x = 奖励区中心（奖励格起点 195/490/790 + 约 90）。
+# 必须与锚点基准分开：类型图标与锚点标记的物理位置相差 130~140px，共用一套基准
+# 会把 gold@290 / sushi@590 这类命中挤出容差，导致整个槽位识别不出类型。
+COOP_TYPE_SLOT_X = (285, 580, 880)
+# 槽位归位容差：命中点与基准的 x 距离超过该值即判为不属于任何槽位
+COOP_SLOT_TOLERANCE = 120
+# 锚点优先级：协/享 不随邀请消失，比邀请按钮可靠，故优先于邀请按钮
+COOP_ANCHOR_PRIORITY = {'协': 0, '享': 1, '邀请': 2}
+# 类型优先级：食物协作里也有金币奖励，故金币排在最后（沿用改造前的判定顺序）
+COOP_TYPE_PRIORITY = {'jade': 0, 'dog_food': 1, 'cat_food': 2, 'sushi': 3, 'gold': 4}
+# 协作目标文本的标称 ROI（槽1 位置）。槽间横向间距 300（180→480→780），实际位置
+# 由「槽位偏移 + 标记抖动」算出，不按槽位写死。
+COOP_DISCOVERER_BASE = (180, 403, 200, 30)
+COOP_FRIEND_BASE = (180, 448, 200, 30)
+# 现世体协只有一行目标文本，位置落在普通协作两行之间
+COOP_REAL_MONSTER_BASE = (180, 425, 200, 32)
+# 目标文本 ROI 的槽间横向间距（奖励格起点 195/490/790 → 180/480/780）
+COOP_TARGET_SLOT_PITCH = 300
+# 作位置基准的锚点模板在槽1 的标称左上角（实测）。只有 协/享 入表：它们固定在
+# 卡片同一横向位置，槽间距精确 299；邀请按钮的横向位置随卡片文案长短浮动
+# （137/462/754，间距 325/292），拿它当基准会引入最多 26px 的固定偏移。
+COOP_ANCHOR_ORIGIN = {'协': (154, 288), '享': (159, 293)}
+# 协/享 标记的槽间横向间距（协字 bbox 158→457→752 精确等差）
+COOP_ANCHOR_PITCH = 299
 
 
 class Cooperation(DailyAltAccBase):
+    # 单区域批量识别使用的 8 个模板。这 8 个条目只被本文件引用，所以
+    # match_all_any 用 roi 参数改写 roi_back 时不会波及别的任务——WantedQuests
+    # 读的是带 _1/_2/_3 后缀、roi_back 为固定区域的另一组条目，两者是不同的对象。
+    COOP_ANCHOR_RULES = {
+        '协': DailyAltAccAssets.I_NORMAL_FLAG,
+        '享': DailyAltAccAssets.I_REAL_FLAG,
+        '邀请': WantedQuestsAssets.I_WQ_INVITE,
+    }
+    COOP_TYPE_RULES = {
+        'jade': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_JADE,
+        'dog_food': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_DOG_FOOD,
+        'cat_food': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_CAT_FOOD,
+        'sushi': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI,
+        'gold': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_GOLD,
+    }
+
+    # 类型信号的输出规格。日志文案与标签沿用改造前的逐字表述（含 "find  jade
+    # cooperation " 里的双空格），前端展示与推送依赖这些字符串，不得改动。
+    # 狗粮/猫粮/金币改造前硬编码 real=False、标签只有一份；改为忠实反映锚点后
+    # 「享」也会出现在这三类上（实机样本里撞到 5 次现世金币），故补上「现世」
+    # 标签，汇总侧的分类表同步扩到 10 类（见 MultiDailyAltAcc._coop_category_order）。
+    COOP_TYPE_SPEC = {
+        'jade': {
+            'type': CooperationType.Jade, 'event_type': 'jade', 'notify': True,
+            'log': 'find  jade cooperation ', 'log_real': 'find real jade cooperation ',
+            'label': '普通勾协', 'label_real': '现世勾协',
+        },
+        'dog_food': {
+            'type': CooperationType.Food, 'event_type': 'food', 'notify': False,
+            'log': 'find dog food cooperation ', 'log_real': None,
+            'label': '狗粮协作', 'label_real': '现世狗粮协作', 'food_kind': 'dog',
+        },
+        'cat_food': {
+            'type': CooperationType.Food, 'event_type': 'food', 'notify': False,
+            'log': 'find cat food cooperation ', 'log_real': None,
+            'label': '猫粮协作', 'label_real': '现世猫粮协作', 'food_kind': 'cat',
+        },
+        'sushi': {
+            'type': CooperationType.Sushi, 'event_type': 'sushi', 'notify': True,
+            'log': 'find  sushi cooperation ', 'log_real': 'find real sushi cooperation ',
+            'label': '普通体协', 'label_real': '现世体协',
+        },
+        'gold': {
+            'type': CooperationType.Gold, 'event_type': 'gold', 'notify': False,
+            'log': 'find gold cooperation ', 'log_real': None,
+            'label': '金币协作', 'label_real': '现世金币协作',
+        },
+    }
+
+    # 目标文本读法：'normal' 读双行（自己击败X / 好友击败Y），'real' 读单行
+    # （击败N个X）。键为 (类型信号, 是否现世)，缺省即不读该组合的目标文本。
+    # 沿用改造前行为：勾协只在普通时读、体协现世读单行普通读双行、其余类型不读
+    # （读目标要走 OCR，非必要不付出这个开销）。
+    COOP_TARGET_READ = {
+        ('jade', False): 'normal',
+        ('sushi', True): 'real',
+        ('sushi', False): 'normal',
+    }
+
     @staticmethod
     def _shift_roi(roi: tuple | list, delta: tuple[int, int]) -> tuple[int, int, int, int]:
         x, y, width, height = roi
@@ -52,11 +135,93 @@ class Cooperation(DailyAltAccBase):
         return int(x + dx), int(y + dy), int(width), int(height)
 
     @staticmethod
-    def _anchor_delta(anchor, reference: tuple[int, int]) -> tuple[int, int]:
-        """以同一锚点的实际匹配左上角相对基准左上角计算平移。"""
-        actual_x, actual_y = anchor.roi_front[:2]
-        reference_x, reference_y = reference
-        return int(actual_x - reference_x), int(actual_y - reference_y)
+    def _coop_target_shift(anchor, slot: int) -> tuple[int, int]:
+        """从锚点实测位置反推该槽协作目标文本 ROI 的平移量。
+
+        @param anchor: 该槽胜出的锚点 (信号名, 得分, x, y)
+        @return: (dx, dy)，用于 _shift_roi 平移 COOP_*_BASE
+
+        拆成「槽位偏移 + 标记抖动」两段：槽位偏移是标称几何（每槽 300），抖动是
+        实测位置相对标称的偏差（实测样本上恒为 0，保留作为版面轻微偏移的兜底）。
+        位置基准只用 协/享 —— 走到邀请说明两个标记都没匹配上，此时退回标称位置。
+        """
+        anchor_name, _score, anchor_x, anchor_y = anchor
+        dx, dy = COOP_TARGET_SLOT_PITCH * slot, 0
+        origin = COOP_ANCHOR_ORIGIN.get(anchor_name)
+        if origin is not None:
+            dx += anchor_x - origin[0] - COOP_ANCHOR_PITCH * slot
+            dy = anchor_y - origin[1]
+        return int(dx), int(dy)
+
+    @staticmethod
+    def _coop_slot_of(x: int, basis: tuple) -> int | None:
+        """按 |x - 基准| 把命中归位到最近的槽位；超出容差返回 None。"""
+        slot, best = None, None
+        for index, base_x in enumerate(basis):
+            distance = abs(x - base_x)
+            if best is None or distance < best:
+                slot, best = index, distance
+        return slot if best is not None and best <= COOP_SLOT_TOLERANCE else None
+
+    @classmethod
+    def _coop_collect(cls, image, rules: dict, basis: tuple, priority: dict) -> tuple[dict, dict]:
+        """在同一区域内批量匹配一组模板，并把命中按 x 归位到卡片槽位。
+
+        改造前每个模板要 match 三次（每槽一次），这里每个模板只匹配一次、在整块
+        区域里一次找出全部命中再做归位，匹配次数从 9+15 降到 8，且完全没有循环。
+
+        @param rules: {信号名: RuleImage}
+        @param basis: 槽位基准 x 三元组
+        @param priority: 同槽位多命中时的优先级，数值小者胜出
+        @return: ({槽位: (信号名, 得分, x, y)}, {信号名: [(得分, x, y, 槽位), ...]})
+                 槽位为 None 表示该命中离所有基准都超过容差、已丢弃。
+        """
+        winners, hits = {}, {}
+        for name, rule in rules.items():
+            # roi 参数会改写 rule.roi_back（module/atom/image.py），这 8 个条目专供
+            # 本处批量识别、不被别的任务引用，故该副作用无害。
+            # 必须用 match_all_any：match_all 返回所有 ≥阈值的像素点，一个图标就是
+            # 几百个候选框；match_all_any 内部走 cv2.dnn.NMSBoxes 去重。
+            matches = rule.match_all_any(image, roi=COOP_CARD_BAND, nms_threshold=0.3)
+            hits[name] = [
+                (score, x, y, cls._coop_slot_of(x, basis))
+                for score, x, y, _width, _height in matches
+            ]
+            for score, x, y, slot in hits[name]:
+                if slot is None:
+                    continue
+                current = winners.get(slot)
+                if current is None or priority[name] < priority[current[0]]:
+                    winners[slot] = (name, score, x, y)
+        return winners, hits
+
+    def _coop_read_targets(self, type_name: str, real: bool, slot: int, anchor) -> dict:
+        """按类型与现世标记读取该槽的协作目标文本；不需要读的组合直接返回空。"""
+        read_mode = self.COOP_TARGET_READ.get((type_name, real))
+        if read_mode is None:
+            return {}
+        if read_mode == 'real':
+            return self._read_real_sushi_target(slot, anchor)
+        return self._read_normal_cooperation_targets(slot, anchor)
+
+    def _coop_invite_button(self, slot: int, invite_hits: list):
+        """按该槽实测到的邀请按钮位置构造返回用的 RuleImage。
+
+        改造前直接返回 I_WQ_INVITE_{n} 实例（appear() 已把实测位置写回 roi_front）；
+        改成单实例批量识别后不再有「每槽一个固定条目」，故按命中位置就地构造。
+        本任务不消费该字段，仅为保持 @return 契约。卡片已邀请时按钮不存在，
+        退回该槽的锚点位置。
+        """
+        source = self.COOP_ANCHOR_RULES['邀请']
+        hit = next((item for item in invite_hits if item[3] == slot), None)
+        x, y = (hit[1], hit[2]) if hit else (COOP_ANCHOR_SLOT_X[slot], COOP_ANCHOR_SLOT_Y)
+        return RuleImage(
+            roi_front=(x, y, source.roi_front[2], source.roi_front[3]),
+            roi_back=COOP_CARD_BAND,
+            method=source.method,
+            threshold=source.threshold,
+            file=source.file,
+        )
 
     @staticmethod
     def _ocr_single(image, roi: tuple[int, int, int, int], name: str) -> str:
@@ -79,80 +244,62 @@ class Cooperation(DailyAltAccBase):
             )
         return result
 
-    def _read_normal_cooperation_targets(self, index: int, anchor) -> dict:
-        """读取普通协作的双目标；固定 ROI 失败时按邀请锚点平移后重试一次。"""
+    def _read_normal_cooperation_targets(self, slot: int, anchor) -> dict:
+        """读取普通协作的双目标（自己击败X / 好友击败Y）。
+
+        区域由「槽位偏移 + 标记抖动」一次算出。改造前是先试固定 ROI、失败再按
+        邀请锚点平移重试一次；锚点位置本身已是实测值，固定 ROI 那一步是多余的，
+        故这里只保留一次带偏移的读取，不再需要二次 fallback。
+        """
         image = getattr(getattr(self, "device", None), "image", None)
         if image is None:
             return {}
-        discoverer_ocr = getattr(
-            WantedQuestsAssets, f"O_WQ_COOPERATION_DISCOVERER_{index + 1}",
-        )
-        friend_ocr = getattr(
-            WantedQuestsAssets, f"O_WQ_COOPERATION_FRIEND_{index + 1}",
-        )
+        shift = self._coop_target_shift(anchor, slot)
         try:
-            fast_result = self._normal_target_result(
-                discoverer_ocr.ocr(image), friend_ocr.ocr(image),
-            )
-        except Exception as exc:
-            logger.warning(f"普通协作目标 OCR 失败(index={index}): {exc}")
-            fast_result = {}
-
-        if fast_result.get("discoverer_monster") and fast_result.get("friend_monster"):
-            return fast_result
-
-        delta = self._anchor_delta(anchor, NORMAL_COOPERATION_ANCHOR_REFERENCE[index])
-        try:
-            fallback_result = self._normal_target_result(
+            result = self._normal_target_result(
                 self._ocr_single(
                     image,
-                    self._shift_roi(discoverer_ocr.roi, delta),
-                    f"wq_cooperation_discoverer_fallback_{index + 1}",
+                    self._shift_roi(COOP_DISCOVERER_BASE, shift),
+                    f"wq_cooperation_discoverer_slot_{slot + 1}",
                 ),
                 self._ocr_single(
                     image,
-                    self._shift_roi(friend_ocr.roi, delta),
-                    f"wq_cooperation_friend_fallback_{index + 1}",
+                    self._shift_roi(COOP_FRIEND_BASE, shift),
+                    f"wq_cooperation_friend_slot_{slot + 1}",
                 ),
             )
         except Exception as exc:
-            logger.warning(f"普通协作目标 fallback OCR 失败(index={index}): {exc}")
-            fallback_result = {}
-
-        result = fallback_result or fast_result
+            logger.warning(f"普通协作目标 OCR 失败(slot={slot + 1}): {exc}")
+            result = {}
         logger.info(
-            f"normal cooperation index={index} fallback_delta={delta} "
+            f"normal cooperation slot={slot + 1} shift={shift} "
             f"discoverer={result.get('discoverer_monster')!r} "
             f"friend={result.get('friend_monster')!r}"
         )
         return result
 
-    def _read_real_sushi_target(self, index: int, anchor) -> dict:
-        """读取现世体协单目标；固定 ROI 失败时按“享”标记平移后重试一次。"""
+    def _read_real_sushi_target(self, slot: int, anchor) -> dict:
+        """读取现世体协的单目标（击败N个X）。
+
+        改造前只读槽1/槽2 —— O_WQ_REAL_COOPERATION_MONSTER_3 这个资产根本不存在，
+        调用处因此带着 index < 2 的绕行判断。改按锚点位置整体平移后，区域是算出来
+        的，槽3 同样能读，那个绕行判断随之取消。
+        """
         image = getattr(getattr(self, "device", None), "image", None)
         if image is None:
             return {}
-        ocr_item = getattr(WantedQuestsAssets, f"O_WQ_REAL_COOPERATION_MONSTER_{index + 1}")
-        try:
-            monster = _parse_real_cooperation_monster(ocr_item.ocr(image))
-        except Exception as exc:
-            logger.warning(f"现世体协目标 OCR 失败(index={index}): {exc}")
-            monster = ""
-        if monster:
-            return {"monster_text": monster}
-
-        delta = self._anchor_delta(anchor, REAL_COOPERATION_ANCHOR_REFERENCE[index])
+        shift = self._coop_target_shift(anchor, slot)
         try:
             monster = _parse_real_cooperation_monster(self._ocr_single(
                 image,
-                self._shift_roi(ocr_item.roi, delta),
-                f"wq_real_cooperation_monster_fallback_{index + 1}",
+                self._shift_roi(COOP_REAL_MONSTER_BASE, shift),
+                f"wq_real_cooperation_monster_slot_{slot + 1}",
             ))
         except Exception as exc:
-            logger.warning(f"现世体协目标 fallback OCR 失败(index={index}): {exc}")
+            logger.warning(f"现世体协目标 OCR 失败(slot={slot + 1}): {exc}")
             monster = ""
         logger.info(
-            f"real sushi cooperation index={index} fallback_delta={delta} monster={monster!r}"
+            f"real sushi cooperation slot={slot + 1} shift={shift} monster={monster!r}"
         )
         return {"monster_text": monster} if monster else {}
 
@@ -231,95 +378,83 @@ class Cooperation(DailyAltAccBase):
                 break
         return account_info
 
+    def _coop_emit(self, type_name: str, real: bool, cooperation: dict) -> None:
+        """产出该槽的日志、推送与归档事件。
+
+        日志文案与推送文案沿用改造前的逐字表述，前端展示与推送逻辑依赖它们；
+        推送范围也保持原样——只有勾协与体协推送，其余类型只归档。
+        """
+        spec = self.COOP_TYPE_SPEC[type_name]
+        label = spec['label_real'] if real else spec['label']
+        logger.info(spec['log_real'] if (real and spec['log_real']) else spec['log'])
+        if spec['notify']:
+            self.push_notify(content=f"    发现{label}", title="协作任务提醒")
+        event = {"type": spec['event_type'], "real": real, "label": label}
+        if 'food_kind' in spec:
+            event["food_kind"] = spec['food_kind']
+        event.update({
+            key: cooperation[key]
+            for key in ("discoverer_monster", "friend_monster", "monster_text")
+            if cooperation.get(key)
+        })
+        self.msg.append([MSGType.cooperation, event])
+
     def get_cooperation_info(self) -> List:
         """
             获取协作任务详情
         @return: 协作任务类型与邀请按钮
         """
         self.screenshot()
+        image = getattr(getattr(self, "device", None), "image", None)
         retList = []
-        i = 0
-        for index in range(3):
-            btn = getattr(WantedQuestsAssets, "I_WQ_INVITE_" + str(index + 1))
-            btn2 = self.__getattribute__("I_REAL_FLAG_" + str(index + 1))
-            normal_flag=self.appear(btn)
-            real_flag=self.appear(btn2)
-            if not normal_flag and not real_flag:
-                break
-            if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_JADE_" + str(index + 1))):
-                cooperation = {
-                    'type': CooperationType.Jade,
-                    'inviteBtn': btn,
-                    'real': real_flag,
-                }
-                if not real_flag:
-                    cooperation.update(self._read_normal_cooperation_targets(index, btn))
-                retList.append(cooperation)
-                if real_flag:
-                    logger.info(f"find real jade cooperation ")
-                    self.push_notify(content=f"    发现现世勾协", title="协作任务提醒")
-                    self.msg.append([MSGType.cooperation,
-                                     {"type": "jade", "real": True, "label": "现世勾协"}])
-                else:
-                    logger.info(f"find  jade cooperation ")
-                    self.push_notify(content=f"    发现普通勾协", title="协作任务提醒")
-                    event = {"type": "jade", "real": False, "label": "普通勾协"}
-                    event.update({
-                        key: cooperation[key]
-                        for key in ("discoverer_monster", "friend_monster", "monster_text")
-                        if cooperation.get(key)
-                    })
-                    self.msg.append([MSGType.cooperation, event])
+        if image is None:
+            logger.warning("协作识别取帧失败，本屏按没有协作任务处理")
+            logger.info(f"get cooperation size {len(retList)}")
+            return retList
+
+        # ① 8 个模板各在整块协作板区域内匹配一次，一次性拿到全部命中（坐标为绝对值）
+        anchor_slots, anchor_hits = self._coop_collect(
+            image, self.COOP_ANCHOR_RULES, COOP_ANCHOR_SLOT_X, COOP_ANCHOR_PRIORITY)
+        logger.info(f"[协作锚点] 协={len(anchor_hits['协'])} 享={len(anchor_hits['享'])}"
+                    f" 邀请={len(anchor_hits['邀请'])}")
+        # 整板无锚点 = 本屏没有协作任务。实测 103 张样本里 58 张如此，是多数情况
+        # 而不是异常，故用 info 记录（设计文档原写 warning，按实测数据下调）。
+        if not anchor_slots:
+            logger.info("本屏无协/享/邀请标记，判定为没有协作任务")
+            logger.info(f"get cooperation size {len(retList)}")
+            return retList
+        type_slots, _ = self._coop_collect(
+            image, self.COOP_TYPE_RULES, COOP_TYPE_SLOT_X, COOP_TYPE_PRIORITY)
+
+        # ② 逐槽产出。类型结果只在同时存在锚点的槽位被采纳 —— 类型模板本身不能
+        # 证明「这是协作卡」：实测 sushi 在非协作卡的橙色鱼籽奖励上能得 0.9735，
+        # 越过 0.8 阈值；锚点先行是唯一可靠的过滤（103 张样本上拦下 252 次误命中）。
+        # 另：改造前的判据是「邀请按钮 或 享字」，一张已邀请的普通协作卡会让循环
+        # break、同屏其后的卡片被一起跳过；现在只跳过没有锚点的槽位，不再提前终止。
+        for slot in sorted(anchor_slots):
+            anchor_name, anchor_score, anchor_x, anchor_y = anchor_slots[slot]
+            logger.info(f"[协作锚点] slot={slot} {anchor_name} "
+                        f"score={anchor_score:.4f} @({anchor_x},{anchor_y})")
+            typed = type_slots.get(slot)
+            if typed is None:
+                logger.warning(f"槽{slot + 1} 有协作标记({anchor_name})但类型模板全部失配，跳过该槽")
                 continue
-            if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_DOG_FOOD_" + str(index + 1))):
-                retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
-                logger.info(f"find dog food cooperation ")
-                # 狗粮协作：不区分现世/普通，food_kind 固定为 dog（模板已人工确认为狗粮）
-                self.msg.append([MSGType.cooperation,
-                                 {"type": "food", "real": False, "food_kind": "dog", "label": "狗粮协作"}])
-                continue
-            if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_CAT_FOOD_" + str(index + 1))):
-                retList.append({'type': CooperationType.Food, 'inviteBtn': btn, 'real': real_flag})
-                logger.info(f"find cat food cooperation ")
-                # 猫粮协作：不区分现世/普通，food_kind 固定为 cat（模板已人工确认为猫粮）
-                self.msg.append([MSGType.cooperation,
-                                 {"type": "food", "real": False, "food_kind": "cat", "label": "猫粮协作"}])
-                continue
-            if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_SUSHI_" + str(index + 1))):
-                cooperation = {
-                    'type': CooperationType.Sushi,
-                    'inviteBtn': btn,
-                    'real': real_flag,
-                }
-                if real_flag and index < 2:
-                    cooperation.update(self._read_real_sushi_target(index, btn2))
-                else:
-                    if not real_flag:
-                        cooperation.update(self._read_normal_cooperation_targets(index, btn))
-                retList.append(cooperation)
-                if real_flag:
-                    logger.info(f"find real sushi cooperation ")
-                    event = {"type": "sushi", "real": True, "label": "现世体协"}
-                    self.push_notify(content=f"    发现现世体协", title="协作任务提醒")
-                else:
-                    logger.info(f"find  sushi cooperation ")
-                    event = {"type": "sushi", "real": False, "label": "普通体协"}
-                    self.push_notify(content=f"    发现普通体协", title="协作任务提醒")
-                event.update({
-                    key: cooperation[key]
-                    for key in ("discoverer_monster", "friend_monster", "monster_text")
-                    if cooperation.get(key)
-                })
-                self.msg.append([MSGType.cooperation, event])
-                continue
-            # NOTE 因为食物协作里面也有金币奖励 ,所以判断金币协作放在最后面
-            if self.appear(getattr(WantedQuestsAssets, "I_WQ_COOPERATION_TYPE_GOLD_" + str(index + 1))):
-                retList.append({'type': CooperationType.Gold, 'inviteBtn': btn, 'real': real_flag})
-                logger.info(f"find gold cooperation ")
-                # 金币协作：不区分现世/普通
-                self.msg.append([MSGType.cooperation,
-                                 {"type": "gold", "real": False, "label": "金币协作"}])
-                continue
+            type_name, type_score, type_x, type_y = typed
+            logger.info(f"[协作类型] slot={slot} {type_name} "
+                        f"score={type_score:.4f} @({type_x},{type_y})")
+            # 现世标记直接由胜出的锚点决定：协→普通、享→现世；走到邀请说明
+            # 协/享 都没匹配上，按普通处理
+            real = anchor_name == '享'
+            cooperation = {
+                'type': self.COOP_TYPE_SPEC[type_name]['type'],
+                'inviteBtn': self._coop_invite_button(slot, anchor_hits['邀请']),
+                'real': real,
+            }
+            cooperation.update(
+                self._coop_read_targets(type_name, real, slot, anchor_slots[slot]))
+            retList.append(cooperation)
+            self._coop_emit(type_name, real, cooperation)
+
         logger.info(f"get cooperation size {len(retList)}")
         # 将本轮识别到的协作按明细写入 STAT，便于前端区分类型和现世标记。
         emit_stat = getattr(self, "emit_stat", None)
