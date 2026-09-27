@@ -202,9 +202,36 @@ class RichFileHandler(RichHandler):
         self._rolling = False
 
     def emit(self, record: logging.LogRecord) -> None:
-        """写入前先判断是否需要跨天切换文件。"""
+        """写入前先判断是否需要跨天切换文件，并让 [STAT] 行整行落盘。"""
         self.maybe_rollover()
-        super().emit(record)
+        # [STAT] 是机器协议，必须整行落盘。Rich 的定宽折行可能丢掉断点空格并
+        # 补入行尾空格，使读者无法恢复原始 JSON；跳过 Table 和宽度限制才能保真。
+        # 普通日志仍按 160 列渲染，逐条复位避免影响下一条记录。
+        self.console.soft_next = self._is_stat(record)
+        try:
+            super().emit(record)
+        finally:
+            self.console.soft_next = False
+
+    def render(self, *, record, traceback, message_renderable):
+        """[STAT] 行直接返回消息本身，绕开 LogRender 的定宽 Table。
+
+        Table 按列宽折行、不受 Console 的 soft_wrap 影响，所以要真正不折，
+        这里与 SoftWrapConsole 两处都得改（同 FlutterHandler.render 的说明）。
+        """
+        if traceback is None and self._is_stat(record):
+            return message_renderable
+        return super().render(record=record, traceback=traceback,
+                              message_renderable=message_renderable)
+
+    @staticmethod
+    def _is_stat(record: logging.LogRecord) -> bool:
+        """本条记录是否为 [STAT] 协议行。"""
+        try:
+            return str(record.getMessage()).startswith('[STAT] ')
+        except Exception:
+            # getMessage 会对消息做 % 插值，坏格式不该让日志本身写不出去
+            return False
 
     def maybe_rollover(self) -> None:
         """日期与当前文件归属日不一致时切换文件；同一天为空操作。"""
@@ -257,12 +284,15 @@ def set_file_logger(name=pyw_name, *, do_cleanup=False):
     log_day = date.today()
     file, log_file = _open_log_file(name, log_day)
 
-    file_console = Console(
+    # 用 SoftWrapConsole 而非普通 Console：RichFileHandler 要对 [STAT] 协议行
+    # 逐条开 soft_wrap 整行推出（见那里的说明）。普通日志行不带 soft_next，
+    # 行为与改动前完全一致，仍按 160 列折行。
+    file_console = SoftWrapConsole(
         file=file,
         no_color=True,
         highlight=False,
         width=160,
-    ) 
+    )
 
     hdlr = RichFileHandler(
         console=file_console,
@@ -380,8 +410,8 @@ class SoftWrapConsole(Console):
     """按 soft_next 逐条切换是否走 soft_wrap 的 Console。
 
     soft_wrap 只能在 print() 调用时传，而 RichHandler.emit 内部那次 print 不接受
-    外部参数，所以由 FlutterHandler.emit 先置 soft_next、这里的 print 再取用。
-    单线程逐条 emit，且 FlutterHandler.emit 在 finally 里复位，不会跨记录串味。
+    外部参数，所以由使用它的 handler 在 emit 中先置 soft_next，这里的 print 再取用。
+    handler 持锁逐条 emit，并在 finally 里复位，不会跨记录串味。
     """
 
     def __init__(self, *args, **kwargs):

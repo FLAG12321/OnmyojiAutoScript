@@ -428,13 +428,18 @@ class MultiStatAggregator:
         self._session_index: int = 0  # 当前会话索引
         self._run_started: bool = False  # 是否已见到首个 run_start（首个保持索引 0，其后 +1）
 
+    # 历史 STAT 最多尝试八条续行；达到上限仍无法解析时也释放增量读取的残块，
+    # 避免损坏日志使 tail 随文件增长。新写入的 STAT 已不再按控制台宽度折行。
+    _STAT_CONTINUATION_LIMIT = 8
+
     def consume_lines(self, lines: list[str]) -> None:
         """逐行扫描，提取 [STAT] JSON 事件并分发处理。
 
-        RichHandler 把一次 logger.info("[STAT] "+json) 写成相邻两行：
-        第一行是 ``时间戳 | stat_log.py | INFO | [STAT]``（无 JSON，行尾无多余空格），
-        第二行才是纯 JSON（无时间戳）。因此需要把前缀行与续行合并后解析；
-        旧格式（前缀行内自带 JSON）仍兼容。
+        RichHandler 把一次 logger.info("[STAT] "+json) 写成相邻多行：
+        第一行是 ``时间戳 | stat_log.py | INFO | [STAT]``（无 JSON），
+        其后才是纯 JSON 的续行（无时间戳，文件 console 定宽 160 会把长载荷
+        折成一段以上）。因此需要把前缀行与全部续行合并后再解析，见
+        ``_parse_json_block``；旧格式（前缀行内自带 JSON）仍兼容。
 
         同时检测战斗边界线（GENERAL BATTLE START），按时间戳行计算真实战斗耗时。
         """
@@ -467,14 +472,64 @@ class MultiStatAggregator:
             if prefix_idx == -1:
                 index += 1
                 continue
-            # 先尝试前缀行内自带的 JSON（非 Rich 换行的旧格式）
-            payload = self._extract_payload(raw)
-            if payload is None and index + 1 < total:
-                # JSON 被 RichHandler 换行到了下一行，作为续行合并解析
-                payload = self._parse_json_line(lines[index + 1])
+            # 前缀行内自带 JSON（旧格式）或紧随其后的续行，一并交给块解析
+            payload = self._parse_json_block(lines, index)
             if payload is not None:
                 self._consume_event(payload, ts)
             index += 1
+
+    @classmethod
+    def _parse_json_block(cls, lines: list[str], index: int) -> dict[str, Any] | None:
+        """解析以 ``lines[index]`` 为前缀行的 STAT 消息，必要时跨续行拼接。
+
+        只拼接紧邻且无时间戳的续行，普通日志与任务分隔线都会结束当前块。
+        逐行去掉 Rich 的行尾补位空格，但这不能无损恢复历史载荷：断点处的原始
+        空格可能已被吞掉，也无法与补位区分，身份字段落在断点时同样可能受影响。
+        本方法仅尽力兼容旧统计；新日志由 RichFileHandler 保证原始 JSON 单行落盘。
+        """
+        head = lines[index].rstrip("\r\n") if index < len(lines) else ""
+        payload = cls._extract_payload(head)
+        if payload is not None:
+            return payload
+        # JSON 可能已经在 [STAT] 同行开始，不能丢掉这段再从下一行单独解析。
+        buffer = head.partition("[STAT]")[2].strip()
+        limit = min(len(lines), index + 1 + cls._STAT_CONTINUATION_LIMIT)
+        for cursor in range(index + 1, limit):
+            line = lines[cursor].rstrip("\r\n")
+            # 分隔线没有时间戳，同样不能当作 JSON 的一部分或跨过它借用后续文本。
+            if (LogStatsParser._extract_timestamp(line) is not None
+                    or _EQ_LINE_RE.match(line.strip()) or _TITLE_LINE_RE.match(line.strip())):
+                break
+            buffer += line.rstrip()
+            # STAT 载荷必须从对象开头开始；不从无关正文中另找一个花括号补造事件。
+            if buffer.strip() and not buffer.lstrip().startswith("{"):
+                return None
+            payload = cls._parse_json_line(buffer)
+            if payload is not None:
+                return payload
+        return None
+
+    @classmethod
+    def _dangling_stat_size(cls, lines: list[str]) -> int:
+        """仅回扣文件末端可能尚未写完的 STAT，已结束或超限的坏块直接释放。
+
+        拼不出 JSON 也可能是记录损坏。遇到下一条时间戳或分隔线即确定旧块已结束；
+        达到续行上限后再等待也无济于事。只有仍可补齐的前缀与续行整体留在 tail。
+        """
+        first = max(0, len(lines) - cls._STAT_CONTINUATION_LIMIT)
+        for back in range(len(lines) - 1, first - 1, -1):
+            raw = lines[back].strip()
+            if _EQ_LINE_RE.match(raw) or _TITLE_LINE_RE.match(raw):
+                return 0
+            if LogStatsParser._extract_timestamp(raw) is None:
+                continue
+            # 只把带时间戳的行视作协议起点，续行值内的 [STAT] 只是普通文本。
+            if "[STAT]" not in raw:
+                return 0
+            if cls._parse_json_block(lines, back) is None:
+                return len(lines) - back
+            return 0
+        return 0
 
     def _handle_battle_boundary(self) -> None:
         """处理战斗边界线：关闭前一个战斗，标记下一个战斗待开始（仅当前有活跃子任务时）。"""
@@ -1156,16 +1211,13 @@ class LogStatsService:
             and _TITLE_LINE_RE.match(lines[-1].strip())
         ):
             tail_size = 2
-        # 悬空 STAT 前缀行回扣：RichHandler 把 STAT 写成"前缀行 + JSON 续行"两行，
-        # 若轮询恰好切在两行之间，前缀行需留在 tail 等续行到达后合并解析；
-        # 否则续行下轮单独到达因无时间戳被跳过，事件永久丢失——新口径下丢失
-        # run_start 会导致全天会话索引错位且不自愈（审查M1）
-        if (
-            tail_size == 0
-            and "[STAT]" in lines[-1]
-            and MultiStatAggregator._extract_payload(lines[-1]) is None
-        ):
-            tail_size = 1
+        # 悬空 STAT 块回扣：RichHandler 把 STAT 写成"前缀行 + 若干续行"（文件
+        # console 定宽 160，长载荷会折成一段以上），若轮询恰好切在块中间，整段
+        # 需留在 tail 等余下续行到达后合并解析；否则续行下轮单独到达因无时间戳被
+        # 跳过，事件永久丢失——新口径下丢失 run_start 会导致全天会话索引错位且
+        # 不自愈（审查M1）
+        if tail_size == 0:
+            tail_size = MultiStatAggregator._dangling_stat_size(lines)
 
         if tail_size <= 0:
             return lines, partial_tail
