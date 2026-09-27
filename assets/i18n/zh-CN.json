@@ -757,6 +757,8 @@
   "桌面客户端游戏安装目录，留空自动发现（仅桌面模式）": "桌面客户端游戏安装目录，留空自动发现（仅桌面模式）",
   "ActivitySignIn": "活动签到",
   "MultiTasks": "多账号通用任务",
+  "AccountExport": "账号数据导出",
+  "account_export": "账号数据导出",
   "account_source": "账号来源方式",
   "account_source_help": "选一种指定账号的方式；未选中的那两组参数不生效",
   "activity_shikigami": "活动爬塔",

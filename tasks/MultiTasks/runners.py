@@ -7,6 +7,7 @@ MultiTasks 不复制任何子任务逻辑：直接复用单账号 ScriptTask 的
 """
 from dataclasses import dataclass
 
+from tasks.AccountExport.script_task import ScriptTask as AccountExportTask  # 独立导出流程。
 from tasks.ActivityShikigami.script_task import ScriptTask as ActivityShikigamiTask
 from tasks.ActivitySignIn.script_task import ScriptTask as ActivitySignInTask
 from tasks.Component.SchedulingShield import shield_scheduling
@@ -46,6 +47,9 @@ SUB_TASKS: dict[SubTaskType, SubTaskSpec] = {
     # 否则每个小号都会去改大号觉醒副本的下次运行时间。
     SubTaskType.EVO_ZONE: SubTaskSpec(
         EvoZoneTask, 'EvoZone', ('EvoZone',)),
+    # 批量导出复用单账号任务，成功和失败都屏蔽单账号调度。
+    SubTaskType.ACCOUNT_EXPORT: SubTaskSpec(
+        AccountExportTask, 'AccountExport', ('AccountExport',)),
 }
 
 # Adapter 类在模块导入时建一次；实例每账号新建，保证可变状态不跨账号共享。

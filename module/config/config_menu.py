@@ -37,6 +37,7 @@ class ConfigMenu:
             "MemoryScrolls",
             "MultiDailyAltAcc",
             "MultiTasks",
+            "AccountExport",  # 单账号导出也提供独立菜单入口。
             "ReturnGift",
             "Plotline",
             "SearchId"

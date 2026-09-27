@@ -407,7 +407,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         if self._progress is None:
             return True
         try:
-            done = self._progress.is_account_done(self._progress_key_of(account_info))
+            key = self._progress_key_of(account_info)
+            done = self._progress.is_account_done(key)
         except Exception:
             logger.exception('读取账号进度失败，按未完成处理')
             return True
@@ -426,17 +427,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             return False
         # 创建配置对象
         config = self._create_account_config(account_info)
-        # 如果没有任何任务被启用，跳过该账号
-        if not ( 
-            config.alliedteam_battle_enable or config.alliedteam_ap_enable or \
-            config.mail_enable or config.donatejade_enable or  \
-            config.courtyard_enable or config.cooperation_enable or   \
-            config.returngift_enable or config.weekaward_enable or   \
-            config.mysteryshop_enable or config.kekkaiActivation_enable or  \
-            config.KekkaiUtilize_enable or config.tree_planting_enable > 0 or \
-            config.trialbattle_enable or config.summon_up_enable or \
-            config.publish_sr_enable \
-            ):
+        # 只执行账号已启用的日常子任务，无任务时直接跳过。
+        enabled_tasks = self._enabled_task_keys(config)
+        if not enabled_tasks:
             logger.info(f"Skipping account {account_info.character} - No tasks enabled")
             return True
          
@@ -461,7 +454,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             acc=account_info.account,
             char=account_info.character,
             svr=account_info.svr,
-            tasks=self._enabled_task_keys(config),
+            tasks=enabled_tasks,
         )
 
         # 异常后的登录记录必须作废；正常返回 False 的待重试子任务才可保留。
@@ -587,7 +580,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     )
 
     def _apply_single_purpose_filter(self, base_config) -> None:
-        """单用途轮（回礼/同心战斗）运行前过滤：只保留本任务开关，其余全关。
+        """单用途轮（回礼/同心战斗）过滤其他日常开关。
 
         用户在轮次间隙手动勾选的任务（如捐勾）不会泄漏进单用途轮；屏蔽值随
         daily_conf 在收尾 save_config() 落盘（与排程物化同哲学：磁盘=本轮实际
@@ -746,7 +739,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
     def _execute_daily_tasks(self, config, account_info):
         """执行日常任务；设备级异常必须穿透到 script.py 的恢复逻辑。"""
-        # 创建子任务实例
+        # 执行已启用的日常子任务，由子实例记录各项进度。
         dff = self._create_task_instance(config, account_info)
 
         try:
@@ -820,8 +813,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     def _finalize_account_progress(self, account_info, account_config) -> bool:
         """仅当本轮所有启用子任务均已了结时，才标记账号完成。
 
-        done / failed / skipped 都算已了结；首次返回 False 的子任务保持 pending，
-        账号返回 False 触发当前进程内重试。重试时已了结子任务自动跳过，只补 pending。
+        日常子任务的 done / failed / skipped 都算已了结。
+        返回 False 保持账号待重试，接续时只补未完成部分。
         """
         if self._progress is not None:
             key = self._progress_key_of(account_info)
@@ -829,6 +822,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             if self._progress.has_pending_tasks(key, enabled_tasks):
                 logger.warning(f"{account_info.character} 仍有未完成子任务，保留进度并重试")
                 return False
+            # 日常全部了结即可收尾，不再依赖账号数据导出记录或文件。
             self._progress.mark_account_done(key)
 
         # last_complete_time 仅用于排序与展示，不再参与完成判定

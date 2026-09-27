@@ -7,9 +7,10 @@ class ConfigManual:
     module.device
     """
 
+    # 账号导出与多账号通用任务同组，独立启用时按自己的调度执行。
     SCHEDULER_PRIORITY = """
         Restart > SoulsTidy
-        > KekkaiUtilize > KekkaiActivation > MultiDailyAltAcc > MultiTasks > DailyAltAcc > MasterDisciple > Dokan > ReturnGift > DemonEncounter
+        > KekkaiUtilize > KekkaiActivation > MultiDailyAltAcc > MultiTasks > AccountExport > DailyAltAcc > MasterDisciple > Dokan > ReturnGift > DemonEncounter
         > AreaBoss > GoldYoukai > ExperienceYoukai > Nian > Tako > AutoCheckinBigGod > ActivitySignIn > RealmRaid > RyouToppa > DailyTrifles > Exploration >FindJade
         > AbyssShadows > Hunt > GuildBanquet > DemonRetreat > GuildActivityMonitor
         > Orochi > OrochiMoans > OrochiJudgement > Sougenbi > FallenSun > EternitySea > SixRealms

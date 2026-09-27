@@ -56,6 +56,14 @@ class ProgressStore(_BaseProgressStore):
     def __init__(self, config_name: str, base_dir='config/tasks_config'):
         super().__init__('multi_daily', config_name, base_dir)
 
+    def _load(self) -> dict:
+        """忽略已取消的导出阶段键，移除功能后仍能接续已完成的日常进度。"""
+        data = super()._load()
+        flags = data.get('phase_flags')
+        if isinstance(flags, dict):
+            flags.pop('account_export_enable', None)
+        return data
+
     # -------------------------------------------------- 本轮协作汇总
 
     def append_coop(self, record: dict) -> None:

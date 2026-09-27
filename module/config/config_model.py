@@ -74,6 +74,7 @@ from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc
 from tasks.MultiTasks.config import MultiTasks
+from tasks.AccountExport.config import AccountExport  # 独立账号数据导出。
 from tasks.ReturnGift.config import ReturnGift
 from tasks.Plotline.config import Plotline
 from tasks.SearchId.config import SearchId
@@ -145,6 +146,7 @@ class ConfigModel(ConfigBase):
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
     multi_daily_alt_acc: MultiDailyAltAcc = Field(default_factory=MultiDailyAltAcc)
     multi_tasks: MultiTasks = Field(default_factory=MultiTasks)
+    account_export: AccountExport = Field(default_factory=AccountExport)  # 默认关闭，由用户启用。
     plotline: Plotline = Field(default_factory=Plotline)
     search_id: SearchId = Field(default_factory=SearchId)
     return_gift: ReturnGift = Field(default_factory=ReturnGift)

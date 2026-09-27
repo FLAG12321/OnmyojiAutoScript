@@ -8,8 +8,10 @@ from collections import defaultdict
 from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.MultiAccountRunner import MultiAccountRunner
-from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
+from tasks.Component.MultiAccountRunner.progress import acc_key
 from tasks.GameUi.game_ui import GameUi
+from tasks.MultiTasks.config import SubTaskType  # 导出使用严格的文件完成判定。
+from tasks.MultiTasks.progress import ProgressStore
 from tasks.MultiTasks.runners import ADAPTERS, SUB_TASKS
 from tasks.MultiTasks.sources import ACCOUNT_SOURCES
 
@@ -95,7 +97,7 @@ class ScriptTask(GameUi):
         # 注入「当前跑的是哪个账号」的上下文，与 MultiDailyAltAcc 用同一约定。
         # 子任务据此给产物命名（如觉醒副本的协战截图 screenshots/EvoZone_Screenshots/<角色名>.png）；
         # 不注入时读取方只会静默退化成配置实例名，导致多账号互相覆盖同一张图。
-        # 现有三个子任务都不混入 StatLogMixin，不读该属性，因此无统计埋点副作用。
+        # 账号导出用该上下文写入来源身份 oas_identity；其他子任务可忽略。
         adapter._stat_ctx = {
             'acc': account.account,
             'char': account.character,
@@ -111,12 +113,22 @@ class ScriptTask(GameUi):
         except TaskEnd as e:
             # 仅当 TaskEnd 表示本子任务才视为当前账号正常完成；其他 TaskEnd 上抛
             if e.args and e.args[0] == spec.task_end_name:
+                if sub_task == SubTaskType.ACCOUNT_EXPORT:
+                    # 导出必须有落盘文件，不能只因收到结束信号就跳过这个账号。
+                    if (self._progress is None or not self._progress.is_task_finished(
+                            adapter._progress_key, 'account_export')):
+                        logger.error('[MultiTasks] 导出没有成功文件，保留账号等待重试')
+                        return False
                 logger.info(
                     f'[MultiTasks] 账号完成: {source_name}/{account.character}/{account.svr}'
                 )
                 return True
             raise
-        # 子任务未抛 TaskEnd 属于异常情况，视为当前账号成功但记录警告
+        if sub_task == SubTaskType.ACCOUNT_EXPORT:
+            # 独立导出任务的普通失败返回 False；任何普通返回都不能标记导出成功。
+            logger.error('[MultiTasks] 账号导出未成功结束，保留账号等待重试')
+            return False
+        # 其他既有子任务未抛 TaskEnd 时仍沿用原来的成功加警告行为。
         logger.warning(f'[MultiTasks] 子任务未抛出 TaskEnd({spec.task_end_name})')
         return True
 
