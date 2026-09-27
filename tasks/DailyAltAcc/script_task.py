@@ -4,6 +4,7 @@
 import time
 
 from module.logger import logger
+from tasks.Utils.coop_store import CoopStoreWriteError
 from module.exception import (
     EmulatorNotRunningError,
     GameBugError,
@@ -252,6 +253,9 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 ok=False,
                 dur=round(time.time() - start_time, 3),
             )
+            if isinstance(e, CoopStoreWriteError):
+                # 协作未保存不能标 failed 后跳过；保持待重试，由父任务保留本轮进度。
+                raise
             # 未注入 store（单任务直跑）时维持旧行为原样上抛：
             # 此时无进度可标、无跳过机制，吞掉会让故障从「显式报错」变成静默成功
             if self._progress is None or not self._progress_key:

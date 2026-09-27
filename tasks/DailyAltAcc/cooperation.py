@@ -1,6 +1,7 @@
 # This Python file uses the following encoding: utf-8
 import re
 import time
+from datetime import datetime
 from typing import List
 
 from module.atom.image import RuleImage
@@ -13,6 +14,12 @@ from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.WantedQuests.config import CooperationType
 from tasks.DailyAltAcc.config import MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent
+from tasks.Utils.coop_records import record_cooperation
+
+
+# 协作时间戳格式。刻意与另一处协作记录的时间字段逐字一致，让两类来源里的时间长得
+# 一样、下游按同一套规则读；真正不能复制的刷新窗口规则（05:00 / 18:00）没有被复制。
+COOP_TS_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
 def _parse_cooperation_monster(raw_text: str, prefix: str) -> str:
@@ -69,6 +76,17 @@ COOP_ANCHOR_PITCH = 299
 
 
 class Cooperation(DailyAltAccBase):
+    # 多账号任务注入同一持久表、账号身份和轮次；单任务无上下文时只产出日志/消息。
+    _coop_store = None
+    _account_identity = None
+    _coop_round_id = None
+    # 本次「找协作」取帧的时刻，由 get_cooperation_info 在 screenshot() 之后立刻盖下。
+    # 协作的归属窗口是 05:00 / 18:00 两档刷新，窗口由**识别帧**决定而不是落盘时刻：
+    # 从识别到落盘隔着点返回与 ui_goto，有 1~5 秒，恰好跨过刷新点时按落盘时刻取
+    # 会把一条版面已经刷掉的协作归进下一个窗口，它于是在下游待办里活满 11 小时。
+    # None 表示没有取帧来源（单测、手工构造），_coop_emit 退化为当下时刻。
+    _coop_scan_at: datetime = None
+
     # 单区域批量识别使用的 8 个模板。这 8 个条目只被本文件引用，所以
     # match_all_any 用 roi 参数改写 roi_back 时不会波及别的任务——WantedQuests
     # 读的是带 _1/_2/_3 后缀、roi_back 为固定区域的另一组条目，两者是不同的对象。
@@ -89,7 +107,7 @@ class Cooperation(DailyAltAccBase):
     # cooperation " 里的双空格），前端展示与推送依赖这些字符串，不得改动。
     # 狗粮/猫粮/金币改造前硬编码 real=False、标签只有一份；改为忠实反映锚点后
     # 「享」也会出现在这三类上（实机样本里撞到 5 次现世金币），故补上「现世」
-    # 标签，汇总侧的分类表同步扩到 10 类（见 MultiDailyAltAcc._coop_category_order）。
+    # 标签，汇总侧的分类表同步扩到 10 类（见 tasks/Utils/coop_summary.coop_category_order）。
     COOP_TYPE_SPEC = {
         'jade': {
             'type': CooperationType.Jade, 'event_type': 'jade', 'notify': True,
@@ -378,18 +396,32 @@ class Cooperation(DailyAltAccBase):
                 break
         return account_info
 
-    def _coop_emit(self, type_name: str, real: bool, cooperation: dict) -> None:
+    def _coop_found_at(self) -> str:
+        """本次识别帧的时刻字符串，见 ``_coop_scan_at`` 的说明。
+
+        退化分支只在没走 get_cooperation_info 的调用里会走到（单测、手工构造）：
+        拿不出取帧时刻时，当下是最接近的估计——比「不写时间」好得多，下游把没有
+        采集时间的协作判为不可判定、排除出供需，等于白识别一场。
+        """
+        return (self._coop_scan_at or datetime.now()).strftime(COOP_TS_FORMAT)
+
+    def _coop_emit(self, type_name: str, real: bool, cooperation: dict, total=None) -> None:
         """产出该槽的日志、推送与归档事件。
 
         日志文案与推送文案沿用改造前的逐字表述，前端展示与推送逻辑依赖它们；
         推送范围也保持原样——只有勾协与体协推送，其余类型只归档。
+
+        事件里带 ``found_at``：识别帧时刻随事件一起走，持久表与 STAT 不再
+        各自记时。表内同时保存轮次和卡槽快照，窗口归属只有一个来源。
         """
         spec = self.COOP_TYPE_SPEC[type_name]
         label = spec['label_real'] if real else spec['label']
         logger.info(spec['log_real'] if (real and spec['log_real']) else spec['log'])
-        if spec['notify']:
-            self.push_notify(content=f"    发现{label}", title="协作任务提醒")
-        event = {"type": spec['event_type'], "real": real, "label": label}
+        event = {"type": spec['event_type'], "real": real, "label": label,
+                 "found_at": self._coop_found_at()}
+        if 'slot' in cooperation:
+            # 卡槽只用于保存本轮逐卡推送快照，不改变管家已有的协作去重 ID。
+            event['slot'] = cooperation['slot']
         if 'food_kind' in spec:
             event["food_kind"] = spec['food_kind']
         event.update({
@@ -398,6 +430,20 @@ class Cooperation(DailyAltAccBase):
             if cooperation.get(key)
         })
         self.msg.append([MSGType.cooperation, event])
+        emit_stat = getattr(self, 'emit_stat', None)
+        if emit_stat and total is not None:
+            # 日志、持久表和推送用同一事件；先写日志，持久化失败时仍有原始证据。
+            emit_stat(
+                StatEvent.COOP, ctype=event['type'], real=event['real'], total=total,
+                found_at=event['found_at'], food_kind=event.get('food_kind'),
+                discoverer_monster=event.get('discoverer_monster', ''),
+                friend_monster=event.get('friend_monster', ''),
+                slot=event.get('slot'),
+            )
+        record_cooperation(event, self._coop_store, self._account_identity,
+                           round_id=self._coop_round_id)
+        if spec['notify']:
+            self.push_notify(content=f"    发现{label}", title="协作任务提醒")
 
     def get_cooperation_info(self) -> List:
         """
@@ -405,6 +451,11 @@ class Cooperation(DailyAltAccBase):
         @return: 协作任务类型与邀请按钮
         """
         self.screenshot()
+        # 取帧即记时刻：下面是纯图像处理（模板匹配 + OCR），不再截图，所以这一屏
+        # 识别出的协作都属于这一帧。落到 _coop_scan_at 供 _coop_emit 与 STAT 共用，
+        # 而不是各自取 datetime.now()——那会让「落盘的时间」和「日志里的时间」差出
+        # 几毫秒，恰好跨过 05:00 / 18:00 时同一张协作会被算进两个窗口。
+        self._coop_scan_at = datetime.now()
         image = getattr(getattr(self, "device", None), "image", None)
         retList = []
         if image is None:
@@ -425,6 +476,8 @@ class Cooperation(DailyAltAccBase):
             return retList
         type_slots, _ = self._coop_collect(
             image, self.COOP_TYPE_RULES, COOP_TYPE_SLOT_X, COOP_TYPE_PRIORITY)
+        # 有锚点且有类型的槽位才会产出事件；每条 STAT 沿用本屏总数口径。
+        total = len(anchor_slots.keys() & type_slots.keys())
 
         # ② 逐槽产出。类型结果只在同时存在锚点的槽位被采纳 —— 类型模板本身不能
         # 证明「这是协作卡」：实测 sushi 在非协作卡的橙色鱼籽奖励上能得 0.9735，
@@ -449,24 +502,14 @@ class Cooperation(DailyAltAccBase):
                 'type': self.COOP_TYPE_SPEC[type_name]['type'],
                 'inviteBtn': self._coop_invite_button(slot, anchor_hits['邀请']),
                 'real': real,
+                'slot': slot,
             }
             cooperation.update(
                 self._coop_read_targets(type_name, real, slot, anchor_slots[slot]))
             retList.append(cooperation)
-            self._coop_emit(type_name, real, cooperation)
+            self._coop_emit(type_name, real, cooperation, total=total)
 
         logger.info(f"get cooperation size {len(retList)}")
-        # 将本轮识别到的协作按明细写入 STAT，便于前端区分类型和现世标记。
-        emit_stat = getattr(self, "emit_stat", None)
-        total = len(retList)
-        if emit_stat:
-            for item in retList:
-                emit_stat(
-                    StatEvent.COOP,
-                    ctype=item["type"].name.lower(),
-                    real=bool(item.get("real", False)),
-                    total=total,
-                )
         return retList
 
 

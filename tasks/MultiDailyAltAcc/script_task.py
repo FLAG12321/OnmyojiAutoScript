@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import os
 import threading
 import json
+import time
 from pathlib import Path
 
 from module.exception import (
@@ -21,9 +22,14 @@ from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.MultiDailyAltAcc import DailyAltAccEx
 from tasks.MultiDailyAltAcc.assets import MultiDailyAltAccAssets
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc, ExtendedAccountInfo
-from tasks.MultiDailyAltAcc.progress import ProgressStore, acc_key, phase_flags_of, phase_id_of
+from tasks.MultiDailyAltAcc.progress import (
+    ProgressStore, acc_key, phase_flags_of, phase_id_of,
+)
 from tasks.MultiDailyAltAcc.task_plan import TaskPlan, load_task_plan
 from tasks.GameUi.game_ui import GameUi
+from tasks.Utils.coop_summary import build_summary_content
+from tasks.Utils.coop_records import cooperation_round_id, record_cooperation
+from tasks.Utils.coop_store import CoopStore
 from tasks.DailyAltAcc.config import MSGType
 from tasks.DailyAltAcc.stat_log import StatEvent, StatLogMixin
 from script import Script
@@ -35,6 +41,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     _normal_plan_phase: str | None = None
     # 子任务进度存储，run() 中按配置实例创建
     _progress: ProgressStore = None
+    # 协作跨轮次持久化；逐卡轮次快照与记录在同一文件原子保存。
+    _coop_store = None
+    _coop_round_id = None
+    _legacy_unmigrated_coops = None
     # 仅供同一账号的紧邻子任务重试使用，新账号、新调度和异常都会作废。
     _retry_account_identity: tuple | None = None
     # 添加一个类级别的锁，用于同步关机操作
@@ -82,8 +92,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             # 和通用调度器决定），因此不读取——plan 文件损坏也不影响该模式
             self._task_plan = None if self._task_rotation_disabled() else load_task_plan()
             self._normal_plan_phase = self._current_normal_plan_phase(base_config)
-            # 单用途轮运行前过滤：回礼/同心轮只做本任务，屏蔽用户手动勾选的其他
-            # 一切任务。屏蔽值随收尾落盘（与物化同哲学），且保证接续重试时
+            # 单用途轮运行前过滤：回礼/同心轮屏蔽其他日常任务。
+            # 屏蔽值随收尾落盘（与物化同哲学），且保证接续重试时
             # phase_flags 快照稳定。回礼轮例外放行 plan.returngift 控制的
             # 勾协/神秘商店翻找。
             self._apply_single_purpose_filter(base_config)
@@ -98,6 +108,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             self._progress.ensure_phase(
                 phase_flags_of(base_config, self._normal_plan_phase), phase_id_of(self.start_time)
             )
+            self._coop_round_id = cooperation_round_id('MultiDailyAltAcc', self._progress)
+            self._coop_store = CoopStore(config_name, base_dir=self._progress.path.parent)
+            self._migrate_legacy_coops()
 
             sup_account_list = self._get_sorted_accounts()
 
@@ -803,7 +816,15 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             "acc": source_account_info.account,
             "char": source_account_info.character,
             "svr": source_account_info.svr,
+            "sys": "android" if source_account_info.apple_or_android else "ios",
         }
+        # 识别时直接记录，避免后续子任务异常导致 TaskEnd 消息来不及交回父任务。
+        dff._coop_store = self._coop_store
+        dff._coop_round_id = self._coop_round_id
+        dff._account_identity = (
+            source_account_info.account, source_account_info.character,
+            source_account_info.svr, source_account_info.apple_or_android,
+        )
         # 注入进度上下文：子任务据此标记 done/failed/skipped 并接续同心战斗场次
         dff._progress = self._progress
         dff._progress_key = self._progress_key_of(source_account_info)
@@ -855,8 +876,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         
         match msg_type:
             case MSGType.cooperation:
-                # 不再「发现一条立即推送」：结构化事件 + 当前账号信息落盘到本轮
-                # ProgressStore，整轮真正完成时统一发送一条汇总（_notify_daily_completion）。
+                # 新识别已直接写入持久表；保留旧消息入口，并按同轮同槽幂等处理。
                 self._persist_coop_event(msg_content, account_info)
             case MSGType.mshop:
                 # 与协作同策：不再「发现一条立即推送」，落盘到本轮 ProgressStore，
@@ -876,13 +896,18 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         return should_retry
 
     def _persist_coop_event(self, event, account_info):
-        """把结构化协作事件 + 当前账号信息落盘到当前配置的 ProgressStore。
-
-        每个配置独立累计（进度文件按 config 命名）；立即 _save()，中途退出不丢。
-        """
+        """新事件走共用持久化入口，未建立该入口的旧调用继续保留临时记录。"""
         if not isinstance(event, dict):
             # 旧版纯字符串事件不再推送，仅记录日志，避免破坏兼容
             logger.info(f'协作事件（旧格式，跳过推送）: {event}')
+            return
+        if self._coop_store is not None and 'slot' in event:
+            record_cooperation(
+                event, self._coop_store,
+                (account_info.account, account_info.character, account_info.svr,
+                 account_info.apple_or_android),
+                round_id=self._coop_round_id,
+            )
             return
         record = {
             "account": str(getattr(account_info, "account", "") or ""),
@@ -895,14 +920,47 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             "food_kind": event.get("food_kind"),
             "label": str(event.get("label", "") or ""),
         }
+        found_at = str(event.get("found_at", "") or "").strip()
+        if found_at:
+            # 识别帧时刻随事件从 _coop_emit 带出来（见 tasks/DailyAltAcc/cooperation.py），
+            # 这里只做透传，不自己算窗口。带上它之后，本文件里的协作才和别处的协作
+            # 记录是同一种东西，不再被当成「缺少采集时间」排除出供需。
+            # 缺了这个字段就**不写**，而不是补一个 now()：下游把没有采集时间的记录
+            # 判为不可判定并排除供需，凭空补时刻等于把一条不知道属于哪个刷新窗口的
+            # 协作算成可用供给。
+            record["found_at"] = found_at
         for key in ("discoverer_monster", "friend_monster", "monster_text"):
             value = str(event.get(key, "") or "").strip()
             if value:
                 record[key] = value
         if self._progress is not None:
             self._progress.append_coop(record)
+            if self._coop_store is not None:
+                # 旧模块可能在本轮启动后才交回无 slot 消息，也必须赶在汇总/clear 前迁移。
+                self._migrate_legacy_coops()
         else:
             logger.info(f'协作事件（无进度存储，仅记录）: {record}')
+
+    def _migrate_legacy_coops(self):
+        """接续升级前的逐条进度，保留重复卡片；缺时间的旧记录只参与原推送。"""
+        self._legacy_unmigrated_coops = []
+        for index, record in enumerate(self._progress.load_coops()):
+            event = dict(record, slot=f'legacy_{index}')
+            saved = record_cooperation(
+                event, self._coop_store,
+                (record.get('account', ''), record.get('character', ''),
+                 record.get('svr', ''), record.get('apple_or_android')),
+                round_id=self._coop_round_id,
+            )
+            if saved is None:
+                self._legacy_unmigrated_coops.append(record)
+
+    def _coops_found_this_round(self):
+        """完整轮次的逐卡快照，重启接续和清除进度都不会删除持久记录。"""
+        if self._coop_store is not None and self._coop_round_id:
+            return (self._coop_store.records_for_round(self._coop_round_id)
+                    + list(self._legacy_unmigrated_coops or []))
+        return self._progress.load_coops() if self._progress is not None else []
 
     def _persist_mshop_event(self, event, account_info):
         """把结构化神秘商店事件 + 当前账号信息落盘到当前配置的 ProgressStore。
@@ -985,7 +1043,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         if self._progress.is_coop_notified():
             logger.info('本轮已完成完成通知，跳过重复推送')
             return
-        coops = self._progress.load_coops() if coop_on else []
+        coops = self._coops_found_this_round() if coop_on else []
         mshops = self._progress.load_mshops() if mshop_on else []
         # 协作关闭时不发空轮汇总，改发普通完成推送（含本轮执行项目）
         if not coop_on and not mshops:
@@ -1089,143 +1147,12 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     @classmethod
     def _build_summary_content(cls, coops, completed_at=None, show_account=False,
                                show_system=True, mshops=None) -> str:
-        """按固定 10 类顺序格式化协作汇总文本，并在末尾追加神秘商店段落。
-
-        show_system=True 时显示平台（安卓/iOS，取自 apple_or_android 字段）；
-        show_account=True 时在角色行尾追加账号/邮箱（account 原值）。
-        svr/account/platform 任一为空都不产生空分隔符。
-
-        mshops 为空时完全不出商店段落（保持原有输出逐字不变）；协作为空但商店
-        非空时，头部计数仍显示协作 0，末尾出商店段落 —— 不能因为没协作就把
-        商店命中吞掉。
+        """协作汇总正文。实现见 ``tasks/Utils/coop_summary.build_summary_content``
+        ——各调用方共用同一份，确保推送正文格式一致。
         """
-        now_str = (completed_at or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
-        mshops = mshops or []
-        if not coops and not mshops:
-            return "\n".join([
-                "多账号日常完成",
-                "",
-                f"完成时间：{now_str}",
-                "发现协作角色：0",
-                "协作任务数量：0",
-                "",
-                "本轮未发现协作任务。",
-            ])
-        roles = set()
-        for r in coops:
-            char = (r.get("character") or "").strip()
-            if char:
-                roles.add((char, r.get("svr") or ""))
-        lines = [
-            "多账号日常完成",
-            "",
-            f"完成时间：{now_str}",
-            f"发现协作角色：{len(roles)}",
-            f"协作任务数量：{len(coops)}",
-        ]
-        for category, matcher in cls._coop_category_order():
-            items = [r for r in coops if matcher(r)]
-            if not items:
-                continue
-            counter = {}
-            first_rec = {}
-            for r in items:
-                char = (r.get("character") or "").strip()
-                if not char:
-                    continue
-                monster_text = ""
-                if (
-                    (r.get("type") == "jade" and not bool(r.get("real")))
-                    or r.get("type") == "sushi"
-                ):
-                    monster_text = (r.get("monster_text") or "").strip()
-                key = (char, r.get("svr") or "", monster_text)
-                counter[key] = counter.get(key, 0) + 1
-                first_rec.setdefault(key, r)
-            lines.append("")
-            lines.append(f"{category}（{len(items)}）")
-            for (char, svr, monster_text), count in sorted(counter.items()):
-                rec = first_rec[(char, svr, monster_text)]
-                role_line = f"• {monster_text}：{char}" if monster_text else f"• {char}"
-                meta = []
-                if svr:
-                    meta.append(svr)
-                # 平台：True=安卓，False=iOS；show_system 关闭或旧记录无该字段则不显示
-                platform = rec.get("apple_or_android")
-                if show_system and platform is not None:
-                    meta.append("安卓" if platform else "iOS")
-                # 账号/邮箱：可选开关，开启后直接显示 account 原值
-                if show_account and rec.get("account"):
-                    meta.append(str(rec["account"]))
-                if meta:
-                    role_line += f"（{'｜'.join(meta)}）"
-                if count > 1:
-                    role_line += f" ×{count}"
-                lines.append(role_line)
-        lines.extend(cls._build_mshop_lines(
-            mshops, show_account=show_account, show_system=show_system))
-        return "\n".join(lines)
-
-    @staticmethod
-    def _build_mshop_lines(mshops, show_account=False, show_system=True) -> list:
-        """格式化神秘商店段落；mshops 为空返回空列表（不产生空段落）。
-
-        商店命中稀有，所以不像协作那样按角色聚合计数 —— 每一件单独一行列出
-        货名与价格，方便直接判断值不值得手动去买。
-        """
-        if not mshops:
-            return []
-        lines = ["", f"神秘商店（{len(mshops)}）"]
-        for rec in mshops:
-            char = (rec.get("character") or "").strip() or "未知角色"
-            line = f"• {char}"
-            meta = []
-            if rec.get("svr"):
-                meta.append(str(rec["svr"]))
-            platform = rec.get("apple_or_android")
-            if show_system and platform is not None:
-                meta.append("安卓" if platform else "iOS")
-            if show_account and rec.get("account"):
-                meta.append(str(rec["account"]))
-            if meta:
-                line += f"（{'｜'.join(meta)}）"
-            # 有结构化货名/价格就拼「货名 价格币种」，否则回退到旧格式的整串 label
-            goods = (rec.get("goods") or "").strip()
-            price = rec.get("price")
-            coin = (rec.get("coin") or "").strip()
-            if goods and price is not None:
-                line += f" {goods} {price}{coin}"
-            elif rec.get("label"):
-                line += f" {rec['label']}"
-            lines.append(line)
-        return lines
-
-    @staticmethod
-    def _coop_category_order():
-        """固定 10 个展示类别（含匹配规则），顺序：
-        现世勾协/现世体协/现世狗粮/现世猫粮/现世金币/普通勾协/普通体协/狗粮/猫粮/金币。
-
-        现世类整体排在前面，与改造前「现世勾协先于普通勾协」的顺序一致。
-        普通类的匹配必须显式排除 real：狗粮/猫粮/金币改造后也会带 real=True，
-        不排除的话一条现世金币协作会同时落进「现世金币协作」和「金币协作」两段。
-        旧记录没有 real 字段时 bool(None) 为 False，仍归入普通类，兼容不变。
-        """
-        return [
-            ("现世勾协", lambda r: r.get("type") == "jade" and bool(r.get("real"))),
-            ("现世体协", lambda r: r.get("type") == "sushi" and bool(r.get("real"))),
-            ("现世狗粮协作", lambda r: r.get("type") == "food"
-                and r.get("food_kind") == "dog" and bool(r.get("real"))),
-            ("现世猫粮协作", lambda r: r.get("type") == "food"
-                and r.get("food_kind") == "cat" and bool(r.get("real"))),
-            ("现世金币协作", lambda r: r.get("type") == "gold" and bool(r.get("real"))),
-            ("普通勾协", lambda r: r.get("type") == "jade" and not bool(r.get("real"))),
-            ("普通体协", lambda r: r.get("type") == "sushi" and not bool(r.get("real"))),
-            ("狗粮协作", lambda r: r.get("type") == "food"
-                and r.get("food_kind") == "dog" and not bool(r.get("real"))),
-            ("猫粮协作", lambda r: r.get("type") == "food"
-                and r.get("food_kind") == "cat" and not bool(r.get("real"))),
-            ("金币协作", lambda r: r.get("type") == "gold" and not bool(r.get("real"))),
-        ]
+        return build_summary_content(
+            coops, completed_at=completed_at, show_account=show_account,
+            show_system=show_system, mshops=mshops)
 
     def save_config(self):
         """保存配置"""

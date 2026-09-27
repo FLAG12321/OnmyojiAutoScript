@@ -16,6 +16,8 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from filelock import FileLock
+
 from module.logger import logger
 
 # 子任务状态：pending 未跑或中断（可重跑）、done 正常完成、failed 抛过异常（跳过）、
@@ -167,6 +169,16 @@ class ProgressStore:
             return {}
 
     def _archive_error(self, key: str, task: str, status: str, **fields) -> None:
+        """与管家清理共用文件锁，读改写完整串行，防止新增错误被旧快照覆盖。"""
+        try:
+            self.error_path.parent.mkdir(parents=True, exist_ok=True)
+            with FileLock(str(self.error_path) + '.cleanup.lock'):
+                self._archive_error_locked(key, task, status, **fields)
+        except Exception as e:
+            # 与原有旁路归档一致：锁或目录访问失败也不能阻断主任务。
+            logger.warning(f'异常归档写入失败，本条记录未持久化: {e}')
+
+    def _archive_error_locked(self, key: str, task: str, status: str, **fields) -> None:
         """把一条 failed/skipped 迁移追加到异常归档文件（按天分组，只保留今昨两组）。
 
         必须在进度 _save() 之前调用（先归档后写进度）：极端情况下进程在两次落盘
@@ -236,6 +248,11 @@ class ProgressStore:
         self._save()
         logger.info(f'创建新的进度: {self.path} phase={phase_id}')
         return True
+
+    @property
+    def phase_token(self) -> str:
+        """接续时保持轮次身份；创建时刻可区分同一分钟内新建的两个阶段。"""
+        return f'{self._data.get("phase_id", "")}|{self._data.get("created_at", "")}'
 
     def clear(self) -> None:
         """删除进度文件、快照与残留的 tmp。任务成功并安排下一阶段后调用。

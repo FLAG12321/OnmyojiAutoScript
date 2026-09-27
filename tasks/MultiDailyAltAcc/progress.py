@@ -11,6 +11,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from filelock import FileLock
+
 from module.logger import logger
 
 from tasks.Component.MultiAccountRunner.progress import (
@@ -137,22 +139,25 @@ class ProgressStore(_BaseProgressStore):
             return 0
         archive_path = self.path.parent / f'{self.task_name}_coop_archive_{self.config_name}.json'
         try:
-            existing = []
-            if archive_path.exists():
-                try:
-                    with open(archive_path, 'r', encoding='utf-8') as f:
-                        existing = json.load(f)
-                    if not isinstance(existing, list):
+            # 与管家历史清理共用锁，读取、追加与原子替换必须处在同一临界区。
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            with FileLock(str(archive_path) + '.cleanup.lock'):
+                existing = []
+                if archive_path.exists():
+                    try:
+                        with open(archive_path, 'r', encoding='utf-8') as f:
+                            existing = json.load(f)
+                        if not isinstance(existing, list):
+                            existing = []
+                    except (json.JSONDecodeError, OSError, ValueError):
                         existing = []
-                except (json.JSONDecodeError, OSError, ValueError):
-                    existing = []
-            existing.append({
-                'archived_at': datetime.now().isoformat(),
-                'coops': coops,
-                'mshops': mshops,
-            })
-            existing = existing[-COOP_ARCHIVE_LIMIT:]
-            _write_json_atomic(archive_path, existing)
+                existing.append({
+                    'archived_at': datetime.now().isoformat(),
+                    'coops': coops,
+                    'mshops': mshops,
+                })
+                existing = existing[-COOP_ARCHIVE_LIMIT:]
+                _write_json_atomic(archive_path, existing)
             logger.info(f'已归档 {len(coops)} 条未通知协作、'
                         f'{len(mshops)} 条神秘商店记录 -> {archive_path}')
             return len(coops) + len(mshops)
@@ -180,8 +185,8 @@ class ProgressStore(_BaseProgressStore):
         return super().ensure_phase(phase_flags, phase_id)
 
 
-# 参与阶段判定的开关白名单：收 _schedule_* 会改写的键，外加「关闭任务自动轮转」
-# 这个模式开关——切换它等于换一整套执行内容，必须让进度重建而不是接续。
+# 参与阶段判定的开关白名单：收 _schedule_* 会改写的键，外加轮转模式。
+# 切换这些开关等于改变执行内容，必须让进度重建而不是接续。
 # 显式白名单而非 startswith('total_')，因为 total_KekkaiUtilize_enable 会在
 # 运行期被 MSGType.Utilize（未找到寄养卡）改写并落盘——若纳入快照，另一账号
 # 失败重调度时会被误判成新阶段，重建进度导致已完成账号全部重跑、重复领奖。
@@ -212,8 +217,8 @@ def phase_flags_of(base_config, task_plan_phase: str | None = None) -> dict:
     这些键由 _schedule_normal_day / _schedule_evening / _schedule_after_midnight /
     _schedule_alliedteam_after_returngift 在成功收尾时改写，因此快照变化恰好
     等价于「任务已分配下一次要做什么」，正是进度失效的边界。
-    唯一的例外是 disable_task_rotation：它不在自动轮转的写入面上，而是用户在
-    轮次间隙手动切换的模式开关，同样让「本轮做什么」整体失效。
+    disable_task_rotation 不在自动轮转的写入面上，
+    但用户手动切换后同样改变「本轮做什么」，需要重建进度。
     need_login / need_login_time 已删除，账号完成与否完全由进度文件判定。
     """
     flags = {name: getattr(base_config, name, None) for name in PHASE_FLAG_KEYS}
