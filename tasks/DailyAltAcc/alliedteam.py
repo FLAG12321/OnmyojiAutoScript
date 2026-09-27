@@ -34,6 +34,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     HELP_ANCHOR_RETRY_LIMIT: int = 3
     # 连续多少秒不在战斗画面才确认上一场结束（防 I_BATTLE_INFO 单帧抖动误计场）
     BATTLE_END_CONFIRM_S = 3
+    # 同心选关、组队和战斗期间保留集结；结束后其他任务导航可以自动退出旧队伍。
+    _alliedteam_battle_active = False
 
     def reward_avoid(self) -> tuple:
         """同心协力是三人战斗，胜利画面上多出两块队友战绩框，落点回避它们。
@@ -161,6 +163,16 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         return True           
 
     def run_alliedteam_battle(self):
+        """同心组队战斗期间禁用退队 Page，正常返回或异常后都恢复导航退出能力。"""
+        previous_active = self._alliedteam_battle_active
+        self._alliedteam_battle_active = True
+        try:
+            return self._run_alliedteam_battle()
+        finally:
+            self._alliedteam_battle_active = previous_active
+
+    def _run_alliedteam_battle(self):
+        """执行同心选关、邀请和连续战斗，入口包装器负责保护当前集结。"""
         logger.info('开始执行战斗任务')
         # 邀请人数阈值由小号配置控制（默认2，可设1）：不足则继续邀请，达标即进入下一流程
         alliedteam_invite_count = self.get_config().daily_alt_acc_config.alliedteam_invite_count

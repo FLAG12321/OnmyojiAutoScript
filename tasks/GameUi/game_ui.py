@@ -42,6 +42,10 @@ _SCROLL_ENTRIES = (
 )
 
 
+class _NavigationPageChanged(Exception):
+    """导航中的覆盖页已变化，放弃旧页面操作并从当前 Page 重新规划。"""
+
+
 class GameUi(BaseTask, GameUiAssets):
     ui_current: Page = None
     ui_close = [GameUiAssets.I_BACK_MALL, GeneralBattleAssets.I_CONFIRM,
@@ -84,19 +88,48 @@ class GameUi(BaseTask, GameUiAssets):
 
     @property
     def ui_pages(self) -> list[Page]:
-        return PageRegistry.all()
+        # 作用域按任务实例筛选；稳定排序保留旧页面次序，并让覆盖页优先于底层庭院。
+        pages = [page for page in PageRegistry.all()
+                 if page.enabled is None or page.enabled(self)]
+        return sorted(pages, key=lambda page: not page.overlay)
+
+    def _match_page(self, page: Page, interval=None) -> bool:
+        """仅匹配当前帧；复合页面判据可读取多项素材与正文，不在这里截图或点击。"""
+        if callable(page.check_button):
+            return page.check_button(self)
+        if isinstance(page.check_button, list):
+            return any(self.appear(button, interval) for button in page.check_button)
+        return self.appear(page.check_button, interval)
+
+    def _current_overlay_page(self):
+        """返回当前作用域内最上层的覆盖页，避免遮罩下页面通过到达判断。"""
+        for page in self.ui_pages:
+            if page.overlay and self._match_page(page):
+                return page
+        return None
+
+    def maybe_screenshot(self, soft_skip: bool = False):
+        """保留完整截图链；导航取帧后只识别覆盖页，具体点击仍由 Page.links 执行。"""
+        image = super().maybe_screenshot(soft_skip)
+        if getattr(self, '_overlay_navigation_active', False):
+            overlay = self._current_overlay_page()
+            if overlay != self.ui_current and (
+                    overlay is not None or getattr(self.ui_current, 'overlay', False)):
+                # 覆盖页出现、变化或消失都重算，不能继续点旧页面的通用确定按钮。
+                self.ui_current = overlay
+                raise _NavigationPageChanged()
+        return image
 
     def ui_page_appear(self, page: Page, skip_first_screenshot: bool = True, interval: float = None):
         """
         判断当前页面是否为page
         """
         self.maybe_screenshot(skip_first_screenshot)
-        if isinstance(page.check_button, list):
-            for button in page.check_button:
-                if self.appear(button, interval):
-                    return True
+        # 直接等待页面也要遵守作用域和遮挡关系，不能绕过全页识别的优先级。
+        if page.enabled is not None and not page.enabled(self):
             return False
-        return self.appear(page.check_button, interval)
+        overlay = self._current_overlay_page()
+        return page == overlay if overlay is not None else self._match_page(page, interval)
 
     def ui_wait_until_appear(self, page: Page, timeout: float = 5, interval: float = 0.5,
                              skip_first_screenshot: bool = True) -> bool:
@@ -142,8 +175,9 @@ class GameUi(BaseTask, GameUiAssets):
         OCR —— 展开后的排版随卷轴皮肤变，没采集过的皮肤上图判据认不出，而入口的文字不随
         皮肤变。图判据放在前面是为了让正常路径零额外成本：OCR 只在它失败后才跑。
         """
-        return (self.ui_page_appear(page_theme, skip_first_screenshot=False)
-                or self._scroll_entries_visible())
+        visible = self.ui_page_appear(page_theme, skip_first_screenshot=False)
+        # 底栏 OCR 也能透过遮罩命中，不能绕过覆盖页的排他判断。
+        return visible or (self._current_overlay_page() is None and self._scroll_entries_visible())
 
     def _target_page_appear(self, page: Page) -> bool:
         """跳转目标页是否已经可见。page_theme 多一路 OCR 判据，其余页仍走 check_button。"""
@@ -330,6 +364,29 @@ class GameUi(BaseTask, GameUiAssets):
         return False
 
     def ui_goto(self, destination: Page, confirm_wait=0, skip_first_screenshot=True, timeout: int = 60) -> bool:
+        """按 Page 出边导航；作用域内新出现的覆盖页会中断旧路径并重新规划。"""
+        if not any(page.overlay for page in self.ui_pages):
+            return self._ui_goto(destination, confirm_wait, skip_first_screenshot, timeout)
+        previous_active = getattr(self, '_overlay_navigation_active', False)
+        self._overlay_navigation_active = True
+        total_timer = Timer(timeout).start()
+        try:
+            while not total_timer.reached():
+                try:
+                    # 已缓存目标页时也先核对画面，不能因路径只有一页就跳过新弹窗。
+                    self.maybe_screenshot(skip_first_screenshot)
+                    return self._ui_goto(
+                        destination, confirm_wait, True, max(0, timeout - total_timer.current()))
+                except _NavigationPageChanged:
+                    # 仅重算 Page 路径，不走未知页关闭，更不把总超时预算重新置满。
+                    logger.info(f'导航覆盖页变化，重新规划路径: {self.ui_current}')
+                    skip_first_screenshot = False
+            logger.error(f'Cannot goto page[{destination}], timeout[{timeout}s] reached')
+            return False
+        finally:
+            self._overlay_navigation_active = previous_active
+
+    def _ui_goto(self, destination: Page, confirm_wait=0, skip_first_screenshot=True, timeout: int = 60) -> bool:
         """
         Args:
             destination (Page):
@@ -409,6 +466,9 @@ class GameUi(BaseTask, GameUiAssets):
             # 当前页不等于路径中对应页, 尝试下一页
             if self.ui_current != current_page:
                 continue
+            # 无 additional 的页面也要检查覆盖状态，防止沿用遮罩出现前缓存的路径。
+            if getattr(self, '_overlay_navigation_active', False):
+                self.maybe_screenshot(False)
             self.run_additional(current_page, interval=0.6, skip_first_screenshot=False)
             # 如果已经是最后一页，不再跳转
             if i == len(path) - 1:
@@ -569,7 +629,8 @@ class GameUi(BaseTask, GameUiAssets):
         """
         detect_timer = Timer(timeout).start()
         while timed and not detect_timer.reached():
-            self.screenshot()
+            # 与普通附加操作共用导航取帧检查，发现新覆盖页后立即停止旧页面点击。
+            self.maybe_screenshot(False)
             for i, (condition, action, _) in enumerate(timed):
                 if not self.appear(condition):
                     continue

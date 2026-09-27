@@ -27,11 +27,14 @@ class PageRegistry:
 
 
 class Page:
-    def __init__(self, check_button, links=None):
+    def __init__(self, check_button, links=None, *, enabled=None, overlay=False):
         if links is None:
             links = {}
         self.check_button = check_button
         self.links = links
+        # 作用域按当前任务判断，不修改共享 Page；覆盖页优先于遮罩下的普通页面。
+        self.enabled = enabled
+        self.overlay = overlay
         self.additional: list = None  # 附加按钮或者是ocr检测按钮
         (filename, line_number, function_name, text) = traceback.extract_stack()[-2]
         self.name = text[:text.find('=')].strip()
@@ -56,9 +59,16 @@ class Page:
 page_login = Page(G.I_CHECK_LOGIN_FORM)
 # 探索exploration
 page_exploration = Page(G.I_CHECK_EXPLORATION)
-# 绑定手机号弹窗 bind phone（必须在page_main之前注册，优先识别弹窗而非底层庭院）
-# 两步操作：run_additional点击"前往绑定"弹出确认框，link点击"取消绑定"关闭
-page_bind_phone = Page(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
+def _bind_phone_appear(task) -> bool:
+    """专属提示启动绑定流程；通用取消按钮只允许延续已经识别出的绑定页面。"""
+    return (task.appear(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
+            or (getattr(task, 'ui_current', None) == page_bind_phone
+                and task.appear(RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE)))
+
+
+# 绑定手机号是前景覆盖页，优先于庭院及其同心集结横幅；两个阶段都保持该 Page。
+# 两步操作：run_additional 点击“前往绑定”，link 点击“取消绑定”关闭，再处理后方集结。
+page_bind_phone = Page(_bind_phone_appear, overlay=True)
 page_bind_phone.additional = [RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE]
 # Main Home 主页
 # check_button 是**列表**：两个锚点都是皮肤无关的固定 UI，任一命中即算在庭院。
