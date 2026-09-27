@@ -59,8 +59,6 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_AUTO = RuleImage(roi_front=(37,646,27,31), roi_back=(9,620,100,81), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_auto.png")
 	# description 
-	I_CLICK_REFUSE = RuleImage(roi_front=(367,588,211,43), roi_back=(227,518,419,154), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_refuse.png")
-	# description 
 	I_CLICK_BACK_RED = RuleImage(roi_front=(1149,75,43,43), roi_back=(771,10,496,320), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_back_red.png")
 	# description 
 	I_CLICK_LV = RuleImage(roi_front=(854,244,25,22), roi_back=(704,134,387,374), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_lv.png")

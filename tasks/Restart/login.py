@@ -113,6 +113,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         if self.appear_then_click(self.I_LOGIN_YELLOW_CLOSE, interval=1.6):
             logger.info('Close yellow close')
             return True
+        # 个性化推荐提示与绑定手机号弹窗是两个独立弹窗，识别顺序排在绑定之前；
+        # interval 需小于 LOGIN_COURTYARD_CONFIRM_DELAY
+        if self.appear_then_click(self.I_CLICK_REFUSE, interval=1):
+            logger.info('Close personalized recommendation')
+            return True
         # 绑定手机号弹窗
         if self.appear_then_click(self.I_LOGIN_LOGIN_GOTO_BIND_PHONE):
             while 1:

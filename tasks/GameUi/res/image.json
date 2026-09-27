@@ -97,5 +97,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "图鉴"
+  },
+  {
+    "itemName": "click_refuse",
+    "imageName": "click_refuse.png",
+    "roiFront": "367,588,211,43",
+    "roiBack": "227,518,419,154",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "关闭个性化推荐独立弹窗，识别优先级高于绑定手机"
   }
 ]

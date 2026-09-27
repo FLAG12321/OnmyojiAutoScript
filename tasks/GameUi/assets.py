@@ -327,6 +327,8 @@ class GameUiAssets:
 	I_HOME_HELP = RuleImage(roi_front=(201,617,56,57), roi_back=(201,617,56,57), threshold=0.8, method="Template matching", file="./tasks/GameUi/res/res_home_help.png")
 	# 图鉴 
 	I_HOME_COLLECT = RuleImage(roi_front=(92,607,48,74), roi_back=(92,607,48,74), threshold=0.8, method="Template matching", file="./tasks/GameUi/res/res_home_collect.png")
+	# 关闭个性化推荐独立弹窗，识别优先级高于绑定手机 
+	I_CLICK_REFUSE = RuleImage(roi_front=(367,588,211,43), roi_back=(227,518,419,154), threshold=0.7, method="Template matching", file="./tasks/GameUi/res/click_refuse.png")
 
 
 	# Ocr Rule Assets

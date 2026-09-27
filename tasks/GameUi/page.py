@@ -59,6 +59,10 @@ class Page:
 page_login = Page(G.I_CHECK_LOGIN_FORM)
 # 探索exploration
 page_exploration = Page(G.I_CHECK_EXPLORATION)
+# 个性化推荐是独立覆盖页，注册在绑定手机之前以优先识别并关闭。
+page_personalized_recommendation = Page(G.I_CLICK_REFUSE, overlay=True)
+
+
 def _bind_phone_appear(task) -> bool:
     """专属提示启动绑定流程；通用取消按钮只允许延续已经识别出的绑定页面。"""
     return (task.appear(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE)
@@ -82,6 +86,7 @@ page_main = Page([G.I_CHECK_MAIN, G.I_MAIN_BUFF])
 # 卷轴收起时庭院上只剩这四样要处理的。展开/收起卷轴不在 additional 里——
 # 那是「前往 page_theme / 回到 page_main」的页面跳转，由下面的 link 承担。
 page_main.additional = [G.I_CHECK_YARD, G.I_AD_CLOSE_RED, G.I_BACK_FRIENDS, RestartAssets.I_CANCEL_BATTLE]
+page_personalized_recommendation.link(button=G.I_CLICK_REFUSE, destination=page_main)
 page_bind_phone.link(button=RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE, destination=page_main)
 
 # 卷轴展开态：庭院右下角卷轴打开后，底部露出一排入口（图鉴/珍旅居/组队/阴阳寮/商店/合战/好友/阴阳术/式神录）。

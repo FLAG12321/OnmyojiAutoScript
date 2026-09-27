@@ -722,6 +722,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if self.appear_then_click(self.I_CHECK_UNTICK, interval=1):
                     start_time=time.time()
                     continue
+        # 独立处理个性化推荐，优先于绑定手机检测并复用 GameUi 的关闭按钮。
+        elif self.appear_then_click(GameUiAssets.I_CLICK_REFUSE, interval=5):
+            pass
         # 绑定手机号弹窗
         elif self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE, interval=1):
             start_time=time.time()
@@ -730,8 +733,6 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
                     logger.info("Close bind phone")
                     break
-        elif self.appear_then_click(self.I_CLICK_REFUSE, interval=5):
-            pass
         elif (self.appear_then_click(self.I_REWARD, action=action_click, interval=1.5) or
             self.appear_then_click(self.I_REWARD_GOLD, action=action_click, interval=1.5)
             ):
