@@ -1,4 +1,7 @@
 {
+  "login_handoff_config": "重启后交给任务切号",
+  "login_handoff_tasks": "从登录页接手的任务",
+  "login_handoff_tasks_help": "仅模拟器生效。填写会在开始时自行切号的任务英文名，每行一个，也可用逗号分隔。仅下一个已到期且不在禁止时段内的任务命中时，重启才在账号选择入口就绪后结束，不进入庭院、不领取奖励。留空保持原行为；请确保所填任务已配置切号。",
   "boss_early_exit_score": "BOSS提前退出成绩阈值",
   "boss_limit_time": "单局Boss限制时间",
   "kirin_battle_config": "麒麟战斗配置",

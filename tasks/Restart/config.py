@@ -38,8 +38,15 @@ class LoginCharacterConfig(BaseModel):
     character: str = Field(default="")
 
 
+class LoginHandoffConfig(BaseModel):
+    # 留空沿用进庭院的流程；只允许名单中的下一个到期任务从登录页接手。
+    login_handoff_tasks: MultiLine = Field(default="", description='login_handoff_tasks_help')
+
+
 class Restart(ConfigBase):
     scheduler: RestartScheduler = Field(default_factory=RestartScheduler)
     tasks_config_reset: TasksReset = Field(default_factory=TasksReset)
     harvest_config: HarvestConfig = Field(default_factory=HarvestConfig)
     login_character_config: LoginCharacterConfig = Field(default_factory=LoginCharacterConfig)
+    # 使用任务名配置，不依赖某个多账号任务的专属实现。
+    login_handoff_config: LoginHandoffConfig = Field(default_factory=LoginHandoffConfig)

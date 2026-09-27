@@ -9,6 +9,7 @@ from tasks.Component.Costume.costume_base import release_costume_probe_locks
 from tasks.Component.SwitchAccount.character_match import (
     CHARACTER_LIST_EMPTY_OCR_DELAY, CHARACTER_LIST_EMPTY_OCR_LIMIT, find_character_index,
 )
+from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
@@ -55,6 +56,11 @@ SELECT_CHARACTER_SHAPE_THRESHOLD = 0.85
 # 角色列表滑动后的等待时间。列表有惯性动画，滑完立刻截图会拍到运动残影导致 OCR 拉花，
 # 与 login_account.py 的 switch_character 同口径。
 CHARACTER_LIST_SWIPE_DELAY = 1.5
+
+
+class LoginHandoffReady(Exception):
+    """账号选择入口已就绪，结束重启登录并跳过庭院领取。"""
+
 
 class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     character: str
@@ -140,9 +146,40 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         return False
     
 
-    def _app_handle_login(self) -> bool:
+    def _get_login_handoff_task(self) -> str:
+        """普通登录和切号后的登录必须进庭院，只有 Restart 可以指定接手任务。"""
+        return ''
+
+    def _prepare_login_handoff(self) -> bool:
+        """只打开账号选择入口并验证可操作，不提交当前账号或进入游戏。"""
+        assets = SwitchAccountAssets
+        if self.appear(assets.I_SA_NETEASE_GAME_LOGO) and self.appear(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED):
+            # 列表可能已经展开；先收起，再验证完整表单，避免卡在等待状态。
+            self.click(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED, interval=1)
+            return False
+        if self.appear(assets.I_SA_NETEASE_GAME_LOGO) and self.appear(assets.I_SA_ACCOUNT_LOGIN_BTN):
+            # 平台选择会覆盖账号表单，必须先退回真正可选择账号的界面。
+            if self.appear(assets.I_SA_LOGIN_FORM_APPLE):
+                self.appear_then_click(assets.I_SA_APPLE_BACK, interval=1)
+                return False
+            return self.appear(assets.I_SA_ACCOUNT_DROP_DOWN_CLOSED)
+        if self.appear_then_click(assets.I_SA_SWITCH_ACCOUNT_BTN, interval=1):
+            return False
+        # 误入选服/选角时只退回登录页，不确认任何角色。
+        if self.appear(self.I_LOGIN_SPECIFIC_SERVE):
+            self.appear_then_click(self.I_BACK_BLUE, interval=1)
+        elif self.appear(assets.I_SA_CHECK_SELECT_SVR_1) or self.appear(assets.I_SA_CHECK_SELECT_SVR_2):
+            self.click(assets.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT, interval=1)
+        elif self.appear(assets.I_SA_LOGIN_FORM_APPLE):
+            self.appear_then_click(assets.I_SA_APPLE_BACK, interval=1)
+        elif self.appear(self.I_CHECK_LOGIN_FORM) or self.appear(self.I_LOGIN_8):
+            # 登录页入口只有坐标资产；点击后还要等切换按钮和账号下拉框实际出现。
+            self.click(assets.C_SA_LOGIN_FORM_USER_CENTER, interval=1)
+        return False
+
+    def _app_handle_login(self, stop_at_login: bool = False) -> bool:
         """
-        最终是在庭院界面
+        普通登录最终到庭院；指定交接时在可操作的账号选择页结束。
         :return:
         """
         logger.hr('App login')
@@ -182,6 +219,12 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
             return True
 
         while 1:
+            # 启动和加载期间任务可能到期或跨入禁止时段，每轮点击前刷新实际接手对象。
+            # 一旦决定保护登录页就不再回退到默认账号登录；队列变化只能重新交接或停止。
+            handoff_task = self._get_login_handoff_task()
+            stop_at_login = (stop_at_login or bool(handoff_task)
+                             or self.__dict__.get('_login_handoff_protected', False))
+            self._login_handoff_protected = stop_at_login
             # MPay 可能在启动后、重登时或登录流程中途反复出现，每一轮都必须处理。
             if handle_desktop_login_popup():
                 continue
@@ -259,8 +302,15 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                     self.screenshot()  # 点击后立即获取最新截图，确保后续状态检查准确
                     continue
 
+            # 名单命中后，入口未就绪只能继续等待/退回登录页，不能兜底登录未知账号。
+            if stop_at_login:
+                if self._prepare_login_handoff():
+                    if not handoff_task:
+                        raise RequestHumanTakeover('切号入口已就绪，但后续任务已变化，请检查重启交接名单和调度')
+                    raise LoginHandoffReady(handoff_task)
+                continue
+
             # 当账号未登录时点击登录
-            from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
             if self.appear_then_click(SwitchAccountAssets.I_SA_ACCOUNT_LOGIN_BTN, interval=0.8):
                 logger.info("click login")
                 continue
@@ -308,6 +358,11 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
         # Restart 可要求在重试内启动游戏；其他调用方仍可直接处理已经打开的登录界面。
         # 桌面客户端的启动、清理和三轮重建统一由 _desktop_start_and_login 管理。
         # 这里若再 stop/start，会在内部重试耗尽后留下一个从未验证的新进程。
+        # 每次启动重新选择交接对象；普通切号调用方始终完整登录。
+        handoff_task = '' if account_retry else self._get_login_handoff_task()
+        # 当前任务实例的应用重试共享保护状态；切号会新建普通 LoginHandler。
+        self._login_handoff_protected = (bool(handoff_task)
+                                        or self.__dict__.get('_login_handoff_protected', False))
         attempts = 1 if self.device.is_desktop else 2
         for attempt in range(attempts):
             self.device.stuck_record_clear()
@@ -316,7 +371,9 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                 # 只有真正开始下一轮登录才启动，最后一次失败后不再额外拉起游戏。
                 if start_app or attempt > 0:
                     self.device.app_start()
-                if self._app_handle_login() is False:
+                # 保留普通调用签名，切号组件使用的 LoginHandler 不会启用提前结束。
+                result = self._app_handle_login(stop_at_login=True) if handoff_task else self._app_handle_login()
+                if result is False:
                     # 切号调用方已有三次账号级预算，普通未识别不叠加应用重启重试。
                     if account_retry:
                         return False
@@ -327,6 +384,13 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                     self.device.desktop_mark_logged_in()
                 if self.config.restart.harvest_config.enable:
                     self.harvest()
+                return True
+            except LoginHandoffReady as ready:
+                # 模拟器已到账号选择页，不领取庭院奖励，后续任务直接从切号表单接手。
+                handoff_task = ready.args[0]
+                self.device.stuck_record_clear()
+                self.device.click_record_clear()
+                logger.info(f'账号选择入口已就绪，结束重启并交给 {handoff_task} 切号')
                 return True
             except (GameNotRunningError, GameTooManyClickError, GameStuckError) as e:
                 logger.warning(e)

@@ -90,7 +90,10 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         self.screenshot()
         # 切号时游戏本就要停在登录页，显式允许把 page_login 当合法当前页返回，
         # 否则 ui_get_current_page 默认会把它误判为掉线抛 GameNotRunningError 触发 Restart
-        curPage = self.ui_get_current_page(accept_login=True)
+        # 模拟器 Restart 可停在账号选择表单，弹窗可能遮住底层登录页标记。
+        account_form = (not self.device.is_desktop and self.appear(self.I_SA_NETEASE_GAME_LOGO)
+                        and self.appear(self.I_SA_ACCOUNT_LOGIN_BTN))
+        curPage = page_login if account_form else self.ui_get_current_page(accept_login=True)
 
         if curPage != page_login and curPage != page_main:
             self.ui_goto(page_main)

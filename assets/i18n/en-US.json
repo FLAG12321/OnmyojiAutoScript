@@ -1,4 +1,7 @@
 {
+  "login_handoff_config": "Switch accounts after restart",
+  "login_handoff_tasks": "Tasks that take over at login",
+  "login_handoff_tasks_help": "Emulators only. Enter task names, one per line or separated by commas. If the next due task is listed and outside its forbidden hours, Restart stops when account selection is ready, without entering the courtyard or collecting rewards. Leave empty for normal login. Listed tasks must switch accounts before other actions.",
   "enable_realm_raid_chain": "Run Realm Raid after each round",
   "enable_realm_raid_chain_help": "Schedule Realm Raid after every Orochi round",
   "epoch": "Team session Epoch",

@@ -2,6 +2,9 @@
 # @author runhey
 # github https://github.com/runhey
 from datetime import datetime, timedelta
+import re  # 名单支持换行、逗号和分号分隔。
+
+from module.config.utils import convert_to_underscore
 
 from tasks.Restart.login import LoginHandler
 
@@ -15,6 +18,28 @@ DESKTOP_RESTART_ATTEMPTS = 3
 
 
 class ScriptTask(LoginHandler):
+
+    def _get_login_handoff_task(self) -> str:
+        """按当前调度顺序选择接手任务，不提前运行未来任务或越过普通任务。"""
+        # 桌面客户端不支持切号，名单仅对模拟器生效，桌面继续完整登录。
+        if self.device.is_desktop:
+            return ''
+        handoff = getattr(self.config.restart, 'login_handoff_config', None)
+        names = getattr(handoff, 'login_handoff_tasks', '')
+        allowed = {convert_to_underscore(name) for name in re.split(r'[\s,，;；]+', names) if name}
+        if not allowed:
+            return ''
+        self.config.update_scheduler()
+        for task in self.config.pending_task:
+            if task.command == 'Restart':
+                continue
+            # 调度器会跳过禁止时段内的任务；这里使用同一规则，但不修改其计划时间。
+            if self.config.get_forbidden_time_end(task.command) is not None:
+                continue
+            if convert_to_underscore(task.command) in allowed:
+                return task.command
+            return ''
+        return ''
 
     def run(self) -> None:
         """
