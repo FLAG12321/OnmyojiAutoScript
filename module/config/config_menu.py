@@ -7,6 +7,7 @@ from cached_property import cached_property
 from pydantic import BaseModel, ValidationError, validator, Field
 
 from module.config.utils import *
+from tasks.Utils.optional_tasks import extend
 
 
 class ConfigMenu:
@@ -51,6 +52,8 @@ class ConfigMenu:
         self.menu["Activity Task"] = ['ActivityShikigami', 'MetaDemon', 'FrogBoss', 'FloatParade', 'Quiz', 'KittyShop', 'DyeTrials']
         # 开发工具
         self.menu["Tools"] = ['Image Rule', 'Ocr Rule', 'Click Rule', 'Long Click Rule', 'Swipe Rule', 'List Rule']
+        # 本机菜单在默认分组创建完成后接入，不在公共菜单中列出本机任务。
+        self.menu = extend('menu', self.menu)
 
     @cached_property
     def gui_menu(self) -> str:

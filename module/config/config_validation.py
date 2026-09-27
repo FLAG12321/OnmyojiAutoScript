@@ -13,6 +13,7 @@ from typing import Annotated, Any, Callable, Sequence, Union, get_args, get_orig
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from tasks.Component.config_base import ConfigBase
+from tasks.Utils.optional_tasks import extend
 from module.config.config_model import ConfigModel
 
 # 严格持久化校验开关：开启时 ConfigBase.__init__ 不再把 range 错误降级为默认值
@@ -248,6 +249,9 @@ LEGACY_ALIAS_MIGRATIONS: Sequence[tuple[tuple[str, ...], Callable[[dict], None]]
     (("script", "device", "humanize_level"), _migrate_humanize_level),
 )
 
+# 本机模型所需的补节点逻辑与模型同步接入，避免默认值和磁盘成员不一致。
+LEGACY_ALIAS_MIGRATIONS = extend('migrations', LEGACY_ALIAS_MIGRATIONS)
+
 
 def legacy_source_paths() -> set[tuple[str, ...]]:
     """返回所有 legacy alias 的源路径，供 AST 门禁校验 before-validator 迁移均已登记。"""
@@ -272,6 +276,9 @@ DYNAMIC_PATH_SET_REGISTRY: Sequence[DynamicPathSet] = (
     DynamicPathSet("abyss_shadows.switch_account_list", ("abyss_shadows", "switch_account_list"),
                    mode="single"),
 )
+
+# 扩展使用相同的注册项类型，使账号表继续经过严格持久化校验。
+DYNAMIC_PATH_SET_REGISTRY = extend('dynamic_paths', DYNAMIC_PATH_SET_REGISTRY, DynamicPathSet)
 
 
 DYNAMIC_FIELD_SET_REGISTRY: Sequence[DynamicFieldSet] = (

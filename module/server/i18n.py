@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from module.logger import logger
+from tasks.Utils.optional_tasks import extend
 
 # 候选项在运行时按环境现算、值不稳定的字段，其 enumEnum 不参与翻译 key 收集。
 # handle 与 leader_instance 都由运行环境动态枚举，不应把候选值写进翻译表。
@@ -36,7 +37,8 @@ class Addition:
             # 过滤空值与非字符串值：兼容历史空值占位条目与手工误填的非字符串值；
             # 前端 .tr 查不到会回退显示 key 原文，避免显示空白
             result[file] = {k: v for k, v in data.items() if isinstance(v, str) and v}
-        return result
+        # 本机翻译只在下发时合并，不写入随仓库分发的翻译表。
+        return extend('translations', result, cls.assets_i18n_dir)
 
 
 class I18n(Addition):
@@ -68,6 +70,8 @@ class I18n(Addition):
         :param menu: gui_menu_list 返回的 {菜单分组名: [任务名]}
         :param script_task_fn: ConfigModel.script_task 的可调用对象
         """
+        # 本机任务的 Schema 不参与公共翻译补齐，防止同步命令重新泄漏名称。
+        menu = extend('translation_menu', menu)
         keys = set()
         for group_name, task_names in menu.items():
             keys.add(group_name)

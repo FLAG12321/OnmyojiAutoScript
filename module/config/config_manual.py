@@ -1,6 +1,8 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+from tasks.Utils.optional_tasks import extend
+
 
 class ConfigManual:
     """
@@ -22,6 +24,9 @@ class ConfigManual:
         > TrueOrochi > RichMan 
         > MetaDemon > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls> Plotline >SearchId
         """
+
+    # 调度只接收当前机器提供的附加优先级，缺少扩展时保留默认顺序。
+    SCHEDULER_PRIORITY = extend('priority', SCHEDULER_PRIORITY)
 
     DEVICE_OVER_HTTP = False
     FORWARD_PORT_RANGE = (20000, 21000)

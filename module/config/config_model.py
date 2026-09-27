@@ -75,6 +75,7 @@ from tasks.MemoryScrolls.config import MemoryScrolls
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc
 from tasks.MultiTasks.config import MultiTasks
 from tasks.AccountExport.config import AccountExport  # 独立账号数据导出。
+from tasks.Utils.optional_tasks import extend
 from tasks.ReturnGift.config import ReturnGift
 from tasks.Plotline.config import Plotline
 from tasks.SearchId.config import SearchId
@@ -215,7 +216,8 @@ class ConfigModel(ConfigBase):
         :param key:
         :return:
         """
-        field_type: str = str(ConfigModel.__annotations__[key])
+        # 扩展模型通过继承追加字段；Pydantic 字段表同时包含公共字段和扩展字段。
+        field_type: str = str(ConfigModel.model_fields[key].annotation)
         # return field_type
         if '.' in field_type:
             classname = field_type.split('.')[-1][:-2]
@@ -504,7 +506,10 @@ class ConfigModel(ConfigBase):
             break
 
 
+# 本机扩展在模型定义完成后追加字段，继承既有 Schema 与读取方法。
+ConfigModel = extend('config_model', ConfigModel)
+
+
 if __name__ == "__main__":
     c = ConfigModel()
     print(c.script_task('GuildBanquet'))
-
