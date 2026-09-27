@@ -8,17 +8,25 @@ from time import sleep
 from module.base.timer import Timer
 from module.base.utils import save_image
 from module.logger import logger
+from module.exception import GamePageUnknownError
 from tasks.GameUi.assets import GameUiAssets
-from tasks.GameUi.page import page_main, page_team, page_friends
+from tasks.GameUi.page import page_main, page_team
 from tasks.DailyAltAcc.utils import DailyAltAccBase
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralBattle.reward_frame import AVOID_WIN_TEAM3
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
+# 同心与觉醒协战共用截图前校验，保证未加载时采用相同的庭院重试流程。
+from tasks.Component.SwitchHelpShikigami.switch_help_shikigami import (
+    build_help_screenshot_name, capture_friend_help_image, capture_completed_help_image,
+    parse_help_count, sync_help_battle_target, HelpTargetReached,
+)
 from tasks.DailyAltAcc.stat_log import StatEvent
 from tasks.Plotline.assets import PlotlineAssets
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
+# 同心协战复用觉醒的购买体力弹窗素材，仅在协战分支处理体力受阻。
+from tasks.EvoZone.assets import EvoZoneAssets
 
 
 class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
@@ -34,6 +42,13 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
     HELP_ANCHOR_RETRY_LIMIT: int = 3
     # 连续多少秒不在战斗画面才确认上一场结束（防 I_BATTLE_INFO 单帧抖动误计场）
     BATTLE_END_CONFIRM_S = 3
+    # 仅 13 次协战启用动态目标；实际战斗场次仍由 current_count 和进度文件独立累计。
+    _help_target_enabled = False
+    _help_battle_limit = None
+    _help_target_synced = False
+    _help_target_complete = None
+    # 体力不足后停止本轮补打，仍由收尾流程保存最终协战次数截图。
+    _help_battle_blocked = False
     # 同心选关、组队和战斗期间保留集结；结束后其他任务导航可以自动退出旧队伍。
     _alliedteam_battle_active = False
 
@@ -85,16 +100,26 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         # 先恢复历史场次，再捕获基线，确保统计的是本次新增场数
         self._restore_battle_count()
         before_count = getattr(self, "current_count", 0)
+        # 每轮仅在协战配置下启用游戏次数目标，补打轮沿用当前场次而不重读历史进度。
+        configured_limit = self.get_config().daily_alt_acc_config.alliedteam_limit_count
+        self._help_target_enabled = bool(battle_enable and configured_limit == 13)
+        self._help_battle_limit = configured_limit
+        self._help_target_synced = False
+        self._help_target_complete = None
+        self._help_battle_blocked = False
         battle_result = None
         if ap_enable:
             self.run_alliedteam_ap()
         if battle_enable:
             battle_result = self.run_alliedteam_battle()
+            self.return_to_main()
+            # 截图核对与补打完成后再统计，额外补的场次也必须纳入本轮统计。
+            if self._help_target_enabled and self._help_target_complete is not None:
+                battle_result = self._help_target_complete
             # 只统计本次同心战斗新增场数，不统计胜负结果。
             emit_stat = getattr(self, "emit_stat", None)
             if emit_stat:
                 emit_stat(StatEvent.BATTLE, count=getattr(self, "current_count", 0) - before_count)
-            self.return_to_main()
         elif ap_enable:
             emit_stat = getattr(self, "emit_stat", None)
             if emit_stat:
@@ -247,7 +272,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         logger.warning('无法回到同心挑战界面（组队页恢复超时）')
         return False
 
-    def return_to_main(self):   
+    def return_to_main(self, capture: bool = True):
+        """退出副本回庭院；补打回调只导航，最终截图由外层统一核对保存。"""
         while 1:
             self.screenshot()
             if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
@@ -265,26 +291,22 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 continue    
         self.ui_goto(page_main)
-        if self.get_config().daily_alt_acc_config.alliedteam_limit_count == 13:
-            self.screenshot()
-            self.ui_goto(page_friends)
-            while 1:    
-                self.screenshot()
-                if self.appear(self.I_FRIEND_HELP_FLAG, interval=1):
-                    break
-                if self.appear_then_click(self.I_FRIEND_HELP,action=self.C_FRIEND_HELP_CLICK, interval=1):
-                    continue
+        if capture and self.get_config().daily_alt_acc_config.alliedteam_limit_count == 13:
+            # 次数未显示时回庭院重进，第三次仍失败则保留现场截图。
+            image = (capture_completed_help_image(self, self._refill_allied_help_battles)
+                     if self._help_target_enabled else capture_friend_help_image(self))
                 
             now=datetime.now()
-            # 角色名优先取多账号运行注入的统计上下文(_stat_ctx)，单实例运行时退化为配置实例名
-            char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
-            # 替换 Windows 文件名非法字符，避免保存失败
-            char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+            # 多账号统一使用完整身份，避免同名角色覆盖；单账号保留原命名。
+            screenshot_name = build_help_screenshot_name(
+                getattr(self, '_stat_ctx', None), self.config.config_name,
+                getattr(self, '_help_screenshot_name_mode', None) or 'char',
+            )
             save_dir = Path(f'screenshots/Battle_Screenshots_{now.year}_{now.month:02d}_{now.day:02d}')
             save_dir.mkdir(parents=True, exist_ok=True)
-            # 同一角色同一天重复运行时直接覆盖，只保留最新一张
-            save_path = save_dir / f'{char_name}.png'
-            save_image(self.screenshot(), str(save_path))
+            # 同一身份同一天覆盖为最新校验帧（或第三次失败帧），不再另取未经校验的画面。
+            save_path = save_dir / f'{screenshot_name}.png'
+            save_image(image, str(save_path))
             logger.info(f'同心协战次数截图已保存: {save_path}')
             run_timer=Timer(5)
             run_timer.start()
@@ -298,6 +320,31 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             if self.ui_get_current_page() != page_main:
                 self.ui_goto(page_main)
             
+
+    def _refill_allied_help_battles(self, remaining: int) -> bool:
+        """同心协战先解除旧队伍集结再重新组队，补完当前缺额后返回庭院。"""
+        if not self._help_target_enabled or self._help_battle_blocked:
+            return False
+        # 与其他任务共用退队 Page：横幅 X → 退队确定 → 庭院，再进入组队页。
+        if not self.ui_goto(page_team):
+            raise GamePageUnknownError('同心协战补打无法重新进入组队页')
+        self._help_battle_limit = self.current_count + remaining
+        self._help_target_synced = False
+        result = self.run_alliedteam_battle()
+        # 不能再走截图闭环，否则补打会递归调用自身。
+        self.return_to_main(capture=False)
+        return result
+
+    def _check_help_ap_exhausted(self) -> bool:
+        """协战体力不足时关窗并停止补打，交给外层回庭院留图。"""
+        if not self._help_target_enabled:
+            return False
+        if not self.appear(EvoZoneAssets.I_EVOZONE_BUY_AP_CLOSE):
+            return False
+        self.ui_click_until_disappear(EvoZoneAssets.I_EVOZONE_BUY_AP_CLOSE, interval=1)
+        self._help_battle_blocked = True
+        logger.warning('同心协战体力不足：已关闭购买体力弹窗，停止本轮补打并保留最终截图')
+        return True
 
     def check_lock(self, lock: bool = True) -> bool:
         """
@@ -338,17 +385,27 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
         auto_battle_enable = self.get_config().daily_alt_acc_config.alliedteam_auto_battle_enable
         # 次数为 13 的账号：改为在准备界面切换援助式神，因此此处必须先解锁阵容
         # （若保持锁定状态，准备界面将无法切换援助式神）。其余次数维持原锁定阵容流程。
-        # 断点接续（current_count>0）且走自动时，援助式神已在阵上，无需再解锁切援助。
+        # 协战每次进入（含接续和补打）都先手动检查次数、援助上场，再允许游戏内自动。
+        self._help_target_enabled = alliedteam_limit_count == 13
+        self._help_target_synced = False
         if alliedteam_limit_count == 13:
-            if not (auto_battle_enable and self.current_count > 0):
-                self.check_lock(False)
+            self.check_lock(False)
             self._need_switch_help_shikigami = True
             self._help_shikigami_detect = True
         else:
+            # 同一对象切换到普通刷本时清除协战分发标记，避免沿用上轮模式。
+            self._need_switch_help_shikigami = False
             self.check_lock(True)
         while 1:
             self.screenshot()
-            if self.current_count >= alliedteam_limit_count:
+            # 体力弹窗也可能遮住挑战按钮，先处理再决定是否需要恢复组队界面。
+            if self._check_help_ap_exhausted():
+                return False
+            # 准备页首次 OCR 会更新上限，循环中实时读取，不能使用进入循环前的旧值。
+            battle_limit = (self._help_battle_limit
+                            if self._help_target_enabled and self._help_battle_limit is not None
+                            else alliedteam_limit_count)
+            if self.current_count >= battle_limit:
                 logger.info('Orochi count limit out')
                 return True
             if not is_in_evozone():
@@ -361,25 +418,35 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
                     )
                     return False
                 continue
-            # 本场起是否挂游戏内自动：13 次账号第一场（current_count==0）仍手动切
-            # 援助式神，第二场起挂自动；其余次数账号全部场次都挂自动。
+            # 协战确认实际次数并完成援助上场后才挂自动，断点接续也不能跳过首轮检查。
             # 自动模式与手动模式不同：进入后由游戏自动连续挑战（自动准备/开局/
             # 结算），脚本只开自动、数场次、控总数，直到打满收尾或异常退出。
             if auto_battle_enable and not (
-                    alliedteam_limit_count == 13 and self.current_count == 0):
+                    self._help_target_enabled and (not self._help_target_synced or self._help_shikigami_detect)):
                 # 开自动前必须先锁定队伍：未锁定时游戏自动准备可能带上错误阵容。
                 # check_lock 幂等，已锁定时一帧截图即返回。
                 self.check_lock(True)
-                return self._auto_battle_loop(alliedteam_limit_count)
+                return self._auto_battle_loop(battle_limit)
             # 点击挑战
             while 1:
                 self.screenshot()
+                # 弹窗后方仍可识别挑战按钮，先关闭体力弹窗再按未完成收尾。
+                if self._check_help_ap_exhausted():
+                    return False
                 if self.appear_then_click(self.I_BATTLE, interval=1):
                     pass
                 if not self.appear(self.I_BATTLE):
-                    self.run_general_battle(config=self.config.daily_alt_acc.general_battle_config)
-                    # 本场结束立刻落盘，中断后可从这里接续
-                    self._persist_battle_count()
+                    # 准备页可能已达 13 次：撤销通用战斗的预增，不把未开打场次落盘。
+                    before_battle = self.current_count
+                    try:
+                        self.run_general_battle(config=self.config.daily_alt_acc.general_battle_config)
+                        # 本场结束立刻落盘，未开打就达标退出的分支不会经过这里。
+                        self._persist_battle_count()
+                    except HelpTargetReached:
+                        self.current_count = before_battle
+                        if not self.exit_battle():
+                            raise GamePageUnknownError('协战已达目标，但无法退出同心准备界面')
+                        return True
                     break
 
     def _locate_help_shikigami(self) -> list:
@@ -402,7 +469,10 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             logger.exception('同心援助式神锚点 OCR 失败，按未识别处理')
             return [0, 0, 0, 0]
         for result in boxed_results:
-            if re.search(r'\d+/15', result.ocr_text):
+            count = parse_help_count(result.ocr_text)
+            if count is not None:
+                # 读取锚点时同步剩余场数；非协战分支不会改动场次目标。
+                sync_help_battle_target(self, count)
                 # detect_and_ocr 的 box 坐标相对 roi 裁剪图，需加回 roi 偏移
                 box = result.box
                 return [box[0][0] + ocr_obj.roi[0], box[0][1] + ocr_obj.roi[1],
@@ -610,6 +680,9 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             self.screenshot()
             in_battle = self.is_in_real_battle(False)
             if not in_battle:
+                # 游戏自动挑战也会触发购买体力弹窗，受阻后必须退出循环才能留图。
+                if self._check_help_ap_exhausted():
+                    return False
                 # 不在战斗画面：启动/保持结束计时，连续达标才确认上一场结束
                 if battle_end_timer is None:
                     battle_end_timer = Timer(self.BATTLE_END_CONFIRM_S).start()

@@ -19,11 +19,144 @@ from datetime import datetime
 from pathlib import Path
 from time import sleep
 
+from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.base.utils import save_image
+from module.exception import GamePageUnknownError
 from module.logger import logger
 from tasks.Component.SwitchHelpShikigami.assets import SwitchHelpShikigamiAssets
 from tasks.GameUi.page import page_friends, page_main
+
+
+# 好友协战页的普通副本次数区域；读取原文，避免数字模式把缺失斜杠补成有效次数。
+O_FRIEND_HELP_COUNT = RuleOcr(
+    roi=(765, 152, 195, 46), area=(765, 152, 195, 46),
+    mode='Full', method='Default', keyword='', name='friend_help_count',
+)
+
+
+# 协战账号的游戏累计目标；独立于本轮脚本已执行的战斗场数。
+HELP_TARGET_COUNT = 13
+
+
+class HelpTargetReached(Exception):
+    """准备页已达到协战目标，交给任务撤销预增场次并退出准备。"""
+
+
+def parse_help_count(text: str) -> int | None:
+    """只接受完整的 0~15/15，避免孤立数字及 13/150 被当作有效读数。"""
+    match = re.search(r'(?<!\d)([0-9]|1[0-5])\s*[/／]\s*15(?!\d)', text)
+    return int(match.group(1)) if match else None
+
+
+def sync_help_battle_target(task, count: int) -> None:
+    """首次准备读数决定还需打几场，不把游戏已有次数灌进脚本统计或进度。"""
+    if not getattr(task, '_help_target_enabled', False) or getattr(task, '_help_target_synced', False):
+        return
+    remaining = max(0, HELP_TARGET_COUNT - count)
+    # 通用战斗在进入准备前已 +1，本场尚未完成，因此计算上限时要减掉该预增。
+    task._help_battle_limit = task.current_count - 1 + remaining
+    task._help_target_synced = True
+    logger.info(f'准备页协战次数 {count}/15，距离目标 13 次还需 {remaining} 场')
+    if remaining == 0:
+        raise HelpTargetReached()
+
+
+def capture_friend_help_image(task):
+    """截图前确认普通副本 x/15 已加载；含首次共尝试三次，第三次失败仍留图。"""
+    # 每次检查重新置空，三次均失败时不能沿用上一次的有效读数。
+    task._friend_help_count = None
+    for attempt in range(1, 4):
+        task.screenshot()
+        # 导航超时也会返回 False；未到好友页时交给外层恢复，不能当成已进入后识别失败。
+        if not task.ui_goto(page_friends):
+            raise GamePageUnknownError('协战截图前无法进入好友页')
+        # 标题可能被临时提示遮住，限时等待后仍取帧检查次数，避免一直停在页签循环。
+        page_timer = Timer(10).start()
+        while not page_timer.reached():
+            task.screenshot()
+            # 共用组件素材，师徒探索等未继承协战 assets 的任务也可直接复用。
+            if task.appear(SwitchHelpShikigamiAssets.I_FRIEND_HELP_FLAG, interval=1):
+                break
+            task.appear_then_click(SwitchHelpShikigamiAssets.I_FRIEND_HELP,
+                                   action=SwitchHelpShikigamiAssets.C_FRIEND_HELP_CLICK, interval=1)
+
+        # 标题出现不代表次数已刷新；等待后识别，并把同一帧交给保存方。
+        sleep(1.5)
+        image = task.screenshot()
+        try:
+            text = O_FRIEND_HELP_COUNT.detect_text(image)
+        except Exception:
+            # 仅 OCR 异常视为未加载；导航、截图的设备异常继续交给外层恢复。
+            logger.exception(f'好友协战次数 OCR 失败（第 {attempt}/3 次），按未识别处理')
+            text = ''
+        # 必须有完整的 x/15；孤立的 15、13/150 等不算加载成功，0/15 则是有效读数。
+        count = parse_help_count(text)
+        if count is not None:
+            task._friend_help_count = count
+            logger.info(f'好友协战次数已加载（第 {attempt}/3 次）: {count}/15')
+            return image
+        if attempt == 3:
+            logger.warning('好友协战次数连续 3 次未识别到 x/15，直接保存第三次截图')
+            return image
+        logger.warning(f'好友协战次数未识别到 x/15（第 {attempt}/3 次），返回庭院后重试')
+        # 只有确实回到庭院才能开始下一次，避免停在同一页却消耗重试次数。
+        if not task.ui_goto(page_main):
+            raise GamePageUnknownError('协战截图重试前无法返回庭院')
+
+
+def capture_completed_help_image(task, refill):
+    """协战模式按游戏次数补缺额再取最终帧；无增量或补打受阻时留图并标记未完成。"""
+    previous_count = None
+    blocked = False
+    task._help_target_complete = None
+    while True:
+        image = capture_friend_help_image(task)
+        count = task._friend_help_count
+        if count is None:
+            # 保留三次未加载也截图的约定；已知不足后失去读数不能反而算完成。
+            task._help_target_complete = False if previous_count is not None else None
+            return image
+        if count >= HELP_TARGET_COUNT:
+            task._help_target_complete = True
+            return image
+        if blocked or (previous_count is not None and count <= previous_count):
+            # 有效读数严格递增才能继续补打，最多增长到 13，避免无效战斗无限耗体力。
+            logger.warning(f'协战补打受阻或次数未增加，当前 {count}/15，保存现场并标记未完成')
+            task._help_target_complete = False
+            return image
+        remaining = HELP_TARGET_COUNT - count
+        logger.info(f'截图核对协战次数 {count}/15，返回补打 {remaining} 场后重新核对')
+        if not task.ui_goto(page_main):
+            raise GamePageUnknownError('协战补打前无法返回庭院')
+        previous_count = count
+        # 回调只负责一轮补打并退出副本，不递归保存截图；失败后仍重新取帧存证。
+        blocked = refill(remaining) is False
+
+
+def _sanitize_filename_part(name: str) -> str:
+    """替换 Windows 文件名非法字符，避免保存失败。"""
+    return re.sub(r'[\\/:*?"<>|]', '_', name)
+
+
+def build_help_screenshot_name(ctx: dict | None, config_name: str, name_mode: str = 'char') -> str:
+    """拼协战次数截图的文件名（不含扩展名）。
+
+    :param ctx: 账号上下文，取多账号运行注入的 _stat_ctx，键为 acc/char/svr/sys
+    :param config_name: 配置实例名，单账号直跑时作为退化值
+    :param name_mode: 'char' 只用角色名（既有行为）；'full' 追加区服/账号名/系统，
+                      便于下游按文件名直接关联账号表
+
+    区服、账号或平台缺失时退化为角色名，避免生成下游无法关联的半截文件名。
+    下游按角色表生成完整候选名匹配，身份字段自身含下划线也可关联。
+    """
+    ctx = ctx or {}
+    char_name = ctx.get('char') or config_name
+    if name_mode == 'full':
+        parts = [char_name, ctx.get('svr'), ctx.get('acc'), ctx.get('sys')]
+        if all(parts[1:]):
+            return '_'.join(_sanitize_filename_part(str(part)) for part in parts)
+    return _sanitize_filename_part(str(char_name))
 
 
 class SwitchHelpShikigami(SwitchHelpShikigamiAssets):
@@ -69,7 +202,10 @@ class SwitchHelpShikigami(SwitchHelpShikigamiAssets):
             logger.exception('援助式神锚点 OCR 失败，按未识别处理')
             return [0, 0, 0, 0]
         for result in boxed_results:
-            if re.search(r'\d+/15', result.ocr_text):
+            count = parse_help_count(result.ocr_text)
+            if count is not None:
+                # 只在启用 13 次协战目标的任务中调整本轮剩余场数。
+                sync_help_battle_target(self, count)
                 # detect_and_ocr 的 box 坐标相对 roi 裁剪图，需加回 roi 偏移
                 box = result.box
                 return [box[0][0] + ocr_obj.roi[0], box[0][1] + ocr_obj.roi[1],
@@ -148,40 +284,37 @@ class SwitchHelpShikigami(SwitchHelpShikigamiAssets):
             sleep(random.uniform(0.4, 0.8))
         return False
 
-    def _resolve_character_name(self) -> str:
-        """截图文件名用的角色名。
+    def _resolve_character_name(self, name_mode: str = 'char') -> str:
+        """截图文件名（不含扩展名）。命名规则见模块级 build_help_screenshot_name。"""
+        return build_help_screenshot_name(
+            getattr(self, '_stat_ctx', None), self.config.config_name, name_mode)
 
-        优先取多账号运行注入的统计上下文（_stat_ctx），单实例直跑时退化为配置
-        实例名；Windows 文件名非法字符替换为下划线，避免保存失败。
-        """
-        char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
-        return re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+    def save_friend_help_screenshot(self, name_mode: str = 'char', refill=None) -> None:
+        """进入好友页校验协战次数；协战任务可传入补打回调，补齐后再保存最终帧。
 
-    def save_friend_help_screenshot(self) -> None:
-        """进入好友页等待协战次数页出现后截图，存到好友协战次数截图目录。
-
-        路径与同心战斗共用同一套：`screenshots/Battle_Screenshots_<年_月_日>/<角色名>.png`。
+        路径与同心战斗共用同一套：`screenshots/Battle_Screenshots_<年_月_日>/`。
         两边截的是同一张「好友协战次数」，所以刻意共用而不是各存一份：同一角色同一
         天后跑的覆盖先跑的，最终只留最新一张，正是想要的语义。
+
+        :param name_mode: 'char'（默认）存为 `<角色名>.png`，与既有行为一致；
+                          'full' 存为 `<角色名>_<区服>_<账号名>_<系统>.png`，
+                          供下游按文件名直接关联账号表。由复用方经
+                          `_help_screenshot_name_mode` 注入，其余调用点不传。
 
         刻意不包 try/except：本方法里的 `ui_goto` 等会抛设备级异常
         （GamePageUnknownError / GameStuckError 等），按项目约定必须穿透到
         script.py 的恢复逻辑；宽泛吞掉会让卡死的游戏一直卡着。
         """
-        self.screenshot()
-        self.ui_goto(page_friends)
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_FRIEND_HELP_FLAG, interval=1):
-                break
-            if self.appear_then_click(self.I_FRIEND_HELP, action=self.C_FRIEND_HELP_CLICK, interval=1):
-                continue
+        # 只有协战任务显式提供回调才进入补打闭环，其余调用仅检查页面是否加载。
+        image = (capture_completed_help_image(self, refill) if refill is not None
+                 else capture_friend_help_image(self))
 
         now = datetime.now()
         save_dir = Path(f'screenshots/Battle_Screenshots_{now.year}_{now.month:02d}_{now.day:02d}')
         save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f'{self._resolve_character_name()}.png'
-        save_image(self.screenshot(), str(save_path))
+        save_path = save_dir / f'{self._resolve_character_name(name_mode)}.png'
+        # 保存刚才通过 OCR 校验的帧，第三次识别失败时也保留当次现场。
+        save_image(image, str(save_path))
         logger.info(f'好友协战次数截图已保存: {save_path}')
 
         # 退出好友页：最多等 5s，点到返回键即提前结束

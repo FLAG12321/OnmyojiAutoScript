@@ -16,8 +16,10 @@ from tasks.Component.GeneralInvite.config_invite import InviteConfig, InviteNumb
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
+# 探索协战存证共用次数加载校验和庭院重试，避免单独入口仍保存未加载界面。
+from tasks.Component.SwitchHelpShikigami.switch_help_shikigami import capture_friend_help_image
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall, page_friends
+from tasks.GameUi.page import page_main, page_team, page_shikigami_records, page_exploration,page_youki, page_mall
 from tasks.MasterDisciple.assets import MasterDiscipleAssets
 from tasks.MasterDisciple.config import MasterDisciple, MasterDiscipleMode
 from tasks.MasterDisciple.team_state import (
@@ -46,7 +48,6 @@ from tasks.GoldYoukai.assets import GoldYoukaiAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.RichMan.assets import RichManAssets
-from tasks.DailyAltAcc.assets import DailyAltAccAssets
 from tasks.Utils.optional_ability import run_optional_ability
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
@@ -1730,16 +1731,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             self.screenshot()
             self.ui_get_current_page()
             self.ui_goto(page_main)
-            self.screenshot()
-            self.ui_goto(page_friends)
-            # 等好友协战页加载完成，期间点击协战入口
-            while 1:
-                self.screenshot()
-                if self.appear(DailyAltAccAssets.I_FRIEND_HELP_FLAG, interval=1):
-                    break
-                if self.appear_then_click(DailyAltAccAssets.I_FRIEND_HELP,
-                                          action=DailyAltAccAssets.C_FRIEND_HELP_CLICK, interval=1):
-                    continue
+            # 次数未显示时回庭院重进，含首次共三次，最后一次仍失败也保存现场。
+            image = capture_friend_help_image(self)
             now = datetime.now()
             # 角色名：切号跑徒弟时用徒弟角色名，未切号退化为配置实例名
             char_name = self._current_disciple_name or self.config.config_name
@@ -1749,7 +1742,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
             save_dir.mkdir(parents=True, exist_ok=True)
             # 同一角色同一天重复运行时直接覆盖，只保留最新一张
             save_path = save_dir / f'{char_name}.png'
-            save_image(self.screenshot(), str(save_path))
+            # 保存 OCR 校验的同一帧，避免另取未经检查的画面。
+            save_image(image, str(save_path))
             logger.info(f'探索任务完成截图已保存: {save_path}')
             # 退出好友协战页回庭院（最多等5秒，期间点一次红色返回）
             exit_timer = Timer(5)

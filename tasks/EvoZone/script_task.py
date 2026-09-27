@@ -12,13 +12,14 @@ from tasks.Component.GeneralBuff.general_buff import GeneralBuff
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.SwitchHelpShikigami import SwitchHelpShikigami
+from tasks.Component.SwitchHelpShikigami.switch_help_shikigami import HelpTargetReached
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_awake_zones, page_shikigami_records
 from tasks.Utils.optional_ability import run_optional_ability
 from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.EvoZone.config import EvoZone, UserStatus, KirinType
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import TaskEnd, GamePageUnknownError
 
 # 需要「准备界面切换援助式神」的次数标记：该值来自游戏侧的好友协战计数玩法
 # （每天固定 13 场），不是可调阈值，所以按字面量比较而非抽成配置项。
@@ -36,6 +37,28 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
     # 执行的诉求，单实例直跑始终保持 None，既不做恢复也不回写任何进度文件。
     _progress = None
     _progress_key: str = None
+    # 协战模式：由复用方注入。None 表示按单实例直跑的原有语义
+    # ——次数等于 HELP_SHIKIGAMI_LIMIT_COUNT 才走「准备界面切换援助式神」。
+    # 之所以要拆成独立开关而非放宽上面的字面量比较：次数在多账号场景是可配的，
+    # 一旦不是 13，协战式神模式会静默失效。
+    _help_shikigami_mode: bool = None
+    # 协战截图命名模式：由复用方注入，透传给
+    # save_friend_help_screenshot。None 表示沿用默认的「只带角色名」命名。
+    _help_screenshot_name_mode: str = None
+    # 仅原本要求 13 次的单人协战启用 OCR 目标，普通刷本与自定义场次沿用原逻辑。
+    _help_target_enabled: bool = False
+    _help_battle_count_restored: bool = False
+    _help_battle_blocked: bool = False
+
+    def _is_help_shikigami_account(self) -> bool:
+        """本账号是否要走「准备界面切换援助式神」的协战路线。
+
+        复用方注入 _help_shikigami_mode 时以它为准；未注入时退化为单实例直跑的
+        原有判据（次数等于 HELP_SHIKIGAMI_LIMIT_COUNT），行为零变化。
+        """
+        if self._help_shikigami_mode is not None:
+            return self._help_shikigami_mode
+        return self.config.evo_zone.evo_zone_config.limit_count == HELP_SHIKIGAMI_LIMIT_COUNT
 
     def run(self) -> bool:
 
@@ -46,6 +69,16 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
         self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute,
                                                seconds=limit_time.second)
         con = self.config.evo_zone
+        self._help_target_enabled = (
+            self._is_help_shikigami_account()
+            and limit_count == HELP_SHIKIGAMI_LIMIT_COUNT
+            and con.evo_zone_config.user_status == UserStatus.ALONE)
+        # 每轮重新初始化：OCR 只修正本轮战斗上限，不把已有协战数写入场次进度。
+        self._help_battle_limit = self.limit_count
+        self._help_target_synced = False
+        self._help_target_complete = None
+        self._help_battle_count_restored = False
+        self._help_battle_blocked = False
         if con.switch_soul_config.enable:
             self.ui_get_current_page()
             self.ui_goto(page_shikigami_records)
@@ -70,7 +103,9 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             case UserStatus.MEMBER:
                 success = self.run_member()
             case UserStatus.ALONE:
-                self.run_alone()
+                alone_success = self.run_alone()
+                if self._help_target_enabled:
+                    success = alone_success is not False
             case UserStatus.WILD:
                 self.run_wild()
             case _:
@@ -81,9 +116,17 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             self.open_buff()
             self.awake(is_open=False)
             self.close_buff()
-        # 13 场账号：战斗结束后保存好友协战次数截图，供人工核对协战是否打满
-        if config.evo_zone_config.limit_count == HELP_SHIKIGAMI_LIMIT_COUNT:
-            self.save_friend_help_screenshot()
+        # 13 次协战先按实际读数补齐，再保存最终截图；其余协战沿用原有截图流程。
+        if self._is_help_shikigami_account():
+            if self._help_target_enabled:
+                self.save_friend_help_screenshot(
+                    name_mode=self._help_screenshot_name_mode or 'char',
+                    refill=self._refill_help_battles)
+                # 三次 OCR 均失败时保留原运行结果；读数明确不足则不能误报完成。
+                if self._help_target_complete is not None:
+                    success = self._help_target_complete
+            else:
+                self.save_friend_help_screenshot(name_mode=self._help_screenshot_name_mode or 'char')
             run_optional_ability('post_task_hook', self)
         # 下一次运行时间
         if success:
@@ -336,6 +379,20 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
         except Exception:
             logger.exception('回写觉醒副本场次失败')
 
+    def _refill_help_battles(self, remaining: int) -> bool:
+        """从庭院补足好友页确认的缺额，不重跑任务收尾或重新恢复历史场次。"""
+        if not self._help_target_enabled or self._help_battle_blocked:
+            return False
+        if datetime.now() - self.start_time >= self.limit_time:
+            self._help_battle_blocked = True
+            logger.warning('觉醒协战已达时间上限，保留当前截图，不再补打')
+            return False
+        # 计数保持已尝试场次，只扩展本次缺额；重新识别上场标签以防好友页读数滞后。
+        self._help_battle_limit = self.current_count + remaining
+        self._help_target_synced = False
+        self._help_battle_count_restored = True
+        return self.run_alone()
+
     def run_alone(self):
         logger.info('Start run alone')
         self.ui_get_current_page()
@@ -343,16 +400,18 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
         self.evozone_enter()
         layer = self.config.evo_zone.evo_zone_config.layer
         self.check_layer(layer)
-        # 次数为 13 的账号：改为在准备界面切换援助式神，因此必须先解锁阵容
-        # （锁定状态下准备界面无法切换援助式神）。其余次数维持原有的按配置锁定。
-        if self.config.evo_zone.evo_zone_config.limit_count == HELP_SHIKIGAMI_LIMIT_COUNT:
+        # 协战号：改为在准备界面切换援助式神，因此必须先解锁阵容
+        # （锁定状态下准备界面无法切换援助式神）。其余账号维持原有的按配置锁定。
+        if self._is_help_shikigami_account():
             self.check_lock(False)
             self.enable_help_shikigami_switch()
         else:
             self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable)
 
-        # 中断接续：从上次已打场次继续；已打满时循环首轮即退出，不再点挑战
-        self._restore_battle_count()
+        # 中断接续只恢复一次，截图后的补打继续当前场次，避免被旧进度覆盖。
+        if not self._help_target_enabled or not self._help_battle_count_restored:
+            self._restore_battle_count()
+            self._help_battle_count_restored = True
 
         def is_in_evozone(screenshot=False) -> bool:
             if screenshot:
@@ -371,11 +430,15 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             if not is_in_evozone():
                 continue
 
-            if self.current_count >= self.limit_count:
+            # OCR 上限包含中断恢复场次；常规刷本仍只使用用户配置的次数。
+            battle_limit = self._help_battle_limit if self._help_target_enabled else self.limit_count
+            if self.current_count >= battle_limit:
                 logger.info('EvoZone count limit out')
                 break
             if datetime.now() - self.start_time >= self.limit_time:
                 logger.info('EvoZone time limit out')
+                if self._help_target_enabled:
+                    self._help_battle_blocked = True
                 break
 
             # 点击挑战
@@ -394,9 +457,15 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
                     pass
 
                 if not self.appear(self.I_EVOZONE_FIRE):
-                    self.run_general_battle(config=self.config.evo_zone.general_battle_config)
-                    # 本场结束立刻落盘，中断后可从这里接续
-                    self._persist_battle_count()
+                    try:
+                        self.run_general_battle(config=self.config.evo_zone.general_battle_config)
+                        # 本场结束立刻落盘，中断后可从这里接续。
+                        self._persist_battle_count()
+                    except HelpTargetReached:
+                        # 通用战斗在准备前已加一；已达 13 次时撤销预增并退出，不能记作打过。
+                        self.current_count -= 1
+                        if not self.exit_battle():
+                            raise GamePageUnknownError('协战已达目标，但无法退出觉醒准备界面')
                     break
 
             if ap_exhausted:
@@ -404,9 +473,11 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
                 # 既有恢复链路，不在这里静默空转
                 self.ui_click_until_disappear(self.I_EVOZONE_BUY_AP_CLOSE, interval=1)
                 logger.warning(
-                    f'体力不足：已打 {self.current_count}/{self.limit_count} 场，'
+                    f'体力不足：已打 {self.current_count}/{battle_limit} 场，'
                     f'已关闭购买体力弹窗并跳过本账号剩余场次'
                 )
+                if self._help_target_enabled:
+                    self._help_battle_blocked = True
                 break
 
         # 回去
@@ -419,6 +490,8 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
 
         self.ui_current = page_awake_zones
         self.ui_goto(page_main)
+        # 补打层据此停止体力不足或超时重试，最终仍由截图读数确认是否达到目标。
+        return not self._help_battle_blocked
 
     def run_wild(self):
         logger.error('Wild mode is not implemented')

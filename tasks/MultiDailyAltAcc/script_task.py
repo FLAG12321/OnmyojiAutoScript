@@ -818,6 +818,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             "svr": source_account_info.svr,
             "sys": "android" if source_account_info.apple_or_android else "ios",
         }
+        # 多账号截图统一使用四项身份，供 Butler 准确关联。
+        dff._help_screenshot_name_mode = 'full'
         # 识别时直接记录，避免后续子任务异常导致 TaskEnd 消息来不及交回父任务。
         dff._coop_store = self._coop_store
         dff._coop_round_id = self._coop_round_id
