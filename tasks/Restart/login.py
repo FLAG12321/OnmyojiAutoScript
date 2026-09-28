@@ -10,6 +10,7 @@ from tasks.Component.SwitchAccount.character_match import (
     CHARACTER_LIST_EMPTY_OCR_DELAY, CHARACTER_LIST_EMPTY_OCR_LIMIT, find_character_index,
 )
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
+from tasks.Component.SwitchAccount.dropdown_state import is_account_dropdown_opened
 from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
@@ -153,9 +154,10 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     def _prepare_login_handoff(self) -> bool:
         """只打开账号选择入口并验证可操作，不提交当前账号或进入游戏。"""
         assets = SwitchAccountAssets
-        if self.appear(assets.I_SA_NETEASE_GAME_LOGO) and self.appear_rgb(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED):
+        # is_account_dropdown_opened 内部已确认账号选择界面（网易游戏 LOGO）可见
+        if is_account_dropdown_opened(self):
             # 列表可能已经展开；先收起，再验证完整表单，避免卡在等待状态。
-            self.click(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED, interval=1)
+            self.click(assets.C_SA_ACCOUNT_DROPDOWN_BLANK, interval=1)
             return False
         if self.appear(assets.I_SA_NETEASE_GAME_LOGO) and self.appear(assets.I_SA_ACCOUNT_LOGIN_BTN):
             # 平台选择会覆盖账号表单，必须先退回真正可选择账号的界面。

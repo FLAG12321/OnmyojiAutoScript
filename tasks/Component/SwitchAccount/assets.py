@@ -29,6 +29,8 @@ class SwitchAccountAssets:
 	C_SA_LOGIN_FORM_USER_CENTER_CLOSE_BTN = RuleClick(roi_front=(1055,120,20,20), roi_back=(1055,120,20,20), name="sa_login_form_user_center_close_btn")
 	# 登录界面-账号选择界面-右上角关闭按钮 
 	C_SA_LOGIN_FORM_ACCOUNT_CLOSE_BTN = RuleClick(roi_front=(895,165,40,40), roi_back=(895,165,40,40), name="sa_login_form_account_close_btn")
+	# 登录界面-账号选择界面-账号下拉列表展开时点击此空白处收起列表 
+	C_SA_ACCOUNT_DROPDOWN_BLANK = RuleClick(roi_front=(866,581,26,17), roi_back=(866,581,26,17), name="sa_account_dropdown_blank")
 	# 游戏庭院内 左上角 头像 
 	C_SA_EG_PROFILE_PHOTO = RuleClick(roi_front=(35,35,55,55), roi_back=(35,35,55,55), name="sa_eg_profile_photo")
 	# 选择服务器界面 底部角色名 列表---与ocr.json中同名对象区域一致 
@@ -62,8 +64,6 @@ class SwitchAccountAssets:
 	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(251,146,103,31), roi_back=(223,131,164,58), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr_1.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时 
 	I_SA_CHECK_SELECT_SVR_2 = RuleImage(roi_front=(240,410,120,40), roi_back=(240,410,120,40), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_check_select_svr.png")
-	# description 
-	I_SA_ACCOUNT_DROP_DOWN_OPENED = RuleImage(roi_front=(866,581,26,17), roi_back=(859,578,38,23), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_drop_down_opened.png")
 	# description 
 	I_SA_APPLE_BACK = RuleImage(roi_front=(898,169,22,22), roi_back=(869,149,73,62), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_apple_back.png")
 	# mumu桌面 

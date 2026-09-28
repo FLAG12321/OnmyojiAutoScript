@@ -54,6 +54,12 @@
     "description": "登录界面-账号选择界面-右上角关闭按钮"
   },
   {
+    "itemName": "sa_account_dropdown_blank",
+    "roiFront": "866,581,26,17",
+    "roiBack": "866,581,26,17",
+    "description": "登录界面-账号选择界面-账号下拉列表展开时点击此空白处收起列表"
+  },
+  {
     "itemName": "sa_eg_profile_photo",
     "roiFront": "35,35,55,55",
     "roiBack": "35,35,55,55",

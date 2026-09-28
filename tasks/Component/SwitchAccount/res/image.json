@@ -117,15 +117,6 @@
     "description": "判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时"
   },
   {
-    "itemName": "sa_account_drop_down_opened",
-    "imageName": "sa_account_drop_down_opened.png",
-    "roiFront": "866,581,26,17",
-    "roiBack": "859,578,38,23",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
-  },
-  {
     "itemName": "sa_apple_back",
     "imageName": "sa_apple_back.png",
     "roiFront": "898,169,22,22",

@@ -15,6 +15,7 @@ from tasks.Component.SwitchAccount.character_match import (
     CHARACTER_LIST_EMPTY_OCR_DELAY, CHARACTER_LIST_EMPTY_OCR_LIMIT,
     find_character_index, is_character_name,
 )
+from tasks.Component.SwitchAccount.dropdown_state import is_account_dropdown_opened
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.base_task import BaseTask
 def _prepare_image_for_ocr_1(image: np.ndarray, asset: RuleOcr) -> np.ndarray:
@@ -311,7 +312,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             while 1:
                 self.screenshot()
                 # 下拉展开才属于列表扫描阶段；重新展开后结束收起过渡的等待。
-                account_list_opened = self.appear_rgb(self.I_SA_ACCOUNT_DROP_DOWN_OPENED)
+                account_list_opened = is_account_dropdown_opened(self)
                 if account_list_opened:
                     awaiting_login_form = False
                 # 优先检查是否已经出现登录按钮（即账号已选中）
@@ -412,7 +413,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     while 1:
                         self.screenshot()
                         if (self.appear(self.I_SA_ACCOUNT_LOGIN_BTN)
-                                or not self.appear_rgb(self.I_SA_ACCOUNT_DROP_DOWN_OPENED)):
+                                or not is_account_dropdown_opened(self)):
                             awaiting_login_form = True
                             break
                         # 第五次点击后也先检查收起状态，仍展开才按原点击预算判失败。
@@ -436,7 +437,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 else:
                     # OCR 期间页面也可能已变化，滑动或点击收起按钮前重新确认下拉。
                     self.screenshot()
-                    if not self.appear_rgb(self.I_SA_ACCOUNT_DROP_DOWN_OPENED):
+                    if not is_account_dropdown_opened(self):
                         awaiting_login_form = True
                         continue
                     # 列表到底后收起并核验，包括第三轮，不能直接跳过末次账号复查。
@@ -445,7 +446,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                         while 1:
                             self.screenshot()
                             if (self.appear(self.I_SA_ACCOUNT_LOGIN_BTN)
-                                    or not self.appear_rgb(self.I_SA_ACCOUNT_DROP_DOWN_OPENED)):
+                                    or not is_account_dropdown_opened(self)):
                                 awaiting_login_form = True
                                 account_list_finished = True
                                 break
