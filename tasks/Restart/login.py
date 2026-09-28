@@ -153,7 +153,7 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
     def _prepare_login_handoff(self) -> bool:
         """只打开账号选择入口并验证可操作，不提交当前账号或进入游戏。"""
         assets = SwitchAccountAssets
-        if self.appear(assets.I_SA_NETEASE_GAME_LOGO) and self.appear(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED):
+        if self.appear(assets.I_SA_NETEASE_GAME_LOGO) and self.appear_rgb(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED):
             # 列表可能已经展开；先收起，再验证完整表单，避免卡在等待状态。
             self.click(assets.I_SA_ACCOUNT_DROP_DOWN_OPENED, interval=1)
             return False
