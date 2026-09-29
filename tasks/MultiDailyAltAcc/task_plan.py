@@ -30,6 +30,12 @@ RETURNGIFT_KEYS = (
     "cooperation",
     "mysteryshop",
 )
+# 已移除功能的 plan 键：撤掉「完成协作」后，旧文件里的遗留勾选必须忽略而不是
+# 报错，否则用户升级后整轮任务直接起不来。
+REMOVED_TASK_KEYS = (
+    "complete_cooperation",
+)
+
 # 单用途阶段开关键：控制回礼/同心战斗这两个阶段本身是否开启。
 # 与普通任务不同，这两个的 total_* 是轮次身份判定开关（next_run 靠它分流
 # 下一阶段），不能被排程物化改写——plan 勾选只在运行时过滤（合成账号配置
@@ -160,6 +166,17 @@ class TaskPlan:
         )
 
 
+def _drop_removed_plan_keys(raw: object) -> object:
+    """剔除已移除功能的 plan 勾选，保证旧 plan 文件仍能解析。
+
+    「完成协作」已从多账号日常撤掉，用户文件里遗留的勾选按无效处理，
+    既不报错也不写回（已有文件永远只读）。
+    """
+    if not isinstance(raw, dict):
+        return raw
+    return {key: value for key, value in raw.items() if key not in REMOVED_TASK_KEYS}
+
+
 def _parse_time(value: object, field: str) -> time:
     if not isinstance(value, str) or not re.fullmatch(r"\d{2}:\d{2}", value):
         raise TaskPlanError(f"{field} must be a HH:MM string")
@@ -252,8 +269,8 @@ def parse_task_plan(raw: object) -> TaskPlan:
         morning_time=morning_time,
         afternoon_time=afternoon_time,
         random_delay_minutes=delay_minutes,
-        morning=_parse_phase(raw["morning"], "morning"),
-        afternoon=_parse_phase(raw["afternoon"], "afternoon"),
+        morning=_parse_phase(_drop_removed_plan_keys(raw["morning"]), "morning"),
+        afternoon=_parse_phase(_drop_removed_plan_keys(raw["afternoon"]), "afternoon"),
         returngift=_parse_phase(returngift_raw, "returngift", RETURNGIFT_KEYS),
         single_purpose=_parse_phase(single_purpose_raw, "single_purpose", SINGLE_PURPOSE_KEYS),
         weekaward_weekdays=weekaward_weekdays,

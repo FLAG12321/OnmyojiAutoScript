@@ -3,8 +3,6 @@
 
 子任务参数一律读单账号任务自身的配置，本任务不持有第二份副本。
 """
-from collections import defaultdict
-
 from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.MultiAccountRunner import MultiAccountRunner
@@ -17,39 +15,7 @@ from tasks.MultiTasks.sources import ACCOUNT_SOURCES
 
 
 class _MultiTasksRunner(MultiAccountRunner):
-    """只改排序：按邮箱分组使同邮箱角色连续，组间与组内保持首次出现顺序。
-
-    不按 last_complete_time 排序 —— MultiTasks 不写该字段（账号完成状态由
-    ProgressStore 驱动），它由各来源实例自行维护，拿它排序会让执行顺序随
-    其他实例的运行状态漂移，不可预测。保留邮箱分组是因为切邮箱比同邮箱
-    换角色慢，这个收益真实存在。
-    """
-
-    def get_sorted_accounts(self) -> list:
-        if not self.account_list:
-            return []
-
-        filtered = [
-            account for account in self.account_list
-            if account is not None and self.should_process_account(account)
-        ]
-        if not filtered:
-            logger.info(f'[{self.task_name}] 过滤后没有需要处理的账号')
-            return []
-
-        # dict 保序：分组键按邮箱首次出现顺序排列，组内按原始位置排列
-        groups: dict[str, list] = defaultdict(list)
-        for account in filtered:
-            groups[account.account].append(account)
-
-        result = []
-        for accounts in groups.values():
-            result.extend(accounts)
-
-        logger.info(f'[{self.task_name}] 执行顺序（按邮箱分组）:')
-        for account in result:
-            logger.info(f'  {account.account} {account.character} {account.svr}')
-        return result
+    """按同邮箱连续、最近登录优先的通用规则确定切号顺序。"""
 
 
 class ScriptTask(GameUi):
@@ -58,6 +24,12 @@ class ScriptTask(GameUi):
     _runner: _MultiTasksRunner = None
     # {acc_key: 来源配置名}，仅供日志使用（Runner 的 account_list 不带来源信息）
     _source_names: dict = None
+    def _record_login_time(self, account) -> None:
+        """登记账号来源，由统一配置事务同步全部任务及本机映射的原配置。"""
+        source_name = (self._source_names or {}).get(
+            acc_key(account.account, account.character, account.svr), '?')
+        self.config.record_account_login(
+            account, config_names=() if source_name == '?' else (source_name,))
 
     def _notify_warnings(self, warnings: list) -> None:
         """来源提醒（如未匹配的角色名）汇总后只推送一次，本身不判失败。"""
@@ -91,6 +63,9 @@ class ScriptTask(GameUi):
                 f'{source_name}/{account.character}/{account.svr}'
             )
             return False
+
+        # 成功登录登记来源；保存时批量回写，后续子任务失败也保留真实登录记录。
+        self._record_login_time(account)
 
         # 切号成功后创建全新的子任务适配器，确保可变状态不跨账号共享
         adapter = ADAPTERS[sub_task](self.config, self.device)
@@ -170,8 +145,8 @@ class ScriptTask(GameUi):
             self.start_time.strftime('%Y%m%d-%H%M'),
         )
 
-        # 5. 轮转执行。update_login_history_func / save_config_func 传 no-op：
-        #    Runner 不触发它们，账号完成状态完全由 progress 驱动。
+        # 5. 轮转执行。账号完成状态由 progress 驱动；登录时间由 _switch_and_run
+        #    在切号成功后主动回写，Runner 自身不重复触发回调。
         self._runner = _MultiTasksRunner(
             task_name='MultiTasks',
             config=self.config,

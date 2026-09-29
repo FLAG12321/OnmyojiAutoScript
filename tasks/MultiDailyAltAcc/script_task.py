@@ -488,7 +488,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         # 运行时只看 total AND account：plan 的阶段勾选已在排程时刻物化进 total_*
         # 落盘，运行时不再过滤。用户在轮次间隙手动开 total_*（如捐勾）就会带着
         # 跑一轮，下一次排程物化重新接管——与试炼战斗等一次性任务同款行为。
-        # 普通轮的 7 个 plan 键不再需要 enabled() 闭包。
+        # 普通轮的 plan 键不再需要 enabled() 闭包。
         # 例外：同心战斗/回礼是轮次身份开关（total 决定 next_run 分流到哪个
         # 阶段），不能物化——它们的 plan 勾选（single_purpose 段）只能在运行时
         # AND：关了就整轮空跑（所有账号 skip，轮次正常完成、照常排下一阶段）。
@@ -627,7 +627,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         # daily_conf 与 config.model 同源，屏蔽值会随收尾 save_config() 落盘
         self.config.model.multi_daily_alt_acc = self.daily_conf
 
-    # plan 9 键 → total_* 开关的映射：排程时物化 plan 阶段勾选的唯一事实源。
+    # plan 键 → total_* 开关的映射：排程时物化 plan 阶段勾选的唯一事实源。
     # 排程落盘的开关就是下一轮的执行内容。周奖励/神秘商店两键需再 AND 星期
     # 列表（schedule.*_weekdays），由 _schedule_plan_phase 的 weekday 逻辑处理。
     _PLAN_TASK_TOTAL = (
@@ -1074,7 +1074,7 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             # best-effort：失败不标记已通知、不重试、不阻塞收尾（可能漏通知，可接受）
             logger.warning('汇总通知返回失败（不标记已通知，整轮仍视为成功）')
 
-    # 普通完成推送：total_* 全局开关 → 中文名；7 个 plan 键普通轮再按早晚阶段过滤
+    # 普通完成推送：total_* 全局开关 → 中文名；普通轮 plan 键按早晚阶段物化
     _PLAIN_PUSH_TASKS = (
         ('total_alliedteam_battle_enable', '同心战斗', None),
         ('total_alliedteam_ap_enable', '同心体力', 'alliedteam_ap'),

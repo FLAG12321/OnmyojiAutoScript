@@ -27,6 +27,7 @@ from tasks.Component.MultiAccountRunner.progress import (
     ProgressStore as _BaseProgressStore,
     _write_json_atomic,
     acc_key,
+    phase_flags_match,
 )
 
 __all__ = [
@@ -169,12 +170,13 @@ class ProgressStore(_BaseProgressStore):
         """在基类判定前做「重建前归档」兜底：本轮即将被重建且还有未通知记录时归档。
 
         保持基类 ensure_phase 的接续/重建语义完全不变：归档只是旁路留痕，绝不改变
-        现有账号进度的接续规则，也不影响新建/重建结果。
+        现有账号进度的接续规则，也不影响新建/重建结果。这里的判定必须与基类完全
+        一致，否则会出现「归档了却仍然接续」的错位。
         """
         data = self._load()
         resumable = (
             bool(data)
-            and data.get('phase_flags') == phase_flags
+            and phase_flags_match(data.get('phase_flags'), phase_flags)
             and not self._is_stale(data)
         )
         pending = any(isinstance(data.get(key), list) and data[key]
@@ -185,7 +187,7 @@ class ProgressStore(_BaseProgressStore):
         return super().ensure_phase(phase_flags, phase_id)
 
 
-# 参与阶段判定的开关白名单：收 _schedule_* 会改写的键，外加轮转模式。
+# 参与阶段判定的开关白名单：收 _schedule_* 会改写的键、轮转模式，以及会改变本轮执行内容的手动开关。
 # 切换这些开关等于改变执行内容，必须让进度重建而不是接续。
 # 显式白名单而非 startswith('total_')，因为 total_KekkaiUtilize_enable 会在
 # 运行期被 MSGType.Utilize（未找到寄养卡）改写并落盘——若纳入快照，另一账号

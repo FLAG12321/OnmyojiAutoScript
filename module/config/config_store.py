@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # 配置存储事务层（Task 3 生产切换核心）：
 # - load/active_config_names 第一条生产动作固定调用 idempotent initialize()
-# - 单锁事务：session RLock → lifecycle FileLock，锁内只做 unlocked 原语读写
+# - 普通保存仍整段持锁（身份锁 + 单配置锁）；只有登录时间来源回写只锁提交与备份
 # - 锁超时统一以 filelock.Timeout（继承 TimeoutError）向上传播，调用方按 TimeoutError 捕获
 # - patch_user_argument 解析动态 group_N / count 控制路径，统一 REPLACE_PATH_SET 原子替换
 # - save_background 三方合并 + blocked 指纹状态转移，磁盘最新值优先
@@ -18,6 +18,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from module.config.account_login import apply_login_times, changed_login_times, latest_login_times
+from module.config.config_backup import backup_source_config
 from module.config.config_generation import (
     ConfigGenerationError,
     ConfigIdentityConflictError,
@@ -57,6 +59,10 @@ class ConfigJsonError(ValueError):
 
 class ConfigGenerationMismatchError(ValueError):
     """会话 generation 与磁盘 sidecar generation 不一致。"""
+
+
+class ConfigWriteConflictError(RuntimeError):
+    """锁外读取后配置已被其他写入方修改，需重新读取并合并。"""
 
 
 @dataclass
@@ -106,6 +112,8 @@ class SaveResult:
     skipped_blocked_paths: list = field(default_factory=list)
     blocked_cleared_paths: list = field(default_factory=list)
     base: dict = field(default_factory=dict)
+    # 经提交校验确认的实际登录时间，用于同步运行模型及关联来源配置。
+    login_times: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -582,10 +590,13 @@ class ConfigStore:
         local: dict,
         generation: str,
         blocked: list,
+        login_times: dict = None,
     ) -> SaveResult:
         """三方合并：base 上次确认基线、local 运行模型想保存、disk 锁内最新磁盘。
 
         blocked 指纹状态转移先行；合并后磁盘最新值优先，同字段冲突不冲回旧值。
+        本方法保持原有整段持锁语义（身份锁 + 单配置锁）；只有登录时间来源回写走
+        `sync_account_login_times` 的窄锁路径。
         """
         self.initialize()
         if isinstance(base, BaseModel):
@@ -594,6 +605,10 @@ class ConfigStore:
             local = local.model_dump(mode="json")
         base = copy.deepcopy(base)
         local = copy.deepcopy(local)
+        # 把本批成功切号和原有任务完成回写合并为一次配置事务。
+        updates = dict(login_times or {})
+        for identity, moment in changed_login_times(base, local).items():
+            updates[identity] = max(updates.get(identity, moment), moment)
         with self.generation.identity_lifecycle_lock(config_name):
             record = self.generation.read_active_generation(config_name)
             if record is None or record.state != "active":
@@ -604,6 +619,10 @@ class ConfigStore:
             loaded = self._load_unlocked(config_name)
             disk = loaded.canonical
             disk_mtime_ns = loaded.mtime_ns
+            # 先按快照取最新时间，提交时若快照已过期则释放锁重读重算。
+            disk_times = latest_login_times(disk)
+            updates = {identity: max(moment, disk_times.get(identity, moment))
+                       for identity, moment in updates.items()}
 
             blocked_result = advance_blocked_state(blocked, base, local, disk)
             # 跳过路径：把 local 压制回 base，diff 不再生成操作，base/磁盘均不推进。
@@ -667,16 +686,68 @@ class ConfigStore:
             result.base = result_base
             result.deleted_paths = sorted(deleted_set)
 
-            if not merge_result.changed:
+            # 普通参数保持原三方合并规则，登录时间按完整角色身份跨列表取最新值。
+            apply_login_times(merge_result.value, updates)
+            apply_login_times(result.base, updates)
+            result.login_times = updates
+            if not merge_result.changed and merge_result.value == disk:
                 return result
             # 合并结果严格校验后写盘；校验失败抛 ConfigValidationError，磁盘保持不变
             _model, canonical = validate_persisted_config(merge_result.value, config_name, self.profile)
             if canonical != disk:
+                # 多个角色或多个 list 只在实际写入前备份一次完整原文件。
+                if changed_login_times(disk, canonical):
+                    backup_source_config(self.generation._config_path(config_name))
                 self._write_config(config_name, canonical)
                 result.wrote_file = True
                 # mtime 与 digest 都在锁内采样，保证 session 记下的正是自己写入的版本
                 result.mtime_ns, result.content_digest = self._file_revision(config_name)
             return result
+
+    def sync_account_login_times(self, config_name: str, updates: dict) -> dict:
+        """来源配置逐份提交，读取不持锁，不同时锁住多份配置。"""
+        for attempt in range(3):
+            try:
+                return self._sync_account_login_times_once(config_name, updates)
+            except ConfigWriteConflictError:
+                if attempt == 2:
+                    raise
+
+    def _commit_login_update(self, config_name, loaded, canonical, *, backup):
+        """单配置锁只覆盖提交校验、备份和覆盖写，读取及合并均在锁外完成。"""
+        with self.generation._lifecycle_lock(config_name):
+            # 原 identity_lifecycle_lock 会在取到该身份锁后就地恢复 creating/tombstone 残留；
+            # 提交路径只锁单配置，需要保留同一恢复语义，否则崩溃残留会让保存直接失败。
+            self.generation._recover_name_sidecar(config_name)
+            record = self.generation.read_active_generation(config_name)
+            if record is None or record.state != 'active' or record.generation != loaded.generation:
+                raise ConfigGenerationMismatchError(f'{config_name}: identity changed before write')
+            # 锁内仅核对快照是否仍有效，变化则释放锁后重读，绝不拿旧内容覆盖新配置。
+            path = self.generation._config_path(config_name)
+            if hashlib.sha256(path.read_bytes()).hexdigest() != loaded.content_digest:
+                raise ConfigWriteConflictError(f'{config_name}: changed before write')
+            if backup:
+                backup_source_config(path)
+            self._write_config(config_name, canonical)
+            return self._file_revision(config_name)
+
+    def _sync_account_login_times_once(self, config_name: str, updates: dict) -> dict:
+        """锁外读取关联来源并合并时间，只在实际备份和覆盖写入时加锁。"""
+        self.initialize()
+        loaded = self._load_unlocked(config_name)
+        canonical = copy.deepcopy(loaded.canonical)
+        previous = latest_login_times(canonical)
+        effective = {identity: max(moment, previous.get(identity, moment))
+                     for identity, moment in updates.items()}
+        if not apply_login_times(canonical, effective):
+            return effective
+        # loaded 已完成旧配置迁移，专用任务完成时间不会被登录时间覆盖。
+        _model, canonical = validate_persisted_config(canonical, config_name, self.profile)
+        # 时间序列化可能消去微秒，最终内容无变化时不能覆盖上一份备份。
+        if canonical == loaded.canonical:
+            return effective
+        self._commit_login_update(config_name, loaded, canonical, backup=True)
+        return effective
 
     # ------------------------------------------------------------------ 专用写操作
 

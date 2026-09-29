@@ -234,8 +234,8 @@ class CoopStore:
             if existing.get('id') != record['id']:
                 continue
             # id 相同即「同一刷新窗口内的重跑」（失败重调度、手动重跑、以及跨
-            # 午夜的同窗口），保留已完成的 status：否则真实实现（Plan 2）会对
-            # 同一张还挂在界面上的协作重复开打、重复耗体力。
+            # 午夜的同窗口），保留已完成的 status：否则完成协作重跑会对同一张
+            # 还挂在界面上的协作重复开打、重复耗体力。
             # expires_at 已含在 id 里，故此处不必再比一次。
             record['status'] = existing.get('status', STATUS_PENDING)
             if 'round_observations' in existing:
@@ -265,7 +265,7 @@ class CoopStore:
         return deepcopy(record)
 
     def mark_done(self, record_id: str) -> bool:
-        """把一条协作标为已完成。
+        """把一条协作标为已完成；当前口径是我方普通勾协进度已满。
 
         :param record_id: 记录的 `id`（= 逻辑键 + 刷新窗口），**不是** `key`。
                           跨窗口之后同一条逻辑协作在表里有多行，按 key 找会命中

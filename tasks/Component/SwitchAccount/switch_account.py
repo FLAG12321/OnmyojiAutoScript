@@ -111,6 +111,10 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         if not login_handler.app_handle_login(account_retry=True):
             return False
 
+        # 只有确认进入庭院才登记；统一覆盖所有直接或通过 Runner 切号的任务。
+        record_login = getattr(self.config, 'record_account_login', None)
+        if callable(record_login):
+            record_login(self.to_account_info)
         logger.info("%s login suc", self.to_account_info.character)
         return True
 

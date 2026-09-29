@@ -291,6 +291,7 @@ class GenerationManager:
         return self.transactions_dir / f"{self._validate_txid(txid)}.json"
 
     def _lifecycle_lock(self, name: str) -> FileLock:
+        """OAS 与管家共用单配置锁；运行期回写只锁提交校验、备份和原子覆盖。"""
         self._ensure_dirs()
         return FileLock(str(self.locks_dir / f"{self._validate_name(name)}.lock"), timeout=self._timeout)
 
@@ -503,22 +504,23 @@ class GenerationManager:
         （marker 写不进去 → 每次启动重试重跑 → 服务永远起不来），也不会阻断其余
         健康配置升级；该身份自身仍然不会被枚举、load 或启动。
         """
-        config_path = self._config_path(name)
-        raw_bytes = config_path.read_bytes()
-        self._write_backup(name, raw_bytes)
-        self.fault_injector.hit("migration.after_backup")
-        try:
-            canonical = self._normalize_for_migration(name, raw_bytes)
-        except (ConfigGenerationError, ConfigValidationError) as exc:
-            self.quarantined_identities[name] = exc
-        else:
-            new_bytes = _config_bytes(canonical)
-            if new_bytes != raw_bytes:
-                _write_file_unlocked(str(config_path), canonical)
-        self.fault_injector.hit("migration.after_normalized_config")
+        # 首次迁移也必须先取得共享锁，不能先归一化改写、最后才等管家释放锁。
         with self._lifecycle_lock(name):
+            config_path = self._config_path(name)
+            raw_bytes = config_path.read_bytes()
+            self._write_backup(name, raw_bytes)
+            self.fault_injector.hit("migration.after_backup")
+            try:
+                canonical = self._normalize_for_migration(name, raw_bytes)
+            except (ConfigGenerationError, ConfigValidationError) as exc:
+                self.quarantined_identities[name] = exc
+            else:
+                new_bytes = _config_bytes(canonical)
+                if new_bytes != raw_bytes:
+                    _write_file_unlocked(str(config_path), canonical)
+            self.fault_injector.hit("migration.after_normalized_config")
             self._write_sidecar(name, GenerationRecord(str(uuid.uuid4()), "active", None))
-        self.fault_injector.hit("migration.after_active_sidecar")
+            self.fault_injector.hit("migration.after_active_sidecar")
 
     def _normalize_for_migration(self, name: str, raw_bytes: bytes) -> dict:
         """legacy 归一化 + strict 校验，返回可落盘 canonical；内容非法抛内容级异常。

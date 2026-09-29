@@ -72,7 +72,9 @@ class MultiDailyAltAcc(ConfigBase):
     def update_account_login_history(self, account: ExtendedAccountInfo):
         accountInfoList = self.sup_account_list
         for info in accountInfoList:
-            if info.character != account.character or info.svr != account.svr:
+            # 同角色名可能属于不同邮箱或平台，必须按完整切号身份匹配。
+            if (info.account, info.character, info.svr, info.apple_or_android) != (
+                    account.account, account.character, account.svr, account.apple_or_android):
                 continue
             info.last_complete_time = datetime.now()
             logger.info(f"update login history name:{info.character}  time :{info.last_complete_time}")

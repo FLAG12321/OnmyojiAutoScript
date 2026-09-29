@@ -15,6 +15,7 @@ from cached_property import cached_property
 from threading import Lock
 
 from module.base.filter import Filter
+from module.config.account_login import account_identity, apply_login_times, login_moment
 from module.config.config_generation import ConfigGenerationError
 from module.config.config_operations import MISSING, _eq, get_path, set_path
 from module.config.config_reload import COLD, HOT, ReloadPolicy, coerce_path, default_reload_policy
@@ -182,6 +183,9 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         self._refresh_in_progress: bool = False
         self._hot_failed_fingerprints: set = set()
         self._state_reporter: Callable | None = None
+        # 成功切号先登记；下一次任务保存或任务收尾按配置批量回写。
+        self._pending_account_logins: dict = {}
+        self._pending_login_writebacks: dict = {}
 
         super().__init__(config_name)  # 调用 ConfigState 的初始化方法
         super(ConfigManual, self).__init__()
@@ -340,6 +344,8 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
                     local,
                     self.generation,
                     self.blocked_changes,
+                    **({'login_times': self._pending_account_logins}
+                       if self._pending_account_logins else {}),
                 )
             except TimeoutError as e:
                 # 锁超时：另一进程持锁超过 timeout，本次保存失败；继续运行会以陈旧模型
@@ -355,9 +361,47 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
                 self._request_instance_stop()
                 return
             self._apply_save_result(result)
+            self._pending_account_logins.clear()
+            for name, updates in list(self._pending_login_writebacks.items()):
+                if not updates:
+                    del self._pending_login_writebacks[name]
+                    continue
+                # 显式账号来源也吸收本配置已确认的较新时间。
+                updates = {identity: max(moment, result.login_times.get(identity, moment))
+                           for identity, moment in updates.items()}
+                # 失败重试也保留已合并的最新时间，不能退回登记时的旧值。
+                self._pending_login_writebacks[name] = updates
+                try:
+                    self.store.sync_account_login_times(name, updates)
+                except Exception:
+                    # 来源备份或加锁失败时停止该来源改写，保留队列等待后续保存重试。
+                    logger.exception(f'[{self.config_name}] 登录时间回写失败：{name}')
+                else:
+                    del self._pending_login_writebacks[name]
+
+    def record_account_login(self, account, login_time=None, config_names=()) -> None:
+        """仅登记确认成功的登录，多个角色及来源在保存时各合并成一次事务。"""
+        identity = account_identity(account)
+        moment = login_moment(login_time or datetime.now())
+        if identity is None or moment is None:
+            return
+        with self.session_lock:
+            pending = self._pending_account_logins
+            pending[identity] = max(pending.get(identity, moment), moment)
+            for name in config_names:
+                if name and name != self.config_name:
+                    target = self._pending_login_writebacks.setdefault(name, {})
+                    target[identity] = max(target.get(identity, moment), moment)
+
+    def flush_account_login_times(self) -> None:
+        """任务结束时兜底保存尚未落盘的成功登录，包括后续子任务失败的角色。"""
+        if self._pending_account_logins or self._pending_login_writebacks:
+            self.save()
 
     def _apply_save_result(self, result) -> None:
         self._base = result.base
+        # 原地推进账号对象，避免任务已持有的列表引用在下一次排序时仍是旧时间。
+        apply_login_times(self.model, result.login_times, model=True)
         self.blocked_changes = result.blocked
         self._mtime_ns = result.mtime_ns
         # save_background 已提交该磁盘版本，同步 watcher 避免把自身保存误判为外部更新。

@@ -43,6 +43,22 @@ def acc_key(account: str, character: str, svr) -> str:
     return f'{account}|{character}|{svr_name}'
 
 
+def phase_flags_match(stored, current: dict) -> bool:
+    """阶段开关快照是否可视为「同一阶段」。
+
+    只要求快照里存在的键在当前快照中取值一致：升级后新增的阶段开关（老快照
+    里没有该键）不参与失效判定，否则历史进度会被整份作废、已完成账号全部重跑。
+    同一开关取值变化（轮转安排下一阶段）仍然判定为不一致，照常重建。
+    快照不是字典（文件被手动改坏）一律按不一致处理。
+    """
+    if not isinstance(stored, dict):
+        return False
+    return all(
+        name in current and current[name] == value
+        for name, value in stored.items()
+    )
+
+
 def _write_json_atomic(path: Path, data: dict) -> None:
     """tmp 文件 + os.replace 原子写 JSON；异常由调用方按各自语义处理。
 
@@ -225,17 +241,23 @@ class ProgressStore:
         阶段是否延续由「当轮生效的阶段标识快照」判定：失败重调度不会改标识，
         因此快照一致 → 接续；正常完成后调用方改写标识安排下一阶段，
         快照不一致 → 重建。phase_flags 的语义由调用方定义（MultiDailyAltAcc
-        传全局开关快照，其他任务传账号集合 + 自然日/时段）。
+        传全局开关快照，其他任务传账号集合 + 自然日/时段）；升级新增的开关键
+        不参与判定（见 phase_flags_match），保证历史进度升级后仍能接续。
         :return: True 表示新建/重建（无可用进度），False 表示接续已有进度
         """
         data = self._load()
         resumable = (
             bool(data)
-            and data.get('phase_flags') == phase_flags
+            and phase_flags_match(data.get('phase_flags'), phase_flags)
             and not self._is_stale(data)
         )
         if resumable:
             self._data = data
+            # 老快照缺少新增开关时把当轮快照补进去并落盘：缺失键不参与比较，
+            # 不补齐的话该开关之后取值变化会一直被忽略。
+            if data.get('phase_flags') != phase_flags:
+                data['phase_flags'] = dict(phase_flags)
+                self._save()
             logger.info(f'接续已有进度: {self.path} phase={data.get("phase_id")}')
             return False
 

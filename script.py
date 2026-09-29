@@ -528,6 +528,13 @@ class Script:
         try:
             return self._run_task(command)
         finally:
+            # 任务正常或异常收尾都刷新已确认的登录；不为无配置的启动失败新建会话。
+            config = self.__dict__.get('config')
+            if config is not None:
+                try:
+                    config.flush_account_login_times()
+                except Exception:
+                    logger.exception('任务收尾同步登录时间失败，保留待回写记录')
             self._ocr_task_end()
 
     def _run_task(self, command: str) -> bool:
