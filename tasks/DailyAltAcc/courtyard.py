@@ -6,6 +6,10 @@ from tasks.DailyAltAcc.utils import DailyAltAccBase
 
 
 class Courtyard(DailyAltAccBase):
+    # 奖励弹窗处理完后，任务页连续稳定若干帧且“一键完成”消失，才确认收尾。
+    # 连续帧用于避开领取动画切页时短暂露出任务页造成的误退。
+    COMPLETE_PAGE_CONFIRM_FRAMES = 3
+
     def run_courtyard(self):
         self.screenshot()
         if self.ui_get_current_page() != page_main:
@@ -27,6 +31,7 @@ class Courtyard(DailyAltAccBase):
             return False
         click_count = 0
         success_count = 0
+        complete_page_frames = 0
         while 1:
             self.screenshot()
             if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
@@ -43,9 +48,23 @@ class Courtyard(DailyAltAccBase):
                 success_count += 1
                 continue
             if self.appear_rgb(self.I_FINISH):
+                complete_page_frames = 0
                 if self.appear_then_click(self.I_FINISH, interval=1):
                     click_count += 1
-                    continue
+                # 按钮仍可见时即使 interval 节流未再次点击，也不能累计完成稳定帧。
+                continue
+            # “一键完成”领取结束后页面仍保留已领取/已完成的任务，不会变成空任务页。
+            # 原逻辑只在 click_count >= 3 或 success_count >= 5 时返回：首次一键完成
+            # 没计入 click_count，而实机通常只有 1~2 个成功弹窗，因此两个阈值都到不了。
+            # 改为识别真实终态：处理过奖励，稳定停在任务页，且一键完成按钮已经消失。
+            if success_count > 0 and self.appear(self.I_PAGE_TASK):
+                complete_page_frames += 1
+                if complete_page_frames >= self.COMPLETE_PAGE_CONFIRM_FRAMES:
+                    if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
+                        time.sleep(1)
+                        continue
+            else:
+                complete_page_frames = 0
         time.sleep(1)
         self.screenshot()
         if self.ui_get_current_page() != page_main:
