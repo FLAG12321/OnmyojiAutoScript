@@ -271,12 +271,14 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :return: interval时间到达且匹配成功则返回True, 否则False
         """
         if interval:
-            if target.name in self.interval_timer:
-                if self.interval_timer[target.name].limit != interval:
-                    self.interval_timer[target.name] = Timer(interval)
+            # GIF 命中帧会改变 name；与多尺度入口共用首帧计时，保证复查点击正常节流。
+            timer_name = target.targets[0].name if isinstance(target, RuleGif) else target.name
+            if timer_name in self.interval_timer:
+                if self.interval_timer[timer_name].limit != interval:
+                    self.interval_timer[timer_name] = Timer(interval)
             else:
-                self.interval_timer[target.name] = Timer(interval)
-            if not self.interval_timer[target.name].reached():
+                self.interval_timer[timer_name] = Timer(interval)
+            if not self.interval_timer[timer_name].reached():
                 return False
         if isinstance(target, RuleOcr):
             appear = self.ocr_appear(target, interval)
@@ -284,7 +286,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             appear = target.match(self.device.image, threshold=threshold)
 
         if appear and interval:
-            self.interval_timer[target.name].reset()
+            self.interval_timer[timer_name].reset()
 
         return appear
 
@@ -330,14 +332,14 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         return appear
 
     def appear_multi_scale(self,
-                           target: RuleImage,
+                           target: RuleImage | RuleGif,
                            interval: float = None,
                            threshold: float = None,
                            scales: list = None,
                            scale_range: tuple = None):
         """
         多尺度图片识别，自动尝试多个缩放比例以适应图片大小的变化
-        :param target: RuleImage对象
+        :param target: RuleImage 或 RuleGif 对象
         :param interval: 匹配间隔时间
         :param threshold: 匹配阈值
         :param scales: 缩放比例列表
@@ -345,23 +347,25 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :return: interval时间到达且匹配成功则返回True, 否则False
         """
         if interval:
-            if target.name in self.interval_timer:
-                if self.interval_timer[target.name].limit != interval:
-                    self.interval_timer[target.name] = Timer(interval)
+            # 独立 GIF 的 name 会随命中帧变化，计时固定用首帧，避免换帧报错或绕过节流。
+            timer_name = target.targets[0].name if isinstance(target, RuleGif) else target.name
+            if timer_name in self.interval_timer:
+                if self.interval_timer[timer_name].limit != interval:
+                    self.interval_timer[timer_name] = Timer(interval)
             else:
-                self.interval_timer[target.name] = Timer(interval)
-            if not self.interval_timer[target.name].reached():
+                self.interval_timer[timer_name] = Timer(interval)
+            if not self.interval_timer[timer_name].reached():
                 return False
 
         appear = target.match_multi_scale(self.device.image, threshold=threshold, scales=scales, scale_range=scale_range)
 
         if appear and interval:
-            self.interval_timer[target.name].reset()
+            self.interval_timer[timer_name].reset()
 
         return appear
 
     def appear_then_click_multi_scale(self,
-                                      target: RuleImage,
+                                      target: RuleImage | RuleGif,
                                       action: Union[RuleClick, RuleLongClick] = None,
                                       interval: float = None,
                                       threshold: float = None,
@@ -400,11 +404,11 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         return appear
 
     def wait_until_appear(self,
-                          target: RuleImage | RuleOcr,
+                          target: RuleImage | RuleGif | RuleOcr,
                           skip_first_screenshot=False,
                           wait_time: int = None) -> bool:
         """
-        等待直到出现目标
+        等待直到出现图片、多帧动画或文字目标，匹配方式由目标自身决定。
         :param wait_time: 等待时间，单位秒
         :param target:
         :param skip_first_screenshot:
@@ -422,7 +426,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             if wait_timer and wait_timer.reached():
                 logger.warning(f"Wait until appear {target.name} timeout")
                 return False
-            if isinstance(target, RuleImage) and self.appear(target):
+            if isinstance(target, (RuleImage, RuleGif)) and self.appear(target):
                 return True
             if isinstance(target, RuleOcr) and self.ocr_appear(target):
                 return True

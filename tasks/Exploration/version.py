@@ -56,6 +56,10 @@ class HighlightGif(RuleGif):
     def pre_process(self, image):
         return highlight(image)
 
+    def match(self, image, threshold: float = None) -> bool:
+        """探索高亮统一多尺度识别，让悬赏、协作找怪及开战复查使用同一规则。"""
+        return self.match_multi_scale(image, threshold=threshold)
+
 
 class HighLight(BaseTask, ExplorationAssets):
 
@@ -93,5 +97,4 @@ if __name__ == '__main__':
     for i in range(10):
         t.screenshot()
         logger.info(t.appear(t.TEMPLATE_GIF))
-
 

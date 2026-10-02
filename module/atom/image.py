@@ -187,18 +187,24 @@ class RuleImage(RuleImageMallResourceMixin):
         if scale_range is not None:
             start, end = scale_range[:2]
             step = scale_range[2] if len(scale_range) > 2 else 0.1
-            scales = sorted(set(round(x, 1) for x in np.arange(start, end + step, step)))
+            # 保留 0.05 等细步长，并过滤浮点步进产生的范围外尺度。
+            if step <= 0:
+                raise ValueError('多尺度匹配的步长必须大于 0')
+            scales = [x for x in np.arange(start, end + step, step)
+                      if round(float(x), 8) <= round(float(end), 8)]
 
         if scales is None:
             scales = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
         else:
-            scales = sorted(set(round(x, 1) for x in scales))
+            # 只消除浮点尾差，不把显式指定的 0.85 压成 0.8。
+            scales = sorted(set(round(float(x), 8) for x in scales))
 
         source = self.corp(image)
         mat = self.image
 
         if mat is None or mat.shape[0] == 0 or mat.shape[1] == 0:
-            logger.error(f"Template image is invalid: {mat.shape}")
+            # 模板为空时日志也不能读取不存在的 shape。
+            logger.error(f"Template image is invalid: {getattr(mat, 'shape', None)}")
             return False
 
         # 预计算模板尺寸
@@ -215,6 +221,9 @@ class RuleImage(RuleImageMallResourceMixin):
 
             # 跳过无效缩放
             if scaled_w < 10 or scaled_h < 10:
+                continue
+            # 每个尺度分别检查，仍允许大模板缩小后匹配较小的搜索区域。
+            if scaled_w > source_w or scaled_h > source_h:
                 continue
 
             try:
@@ -235,8 +244,9 @@ class RuleImage(RuleImageMallResourceMixin):
         if best_score > threshold and best_loc is not None:
             self.roi_front[0] = best_loc[0] + self.roi_back[0]
             self.roi_front[1] = best_loc[1] + self.roi_back[1]
-            self.roi_front[2] = scaled_w
-            self.roi_front[3] = scaled_h
+            # 点击区域必须使用最佳匹配的宽高，不能沿用最后一次尝试的尺寸。
+            self.roi_front[2] = int(mat_w * best_scale)
+            self.roi_front[3] = int(mat_h * best_scale)
             return True
         else:
             return False
@@ -428,6 +438,47 @@ class RuleImage(RuleImageMallResourceMixin):
             if abs(average_color[i] - color[i]) > bias:
                 return False
         return True
+
+    def match_brightness(self, image: np.array, threshold: float = 0.9,
+                         roi: list = None, gray: bool = False) -> bool:
+        """比较区域与模板的平均亮度；默认使用 HSV 的 V 通道，可选灰度。
+
+        仅用于辅助判断按钮或遮罩状态，不定位目标，也不修改匹配区域。
+        """
+        source = self.corp(image, roi)
+        template = self.image
+        # 临时空帧或越界区域不能作为有效的状态判据。
+        if source.size == 0 or template.size == 0:
+            return False
+        if any(frame.ndim != 3 or frame.shape[2] != 3 for frame in (source, template)):
+            raise ValueError(f'{self.name} 亮度匹配需要三通道 RGB 图片')
+        conversion = cv2.COLOR_RGB2GRAY if gray else cv2.COLOR_RGB2HSV
+        source_channel = cv2.cvtColor(source, conversion)
+        template_channel = cv2.cvtColor(template, conversion)
+        if not gray:
+            source_channel = source_channel[:, :, 2]
+            template_channel = template_channel[:, :, 2]
+        score = 1.0 - abs(float(source_channel.mean()) - float(template_channel.mean())) / 255.0
+        if self.debug_mode:
+            logger.attr(self.name, f'brightness similarity {score:.5f}')
+        return score >= threshold
+
+    def match_saturation(self, image: np.array, threshold: float = 0.9,
+                         roi: list = None) -> bool:
+        """比较区域与模板的平均饱和度，辅助区分彩色和灰化状态。"""
+        source = self.corp(image, roi)
+        template = self.image
+        # 与亮度判定一致，空区域返回未命中，异常通道明确报错。
+        if source.size == 0 or template.size == 0:
+            return False
+        if any(frame.ndim != 3 or frame.shape[2] != 3 for frame in (source, template)):
+            raise ValueError(f'{self.name} 饱和度匹配需要三通道 RGB 图片')
+        source_value = float(cv2.cvtColor(source, cv2.COLOR_RGB2HSV)[:, :, 1].mean())
+        template_value = float(cv2.cvtColor(template, cv2.COLOR_RGB2HSV)[:, :, 1].mean())
+        score = 1.0 - abs(source_value - template_value) / 255.0
+        if self.debug_mode:
+            logger.attr(self.name, f'saturation similarity {score:.5f}')
+        return score >= threshold
 
 if __name__ == "__main__":
     from dev_tools.assets_test import detect_image
