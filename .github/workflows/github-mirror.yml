@@ -11,6 +11,8 @@ name: GitHub-Mirrors
 jobs:
   run:
     name: Run
+    # 此镜像配置归上游作者所有，仅允许其指定公开仓库执行。
+    if: ${{ github.repository == 'runhey/OnmyojiAutoScript' && github.event.repository.private == false }}
     runs-on: ubuntu-latest
     steps:
       - name: Get repo and time

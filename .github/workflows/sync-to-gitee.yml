@@ -3,24 +3,25 @@ name: Sync to Gitee
 on:
   push:
     branches:
-      - '**' # 任意分支 push 都触发，即时同步该分支与 tag
+      - run_now_2 # 只同步公开发布分支，不同步其他分支或标签
   schedule:
-    - cron: "0 4 * * *" # 每天 UTC 04:00（北京时间 12:00）兜底同步未触发的分支
+    - cron: "0 4 * * *" # 每天 UTC 04:00（北京时间 12:00）兜底同步公开发布分支
 
 jobs:
   mirror:
     name: Mirror FLAG12321/OnmyojiAutoScript to Gitee
+    # 仅允许指定公开仓库执行，避免派生仓库继承后误同步。
+    if: ${{ github.repository == 'FLAG12321/OnmyojiAutoScript' && github.event.repository.private == false }}
     runs-on: ubuntu-latest
     steps:
-      - name: Clone all branches and tags from GitHub
+      - name: Clone public release branch from GitHub
         run: |
-          # --mirror 克隆远端所有分支与 tag，refs 直接作为本地 heads/tags
-          git clone --mirror https://github.com/FLAG12321/OnmyojiAutoScript.git source
-      - name: Force push to Gitee
+          # 仅克隆公开发布分支，禁用标签抓取，避免其他引用进入镜像。
+          git clone --bare --single-branch --branch run_now_2 --no-tags https://github.com/FLAG12321/OnmyojiAutoScript.git source
+      - name: Force push public release branch to Gitee
         run: |
           cd source
-          # 只推送分支与 tag 并 prune 删除远端已删的对应 ref，保证 Gitee 与 GitHub 分支/tag 一致
-          # 不能用 --mirror 全量推送：--mirror 克隆会带回 GitHub 的 refs/pull/*（PR 引用），Gitee 拒绝更新（deny updating a hidden ref）
+          # 只更新同名公开分支，不删除或覆盖远端其他分支与标签。
           # Gitee 私人令牌作为 HTTPS 密码认证
-          git push --prune https://flag12321:${{ secrets.GITEE_TOKEN }}@gitee.com/flag12321/OnmyojiAutoScript.git \
-            '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+          git push https://flag12321:${{ secrets.GITEE_TOKEN }}@gitee.com/flag12321/OnmyojiAutoScript.git \
+            '+refs/heads/run_now_2:refs/heads/run_now_2'
