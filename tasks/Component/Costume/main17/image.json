@@ -43,5 +43,113 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "宠物小屋"
+  },
+  {
+    "itemName": "main_goto_exploration_17_a",
+    "imageName": "main17_main_goto_exploration_17_a.png",
+    "roiFront": "598,177,22,44",
+    "roiBack": "308,103,868,208",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "探索入口动态帧 A"
+  },
+  {
+    "itemName": "main_goto_exploration_17_b",
+    "imageName": "main17_main_goto_exploration_17_b.png",
+    "roiFront": "592,185,22,44",
+    "roiBack": "308,103,868,208",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "探索入口动态帧 B"
+  },
+  {
+    "itemName": "main_goto_exploration_17_c",
+    "imageName": "main17_main_goto_exploration_17_c.png",
+    "roiFront": "603,182,22,44",
+    "roiBack": "308,103,868,208",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "探索入口动态帧 C"
+  },
+  {
+    "itemName": "main_goto_exploration_17_d",
+    "imageName": "main17_main_goto_exploration_17_d.png",
+    "roiFront": "593,179,22,44",
+    "roiBack": "308,103,868,208",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "探索入口动态帧 D"
+  },
+  {
+    "itemName": "main_goto_exploration_17_e",
+    "imageName": "main17_main_goto_exploration_17_e.png",
+    "roiFront": "594,177,22,44",
+    "roiBack": "308,103,868,208",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "探索入口动态帧 E"
+  },
+  {
+    "itemName": "main_goto_exploration_17_f",
+    "imageName": "main17_main_goto_exploration_17_f.png",
+    "roiFront": "606,181,22,44",
+    "roiBack": "308,103,868,208",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "探索入口动态帧 F"
+  },
+  {
+    "itemName": "main_goto_summon_17_a",
+    "imageName": "main17_main_goto_summon_17_a.png",
+    "roiFront": "958,192,27,45",
+    "roiBack": "571,153,585,124",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "召唤入口动态帧 A"
+  },
+  {
+    "itemName": "main_goto_summon_17_b",
+    "imageName": "main17_main_goto_summon_17_b.png",
+    "roiFront": "965,197,27,45",
+    "roiBack": "571,153,585,124",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "召唤入口动态帧 B"
+  },
+  {
+    "itemName": "main_goto_summon_17_c",
+    "imageName": "main17_main_goto_summon_17_c.png",
+    "roiFront": "955,198,27,45",
+    "roiBack": "571,153,585,124",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "召唤入口动态帧 C"
+  },
+  {
+    "itemName": "main_goto_summon_17_d",
+    "imageName": "main17_main_goto_summon_17_d.png",
+    "roiFront": "954,193,27,45",
+    "roiBack": "571,153,585,124",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "召唤入口动态帧 D"
+  },
+  {
+    "itemName": "main_goto_summon_17_e",
+    "imageName": "main17_main_goto_summon_17_e.png",
+    "roiFront": "961,192,27,45",
+    "roiBack": "571,153,585,124",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "召唤入口动态帧 E"
+  },
+  {
+    "itemName": "main_goto_summon_17_f",
+    "imageName": "main17_main_goto_summon_17_f.png",
+    "roiFront": "968,196,27,45",
+    "roiBack": "571,153,585,124",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "description": "召唤入口动态帧 F"
   }
 ]

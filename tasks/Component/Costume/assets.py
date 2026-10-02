@@ -117,6 +117,30 @@ class CostumeAssets:
 	I_MAIN_GOTO_TOWN_16 = RuleImage(roi_front=(1021,315,45,57), roi_back=(200,120,951,297), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_town_16.png")
 	# 宠物小屋 
 	I_PET_HOUSE_16 = RuleImage(roi_front=(1246,405,28,55), roi_back=(627,387,653,194), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main16/main16_pet_house_16.png")
+	# 探索入口动态帧 A
+	I_MAIN_GOTO_EXPLORATION_16_A = RuleImage(roi_front=(728,227,26,57), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16_a.png")
+	# 探索入口动态帧 B
+	I_MAIN_GOTO_EXPLORATION_16_B = RuleImage(roi_front=(723,226,26,57), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16_b.png")
+	# 探索入口动态帧 C
+	I_MAIN_GOTO_EXPLORATION_16_C = RuleImage(roi_front=(730,223,26,57), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16_c.png")
+	# 探索入口动态帧 D
+	I_MAIN_GOTO_EXPLORATION_16_D = RuleImage(roi_front=(730,226,26,57), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16_d.png")
+	# 探索入口动态帧 E
+	I_MAIN_GOTO_EXPLORATION_16_E = RuleImage(roi_front=(730,223,26,57), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16_e.png")
+	# 探索入口动态帧 F
+	I_MAIN_GOTO_EXPLORATION_16_F = RuleImage(roi_front=(725,224,26,57), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_exploration_16_f.png")
+	# 召唤入口动态帧 A
+	I_MAIN_GOTO_SUMMON_16_A = RuleImage(roi_front=(979,216,35,53), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_summon_16_a.png")
+	# 召唤入口动态帧 B
+	I_MAIN_GOTO_SUMMON_16_B = RuleImage(roi_front=(976,213,35,53), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_summon_16_b.png")
+	# 召唤入口动态帧 C
+	I_MAIN_GOTO_SUMMON_16_C = RuleImage(roi_front=(980,212,35,53), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_summon_16_c.png")
+	# 召唤入口动态帧 D
+	I_MAIN_GOTO_SUMMON_16_D = RuleImage(roi_front=(980,212,35,53), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_summon_16_d.png")
+	# 召唤入口动态帧 E
+	I_MAIN_GOTO_SUMMON_16_E = RuleImage(roi_front=(975,215,35,53), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_summon_16_e.png")
+	# 召唤入口动态帧 F
+	I_MAIN_GOTO_SUMMON_16_F = RuleImage(roi_front=(982,215,35,53), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main16/main16_main_goto_summon_16_f.png")
 
 
 	# Image Rule Assets
@@ -130,6 +154,30 @@ class CostumeAssets:
 	I_MAIN_GOTO_TOWN_17 = RuleImage(roi_front=(834,321,33,58), roi_back=(200,120,951,297), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_town_17.png")
 	# 宠物小屋 
 	I_PET_HOUSE_17 = RuleImage(roi_front=(949,372,28,55), roi_back=(720,323,559,257), threshold=0.7, method="Template matching", file="./tasks/Component/Costume/main17/main17_pet_house_17.png")
+	# 探索入口动态帧 A
+	I_MAIN_GOTO_EXPLORATION_17_A = RuleImage(roi_front=(598,177,22,44), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_exploration_17_a.png")
+	# 探索入口动态帧 B
+	I_MAIN_GOTO_EXPLORATION_17_B = RuleImage(roi_front=(592,185,22,44), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_exploration_17_b.png")
+	# 探索入口动态帧 C
+	I_MAIN_GOTO_EXPLORATION_17_C = RuleImage(roi_front=(603,182,22,44), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_exploration_17_c.png")
+	# 探索入口动态帧 D
+	I_MAIN_GOTO_EXPLORATION_17_D = RuleImage(roi_front=(593,179,22,44), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_exploration_17_d.png")
+	# 探索入口动态帧 E
+	I_MAIN_GOTO_EXPLORATION_17_E = RuleImage(roi_front=(594,177,22,44), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_exploration_17_e.png")
+	# 探索入口动态帧 F
+	I_MAIN_GOTO_EXPLORATION_17_F = RuleImage(roi_front=(606,181,22,44), roi_back=(308,103,868,208), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_exploration_17_f.png")
+	# 召唤入口动态帧 A
+	I_MAIN_GOTO_SUMMON_17_A = RuleImage(roi_front=(958,192,27,45), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_summon_17_a.png")
+	# 召唤入口动态帧 B
+	I_MAIN_GOTO_SUMMON_17_B = RuleImage(roi_front=(965,197,27,45), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_summon_17_b.png")
+	# 召唤入口动态帧 C
+	I_MAIN_GOTO_SUMMON_17_C = RuleImage(roi_front=(955,198,27,45), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_summon_17_c.png")
+	# 召唤入口动态帧 D
+	I_MAIN_GOTO_SUMMON_17_D = RuleImage(roi_front=(954,193,27,45), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_summon_17_d.png")
+	# 召唤入口动态帧 E
+	I_MAIN_GOTO_SUMMON_17_E = RuleImage(roi_front=(961,192,27,45), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_summon_17_e.png")
+	# 召唤入口动态帧 F
+	I_MAIN_GOTO_SUMMON_17_F = RuleImage(roi_front=(968,196,27,45), roi_back=(571,153,585,124), threshold=0.85, method="Template matching", file="./tasks/Component/Costume/main17/main17_main_goto_summon_17_f.png")
 
 
 	# Image Rule Assets

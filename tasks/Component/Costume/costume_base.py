@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 
 from module.atom.click import RuleClick
+from module.atom.gif import RuleGif
 from module.atom.image import RuleImage
 from module.base.decorator import del_cached_property
 from module.base.timer import Timer
@@ -40,6 +41,13 @@ main_costume_model = {
         (PetsAssets, 'I_PET_HOUSE'): f'I_PET_HOUSE_{i}',
     } for i in range(1, 18)
 }
+
+# 狐栖归处、茨心乐园的灯笼会摆动，探索/召唤使用互补帧；庭院活动与加成判据不变。
+for i in (16, 17):
+    for entry in ('EXPLORATION', 'SUMMON'):
+        main_costume_model[getattr(MainType, f'COSTUME_MAIN_{i}')][
+            (GameUiAssets, f'I_MAIN_GOTO_{entry}')
+        ] = [f'I_MAIN_GOTO_{entry}_{i}_{frame}' for frame in 'ABCDEF']
 
 
 # 鲤鱼旗皮肤
@@ -187,6 +195,17 @@ def _rebuild(snapshot: dict) -> RuleImage:
     return RuleImage(roi_front=snapshot['roi_front'], roi_back=snapshot['roi_back'],
                      method=snapshot['method'], threshold=snapshot['threshold'],
                      file=snapshot['file'])
+
+
+def _build_main_asset(assets, value: str | list[str]) -> RuleImage | RuleGif | None:
+    """按映射构建独立入口规则；动画多帧算一个入口，且不改写资源类上的模板。"""
+    names = value if isinstance(value, list) else [value]
+    for name in names:
+        if not hasattr(assets, name):
+            logger.warning(f'Main costume asset {name} not found, skip')
+            return None
+    frames = [_rebuild(_snapshot(getattr(assets, name))) for name in names]
+    return RuleGif(frames) if isinstance(value, list) else frames[0]
 
 
 def _ensure_default_main_snapshot() -> None:
@@ -402,8 +421,9 @@ def _ensure_probe_tables() -> None:
     if default_confirm:
         confirm_table[MainType.COSTUME_MAIN] = default_confirm
     for main_type, model in main_costume_model.items():
-        rules = [_rebuild(_snapshot(getattr(costume_assets, v)))
-                 for v in model.values() if hasattr(costume_assets, v)]
+        # 动态入口按整组复核，只计一个入口，不能把多个动画帧当成多项证据。
+        rules = [_build_main_asset(costume_assets, value) for value in model.values()]
+        rules = [rule for rule in rules if rule is not None]
         # 一张都没采到就不进表 —— 探测时按「无法复核」放行，退回纯月亮判断
         if rules:
             confirm_table[main_type] = rules
@@ -545,9 +565,9 @@ class CostumeBase:
 
     def replace_img(self,
                     target,
-                    asset_after: RuleImage,
+                    asset_after: RuleImage | RuleGif,
                     rp_roi_back: bool = True):
-        """把 target 指向的资产对象就地改写为 asset_after。
+        """把 target 指向的资产对象就地改写为静态或多帧 asset_after。
 
         就地改写意味着影响是全进程的——这正是本机制生效的前提：所有任务读到的都是
         同一个对象，改一次处处生效。
@@ -572,14 +592,24 @@ class CostumeBase:
             if not hasattr(self, target):
                 return
             obj: RuleImage = getattr(self, target)
+        # 静态/动态皮肤互切时先恢复旧挂载；保留原对象以兼容 Page 已保存的引用。
+        roi_back = obj.roi_back
+        RuleGif.detach_from(obj)
+        animation = asset_after if isinstance(asset_after, RuleGif) else None
+        if animation is not None:
+            asset_after = animation.targets[0]
         obj.roi_front = list(asset_after.roi_front)
-        if rp_roi_back:
-            obj.roi_back = asset_after.roi_back
+        obj.roi_back = asset_after.roi_back if rp_roi_back else roi_back
         # RuleClick 没有 threshold / file（它不做模板匹配），只同步区域
         if not isinstance(obj, RuleClick):
             obj.threshold = asset_after.threshold
             obj.file = asset_after.file
         _clear_rule_image_cache(obj)
+        if animation is not None:
+            # 普通 appear/导航点击即可逐帧识别；调用方限定的搜索范围仍需保留。
+            RuleGif.attach_to(obj, animation.targets)
+            if not rp_roi_back:
+                obj.roi_back = roi_back
 
     def check_costume_main(self, main_type: MainType):
         """套用指定庭院皮肤。幂等：同一套重复调用直接返回。
@@ -599,11 +629,10 @@ class CostumeBase:
         else:
             costume_assets = CostumeAssets()
             for target, value in main_costume_model[main_type].items():
-                if not hasattr(costume_assets, value):
-                    # 皮肤资产还没采集（例如只登记了枚举项），跳过而不是抛异常
-                    logger.warning(f'Main costume asset {value} not found, skip')
-                    continue
-                targets[target] = getattr(costume_assets, value)
+                # 与探测复核共用映射，多帧入口与其他静态入口按同一套皮肤切换。
+                asset = _build_main_asset(costume_assets, value)
+                if asset is not None:
+                    targets[target] = asset
         for target, asset in targets.items():
             self.replace_img(target, asset)
         if not targets:
