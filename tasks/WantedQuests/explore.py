@@ -55,8 +55,13 @@ class WQExplore(BaseExploration, HighLight):
                     timeout=Timer(2, count=10)
                 )
                 curr_scene = self.get_current_scene(reuse_screenshot=False)
-                if curr_scene == Scene.WORLD and _cnt_exploration >= num:
-                    logger.info('All Done')
+                if curr_scene == Scene.WORLD:
+                    # 已离开章节就结束本批次，由上层重读悬赏进度并按需再次前往；
+                    # 预估次数未满也不能在大世界等待已消失的章节入口。
+                    logger.info(f'Exploration returned to world: {_cnt_exploration}/{num}')
+                    if explore_only_boss:
+                        # 与入口分支保持一致，整批没打到目标时仍排除无效路线。
+                        raise ExploreWantedBoss
                     break
                 continue
             # 探索里面
@@ -82,7 +87,7 @@ class WQExplore(BaseExploration, HighLight):
                         _cnt_exploration += 1
                         explore_only_boss = False
                     continue
-                # 小怪
+                # 小怪高亮由 HighlightGif 统一多尺度匹配，fire 内的复查点击也沿用该规则。
                 if self.appear(self.TEMPLATE_GIF) and self.fire(self.TEMPLATE_GIF):
                     explore_only_boss = False
                     logger.info(f'Fight, minions cnt {self.minions_cnt}')
