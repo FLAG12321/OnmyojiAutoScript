@@ -15,9 +15,11 @@
 """
 import random
 import re
+import cv2
 from datetime import datetime
 from pathlib import Path
 from time import sleep
+from types import SimpleNamespace
 
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
@@ -45,27 +47,31 @@ class HelpTargetReached(Exception):
 
 def parse_help_count(text: str) -> int | None:
     """只接受完整的 0~15/15，避免孤立数字及 13/150 被当作有效读数。"""
-    # OCR 偶尔把细字体母误读成数字，先做限定范围内的常见纠正。
-    normalized = str(text or '').translate(str.maketrans({
-        'I': '1', 'l': '1', 'S': '5', 's': '5',
-        'O': '0', 'o': '0', '／': '/',
-    }))
-    normalized = re.sub(r'\s+', '', normalized)
+    normalized = _normalize_help_text(text)
     match = re.search(r'(?<!\d)([0-9]|1[0-5])/15(?!\d)', normalized)
     return int(match.group(1)) if match else None
 
 
-def _help_text_has_total_15(text: str) -> bool:
-    """判断 OCR 候选是否像次数标签中的 15，而不是任意长数字。"""
+def _normalize_help_text(text: str) -> str:
+    """统一 OCR 常见误识字符，供首轮筛选和二次复核共用。"""
     normalized = str(text or '').translate(str.maketrans({
         'I': '1', 'l': '1', 'S': '5', 's': '5',
         'O': '0', 'o': '0', '／': '/',
     }))
-    normalized = re.sub(r'\s+', '', normalized)
+    return re.sub(r'\s+', '', normalized)
+
+
+def _help_text_has_total_15(text: str) -> bool:
+    """判断 OCR 候选是否像次数标签中的 15，而不是任意长数字。"""
+    normalized = _normalize_help_text(text)
     if not normalized or len(normalized) > 6 or not re.fullmatch(r'[0-9/]+', normalized):
         return False
     # 允许 OCR 丢掉斜杠或前面的次数，后续会在候选左侧重新核对。
-    return bool(re.fullmatch(r'(?:[0-9]{0,3}/)?15|[0-9]{1,3}15', normalized))
+    return bool(
+        normalized in ('15', '/15')
+        or re.fullmatch(r'0{1,3}15', normalized)
+        or re.fullmatch(r'(?:[0-9]|1[0-5])/15', normalized)
+    )
 
 
 def _result_xywh(result, roi) -> list[int] | None:
@@ -89,18 +95,52 @@ def _result_total_15_xywh(result, roi) -> list[int] | None:
     box = _result_xywh(result, roi)
     if box is None:
         return None
-    normalized = str(result.ocr_text or '').translate(str.maketrans({
-        'I': '1', 'l': '1', 'S': '5', 's': '5',
-        'O': '0', 'o': '0', '／': '/',
-    }))
-    normalized = re.sub(r'\s+', '', normalized)
+    normalized = _normalize_help_text(result.ocr_text)
     suffix_start = normalized.rfind('15')
     if suffix_start < 0 or not normalized[suffix_start:].startswith('15'):
         return box
     # 按文字长度估算 15 在检测框中的起点；检测框通常覆盖整段 N/15。
+    if box[2] > 100:
+        # 检测器把整行或裁剪边界并入文字框时，15 通常位于该框右端。
+        return [box[0] + box[2] - 40, box[1], 40, box[3]]
     offset = int(round(box[2] * suffix_start / len(normalized)))
-    suffix_width = max(1, box[2] - offset)
+    suffix_width = min(40, max(1, box[2] - offset))
     return [box[0] + offset, box[1], suffix_width, box[3]]
+
+
+def _result_span(result, text: str, start: int, end: int, total: int):
+    """按合并 OCR 文本的相对字符位置拆出一个候选文字框。"""
+    try:
+        points = [(float(point[0]), float(point[1])) for point in result.box]
+        x0 = min(point[0] for point in points)
+        y0 = min(point[1] for point in points)
+        x1 = max(point[0] for point in points)
+        y1 = max(point[1] for point in points)
+        span_x0 = x0 + (x1 - x0) * start / total
+        span_x1 = x0 + (x1 - x0) * end / total
+        return SimpleNamespace(
+            ocr_text=text,
+            box=[[span_x0, y0], [span_x1, y0], [span_x1, y1], [span_x0, y1]],
+        )
+    except (TypeError, IndexError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _iter_help_candidates(result):
+    """拆分首轮 OCR 合并的多个标签，确保每个 /15 都会单独复核。"""
+    normalized = _normalize_help_text(result.ocr_text)
+    initial_count = parse_help_count(normalized)
+    if initial_count is not None or _help_text_has_total_15(normalized):
+        yield result, initial_count
+        return
+
+    # OCR 可能把 15/30、15/30、2/15 合并成一条长文本，只提取总数为 15 的片段。
+    for match in re.finditer(r'(?:[0-9]|1[0-5])/15', normalized):
+        candidate = _result_span(
+            result, match.group(0), match.start(), match.end(), len(normalized))
+        if candidate is not None:
+            # 合并文本只用于给出 15 的相对位置，次数必须由二次窄 OCR 确认。
+            yield candidate, None
 
 
 def _probe_help_count(image, anchor, anchor_roi):
@@ -108,45 +148,95 @@ def _probe_help_count(image, anchor, anchor_roi):
     anchor_xywh = _result_total_15_xywh(anchor, anchor_roi)
     if anchor_xywh is None:
         return None, None
-    x, y, width, height = anchor_xywh
-    # 候选框可能只覆盖 15，也可能覆盖 015；向左留出次数与斜杠的空间。
-    probe = (max(0, x - max(42, width)), max(0, y - 8),
-             width + max(52, width), height + 16)
-    probe_rule = RuleOcr(
-        roi=probe, area=probe, mode='Full', method='Default',
-        keyword='', name='find_shikigami_help_probe',
-    )
-    try:
-        results = probe_rule.detect_and_ocr(image)
-    except Exception:
-        logger.exception('协战次数候选二次 OCR 失败，按未识别处理')
+    raw_anchor = _result_xywh(anchor, anchor_roi)
+    if raw_anchor is None:
         return None, None
+    # 合并框的 15 位置可能落在左、中、右任一侧，按相对坐标逐点尝试，仍不扩大首轮 ROI。
+    anchor_boxes = [anchor_xywh]
+    if raw_anchor[2] > 100:
+        for candidate_x in (
+            raw_anchor[0],
+            raw_anchor[0] + max(0, raw_anchor[2] // 2 - 20),
+            raw_anchor[0] + raw_anchor[2] - 40,
+        ):
+            candidate = [candidate_x, raw_anchor[1], 40, raw_anchor[3]]
+            if candidate not in anchor_boxes:
+                anchor_boxes.append(candidate)
 
-    # 优先使用单个完整结果；检测器把字符拆开时再按横坐标拼接。
-    for result in results:
-        count = parse_help_count(result.ocr_text)
-        if count is not None:
-            return count, _result_xywh(result, probe)
-    ordered = sorted(results, key=lambda item: min(float(point[0]) for point in item.box))
-    combined = ''.join(str(item.ocr_text or '') for item in ordered)
-    count = parse_help_count(combined)
-    if count is None or not ordered:
-        return None, None
-    boxes = [_result_xywh(item, probe) for item in ordered]
-    boxes = [box for box in boxes if box is not None]
-    if not boxes:
-        return None, None
-    x0 = min(box[0] for box in boxes)
-    y0 = min(box[1] for box in boxes)
-    x1 = max(box[0] + box[2] for box in boxes)
-    y1 = max(box[1] + box[3] for box in boxes)
-    return count, [x0, y0, x1 - x0, y1 - y0]
+    for x, y, width, height in anchor_boxes:
+        # 候选框可能只覆盖 15，也可能覆盖整段文本；固定上限避免带入相邻卡片属性。
+        probe_width = min(104, max(76, width + 64))
+        # 文字框可能从资源 ROI 上沿开始，保留约 35px 高度覆盖完整数字笔画。
+        probe_height = min(36, max(30, height))
+        center_y = y + max(0, (height - probe_height) // 2)
+        for y_offset in (0, -4, 4):
+            probe = (max(0, x - 44), max(0, center_y + y_offset),
+                     probe_width, probe_height)
+            probe_rule = RuleOcr(
+                roi=probe, area=probe, mode='Full', method='Default',
+                keyword='', name='find_shikigami_help_probe',
+            )
+            try:
+                results = probe_rule.detect_and_ocr(image)
+            except Exception:
+                logger.exception('协战次数候选二次 OCR 失败，按未识别处理')
+                continue
+
+            # 只接受复核窗口内的单个完整结果，拒绝合并相邻卡片的宽文本。
+            for result in results:
+                count = parse_help_count(result.ocr_text)
+                result_roi = _result_xywh(result, probe)
+                if count is None or result_roi is None:
+                    continue
+                if result_roi[2] <= probe_width:
+                    return count, result_roi
+                # OCR 偶尔仍返回超出局部窗口的框，但文字本身完整时取其 15 锚点。
+                return count, _result_total_15_xywh(result, probe)
+    return None, None
+
+
+def _map_scaled_result(result, scale: int):
+    """把放大 ROI OCR 的坐标缩回原始 ROI，保持后续坐标换算一致。"""
+    try:
+        box = [[float(point[0]) / scale, float(point[1]) / scale]
+               for point in result.box]
+        return SimpleNamespace(ocr_text=result.ocr_text, box=box)
+    except (TypeError, IndexError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _detect_help_results(ocr_obj, image):
+    """先用资源原始 ROI OCR，失败时只对同一 ROI 做放大增强，不扩大扫描范围。"""
+    results = ocr_obj.detect_and_ocr(image)
+    if any(list(_iter_help_candidates(result)) for result in results):
+        return results
+
+    x, y, width, height = [int(value) for value in ocr_obj.roi]
+    crop = image[y:y + height, x:x + width]
+    if crop.size == 0:
+        return results
+    scale = 4
+    enlarged = cv2.resize(
+        crop, (width * scale, height * scale), interpolation=cv2.INTER_NEAREST)
+    # 白色次数文字在原图中对比度低，阈值化只作用于资源 ROI，不改变扫描区域。
+    gray = cv2.cvtColor(enlarged, cv2.COLOR_RGB2GRAY)
+    binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    enhanced = cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
+    retry_rule = RuleOcr(
+        roi=(0, 0, width * scale, height * scale),
+        area=(0, 0, width * scale, height * scale),
+        mode='Full', method='Default', keyword='',
+        name='find_shikigami_help_enhanced',
+    )
+    retry_results = retry_rule.detect_and_ocr(enhanced)
+    mapped = [_map_scaled_result(result, scale) for result in retry_results]
+    return [result for result in mapped if result is not None]
 
 
 def locate_help_shikigami_anchor(ocr_obj, image) -> tuple[list[int], int | None]:
     """先定位 15，再在其左侧核对完整 N/15 标签。"""
     try:
-        results = ocr_obj.detect_and_ocr(image)
+        results = _detect_help_results(ocr_obj, image)
     except Exception:
         logger.exception('援助式神锚点 OCR 失败，按未识别处理')
         return [0, 0, 0, 0], None
@@ -154,19 +244,22 @@ def locate_help_shikigami_anchor(ocr_obj, image) -> tuple[list[int], int | None]
     # 完整结果也必须复核，避免首轮把 0/15 误读成 10/15 后直接返回。
     candidates = []
     for result in results:
-        initial_count = parse_help_count(result.ocr_text)
-        if initial_count is not None or _help_text_has_total_15(result.ocr_text):
-            candidates.append((result, initial_count))
+        candidates.extend(_iter_help_candidates(result))
 
     for candidate, initial_count in candidates:
         probed_count, probed_roi = _probe_help_count(image, candidate, ocr_obj.roi)
         if probed_count is not None and probed_roi is not None:
-            # 二次结果与首轮一致时沿用首轮坐标，避免 OCR 坐标不变时平移锚点。
-            if initial_count is None or probed_count != initial_count:
+            # 二次结果通常应与首轮一致；仅允许已知的 10/15→0/15 误读被纠正。
+            if (initial_count is None or probed_count == initial_count
+                    or (initial_count == 10 and probed_count == 0)):
                 return probed_roi, probed_count
         if initial_count is not None:
             roi = _result_xywh(candidate, ocr_obj.roi)
             if roi is not None:
+                # 首轮框过宽时只保留其 15 侧锚点，避免把整行卡片带入后续匹配。
+                if roi[2] > 100:
+                    # 宽框未能局部复核时不返回不可靠坐标，交给上层重试。
+                    continue
                 return roi, initial_count
     return [0, 0, 0, 0], None
 
