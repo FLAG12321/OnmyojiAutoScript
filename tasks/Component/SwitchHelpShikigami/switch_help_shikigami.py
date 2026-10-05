@@ -67,11 +67,11 @@ def _help_text_has_total_15(text: str) -> bool:
     if not normalized or len(normalized) > 6 or not re.fullmatch(r'[0-9/]+', normalized):
         return False
     # 允许 OCR 丢掉斜杠或前面的次数，后续会在候选左侧重新核对。
-    return bool(
-        normalized in ('15', '/15')
-        or re.fullmatch(r'0{1,3}15', normalized)
-        or re.fullmatch(r'(?:[0-9]|1[0-5])/15', normalized)
-    )
+    if normalized in ('15', '/15') or re.fullmatch(r'(?:[0-9]|1[0-5])/15', normalized):
+        return True
+    # OCR 丢掉斜杠时会把 2/15 读成 215；只把 0~15 范围内的前缀交给二次 OCR。
+    prefix = normalized[:-2] if normalized.endswith('15') else ''
+    return bool(prefix and len(prefix) <= 2 and prefix.isdigit() and int(prefix) <= 15)
 
 
 def _result_xywh(result, roi) -> list[int] | None:
