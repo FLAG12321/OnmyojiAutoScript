@@ -1,7 +1,7 @@
 [
   {
     "itemName": "character_level",
-    "roiFront": "7,20,28,24",
+    "roiFront": "0,23,73,18",
     "roiBack": "0,0,100,100",
     "mode": "Digit",
     "method": "Default",
