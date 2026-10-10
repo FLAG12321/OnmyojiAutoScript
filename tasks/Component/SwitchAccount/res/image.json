@@ -142,5 +142,23 @@
     "method": "Template matching",
     "threshold": 0.7,
     "description": "取消集结"
+  },
+  {
+    "itemName": "sa_cancel_update",
+    "imageName": "res_sa_cancel_update.png",
+    "roiFront": "481,436,102,35",
+    "roiBack": "371,254,390,255",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "暂不更新"
+  },
+  {
+    "itemName": "sa_cancel_check",
+    "imageName": "res_sa_cancel_check.png",
+    "roiFront": "440,390,30,27",
+    "roiBack": "371,254,390,255",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "勾选"
   }
 ]

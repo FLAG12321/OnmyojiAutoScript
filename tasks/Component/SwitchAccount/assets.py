@@ -70,6 +70,10 @@ class SwitchAccountAssets:
 	I_PAGE_DESKTOP = RuleImage(roi_front=(942,177,46,25), roi_back=(651,6,614,708), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_page_desktop.png")
 	# 取消集结 
 	I_CANCEL_TOINVITE = RuleImage(roi_front=(504,430,63,41), roi_back=(474,424,118,52), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_cancel_toinvite.png")
+	# 暂不更新 
+	I_SA_CANCEL_UPDATE = RuleImage(roi_front=(481,436,102,35), roi_back=(371,254,390,255), threshold=0.7, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_cancel_update.png")
+	# 勾选 
+	I_SA_CANCEL_CHECK = RuleImage(roi_front=(440,390,30,27), roi_back=(371,254,390,255), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_cancel_check.png")
 
 
 	# Ocr Rule Assets

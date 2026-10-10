@@ -205,6 +205,12 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             self.screenshot()
             if self.appear(self.I_SA_CHECK_SELECT_SVR_1):
                 break
+            # 优先处理登录勾选与更新提示，避免遮挡区服选择入口。
+            if self.appear(self.I_SA_CANCEL_CHECK):
+                self.click(self.I_SA_CANCEL_CHECK, interval=1.5)
+                continue
+            if self.appear_then_click(self.I_SA_CANCEL_UPDATE, interval=1.5):
+                continue
             now = time.monotonic()
             # 点击切服按钮过程中游戏可能闪退回MuMu桌面，每隔10秒复用现成逻辑检测一次，若已闪退则抛异常交由恢复处理
             if now - last_alive_check >= 10:
