@@ -286,5 +286,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "箭头，打开"
+  },
+  {
+    "itemName": "e_exploration_intro",
+    "imageName": "e_exploration_intro.png",
+    "roiFront": "477,102,339,41",
+    "roiBack": "380,90,520,70",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "「探索」玩法介绍教学弹窗的标题，用于识别该弹窗"
   }
 ]

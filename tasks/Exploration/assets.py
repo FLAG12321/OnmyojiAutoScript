@@ -68,6 +68,8 @@ class ExplorationAssets:
 	C_CLICK_ROTATE_4 = RuleClick(roi_front=(921,590,21,21), roi_back=(921,590,21,21), name="click_rotate_4")
 	# 随机点 
 	C_SAFE_RANDOM = RuleClick(roi_front=(0,0,111,12), roi_back=(0,0,111,12), name="safe_random")
+	# 「探索」玩法介绍弹窗外侧的暗处，点这里关弹窗 
+	C_E_INTRO_CLOSE_AREA = RuleClick(roi_front=(150,640,90,55), roi_back=(150,640,90,55), name="e_intro_close_area")
 
 
 	# Image Rule Assets
@@ -135,6 +137,8 @@ class ExplorationAssets:
 	I_EXP_ARROW_RIGHT = RuleImage(roi_front=(1240,117,24,21), roi_back=(1178,74,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_arrow_right.png")
 	# 箭头，打开 
 	I_EXP_ARROW_LEFT = RuleImage(roi_front=(1244,115,18,26), roi_back=(1178,78,100,100), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/res_exp_arrow_left.png")
+	# 「探索」玩法介绍教学弹窗的标题，用于识别该弹窗 
+	I_E_EXPLORATION_INTRO = RuleImage(roi_front=(477,102,339,41), roi_back=(380,90,520,70), threshold=0.8, method="Template matching", file="./tasks/Exploration/res/e_exploration_intro.png")
 
 
 	# List Rule Assets

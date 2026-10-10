@@ -52,5 +52,11 @@
     "roiFront": "0,0,111,12",
     "roiBack": "0,0,111,12",
     "description": "随机点"
+  },
+  {
+    "itemName": "e_intro_close_area",
+    "roiFront": "150,640,90,55",
+    "roiBack": "150,640,90,55",
+    "description": "「探索」玩法介绍弹窗外侧的暗处，点这里关弹窗"
   }
 ]

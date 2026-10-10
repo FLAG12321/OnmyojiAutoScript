@@ -67,9 +67,30 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     def _match_end(self):
         return RuleAnimate(self.I_SWIPE_END)
 
+    def close_exploration_intro_popup(self, skip_screenshot: bool = True) -> bool:
+        """ 首次进入探索的「探索」玩法介绍教学弹窗：没有关闭按钮，点弹窗外侧的暗处关闭。
+        它盖住整屏，页面识别与场景识别在弹窗期间全部失效，所以要先于它们处理。
+        返回 True 表示弹窗仍在（本轮已点或正被节流），调用方应跳过后续判断。 """
+        self.maybe_screenshot(skip_screenshot)
+        if not self.appear(self.I_E_EXPLORATION_INTRO):
+            return False
+        if self.click(self.C_E_INTRO_CLOSE_AREA, interval=2):
+            logger.info('出现「探索」玩法介绍弹窗，点击暗处关闭')
+        return True
+
+    def try_close_unknown_page(self, skip_screenshot: bool = True):
+        """ 未知页兜底：先试探索教学弹窗（点暗处），再走通用的关闭按钮 """
+        if self.close_exploration_intro_popup(skip_screenshot):
+            return True
+        return super().try_close_unknown_page(skip_screenshot)
+
     def get_current_scene(self, reuse_screenshot: bool = True) -> Scene:
         if not reuse_screenshot:
             self.screenshot()
+
+        # 「探索」玩法介绍教学弹窗盖屏时下面所有判据都失效，先点暗处关掉再判场景
+        if self.close_exploration_intro_popup(skip_screenshot=True):
+            return Scene.UNKNOWN
 
         if self.appear(self.I_E_ENTRANCE) and self.appear(self.I_E_EXPLORATION_CLICK):
             logger.info("In entrance")
