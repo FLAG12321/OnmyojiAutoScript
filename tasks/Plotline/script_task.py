@@ -710,6 +710,14 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             pass    
         elif self.privileges_flag and not self.experience_youkai_battle and not self.mail_flag and self.appear_then_click(self.I_CLICK_LV,interval=1):    
             self.exploration_flag =True 
+        # 「提升等级」弹窗：点 LV 触发的等级不足引导窗，正确动作是点「前往」进入探索。
+        # 必须排在下面红色返回按钮兜底之前，否则弹窗会被当成"返回"关掉，
+        # 与上面的点 LV 分支互相抵消形成死循环。
+        elif self.appear_then_click(self.I_CLICK_TO_EXPLORATION, interval=1):
+            logger.info("点击前往探索按钮")
+            self.exploration_flag = True
+            # 前往探索会直接加载到章节入口，等动画结束后再交给探索场景处理。
+            self._wait_exploration_entrance_after_click()
         elif self.appear_then_click(self.I_CLICK_CV, interval=1):
             pass
         elif not self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK) and self.appear_then_click(self.I_CLICK_BACK_RED, interval=3):
