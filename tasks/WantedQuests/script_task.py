@@ -340,6 +340,41 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             logger.warning('The extreme case. The quest only needs to challenge one final boss, so skip it')
             self.want_strategy_excluding.append(info_wq_list[0])
 
+    def _exit_to_exploration(self, *stop_checks, back_red: bool = False):
+        """连点返回键退出副本界面，停下后确保落在探索大世界。
+
+        副本关闭动画里页面特征图容易漏判一帧，而这时返回键仍然命中，循环就会多退
+        一级。无界循环一路退到庭院后既没有返回键也没有目标特征图，所有分支都不成立，
+        只能空转到设备层 60s 卡死超时。这里认出庭院或调用方给的页面就停手，点满超时
+        也停，最后统一由 ui_goto 把当前页面拉回探索大世界。
+
+        :param stop_checks: 额外的停止特征图，命中后不再点返回（如秘闻区域列表）。
+        :param back_red: 需要先用红色返回键关掉层选择一类的弹层时置 True。
+        """
+        # 返回键按 1.5s 节流，正常关闭点两三次就到位，20s 足够覆盖过场动画与漏判重试。
+        exit_timer = Timer(20).start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_CHECK_EXPLORATION):
+                # 已经在探索大世界，省掉一次页面识别与导航。
+                return
+            # 退过头到庭院同样立刻停手，交给下面的 ui_goto 拉回来。
+            if self.appear(self.I_CHECK_MAIN):
+                logger.warning('退出副本时多退了一级到庭院，重新导航回探索')
+                break
+            if any(self.appear(check) for check in stop_checks):
+                break
+            if exit_timer.reached():
+                logger.warning('退出副本界面超时，按当前页面重新导航回探索')
+                break
+            if back_red and self.appear_then_click(self.I_UI_BACK_RED, interval=1):
+                continue
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1.5):
+                continue
+        self.ui_get_current_page()
+        self.ui_goto(page_exploration)
+        self.wait_until_stable(self.I_CHECK_EXPLORATION)
+
     def challenge(self, goto_btn, num):
         self.ui_click(goto_btn, self.I_WQC_FIRE)
         self.ui_click(self.I_WQC_UNLOCK, self.I_WQC_LOCK)
@@ -349,12 +384,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         self.run_general_battle(config=wq_config)
         self.wait_until_appear(self.I_WQC_FIRE, wait_time=4)
         # 关闭 挑战界面
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_CHECK_EXPLORATION):
-                break
-            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1.5):
-                continue
+        self._exit_to_exploration()
 
     def secret(self, goto, num=1):
         self.ui_click(goto, self.I_WQSE_FIRE)
@@ -378,17 +408,8 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                         self.device.click_record_clear()
                     continue
             success = self.run_general_battle(self.battle_config)
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_CHECK_SECRET_ZONES):
-                break
-            if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
-                continue
-            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1.5):
-                continue
-        self.ui_get_current_page()
-        self.ui_goto(page_exploration)
-        self.wait_until_stable(self.I_CHECK_EXPLORATION)
+        # 秘闻层选择要先点红色返回键关掉，退出到秘闻区域列表即可停手。
+        self._exit_to_exploration(self.I_CHECK_SECRET_ZONES, back_red=True)
         logger.info('Secret mission finished')
 
     def invite_random(self, add_button: RuleImage):
