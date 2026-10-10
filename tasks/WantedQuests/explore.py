@@ -86,18 +86,18 @@ class WQExplore(BaseExploration, HighLight):
                         # 领奖后的首帧可能仍在过渡，不能沿用领奖前的失败计时。
                         search_fail_timer.clear()
                         continue
-                # boss
-                if self.appear(self.I_BOSS_BATTLE_BUTTON):
-                    if self.fire(self.I_BOSS_BATTLE_BUTTON):
+                # 首领也必须高亮，开战前复查继续使用同一亮度规则。
+                if self.appear(self.I_HIGHLIGHT_BOSS_BATTLE_BUTTON):
+                    if self.fire(self.I_HIGHLIGHT_BOSS_BATTLE_BUTTON):
                         logger.info(f'Boss battle, minions cnt {self.minions_cnt}')
                         _cnt_exploration += 1
                         explore_only_boss = False
                     # 已经发现目标，点击等待和战斗时间都不能触发后续空扫。
                     search_fail_timer.clear()
                     continue
-                # 小怪高亮由 HighlightGif 统一多尺度匹配，fire 内的复查点击也沿用该规则。
-                if self.appear(self.TEMPLATE_GIF):
-                    if self.fire(self.TEMPLATE_GIF):
+                # 遍历普通挑战图标并检查外围亮度，避免漏掉同屏其他高亮小怪。
+                if self.appear(self.I_HIGHLIGHT_NORMAL_BATTLE_BUTTON):
+                    if self.fire(self.I_HIGHLIGHT_NORMAL_BATTLE_BUTTON):
                         explore_only_boss = False
                         logger.info(f'Fight, minions cnt {self.minions_cnt}')
                     # 识别到高亮但尚未点进战斗时也先重试，不能当作未找到怪而滑走。

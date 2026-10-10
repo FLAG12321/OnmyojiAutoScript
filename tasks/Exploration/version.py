@@ -4,89 +4,84 @@
 import cv2
 import numpy as np
 
-from pathlib import Path
 from cached_property import cached_property
 
-from module.base.utils import color_similarity_2d, load_image, save_image
-from module.atom.gif import RuleGif
 from module.atom.image import RuleImage
+from module.logger import logger
 
 from tasks.base_task import BaseTask
 from tasks.Exploration.assets import ExplorationAssets
-from dev_tools.assets_test import detect_image
 
 
 class Version(BaseTask):
     pass
 
 
-def apply_mask(image, mask):
-    image16 = image.astype(np.uint16)
-    mask16 = mask.astype(np.uint16)
-    mask16 = cv2.merge([mask16, mask16, mask16])
-    image16 = cv2.multiply(image16, mask16)
-    # cv2.multiply(image16, mask16, dst=image16)
-    image16 = cv2.convertScaleAbs(image16, alpha=1 / 255)
-    # cv2.convertScaleAbs(image16, alpha=1 / 255, dst=image16)
-    # Image.fromarray(image16.astype(np.uint8)).show()
-    return image16.astype(np.uint8)
+class HighlightBattleButton(RuleImage):
+    """先定位挑战图标，再用排除图标后的按钮外围平均亮度判断高亮。"""
 
-def highlight(image):
-    yuv = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
-    _, u, _ = cv2.split(yuv)
-    cv2.subtract(128, u, dst=u)
-    cv2.multiply(u, 8, dst=u)
+    # log2 六帧中，高亮灰度均值为 98.04～130.93，非高亮为 50.88～60.24。
+    # 取间隔中部的 80（0～255）；颜色均值仅用于诊断，不另加颜色限制。
+    MIN_RING_BRIGHTNESS = 80.0
+    # 普通图标 (444,287,42,39) 对应完整按钮 (422,262,93,90)。
+    # 首领沿用相同外扩边距，核心排除范围按首领模板自身尺寸计算。
+    RING_PADDING = (22, 25, 29, 26)
 
-    color = color_similarity_2d(image, color=(255,255,255))
-    hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-    _, _, v = cv2.split(hsv)
-    image = apply_mask(image, u)
-    image = apply_mask(image, color)
-    image = apply_mask(image, v)
+    def __init__(self, target: RuleImage):
+        """独立保存匹配位置，避免改写普通探索共用的挑战按钮资源。"""
+        super().__init__(roi_front=target.roi_front, roi_back=target.roi_back,
+                         method=target.method, threshold=target.threshold, file=target.file)
 
-    cv2.convertScaleAbs(image, alpha=3, dst=image)
-    cv2.subtract((255, 255, 255, 0), image, dst=image)
-
-    # from PIL import Image
-    # Image.fromarray(image.astype(np.uint8)).show()
-    return image
-
-
-class HighlightGif(RuleGif):
-    def pre_process(self, image):
-        return highlight(image)
+    def ring_mean(self, image, roi):
+        """返回外围 RGB 均值与灰度均值；按钮被屏幕裁切时等待后续完整帧。"""
+        x, y, w, h = map(int, roi)
+        left, top, right, bottom = self.RING_PADDING
+        x1, y1 = x - left, y - top
+        x2, y2 = x + w + right, y + h + bottom
+        if x1 < 0 or y1 < 0 or x2 > image.shape[1] or y2 > image.shape[0]:
+            return None
+        # 只统计外框内、模板矩形外的像素，排除刀剑本身的颜色和亮度。
+        crop = image[y1:y2, x1:x2]
+        mask = np.ones(crop.shape[:2], dtype=np.uint8)
+        mask[top:top + h, left:left + w] = 0
+        mean_color = cv2.mean(crop, mask=mask)[:3]
+        brightness = cv2.mean(cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY), mask=mask)[0]
+        return mean_color, brightness
 
     def match(self, image, threshold: float = None) -> bool:
-        """探索高亮统一多尺度识别，让悬赏、协作找怪及开战复查使用同一规则。"""
-        return self.match_multi_scale(image, threshold=threshold)
+        """遍历去重后的全部图标，找怪与点击前复查均执行外围亮度筛选。"""
+        # 普通探索会收窄共享按钮的搜索范围，悬赏每帧独立搜索完整截图。
+        search_roi = (0, 0, image.shape[1], image.shape[0])
+        for _, x, y, w, h in self.match_all_any(image, threshold=threshold, roi=search_roi):
+            roi = [int(x), int(y), int(w), int(h)]
+            result = self.ring_mean(image, roi)
+            if result is None:
+                continue
+            mean_color, brightness = result
+            logger.debug(f'{self.name} roi={roi}, ring RGB='
+                         f'{tuple(round(value, 2) for value in mean_color)}, '
+                         f'brightness={brightness:.2f}, threshold={self.MIN_RING_BRIGHTNESS}')
+            if brightness >= self.MIN_RING_BRIGHTNESS:
+                self.roi_front = roi
+                return True
+        return False
 
 
 class HighLight(BaseTask, ExplorationAssets):
 
     @cached_property
-    def TEMPLATE_GIF(self) -> RuleGif:
-        return HighlightGif(
-            targets=[
-                self.I_LIGHT1, self.I_LIGHT2, self.I_LIGHT3, self.I_LIGHT4, self.I_LIGHT5,
-                self.I_LIGHT6, self.I_LIGHT7, self.I_LIGHT8, self.I_LIGHT9, self.I_LIGHT10,
-                self.I_LIGHT11, self.I_LIGHT12, self.I_LIGHT13, self.I_LIGHT14,
-            ],
-        )
+    def I_HIGHLIGHT_NORMAL_BATTLE_BUTTON(self) -> HighlightBattleButton:
+        """普通怪仅在挑战按钮外围高亮时匹配。"""
+        return HighlightBattleButton(self.I_NORMAL_BATTLE_BUTTON)
+
+    @cached_property
+    def I_HIGHLIGHT_BOSS_BATTLE_BUTTON(self) -> HighlightBattleButton:
+        """首领与普通怪共用外围判定，避免无条件挑战非悬赏首领。"""
+        return HighlightBattleButton(self.I_BOSS_BATTLE_BUTTON)
 
 
 if __name__ == '__main__':
-    # image = load_image(r'C:\Users\萌萌哒\Desktop\屏幕截图 2024-08-17 175713.png')
-    # image = highlight(image)
-    # save_image(image, r'C:\Users\萌萌哒\Desktop\1345.png')
-    #
-    # IMAGE_FILE = r"C:\Users\萌萌哒\Desktop\QQ20240818-163854.png"
-    # image = load_image(IMAGE_FILE)
-    # from tasks.Exploration.assets import ExplorationAssets
-    # targe = ExplorationAssets.I_UP_COIN
-    # print(targe.test_match(image))
-
-    from dev_tools.get_images import GetAnimation
-    from module.logger import logger
+    # 手动调试时同时检查普通怪与首领的外围亮度。
     from module.config.config import Config
     from module.device.device import Device
     c = Config('oas1')
@@ -96,5 +91,5 @@ if __name__ == '__main__':
     #
     for i in range(10):
         t.screenshot()
-        logger.info(t.appear(t.TEMPLATE_GIF))
-
+        logger.info(t.appear(t.I_HIGHLIGHT_NORMAL_BATTLE_BUTTON))
+        logger.info(t.appear(t.I_HIGHLIGHT_BOSS_BATTLE_BUTTON))
