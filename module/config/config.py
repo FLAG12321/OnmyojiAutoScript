@@ -263,6 +263,8 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         """生成 OASX 参数，并按当前 Store active 身份注入动态实例选项。"""
         result = self.model.script_task(task)
         task_name = convert_to_underscore(task)
+        # 必须在本函数任何提前 return 之前调用，否则多数任务拿不到可删除标记。
+        self._mark_deletable_rows(task_name, result)
         if task_name == 'orochi':
             self._inject_orochi_leader_options(result)
             self._hide_orochi_team_config(result)
@@ -286,6 +288,29 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             in active_account_configs(self.store).items()
         ]
         return result
+
+    def _mark_deletable_rows(self, task_name: str, result: dict) -> None:
+        """给计数型动态列表的每个分组打上可删除标记。
+
+        分组名形如 sup_account_list_3，前端据此在标题上显示「删除该行」并调用
+        DELETE /{实例}/{任务}/{分组}。只有注册表里父路径恰为本任务的 counted
+        条目才算可删——contiguous / single 列表与普通分组都不打标记。
+
+        纯展示层信息：只加在返回给前端的 JSON 上，不落盘、不进模型。
+        """
+        for entry in self.store.profile.dynamic_path_sets:
+            if entry.mode != 'counted' or entry.count_path is None:
+                continue
+            if entry.member_path[:-1] != (task_name,):
+                continue
+            prefix = entry.member_path[-1] + '_'
+            for group_name, items in result.items():
+                if not group_name.startswith(prefix):
+                    continue
+                if not group_name[len(prefix):].isdigit():
+                    continue
+                for item in items:
+                    item['deletable'] = True
 
     def _inject_orochi_leader_options(self, result: dict) -> None:
         """把 leader_instance 参数改成当前有效实例下拉框。

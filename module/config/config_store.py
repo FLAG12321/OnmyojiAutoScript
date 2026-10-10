@@ -458,6 +458,69 @@ class ConfigStore:
             values[count_path] = new_count
         return self._replace_path_set_locked(config_name, loaded, entry, values, expected)
 
+    def delete_user_row(self, config_name: str, task: str, group: str) -> ReplaceResult:
+        """删除计数型动态列表的一行：后续行整体上移，数量减一。
+
+        给界面上的「删除该行」用。group 是前端的分组名（如 sup_account_list_3），
+        用与 patch_user_argument 相同的解析规则拆出 (字段, 序号)，保证「界面第几行」
+        与「落盘 _N 索引」始终是同一套语义。
+
+        数量字段本身是派生值（父 validator 会按实际成员数覆盖），所以删行必须与
+        改数量在同一次事务里完成——单独改数量只能从尾部削减，删不掉中间行。
+        """
+        self.initialize()
+        task_key = convert_to_underscore(task)
+        stem, index = self._normalize_user_group(group)
+        if index is None:
+            raise ConfigValidationError(f'{group} is not a dynamic list member')
+        entry = self._find_dynamic_entry(task_key, stem)
+        if entry is None:
+            raise ConfigValidationError(f'{group} is not a dynamic list member')
+        if entry.mode != 'counted' or entry.count_path is None:
+            raise ConfigValidationError(
+                f'dynamic list {entry.key} does not support row deletion')
+        with self.generation.identity_lifecycle_lock(config_name):
+            loaded = self._load_unlocked(config_name)
+            return self._delete_dynamic_member_locked(config_name, loaded, entry, index)
+
+    def _delete_dynamic_member_locked(
+        self,
+        config_name: str,
+        loaded: LoadedConfig,
+        entry,
+        index: int,
+    ) -> ReplaceResult:
+        """锁内实现：第 index+1..count 行上移覆盖第 index..count-1 行，末行整行删除。"""
+        canonical = loaded.canonical
+        parent_path = entry.member_path[:-1]
+        field = entry.member_path[-1]
+        parent = get_path(canonical, parent_path)
+        member_keys = self._existing_member_keys(parent, field)
+        count = self._dynamic_count(canonical, entry, member_keys)
+        if index < 1 or index > count:
+            raise ConfigValidationError(
+                f"dynamic member {field}_{index} out of range 1..{count}")
+        # 账号表的数量字段多带 ge=1，删到 0 会被模型拒绝；这里提前拦下，
+        # 给出可操作的提示而不是把 pydantic 的字段错误原样抛给界面。
+        if count <= 1:
+            raise ConfigValidationError(
+                f"dynamic list {entry.key} must keep at least one row")
+
+        values: dict = {}
+        expected: dict = {}
+        for i in range(index, count):
+            dst = parent_path + (f"{field}_{i}",)
+            src = parent_path + (f"{field}_{i + 1}",)
+            expected[dst] = copy.deepcopy(get_path(canonical, dst))
+            values[dst] = copy.deepcopy(get_path(canonical, src))
+        last = parent_path + (f"{field}_{count}",)
+        expected[last] = copy.deepcopy(get_path(canonical, last))
+        values[last] = MISSING
+        count_path = entry.count_path
+        expected[count_path] = get_path(canonical, count_path)
+        values[count_path] = count - 1
+        return self._replace_path_set_locked(config_name, loaded, entry, values, expected)
+
     def _existing_member_keys(self, parent, field: str) -> list[str]:
         """收集父节点下 field_N 规范数字 key（按数字升序）。"""
         if not isinstance(parent, dict):

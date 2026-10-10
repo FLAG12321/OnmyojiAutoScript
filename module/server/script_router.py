@@ -465,6 +465,38 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
     return result.success
 
 
+@script_app.delete('/{script_name}/{task}/{group}')
+async def script_delete_row(script_name: str, task: str, group: str):
+    """删除动态列表的一行（界面上的「删除该行」）。
+
+    运行中一律拒绝：脚本按启动时读入的名单继续跑，删行只会在它回写时制造冲突。
+    detail 用机器可读的固定串（如 instance_running），由前端翻成用户语言；
+    其余情况沿用本文件既有的英文 detail。
+    """
+    if mm.is_script_running(script_name):
+        raise HTTPException(status_code=409, detail='instance_running')
+
+    try:
+        result = mm.store.delete_user_row(script_name, task, group)
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail=f'Row not deletable: {e}')
+    except ConfigIdentityNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Timeout as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except OSError as e:
+        # 原子写盘失败必须明确报服务端错误，不能报告成「已删除」。
+        raise HTTPException(status_code=500, detail=f'Config write failed: {e}')
+
+    # 与 PUT value 同一模式：锁外投递 config_changed 事件给运行实例。
+    mm.notify_config_changed(script_name, result)
+    return result.success
+
+
 @script_app.put('/{script_name}/{task}/sync_next_run')
 async def sync_next_run(script_name: str, task: str, target_dt: str):
     if script_name not in mm.script_process:

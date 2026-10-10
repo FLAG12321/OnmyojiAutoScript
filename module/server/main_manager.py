@@ -119,6 +119,17 @@ class MainManager(ConfigManager):
         with self._registry_lock:
             return list(self.script_process.items())
 
+    def is_script_running(self, config_name: str) -> bool:
+        """实例是否正在运行：删除行这类破坏性配置编辑的前置守卫。
+
+        读 registry 必须持锁（与 notify_config_changed 同一约定）；进程已被回收
+        或停在 INACTIVE 都算「配置可以改」。运行中的脚本按启动时读入的名单继续跑，
+        改了只会和它的回写撞车，所以由调用方据此拒绝并提示先停任务。
+        """
+        with self._registry_lock:
+            process = self.script_process.get(config_name)
+        return process is not None and process.state != ScriptState.INACTIVE
+
     def notify_config_changed(self, config_name: str, result) -> None:
         """OASX PUT 成功后锁外投递 config_changed 事件给运行实例。"""
         with self._registry_lock:
