@@ -99,7 +99,7 @@ class PlotlineAssets:
 	# description 
 	I_CHECK_TICK = RuleImage(roi_front=(425,402,27,34), roi_back=(344,374,196,77), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/check_tick.png")
 	# description 
-	I_PAGE_CLICK_ANY2 = RuleImage(roi_front=(162,415,34,37), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_click_any2.png")
+	I_PAGE_CLICK_ANY2 = RuleImage(roi_front=(163,417,32,36), roi_back=(1,0,1278,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_click_any2.png")
 	# description 
 	I_PAGE_EXP_BATTLE = RuleImage(roi_front=(1127,103,47,62), roi_back=(1056,61,180,164), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_exp_battle.png")
 	# description 

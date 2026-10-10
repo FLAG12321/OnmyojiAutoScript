@@ -319,13 +319,15 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if daily_alt_acc_task.harvest_mail():
                 self.mail_flag = False
             sleep(1)
+        # 收邮件后落点不确定：harvest_mail 的超时支点完返回就交还，画面常停在
+        # page_theme 这类过渡页。先确保回到主界面，再无条件走「探索 → 队伍」——
+        # 原来这支挂在 else 上，落点非主界面时会被整支跳过，等于从未生效。
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
-        else:
-            self.ui_goto(page_exploration)
-            self.screenshot()
-            self.ui_get_current_page()
-            self.ui_goto(page_team)
+        self.ui_goto(page_exploration)
+        self.screenshot()
+        self.ui_get_current_page()
+        self.ui_goto(page_team)
         self.screenshot()
         # 3 秒窗等待进入经验妖怪的准备页（出现即可继续）
         wait_timer = Timer(3).start()

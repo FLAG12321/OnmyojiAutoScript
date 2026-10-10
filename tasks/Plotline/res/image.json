@@ -308,10 +308,10 @@
   {
     "itemName": "page_click_any2",
     "imageName": "page_click_any2.png",
-    "roiFront": "162,415,34,37",
-    "roiBack": "0,0,1280,720",
+    "roiFront": "163,417,32,36",
+    "roiBack": "1,0,1278,720",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "description"
   },
   {
