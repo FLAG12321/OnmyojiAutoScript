@@ -121,19 +121,27 @@ class PlotlineAssets:
 	# description 
 	I_CLICK_ATTACK3 = RuleImage(roi_front=(577,111,33,19), roi_back=(0,0,1280,720), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/click_attack3.png")
 	# description 
-	I_PAGE_COLLET = RuleImage(roi_front=(103,609,41,38), roi_back=(18,577,936,130), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_collet.png")
+	I_PAGE_COLLET = RuleImage(roi_front=(104,609,41,38), roi_back=(19,577,698,137), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/page_collet.png")
 	# 旧庭院判断 
 	I_PLOTLINE_OLD_MAIN_CHECK = RuleImage(roi_front=(839,176,73,51), roi_back=(204,68,1007,482), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_plotline_old_main_check.png")
 	#  
 	I_PAGE_SUMMON2 = RuleImage(roi_front=(381,89,77,85), roi_back=(255,66,834,556), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_summon2.png")
 	# 召唤页底部画符或语音召唤式神提示 
-	I_PAGE_SUMMON_DRAW = RuleImage(roi_front=(521,600,250,30), roi_back=(480,580,320,70), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_summon_draw.png")
+	I_PAGE_SUMMON_DRAW = RuleImage(roi_front=(379,90,74,71), roi_back=(315,58,207,178), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/page_summon_draw.png")
 	#  
 	I_PAGE_CLICK_ANY3 = RuleImage(roi_front=(562,666,152,30), roi_back=(242,604,771,111), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_page_click_any3.png")
 	#  
 	I_PLOTLINE_NEW_MAIN_CHECK_2 = RuleImage(roi_front=(846,151,66,39), roi_back=(270,133,817,66), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_plotline_new_main_check_2.png")
 	#  
 	I_P_LOGIN_SCROOLL_CLOSE = RuleImage(roi_front=(1172,628,72,51), roi_back=(1085,587,195,133), threshold=0.7, method="Template matching", file="./tasks/Plotline/res/res_p_login_scrooll_close.png")
+	# 胧车领取界面底部的「长按启动胧车」提示 
+	I_OBOROGURUMA_LONG_PRESS = RuleImage(roi_front=(544,652,218,49), roi_back=(350,610,580,110), threshold=0.75, method="Template matching", file="./tasks/Plotline/res/oboroguruma_long_press.png")
+	#  
+	I_PAGE_OBOROGURUMA_2 = RuleImage(roi_front=(39,608,53,54), roi_back=(0,581,146,139), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_oboroguruma_2.png")
+	#  
+	I_PAGE_OBOROGURUMA_3 = RuleImage(roi_front=(37,608,57,55), roi_back=(4,582,126,127), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_oboroguruma_3.png")
+	#  
+	I_PAGE_OBOROGURUMA_4 = RuleImage(roi_front=(80,14,143,51), roi_back=(4,0,255,92), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_oboroguruma_4.png")
 
 
 	# Ocr Rule Assets

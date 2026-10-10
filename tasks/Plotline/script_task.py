@@ -40,6 +40,7 @@ class PlotlineScene(Enum):
     PLOTLINE_SCENE_BATTLE = 4
     PLOTLINE_SCENE_PRIVILEGES = 5
     PLOTLINE_SCENE_SETTLEMENT = 6
+    PLOTLINE_SCENE_OBOROGURUMA = 7
     PLOTLINE_SCENE_UNKNOWN = 99
 
 class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
@@ -60,6 +61,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
     # 等级识别缓存：等级只随战斗提升，battle_wait 置脏后下次进入 main 才重查
     _level_cache: int = 0
     _level_dirty: bool = True
+    # 等级读数校验：等级上限 60；相对上次正常等级不降级，且单次跳变不超过 5 级
+    LEVEL_MAX: int = 60
+    LEVEL_MAX_JUMP: int = 5
 
     def _reset_shikigami_switch_flags(self, switch_system_shikigami: bool):
         self.privileges_flag = not switch_system_shikigami
@@ -118,13 +122,35 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             
                 
 
+    def handle_oboroguruma_long_press(self) -> bool:
+        """ 胧车领取界面：识别「长按启动胧车」后长按该位置 5 秒启动胧车。
+        这个界面只有这一处可操作目标，不在这里处理就会被判成未知场景而走返回兜底点掉。
+        interval=5 与长按耗时对齐，避免同一次弹窗被反复长按。 """
+        
+        while 1:
+            self.screenshot()
+            if self.appear_rgb(self.I_BACK_MAIN):
+                self.click(self.I_BACK_MAIN)
+                return True
+            if self.appear_then_click(self.I_PAGE_OBOROGURUMA_2,interval=1):
+                continue
+            if self.appear_then_click(self.I_PAGE_OBOROGURUMA_3,interval=1):
+                continue
+            if self.appear_then_click(self.I_PAGE_OBOROGURUMA_4,action=self.I_BACK_YOLLOW,interval=1):
+                continue
+            if self.appear(self.I_OBOROGURUMA_LONG_PRESS):
+                x, y = self.I_OBOROGURUMA_LONG_PRESS.coord()
+                logger.info("识别到「长按启动胧车」，长按 5 秒")
+                self.device.long_click(x, y, duration=5, control_name=self.I_OBOROGURUMA_LONG_PRESS.name)
+                continue
+            
+
     def get_current_scene(self) -> PlotlineScene:
         """ 获取当前场景，轮询最多10秒后如果仍未识别到有效场景则返回UNKNOWN """
         import time
         start_time = time.time()
         
         while time.time() - start_time < 5:
-
             # 结算场景优先判定：胜利/奖励页必须先于剧情点击器识别，
             # 否则会被 click_dialogue_high 吞掉（其 win 分支只打日志不点击，原 bug）
             if self.is_in_settlement():
@@ -133,6 +159,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if self.click_dialogue_high():
                 start_time=time.time()
                 continue
+            elif self.appear(self.I_OBOROGURUMA_LONG_PRESS, interval=1) or\
+                 self.appear(self.I_PAGE_OBOROGURUMA_2, interval=1) or\
+                 self.appear(self.I_PAGE_OBOROGURUMA_3, interval=1) or\
+                 self.appear(self.I_PAGE_OBOROGURUMA_4, interval=1):
+                return PlotlineScene.PLOTLINE_SCENE_OBOROGURUMA
             elif self.appear(self.I_PAGE_MAIN, interval=1):
                 return PlotlineScene.PLOTLINE_SCENE_MAIN
             elif self.appear(self.I_PAGE_EXP_BATTLE, interval=1):
@@ -150,7 +181,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 return PlotlineScene.PLOTLINE_SCENE_PRIVILEGES
             # 补充底部画符提示，兼容绘符边框因背景变色而未通过颜色校验的召唤页。
             elif (self.appear_rgb(self.I_PAGE_SUMMON) or self.appear_rgb(self.I_PAGE_SUMMON2)
-                  or self.appear(self.I_PAGE_SUMMON_2) or self.appear(self.I_PAGE_SUMMON_DRAW)):
+                  or self.appear_rgb(self.I_PAGE_SUMMON_2) or self.appear_rgb(self.I_PAGE_SUMMON_DRAW)):
                 return PlotlineScene.PLOTLINE_SCENE_SUMMON
             elif self.click_dialogue_low():
                 start_time=time.time()
@@ -168,6 +199,7 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             PlotlineScene.PLOTLINE_SCENE_BATTLE: self.handle_battle_scene,
             PlotlineScene.PLOTLINE_SCENE_SETTLEMENT: self.handle_settlement_scene,
             PlotlineScene.PLOTLINE_SCENE_PRIVILEGES: self.handle_privileges_scene,
+            PlotlineScene.PLOTLINE_SCENE_OBOROGURUMA: self.handle_oboroguruma_long_press,
             PlotlineScene.PLOTLINE_SCENE_UNKNOWN: self.handle_unknown_scene
         }
 
@@ -416,32 +448,47 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             self._level_dirty = False
         return self._level_cache
 
+    def _is_valid_level(self, level) -> bool:
+        """ 等级读数是否可信：先卡 1-60 的合法范围，再与上次正常等级比对。
+        等级只升不降，所以读数比上次小、或比上次跳超过 5 级，都判为误识别
+        （例如把左上角的 7 连同旁边的字一起读成了 75）。 """
+        if level is None or not 1 <= level <= self.LEVEL_MAX:
+            return False
+        if self._level_cache <= 0:
+            return True  # 还没有上次等级作参照，只做范围校验
+        return self._level_cache <= level <= self._level_cache + self.LEVEL_MAX_JUMP
+
     def get_character_level_with_multiple_attempts(self) -> int:
-        """ 对角色等级进行多次识别并返回最大值 """
+        """ 对角色等级进行多次识别，返回其中最高的合法读数 """
         import time
         levels = []
-        
+        valid_levels = []
+
         for i in range(3):
             # 截图并识别等级
             self.screenshot()
             try:
                 level = self.O_CHARACTER_LEVEL.ocr(self.device.image)
                 levels.append(level)
-                logger.info(f"第{i+1}次等级识别结果: {level}")
+                if self._is_valid_level(level):
+                    valid_levels.append(level)
+                    logger.info(f"第{i+1}次等级识别结果: {level}")
+                else:
+                    logger.warning(f"第{i+1}次等级识别结果 {level} 不合法（范围1-{self.LEVEL_MAX}、"
+                                   f"不降级且跳变≤{self.LEVEL_MAX_JUMP}级），忽略")
             except Exception as e:
                 logger.warning(f"第{i+1}次等级识别失败: {e}")
             # 短暂延迟，避免识别过于频繁
             time.sleep(0.2)
-        
-        # 返回识别结果中的最大值
-        if levels:
-            max_level = max(levels)
-            logger.info(f"三次识别中最高等级: {max_level}")
+
+        # 返回合法读数中的最大值；一次都没读到合法值就返回 0，
+        # 让 _get_level_cached 保留上次等级并保持 dirty，下次再重查
+        if valid_levels:
+            max_level = max(valid_levels)
+            logger.info(f"三次识别中最高合法等级: {max_level}")
             return max_level
-        else:
-            # 如果识别失败，返回默认值0
-            logger.warning("等级识别全部失败，返回默认值0")
-            return 0
+        logger.warning(f"三次识别结果{levels}均不合法，沿用上次等级 {self._level_cache}")
+        return 0
 
     def handle_exploration_scene(self) -> None:
         """ 处理探索场景 """

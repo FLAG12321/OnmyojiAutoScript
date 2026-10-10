@@ -407,8 +407,8 @@
   {
     "itemName": "page_collet",
     "imageName": "page_collet.png",
-    "roiFront": "103,609,41,38",
-    "roiBack": "18,577,936,130",
+    "roiFront": "104,609,41,38",
+    "roiBack": "19,577,698,137",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
@@ -434,8 +434,8 @@
   {
     "itemName": "page_summon_draw",
     "imageName": "page_summon_draw.png",
-    "roiFront": "521,600,250,30",
-    "roiBack": "480,580,320,70",
+    "roiFront": "379,90,74,71",
+    "roiBack": "315,58,207,178",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "召唤页底部画符或语音召唤式神提示"
@@ -465,6 +465,42 @@
     "roiBack": "1085,587,195,133",
     "method": "Template matching",
     "threshold": 0.7,
+    "description": ""
+  },
+  {
+    "itemName": "oboroguruma_long_press",
+    "imageName": "oboroguruma_long_press.png",
+    "roiFront": "544,652,218,49",
+    "roiBack": "350,610,580,110",
+    "method": "Template matching",
+    "threshold": 0.75,
+    "description": "胧车领取界面底部的「长按启动胧车」提示"
+  },
+  {
+    "itemName": "page_oboroguruma_2",
+    "imageName": "res_page_oboroguruma_2.png",
+    "roiFront": "39,608,53,54",
+    "roiBack": "0,581,146,139",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "page_oboroguruma_3",
+    "imageName": "res_page_oboroguruma_3.png",
+    "roiFront": "37,608,57,55",
+    "roiBack": "4,582,126,127",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "page_oboroguruma_4",
+    "imageName": "res_page_oboroguruma_4.png",
+    "roiFront": "80,14,143,51",
+    "roiBack": "4,0,255,92",
+    "method": "Template matching",
+    "threshold": 0.8,
     "description": ""
   }
 ]
