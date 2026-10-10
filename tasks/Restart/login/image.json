@@ -101,8 +101,8 @@
   {
     "itemName": "login_login_ensure_bind_phone",
     "imageName": "login_login_ensure_bind_phone.png",
-    "roiFront": "670,460,160,100",
-    "roiBack": "670,460,160,100",
+    "roiFront": "713,486,78,34",
+    "roiBack": "670,460,161,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "登录界面 弹出框 确定绑定手机"
@@ -110,8 +110,8 @@
   {
     "itemName": "login_login_cancel_bind_phone",
     "imageName": "login_login_cancel_bind_phone.png",
-    "roiFront": "450,460,160,100",
-    "roiBack": "450,460,160,100",
+    "roiFront": "487,487,79,33",
+    "roiBack": "451,460,161,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "登录界面 弹出框 取消绑定手机"

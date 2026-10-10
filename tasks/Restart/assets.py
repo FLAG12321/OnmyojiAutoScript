@@ -119,9 +119,9 @@ class RestartAssets:
 	# 登录界面 弹出框 前往绑定 手机 
 	I_LOGIN_LOGIN_GOTO_BIND_PHONE = RuleImage(roi_front=(940,430,170,150), roi_back=(940,430,170,150), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_goto_bind_phone.png")
 	# 登录界面 弹出框 确定绑定手机 
-	I_LOGIN_LOGIN_ENSURE_BIND_PHONE = RuleImage(roi_front=(670,460,160,100), roi_back=(670,460,160,100), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_ensure_bind_phone.png")
+	I_LOGIN_LOGIN_ENSURE_BIND_PHONE = RuleImage(roi_front=(713,486,78,34), roi_back=(670,460,161,100), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_ensure_bind_phone.png")
 	# 登录界面 弹出框 取消绑定手机 
-	I_LOGIN_LOGIN_CANCEL_BIND_PHONE = RuleImage(roi_front=(450,460,160,100), roi_back=(450,460,160,100), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_cancel_bind_phone.png")
+	I_LOGIN_LOGIN_CANCEL_BIND_PHONE = RuleImage(roi_front=(487,487,79,33), roi_back=(451,460,161,100), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_cancel_bind_phone.png")
 	# 登录界面 弹出框 阴阳师精灵 
 	I_LOGIN_LOGIN_ONMYOJI_GENIE = RuleImage(roi_front=(80,110,280,120), roi_back=(80,110,280,120), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_login_onmyoji_genie.png")
 	# 已有角色 
