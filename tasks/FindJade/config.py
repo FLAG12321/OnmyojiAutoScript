@@ -58,13 +58,34 @@ class FindJadeConfig(ConfigBase, extra='allow'):
     sup_account_count: int = Field(default=1, ge=1, description='sup_account_count_help')
 
 
+class FindJadeAccountInfo(AccountInfo):
+    # 找勾完成时间独立持久化，其他任务同步登录时间时不能让找勾误判已完成。
+    last_find_jade_time: DateTime = Field(
+        default=DateTime.fromisoformat("2023-01-01 00:00:00"),
+        description='上次找勾完成时间（不随其他任务登录更新）')
+
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_completion_time(cls, value):
+        """旧配置仅在缺少独立完成时间时迁移，保留当前轮次的续跑状态。"""
+        if isinstance(value, AccountInfo):
+            # 兼容调用方使用通用账号模型构造找勾账号表。
+            value = vars(value).copy()
+        if isinstance(value, dict) and 'last_find_jade_time' not in value:
+            value = dict(value)
+            if 'last_complete_time' in value:
+                value['last_find_jade_time'] = value['last_complete_time']
+        return value
+
+
 class FindJade(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     find_jade_config: FindJadeConfig = Field(default_factory=FindJadeConfig)
     # 邀请人员信息
     invite_info_list: list[InviteInfo] = None
     # 小号信息
-    sup_account_list: list[AccountInfo] = None
+    # 每个角色独立保存找勾完成状态，登录时间仍使用通用账号字段。
+    sup_account_list: list[FindJadeAccountInfo] = None
 
     def get_invite_name(self, ctype: CooperationType):
         for info in self.invite_info_list:
@@ -82,9 +103,14 @@ class FindJade(ConfigBase):
     def update_account_login_history(self, account: AccountInfo):
         accountInfoList = self.sup_account_list
         for info in accountInfoList:
-            if info.character != account.character or info.svr != account.svr:
+            # 同角色名可能属于不同邮箱或平台，必须按完整切号身份匹配。
+            if (info.account, info.character, info.svr, info.apple_or_android) != (
+                    account.account, account.character, account.svr, account.apple_or_android):
                 continue
-            info.last_complete_time = datetime.now()
+            # 本方法仅在找勾成功收尾时调用，同步记录登录排序和本任务完成状态。
+            completed_at = datetime.now()
+            info.last_complete_time = completed_at
+            info.last_find_jade_time = completed_at
             break
 
     def get_cooperation_type_mask(self) -> CooperationSelectMaskDescription:
@@ -131,7 +157,8 @@ class FindJade(ConfigBase):
                         data[list_name].append(item_type())
 
         validator_list('invite_info_list', v, InviteInfo, invite_info_count)
-        validator_list('sup_account_list', v, AccountInfo, sup_account_count)
+        # 扁平账号表同样使用带迁移规则的找勾账号模型。
+        validator_list('sup_account_list', v, FindJadeAccountInfo, sup_account_count)
 
         return v
 

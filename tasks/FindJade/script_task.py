@@ -6,7 +6,7 @@ from module.logger import logger
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
 from tasks.FindJade import WantedQuestsEx
 from tasks.FindJade.assets import FindJadeAssets
-from tasks.FindJade.config import AccountInfo, FindJade
+from tasks.FindJade.config import FindJadeAccountInfo, FindJade  # 找勾完成状态与登录排序时间分离。
 from tasks.GameUi.game_ui import GameUi
 
 
@@ -19,7 +19,8 @@ class ScriptTask(GameUi, FindJadeAssets):
         for accountInfo in self.fade_conf.sup_account_list:
             logger.info("start %s-%s ", accountInfo.character, accountInfo.svr)
             if not self.is_need_login(accountInfo):
-                logger.warning("%s Skipped last Login Time:%s", accountInfo.character, accountInfo.last_complete_time)
+                # 跳过原因必须展示找勾完成时间，避免与其他任务同步的登录时间混淆。
+                logger.warning("%s Skipped last FindJade Time:%s", accountInfo.character, accountInfo.last_find_jade_time)
                 continue
             suc = SwitchAccount(self.config, self.device, accountInfo).switchAccount()
             if not suc:
@@ -47,13 +48,13 @@ class ScriptTask(GameUi, FindJadeAssets):
         pass
 
 
-    def is_need_login(self, item: AccountInfo):
+    def is_need_login(self, item: FindJadeAccountInfo):
         """
-            根据上次登陆时间 判断是否需要登录查找
+            根据上次找勾完成时间判断是否需要登录查找，不受其他任务登录影响
         @param item:
         @type item:
         """
-        lastTime = item.last_complete_time
+        lastTime = item.last_find_jade_time
         now = datetime.now()
         if now - lastTime > timedelta(hours=13):
             return True
