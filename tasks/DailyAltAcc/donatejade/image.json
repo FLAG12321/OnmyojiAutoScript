@@ -38,10 +38,10 @@
   {
     "itemName": "award",
     "imageName": "donatejade_award.png",
-    "roiFront": "476,178,327,100",
-    "roiBack": "438,160,399,133",
+    "roiFront": "523,124,235,41",
+    "roiBack": "353,86,557,228",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "description"
   }
 ]

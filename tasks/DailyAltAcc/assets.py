@@ -178,7 +178,7 @@ class DailyAltAccAssets:
 	# description 
 	I_CLICK_DONATE = RuleImage(roi_front=(577,524,133,48), roi_back=(553,501,178,92), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/donatejade/donatejade_click_donate.png")
 	# description 
-	I_AWARD = RuleImage(roi_front=(476,178,327,100), roi_back=(438,160,399,133), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/donatejade/donatejade_award.png")
+	I_AWARD = RuleImage(roi_front=(523,124,235,41), roi_back=(353,86,557,228), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/donatejade/donatejade_award.png")
 
 
 	# Image Rule Assets
@@ -192,11 +192,11 @@ class DailyAltAccAssets:
 	# 领取邮件 
 	I_M_GET_MAIL = RuleImage(roi_front=(65,575,87,66), roi_back=(61,563,98,92), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_get_mail.png")
 	# description 
-	I_M_PAGE_GET = RuleImage(roi_front=(554,48,195,51), roi_back=(539,33,225,88), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_page_get.png")
+	I_M_PAGE_GET = RuleImage(roi_front=(537,61,177,45), roi_back=(441,27,340,98), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_page_get.png")
 	# description 
 	I_M_ENSURE_GET = RuleImage(roi_front=(737,553,76,40), roi_back=(698,550,151,52), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_ensure_get.png")
 	# 奖励 
-	I_M_AWARD = RuleImage(roi_front=(476,193,328,42), roi_back=(381,100,551,178), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_award.png")
+	I_M_AWARD = RuleImage(roi_front=(521,125,234,38), roi_back=(278,67,698,280), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_award.png")
 	# description 
 	I_M_BACK_RED = RuleImage(roi_front=(1152,91,49,47), roi_back=(1131,74,91,82), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/mail/mail_m_back_red.png")
 	# description 
@@ -268,7 +268,7 @@ class DailyAltAccAssets:
 	# description 
 	I_H_BACK_RED = RuleImage(roi_front=(851,144,31,33), roi_back=(777,114,182,110), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/returngift/returngift_h_back_red.png")
 	# description 
-	I_BTN_ENSURE = RuleImage(roi_front=(693,405,134,49), roi_back=(639,376,244,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/returngift/returngift_btn_ensure.png")
+	I_BTN_ENSURE = RuleImage(roi_front=(709,419,92,40), roi_back=(639,377,244,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/returngift/returngift_btn_ensure.png")
 	# description 
 	I_TO_THINK = RuleImage(roi_front=(1060,602,58,53), roi_back=(1042,580,100,100), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/returngift/returngift_to_think.png")
 	# description 

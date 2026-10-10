@@ -20,8 +20,8 @@
   {
     "itemName": "ui_reward",
     "imageName": "ui_ui_reward.png",
-    "roiFront": "481,185,317,42",
-    "roiBack": "464,142,350,145",
+    "roiFront": "520,188,237,39",
+    "roiBack": "270,48,713,267",
     "method": "Template matching",
     "threshold": 0.73,
     "description": "'获得奖励' 四个大字"

@@ -29,8 +29,8 @@
   {
     "itemName": "btn_ensure",
     "imageName": "returngift_btn_ensure.png",
-    "roiFront": "693,405,134,49",
-    "roiBack": "639,376,244,100",
+    "roiFront": "709,419,92,40",
+    "roiBack": "639,377,244,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

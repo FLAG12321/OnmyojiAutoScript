@@ -20,10 +20,10 @@
   {
     "itemName": "m_page_get",
     "imageName": "mail_m_page_get.png",
-    "roiFront": "554,48,195,51",
-    "roiBack": "539,33,225,88",
+    "roiFront": "537,61,177,45",
+    "roiBack": "441,27,340,98",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "description"
   },
   {
@@ -38,10 +38,10 @@
   {
     "itemName": "m_award",
     "imageName": "mail_m_award.png",
-    "roiFront": "476,193,328,42",
-    "roiBack": "381,100,551,178",
+    "roiFront": "521,125,234,38",
+    "roiBack": "278,67,698,280",
     "method": "Template matching",
-    "threshold": "0.7",
+    "threshold": 0.7,
     "description": "奖励"
   },
   {
@@ -64,29 +64,29 @@
   },
   {
     "itemName": "m_picture",
+    "imageName": "m_picture.png",
     "roiFront": "507,51,260,66",
     "roiBack": "449,22,388,101",
-    "description": "description",
-    "imageName": "m_picture.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "m_picture_refuse",
+    "imageName": "m_picture_refuse.png",
     "roiFront": "469,408,109,43",
     "roiBack": "412,375,224,105",
-    "description": "description",
-    "imageName": "m_picture_refuse.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "m_frame_back_red",
+    "imageName": "mail_m_back_red.png",
     "roiFront": "1196,31,53,49",
     "roiBack": "1165,13,102,86",
-    "description": "description",
-    "imageName": "mail_m_back_red.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   }
 ]

@@ -1,92 +1,92 @@
 [
   {
     "itemName": "r_send_flag",
+    "imageName": "r_send_flag.png",
     "roiFront": "173,606,206,51",
     "roiBack": "153,588,250,87",
-    "description": "description",
-    "imageName": "r_send_flag.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "r_toreceive_flag",
+    "imageName": "r_toreceive_flag.png",
     "roiFront": "1116,584,19,23",
     "roiBack": "1018,561,150,125",
-    "description": "description",
-    "imageName": "r_toreceive_flag.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_send_btn",
+    "imageName": "r_send_btn.png",
     "roiFront": "862,175,61,35",
     "roiBack": "794,71,203,507",
-    "description": "description",
-    "imageName": "r_send_btn.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_toreceive_flag2",
+    "imageName": "r_toreceive_flag2.png",
     "roiFront": "1022,299,19,18",
     "roiBack": "962,258,105,178",
-    "description": "description",
-    "imageName": "r_toreceive_flag2.png",
     "method": "Template matching",
-    "threshold": 0.8
+    "threshold": 0.8,
+    "description": "description"
   },
   {
     "itemName": "r_receive_btn",
+    "imageName": "r_receive_btn.png",
     "roiFront": "922,605,50,50",
     "roiBack": "893,578,118,114",
-    "description": "description",
-    "imageName": "r_receive_btn.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_receive_ensure",
-    "roiFront": "722,413,70,37",
-    "roiBack": "634,359,235,127",
-    "description": "description",
     "imageName": "r_receive_ensure.png",
+    "roiFront": "721,419,70,37",
+    "roiBack": "634,359,235,127",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_back_red",
+    "imageName": "r_back_red.png",
     "roiFront": "936,87,38,39",
     "roiBack": "893,65,127,89",
-    "description": "description",
-    "imageName": "r_back_red.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_award",
-    "roiFront": "476,188,326,83",
-    "roiBack": "364,123,558,223",
-    "description": "description",
     "imageName": "r_award.png",
+    "roiFront": "521,175,236,35",
+    "roiBack": "364,123,558,223",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_page_guild",
+    "imageName": "r_page_guild.png",
     "roiFront": "964,632,59,69",
     "roiBack": "895,578,246,139",
-    "description": "description",
-    "imageName": "r_page_guild.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   },
   {
     "itemName": "r_back_y",
+    "imageName": "r_back_y.png",
     "roiFront": "29,10,41,41",
     "roiBack": "3,3,93,77",
-    "description": "description",
-    "imageName": "r_back_y.png",
     "method": "Template matching",
-    "threshold": "0.7"
+    "threshold": 0.7,
+    "description": "description"
   }
 ]

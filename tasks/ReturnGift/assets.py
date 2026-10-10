@@ -176,11 +176,11 @@ class ReturnGiftAssets:
 	# description 
 	I_R_RECEIVE_BTN = RuleImage(roi_front=(922,605,50,50), roi_back=(893,578,118,114), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_receive_btn.png")
 	# description 
-	I_R_RECEIVE_ENSURE = RuleImage(roi_front=(722,413,70,37), roi_back=(634,359,235,127), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_receive_ensure.png")
+	I_R_RECEIVE_ENSURE = RuleImage(roi_front=(721,419,70,37), roi_back=(634,359,235,127), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_receive_ensure.png")
 	# description 
 	I_R_BACK_RED = RuleImage(roi_front=(936,87,38,39), roi_back=(893,65,127,89), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_back_red.png")
 	# description 
-	I_R_AWARD = RuleImage(roi_front=(476,188,326,83), roi_back=(364,123,558,223), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_award.png")
+	I_R_AWARD = RuleImage(roi_front=(521,175,236,35), roi_back=(364,123,558,223), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_award.png")
 	# description 
 	I_R_PAGE_GUILD = RuleImage(roi_front=(964,632,59,69), roi_back=(895,578,246,139), threshold=0.7, method="Template matching", file="./tasks/ReturnGift/image/r_page_guild.png")
 	# description 
