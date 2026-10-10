@@ -138,6 +138,11 @@ class ConfigManager:
 
     @staticmethod
     def _is_model_type(annotation: Any) -> bool:
+        # 带 origin 的泛型构造（list[X]/dict[K,V]/Optional[X] 等）不是类，必须先排除：
+        # Python 3.9~3.10 的 GenericAlias 能通过 isinstance(..., type)，直接送进
+        # issubclass 会抛 TypeError，被上层 catch 成 400 model_type 而拒绝整次导入。
+        if get_origin(annotation) is not None:
+            return False
         return isinstance(annotation, type) and issubclass(annotation, BaseModel)
 
     @staticmethod
