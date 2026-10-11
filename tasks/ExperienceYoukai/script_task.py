@@ -61,7 +61,9 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                             break
                     start_time = time.time()
             logger.info('Click I_MAIN_GOTO_SHIKIGAMI_RECORDS')
-            while 1:
+            # 入口识别最多等待 5 秒，超时后由页面导航接管，避免在式神录里空等。
+            start_time = time.time()
+            while time.time() - start_time < 5:
                 self.screenshot()   
                 if  self.appear(RestartAssets.I_LOGIN_COURTYARD, interval=0.2) or \
                     self.appear(RestartAssets.I_LOGIN_SCROOLL_CLOSE, interval=0.2):
