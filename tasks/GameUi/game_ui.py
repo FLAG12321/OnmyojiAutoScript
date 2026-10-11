@@ -41,6 +41,13 @@ _SCROLL_ENTRIES = (
     GameUiAssets.O_PAGE_COLLECTION,          # 图鉴
 )
 
+# 卷轴皮肤未采集时，一轮导航（ui_goto）内允许的兜底点击次数上限。
+# 展开区域是 toggle、点错方向会把已展开的卷轴收回去，所以必须有上限；
+# 但上限为 1 时，那一次若撞上「到达判定没跟上」（实测展开态下两路判据全灭、
+# 点完 16s 仍认不出展开），本轮再无补救，只能空转到 ui_goto 超时并报
+# Cannot goto（实测一轮烧掉 60s）。放宽到 5 次，让每次 6s 超时都有重试机会。
+_SCROLL_FALLBACK_MAX = 5
+
 
 class _NavigationPageChanged(Exception):
     """导航中的覆盖页已变化，放弃旧页面操作并从当前 Page 重新规划。"""
@@ -59,9 +66,9 @@ class GameUi(BaseTask, GameUiAssets):
         super().__init__(config, device)
         # 初始化时动态导入所有 page 模块
         self._import_all_pages()
-        # 卷轴皮肤未采集时的兜底点击本轮导航是否已用过（见 _execute_path）。
-        # 每次 ui_goto 重置，保证一轮导航最多兜底一次。
-        self._scroll_fallback_used = False
+        # 卷轴皮肤未采集时的兜底点击本轮的已用次数（见 _execute_path）。
+        # 每次 ui_goto 归零，一轮导航最多点 _SCROLL_FALLBACK_MAX 次。
+        self._scroll_fallback_count = 0
 
     @staticmethod
     def _import_all_pages():
@@ -399,8 +406,9 @@ class GameUi(BaseTask, GameUiAssets):
         timeout_timer = Timer(timeout).start()
         confirm_timer = Timer(confirm_wait, count=int(confirm_wait // 0.5)).start()
         close_unknown_timer = Timer(3).start()
-        # 卷轴兜底点击一轮导航最多用一次：展开区域是 toggle，反复点会来回切换
-        self._scroll_fallback_used = False
+        # 卷轴兜底点击一轮导航最多 _SCROLL_FALLBACK_MAX 次：展开区域是 toggle，
+        # 反复点会来回切换，所以放宽次数但保留上限。
+        self._scroll_fallback_count = 0
         # 构建路径映射
         path_dict = self.build_reverse_path_dict(destination)
 
@@ -530,13 +538,20 @@ class GameUi(BaseTask, GameUiAssets):
                 # 图判据：展开后的排版随卷轴皮肤变，式神录按钮图在没采集过的皮肤上照样
                 # 认不出，而入口的文字不随皮肤变。OCR 说没展开才点 —— 展开区域是 toggle，
                 # 判错方向就会把它点回收起。
-                # 限次：一轮导航最多兜底一次，防展开后到达判定没跟上、下一轮又点回收起。
-                if (not self._scroll_fallback_used
-                        and current_page == page_main and next_page == page_theme
-                        and not self._scroll_entries_visible()):
-                    self._scroll_fallback_used = True
-                    logger.info('Scroll images unrecognized, click the fixed expand area')
-                    self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA)
+                # 限次：一轮导航最多兜底 _SCROLL_FALLBACK_MAX 次。单次时撞上
+                # 「到达判定没跟上」就没有第二次机会，本轮只能空转到超时；
+                # 放宽后每次 6s 超时都有一次重试，上限仍在防 toggle 来回切换。
+                if (self._scroll_fallback_count < _SCROLL_FALLBACK_MAX
+                        and current_page == page_main and next_page == page_theme):
+                    # 判方向前重新取一帧：6s 循环里最后那帧可能已过时（卷轴开合
+                    # 动画未定、刚点完跳转的过渡帧），拿旧帧判方向容易把已经展开
+                    # 的卷轴点回收起。
+                    self.maybe_screenshot(soft_skip=False)
+                    if not self._scroll_entries_visible():
+                        self._scroll_fallback_count += 1
+                        logger.info(f'Scroll images unrecognized, click the fixed expand area'
+                                    f' ({self._scroll_fallback_count}/{_SCROLL_FALLBACK_MAX})')
+                        self.click(RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA)
                 self.ui_get_current_page(skip_first_screenshot=False)
                 # 当前页面不是对应路径的页面, 则尝试下一个页面
                 if self.ui_current != current_page:
