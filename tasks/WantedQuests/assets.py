@@ -122,8 +122,8 @@ class WantedQuestsAssets:
 	C_SECRET_CHAT = RuleClick(roi_front=(597,296,59,100), roi_back=(597,296,59,100), name="secret_chat")
 	# 特殊的庭院需要点击，然后才能找到这个悬赏 
 	C_SPECIAL_MAIN = RuleClick(roi_front=(409,572,32,30), roi_back=(404,569,41,35), name="special_main")
-	# 关闭 单个任务追踪界面 所需点击 的  空白区域 
-	C_WQ_TRACE_ONE_CLOSE = RuleClick(roi_front=(170,30,400,100), roi_back=(170,30,400,100), name="wq_trace_one_close")
+	# 关闭 单个任务追踪界面 所需点击 的  空白区域。右边界收到 460：原先到 570 会压在顶部聊天跑马灯上（实测跑马灯左界 x≈514），点中就展开聊天面板盖住左半屏 
+	C_WQ_TRACE_ONE_CLOSE = RuleClick(roi_front=(170,30,290,100), roi_back=(170,30,290,100), name="wq_trace_one_close")
 
 
 	# Image Rule Assets

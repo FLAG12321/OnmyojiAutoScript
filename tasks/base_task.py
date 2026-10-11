@@ -19,7 +19,8 @@ from module.atom.input import RuleInput  # 新增导入
 from module.base.timer import Timer
 from module.config.config import Config
 from module.device.device import Device
-from module.exception import ScriptError, TaskEnd
+# 聊天面板持续关闭失败时复用调度器已有的卡死恢复异常。
+from module.exception import GameStuckError, ScriptError, TaskEnd
 from module.config.utils import convert_to_underscore, forbidden_range_end
 from module.logger import logger
 from module.ocr.base_ocr import OcrMode
@@ -32,6 +33,12 @@ from enum import Enum
 from pydantic import Field
 from tasks.Component.config_base import ConfigBase
 
+
+# 聊天面板兜底收起时，单次截图内允许的点击次数上限。
+# 面板展开会盖住左半屏（含左上角返回键），导航认不出返回键就只能空转到卡死
+# （实测一轮 ui_goto 烧 60s，最终抛 GameStuckError）。所以每帧都要检测并收起。
+# 达到上限仍未收起时抛出 GameStuckError，避免下一帧重新点击并重置卡死计时。
+_CHAT_COLLAPSE_MAX_CLICK = 5
 
 
 class Week(str, Enum):
@@ -216,6 +223,40 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             self.set_next_run(task='WantedQuests', target=datetime.now().replace(microsecond=0))
         return True
 
+    def _close_chat_panel(self) -> bool:
+        """聊天面板展开时把它收起。
+
+        面板展开会盖住左半屏，左上角的返回键被埋住，导航只能一轮轮空等到
+        GameStuckError（实测 05:24 现场烧了 64s）。而页面判据多在右半屏，
+        所以页面还判得对，任务不会自己意识到被遮挡——只能在截图路径上兜。
+
+        判据与点击目标共用同一个收起把手，检测点就是点击点，不会脱钩。
+        不复用 ui_click_until_disappear：它内部会调 self.screenshot()，
+        从本函数（截图路径内部）调用会无限递归，因此照 _burst 的写法直接走
+        device.screenshot()。
+
+        :return: 面板原本没展开返回 False，成功收起返回 True
+        :raises GameStuckError: 达到点击上限后面板仍展开，交由调度器恢复
+        """
+        if not self.appear(self.I_CHAT_CLOSE_BUTTON):
+            return False
+        logger.warning('Chat panel expanded, collapsing it')
+        # 点击会重置设备卡死计时并清空等待标记，成功和异常路径都要还原等待标记。
+        detect_record = self.device.detect_record
+        try:
+            for attempt in range(1, _CHAT_COLLAPSE_MAX_CLICK + 1):
+                self.click(self.I_CHAT_CLOSE_BUTTON)
+                # 收起带动画，不等会在中间态上判断，误以为没收掉又多点一次
+                sleep(0.3)
+                self.device.screenshot()
+                if not self.appear(self.I_CHAT_CLOSE_BUTTON):
+                    logger.info(f'Chat panel collapsed after {attempt} click(s)')
+                    return True
+            # 失败不能清空点击证据后返回，否则外层每次截图都会重新获得全部重试次数。
+            raise GameStuckError(f'Chat panel still expanded after {_CHAT_COLLAPSE_MAX_CLICK} clicks')
+        finally:
+            self.device.detect_record = detect_record
+
     def screenshot(self):
         """
         截图 引入中间函数的目的是 为了解决如协作的这类突发的事件
@@ -227,6 +268,8 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         """
         self.config.refresh_hot_at_checkpoint(self)
         self.device.screenshot()
+        # 聊天面板盖住左半屏会让导航空转到卡死，先收起再做后续判定
+        self._close_chat_panel()
         # 判断勾协
         self._burst()
 
