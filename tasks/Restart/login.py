@@ -133,6 +133,19 @@ class LoginHandler(BaseTask, RestartAssets, GameUiAssets):
                     logger.info("Close bind phone")
                     break
             return True
+        # 「暂不更新」按钮与「自动更新」勾选框同属一个弹窗，勾选框按需出现，
+        # 所以先取消勾选、再点按钮关掉。该弹窗是模态的，不处理会拦掉登录入口的
+        # 所有点击（点 user_center 无效 → 循环空转），2026-10-10 远程实测。
+        # 勾选标记必须用 appear+click 两步：它点一次只切换勾选状态、标记本身不消失，
+        # 换成 appear_then_click 会在点击静默期内误报「无弹窗」而放行庭院判定。
+        # 按钮则相反——点掉即消失，用带节流的 appear_then_click。
+        if self.appear(SwitchAccountAssets.I_SA_CANCEL_CHECK):
+            self.click(SwitchAccountAssets.I_SA_CANCEL_CHECK, interval=1.5)
+            logger.info('Uncheck auto update')
+            return True
+        if self.appear_then_click(SwitchAccountAssets.I_SA_CANCEL_UPDATE, interval=1.5):
+            logger.info('Close auto update')
+            return True
         # 拒绝邀请弹窗已移除：匹配帧与点击帧之间存在竞态——邀请在点击落地前
         # 消失会让点击穿透到庭院左缘入口上，误开灯笼菜单导致页面识别死循环
         # （2026-08-31 远程事故）；登录期间的邀请放任自然过期即可。

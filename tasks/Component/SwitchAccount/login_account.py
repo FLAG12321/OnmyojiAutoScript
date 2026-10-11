@@ -185,6 +185,17 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         bottom_group.sort(key=lambda item: min(point[0] for point in item.box))
         return tuple(item.ocr_text for item in bottom_group)
 
+    def _clear_login_form_popup(self) -> bool:
+        """处理登录表单上的「自动更新」弹窗：勾选框按需出现，先取消勾选再点「暂不更新」。
+        识别到一个元素就处理并立即返回，让调用方重新截图再判——该弹窗是模态的，
+        不点掉会拦住登录入口的所有点击（点 user_center 无效 → 循环空转）。"""
+        if self.appear(self.I_SA_CANCEL_CHECK):
+            self.click(self.I_SA_CANCEL_CHECK, interval=1.5)
+            return True
+        if self.appear_then_click(self.I_SA_CANCEL_UPDATE, interval=1.5):
+            return True
+        return False
+
     def switch_character(self, characterName: str, svrName: str = ""):
         """
               需保证账号已登录 且处于登录界面
@@ -206,10 +217,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             if self.appear(self.I_SA_CHECK_SELECT_SVR_1):
                 break
             # 优先处理登录勾选与更新提示，避免遮挡区服选择入口。
-            if self.appear(self.I_SA_CANCEL_CHECK):
-                self.click(self.I_SA_CANCEL_CHECK, interval=1.5)
-                continue
-            if self.appear_then_click(self.I_SA_CANCEL_UPDATE, interval=1.5):
+            if self._clear_login_form_popup():
                 continue
             now = time.monotonic()
             # 点击切服按钮过程中游戏可能闪退回MuMu桌面，每隔10秒复用现成逻辑检测一次，若已闪退则抛异常交由恢复处理
@@ -292,6 +300,9 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         while 1:
             if self.appear(self.I_SA_NETEASE_GAME_LOGO) and self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                 return
+            # 弹窗会拦掉「用户中心」入口点击，先清掉再判后面两个入口，避免空转
+            if self._clear_login_form_popup():
+                continue
             if self.appear_then_click(self.I_SA_SWITCH_ACCOUNT_BTN, interval=1.5):
                 continue
             if self.appear(self.I_CHECK_LOGIN_FORM):
@@ -633,6 +644,9 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             if not (self.appear(self.I_SA_NETEASE_GAME_LOGO) or self.appear(self.I_SA_SWITCH_ACCOUNT_BTN)):
                 # 判断是否已经账号登录
                 if not isAccountLogon:
+                    # 弹窗会拦掉入口点击，本轮处理过就重新截图再判
+                    if self._clear_login_form_popup():
+                        continue
                     self.click(self.C_SA_LOGIN_FORM_USER_CENTER)
                     continue
 
