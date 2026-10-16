@@ -27,7 +27,8 @@ class SoloExploration(BaseExploration):
             default_invite=False
         )
 
-    def run_solo(self):
+    def run_solo(self, stop_condition=None):
+        """单人探索可由调用方在新截图上判断是否需要交还页面。"""
         logger.hr('solo')
         explore_init = False
         search_fail_cnt = 0
@@ -35,6 +36,9 @@ class SoloExploration(BaseExploration):
 
         while 1:
             self.screenshot()
+            # 剧情借跑时优先交还庭院、胧车等页面，避免未知场景一直占用探索循环。
+            if stop_condition is not None and stop_condition():
+                return
             scene = self.get_current_scene()
             logger.info(f'[run_solo] Current scene: {scene.name}')  # TODO 2026.06.22 之后删掉这个刷屏的
             #
@@ -55,7 +59,9 @@ class SoloExploration(BaseExploration):
                 if self.check_exit():
                     break
 
-                self.ui_click(self.I_E_EXPLORATION_CLICK, stop=self.I_E_MAIN_FLAG)
+                # 借跑时分段等待进入探索，给上层检查页面交接条件的机会。
+                self.ui_click(self.I_E_EXPLORATION_CLICK, stop=self.I_E_MAIN_FLAG,
+                              timeout=8 if stop_condition is not None else None)
                 explore_init = False
                 continue
             #

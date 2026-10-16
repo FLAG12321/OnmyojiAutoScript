@@ -99,6 +99,15 @@
     "description": "description"
   },
   {
+    "itemName": "check_friends_tab",
+    "imageName": "check_friends_tab.png",
+    "roiFront": "157,97,70,46",
+    "roiBack": "157,97,70,46",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "好友主页左上角页签，无好友及无送信按钮时仍可识别"
+  },
+  {
     "itemName": "check_daily",
     "imageName": "page_check_daily.png",
     "roiFront": "28,515,58,62",

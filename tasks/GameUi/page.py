@@ -227,7 +227,8 @@ page_onmyodo = Page(G.I_CHECK_ONMYODO)
 page_onmyodo.link(button=G.I_BACK_Y, destination=page_main)
 page_theme.link(button=G.O_PAGE_ONMYODO, destination=page_onmyodo)
 # 好友 friends
-page_friends = Page(G.I_CHECK_FRIENDS)
+# 无好友时没有“送信”，左上角“好友”页签可独立确认好友主页，任一标志命中即可。
+page_friends = Page([G.I_CHECK_FRIENDS, G.I_CHECK_FRIENDS_TAB])
 page_friends.additional = [[G.I_FAVORABILITY_UP, G.C_FAVORABILITY_UP]]
 page_friends.link(button=G.I_BACK_FRIENDS, destination=page_main)
 page_theme.link(button=G.O_PAGE_FRIENDS, destination=page_friends)

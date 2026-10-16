@@ -382,8 +382,8 @@ def restart_ocr_server(address: str) -> bool:
         return ensure_ocr_server_started()
 
 
-def notify_ocr_instance_state(instance_id: str, active: bool) -> bool:
-    """通知 OCR RPC 某个实例是否正在执行任务。"""
+def notify_ocr_instance_state(instance_id: str, active: bool, *, reuse_client: bool = True) -> bool:
+    """通知任务状态；服务后台线程可选择独立连接，避免跨线程复用 gevent 客户端。"""
     try:
         from module.server.setting import State
         deploy_config = State.deploy_config
@@ -400,6 +400,9 @@ def notify_ocr_instance_state(instance_id: str, active: bool) -> bool:
         return False
 
     address = deploy_config.OcrClientAddress or '127.0.0.1:22268'
+    if not reuse_client:
+        # 管家停止操作来自并行工作线程，连接的创建、调用、关闭必须在同一线程。
+        return _notify_ocr_instance_with_local_client(address, instance_id, active)
     client = _get_ocr_control_client(address)
     if client is None:
         return False
@@ -419,6 +422,30 @@ def notify_ocr_instance_state(instance_id: str, active: bool) -> bool:
             _reset_ocr_control_client(client)
             logger.debug(f'OCR instance state retry failed: {retry_error}')
             return False
+
+
+def _notify_ocr_instance_with_local_client(address: str, instance_id: str, active: bool) -> bool:
+    """沿用控制连接的探测、超时和重连次数，单次通知后立即释放连接。"""
+    for attempt in range(2):
+        client = None
+        try:
+            host, port = _split_host_port(address)
+            if not _is_port_in_use(host, port, timeout=0.1):
+                return False
+            client = zerorpc.Client(timeout=0.5)
+            client.connect(_normalize_address(address))
+            client.ping()
+            return bool(client.set_instance_active(str(instance_id), bool(active)))
+        except Exception as error:
+            logger.debug(f'OCR instance state local notification failed ({attempt + 1}/2): {error}')
+        finally:
+            # 失败的连接也要在线程退出前关闭，不能留下 gevent 后台资源。
+            if client is not None:
+                try:
+                    client.close()
+                except Exception as error:
+                    logger.debug(f'OCR instance state local client close failed: {error}')
+    return False
 
 
 def _get_ocr_control_client(address: str):

@@ -55,7 +55,8 @@ class RuleAnimate(RuleImage):
         @return:
         """
         if self._last_image is None:
-            self._last_image = image
+            # 首帧也只截取目标区域；整屏模板会让匹配坐标越界，后续裁出空图。
+            self._last_image = self.corp(image, self.roi_front)
             return False
 
         self._image = self._last_image

@@ -20,7 +20,8 @@ from tasks.Restart.assets import RestartAssets
 from tasks.GameUi.assets import GameUiAssets 
 class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, ExperienceYoukaiAssets):
 
-    def run(self):
+    def run(self, on_team_ready=None):
+        """可选的组队检查可交还当前页面，让调用方先处理新手引导。"""
         # 切换御魂
         if self.config.experience_youkai.switch_soul.enable:
             self.ui_get_current_page()
@@ -74,10 +75,16 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 if self.appear(GameUiAssets.I_MAIN_GOTO_SHIKIGAMI_RECORDS, interval=0.2):
                     break
             self.ui_get_current_page()
-            self.ui_goto(page_team)
-            self.check_zones('经验妖怪')
+            team_arrived = self.ui_goto(page_team)
+            # 借跑时在实际进入组队后检查引导，未到达或需要接管时不能选择副本、建房。
+            if on_team_ready is not None and (not team_arrived or on_team_ready()):
+                return True
+            # 未找到副本时报告失败，不能继续建房并把未完成任务记为成功。
+            if not self.check_zones('经验妖怪'):
+                self.experience_exit(con, success=False)
             # 开始
             if not self.create_room():
+                # 沿用经验妖怪原语义：建房按钮点击四次无效通常表示次数耗尽，按完成退出。
                 self.experience_exit(con)
             self.ensure_public()
             self.create_ensure()
@@ -130,7 +137,8 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 self.ui_click_until_disappear(self.I_FALSE)
                 return False
 
-    def experience_exit(self, con):
+    def experience_exit(self, con, success: bool = True):
+        """退出并报告实际结果，失败不能清除调用方保存的待完成进度。"""
         start_time = time.time()
         while time.time() - start_time < 5:
             self.screenshot()
@@ -152,7 +160,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 self.exp_100(False)
             self.close_buff()
 
-        self.set_next_run(task='ExperienceYoukai', success=True, finish=False)
+        self.set_next_run(task='ExperienceYoukai', success=success, finish=False)
         raise TaskEnd('ExperienceYoukai')
 
 if __name__ == '__main__':
