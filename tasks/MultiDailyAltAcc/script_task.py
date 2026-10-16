@@ -1,11 +1,11 @@
 import importlib
 from datetime import datetime, timedelta
 import os
-import threading
-import json
 import time
 from pathlib import Path
+from module.config.history_retention import BEIJING
 
+from tasks.Utils.notification_outbox import NotificationOutbox, NotificationOutboxError
 from module.exception import (
     EmulatorNotRunningError,
     GameBugError,
@@ -23,8 +23,9 @@ from tasks.MultiDailyAltAcc import DailyAltAccEx
 from tasks.MultiDailyAltAcc.assets import MultiDailyAltAccAssets
 from tasks.MultiDailyAltAcc.config import MultiDailyAltAcc, ExtendedAccountInfo
 from tasks.MultiDailyAltAcc.progress import (
-    ProgressStore, acc_key, phase_flags_of, phase_id_of,
+    ProgressStore, acc_key, phase_id_of,
 )
+from tasks.Component.MultiAccountRunner.progress import execution_parameters
 from tasks.MultiDailyAltAcc.task_plan import TaskPlan, load_task_plan
 from tasks.GameUi.game_ui import GameUi
 from tasks.Utils.coop_summary import build_summary_content
@@ -47,8 +48,6 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     _legacy_unmigrated_coops = None
     # 仅供同一账号的紧邻子任务重试使用，新账号、新调度和异常都会作废。
     _retry_account_identity: tuple | None = None
-    # 添加一个类级别的锁，用于同步关机操作
-    _shutdown_lock = threading.Lock()
 
     # 设备级异常：必须穿透到 script.py 的 Restart / 人工接管恢复逻辑，
     # 任何一层被宽泛 except Exception 吞掉，游戏都会一直卡着、后续账号连环失败。
@@ -102,11 +101,15 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             # 更新进度文件中的returngift_enable状态
             self._update_task_returngift_enable(config_name, returngift_enable)
 
-            # 建立子任务进度：开关快照与上次一致则接续（失败重调度/崩溃重启），
-            # 不一致说明上轮已成功并安排了新阶段，旧进度作废重建。
-            self._progress = ProgressStore(config_name)
+            # 轮次只按自然日和实际轮转阶段划分，业务开关/次数按角色逐项核对。
+            self._progress = ProgressStore(config_name, generation=self.config.generation)
+            phase = ('manual' if self._task_rotation_disabled() else
+                     'returngift' if base_config.total_returngift_enable else
+                     'alliedteam' if base_config.total_alliedteam_battle_enable else
+                     self._normal_plan_phase or 'night')
             self._progress.ensure_phase(
-                phase_flags_of(base_config, self._normal_plan_phase), phase_id_of(self.start_time)
+                {'day': self.start_time.strftime('%Y-%m-%d'), 'phase': phase},
+                phase_id_of(self.start_time), account_plans=self._account_execution_plans(),
             )
             self._coop_round_id = cooperation_round_id('MultiDailyAltAcc', self._progress)
             self._coop_store = CoopStore(config_name, base_dir=self._progress.path.parent)
@@ -159,9 +162,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                 # 有账号失败：保留进度文件，3 分钟后重调度接续未完成部分
                 self.next_run("MultiDailyAltAcc", success=False)
             else:
-                # 整轮真正完成：先发送最终协作汇总（此时 coop 尚未 clear）。
-                # 放在 next_run(success=True) 之前，避免「phase_flags 已改、coop 未发」窗口；
-                # 通知失败只记日志，不影响后续收尾（见 _notify_daily_completion）。
+                # 先持久化待发摘要，再尝试通知；网络失败只补发，不能重打游戏任务。
+                # 待发落盘失败会停止收尾并保留唯一进度，不提前安排下一轮或清记录。
                 self._notify_daily_completion()
                 # 检查是否需要关机：仅闲时(00:00-08:00)触发，避免整轮白天完成时误关机
                 if (self.daily_conf.multi_daily_alt_acc_config.shutdown_after_finish
@@ -190,161 +192,71 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         raise TaskEnd("MultiDailyAltAcc")
 
     def _mark_task_start(self, config_name, pid):
-        """
-        标记进程开始执行任务，基于配置名称而非PID
-        """
-        progress_file = Path('./config/tasks_config/daily_progress.json')
-        progress_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        with self._shutdown_lock:
-            # 读取现有进度信息
-            progress_data = {}
-            if progress_file.exists():
-                try:
-                    with open(progress_file, 'r', encoding='utf-8') as f:
-                        progress_data = json.load(f)
-                except (json.JSONDecodeError, FileNotFoundError):
-                    progress_data = {}
-            
-            # 使用配置名称标记当前进程为运行中，同时记录PID以便追踪
-            progress_data[f'config_{config_name}'] = {
-                'status': 'running',
-                'start_time': datetime.now().isoformat(),
-                'completed': False,
-                'pid': pid,
-                'returngift_enable': False  # 初始为False，后续更新
-            }
-            
-            # 保存更新后的进度
-            with open(progress_file, 'w', encoding='utf-8') as f:
-                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        """登记代际、运行轮次和真实进程身份，后续仅更新本对象的槽。"""
+        from module.config.runtime_registry import start_runtime_slot
+        self._runtime_token = start_runtime_slot(
+            Path(self.config.store.config_root) / 'tasks_config' / 'daily_progress.json',
+            self.config, 'MultiDailyAltAcc', pid, returngift_enable=False,
+        )
 
     def _update_task_returngift_enable(self, config_name, returngift_enable):
-        """更新进度文件中的returngift_enable状态"""
-        progress_file = Path('./config/tasks_config/daily_progress.json')
-        
-        with self._shutdown_lock:
-            if not progress_file.exists():
-                return
-            
-            try:
-                with open(progress_file, 'r', encoding='utf-8') as f:
-                    progress_data = json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                return
-            
-            key = f'config_{config_name}'
-            if key in progress_data:
-                progress_data[key]['returngift_enable'] = returngift_enable
-                with open(progress_file, 'w', encoding='utf-8') as f:
-                    json.dump(progress_data, f, ensure_ascii=False, indent=2)
-    
+        """旧轮次不能改写新一轮的回礼开关。"""
+        from module.config.runtime_registry import update_runtime_slot
+        update_runtime_slot(
+            Path(self.config.store.config_root) / 'tasks_config' / 'daily_progress.json',
+            config_name, getattr(self, '_runtime_token', None),
+            returngift_enable=returngift_enable,
+        )
+
     def _mark_task_completed(self, config_name):
-        """
-        标记进程任务已完成，基于配置名称而非PID
-        """
-        progress_file = Path('./config/tasks_config/daily_progress.json')
-        
-        with self._shutdown_lock:
-            # 读取现有进度信息
-            progress_data = {}
-            if progress_file.exists():
-                try:
-                    with open(progress_file, 'r', encoding='utf-8') as f:
-                        progress_data = json.load(f)
-                except (json.JSONDecodeError, FileNotFoundError):
-                    progress_data = {}
-                    
-            # 标记当前配置为已完成
-            if f'config_{config_name}' in progress_data:
-                progress_data[f'config_{config_name}'].update({
-                    'status': 'completed',
-                    'completed': True,
-                    'completed_time': datetime.now().isoformat()
-                })
-            
-            # 保存更新后的进度
-            with open(progress_file, 'w', encoding='utf-8') as f:
-                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        """完成通知按完整 token 更新，避免旧进程覆盖同名重建或新轮次。"""
+        from module.config.runtime_registry import update_runtime_slot
+        update_runtime_slot(
+            Path(self.config.store.config_root) / 'tasks_config' / 'daily_progress.json',
+            config_name, getattr(self, '_runtime_token', None),
+            status='completed', completed=True, completed_time=datetime.now().isoformat(),
+        )
 
     def _coordinated_shutdown_system(self,config_name):
-        """
-        协调多个进程的关机操作
-        使用文件标记来跟踪完成的进程数
-        """
-        import os
-        import time
-        
-        pid = os.getpid()
-        progress_file = Path('./config/tasks_config/daily_progress.json')
-        
-        # 标记当前进程已完成
+        """先完成本轮，再由所有启动入口共用的门禁核对实际 worker。"""
         self._mark_task_completed(config_name)
-        
-        # 等待一小段时间，让其他进程也有机会更新状态
-        time.sleep(5)
-        
-        # 检查是否所有进程都完成了
-        with self._shutdown_lock:
-            # 重新读取进度信息
-            if progress_file.exists():
-                try:
-                    with open(progress_file, 'r', encoding='utf-8') as f:
-                        progress_data = json.load(f)
-                except (json.JSONDecodeError, FileNotFoundError):
-                    progress_data = {}
-                    
-                # 检查是否所有标记的进程都完成了
-                all_completed = all(
-                    v.get('completed', False) for v in progress_data.values()
-                )
-                
-                if all_completed and len(progress_data) > 0:
-                    logger.info(f"All {len(progress_data)} processes completed, executing shutdown")
-                    self._execute_shutdown()
-                    
-                    # 清理进度文件
-                    try:
-                        progress_file.unlink()
-                    except:
-                        pass
-                else:
-                    remaining = sum(1 for v in progress_data.values() if not v.get('completed', False))
-                    logger.info(f"Not all processes completed yet, {remaining} remaining")
+        self._execute_shutdown()
     
     def _execute_shutdown(self):
-        """实际执行系统关机操作"""
+        """旧入口也必须经过运行门禁；通知失败不能解除已提交的关机。"""
         import platform
         import subprocess
-        
+        from module.config.runtime_registry import request_runtime_shutdown
         system = platform.system()
-        try:
+        def execute():
+            # 此回调只发系统命令，不申请配置锁，也不在门禁内执行通知。
             if system == "Windows":
-                logger.info("正在关闭系统...")
-                # Windows 关机命令，/s 表示关机，/t 30 表示30秒后关机
                 subprocess.run(["shutdown", "/s", "/t", "30"], check=True)
-                self.config.notifier.push(
-                    content="系统将在30秒后关机，请及时保存工作",
-                    title="系统关机提醒"
-                )
-            elif system == "Linux" or system == "Darwin":  # Darwin 是 macOS
-                logger.info("正在关闭系统...")
-                # Linux/macOS 关机命令
+            elif system in ("Linux", "Darwin"):
                 subprocess.run(["sudo", "shutdown", "-h", "now"], check=True)
-                self.config.notifier.push(
-                    content="系统即将关机",
-                    title="系统关机提醒"
-                )
             else:
                 logger.warning(f"不支持的操作系统: {system}，无法执行关机操作")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"关机命令执行失败: {e}")
-            self.config.notifier.push(
-                content=f"关机失败: {e}",
-                title="关机错误"
+                return False
+            return True
+        try:
+            accepted = request_runtime_shutdown(
+                Path(self.config.store.config_root) / 'tasks_config' / 'daily_progress.json',
+                self.config, getattr(self, '_runtime_token', None), execute,
             )
-        except Exception as e:
-            logger.error(f"执行关机时发生错误: {e}")
+        except Exception as error:
+            logger.warning(f"关机核验或命令失败，保留运行登记：{error}")
+            return False
+        if not accepted:
+            logger.info("仍有运行任务或无法确认的运行身份，本轮不自动关机")
+            return False
+        try:
+            self.config.notifier.push(
+                content="系统将在30秒后关机，请及时保存工作" if system == 'Windows' else "系统即将关机",
+                title="系统关机提醒",
+            )
+        except Exception as error:
+            logger.warning(f"关机已提交，提醒发送失败：{error}")
+        return True
 
     def _shutdown_system(self):
         """执行系统关机操作（旧版本，保持向后兼容）"""
@@ -412,8 +324,55 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         return result
 
     def _progress_key_of(self, account_info) -> str:
-        """账号在进度文件中的键。"""
-        return acc_key(account_info.account, account_info.character, account_info.svr)
+        """账号、清洗后的角色名、区服和平台共同标识一个进度条目。"""
+        return acc_key(account_info.account, account_info.character, account_info.svr,
+                       account_info.apple_or_android)
+
+    def _account_execution_plans(self) -> dict:
+        """对照 DailyAltAccEx 的实际下发参数，逐子任务保存稳定执行快照。"""
+        result = {}
+        for account in self.daily_conf.sup_account_list or []:
+            if account is None:
+                continue
+            effective = self._create_account_config(account)
+            enabled = self._enabled_task_keys(effective)
+            plans = {task: {'enabled': task in enabled, 'parameters': {}}
+                     for task in ('courtyard', 'mail', 'cooperation', 'donatejade',
+                                  'returngift', 'weekaward', 'mysteryshop', 'tree',
+                                  'trialbattle', 'summon_up', 'publish_sr',
+                                  'kekkaiActivation', 'KekkaiUtilize', 'alliedteam')}
+            plans['mysteryshop']['parameters'] = {'isflower': effective.isflower}
+            plans['tree']['parameters'] = {'mode': effective.tree_planting_enable}
+            single = self.config.daily_alt_acc.daily_alt_acc_config
+            plans['alliedteam'].update(
+                parameters={
+                    'battle_enable': effective.alliedteam_battle_enable,
+                    'ap_enable': effective.alliedteam_ap_enable,
+                    'invite_count': effective.alliedteam_invite_count,
+                    'auto_battle': single.alliedteam_auto_battle_enable,
+                    'paper_settings': single.alliedteam_paper_settings_enable,
+                    'general_battle': execution_parameters(self.config.daily_alt_acc.general_battle_config),
+                }, counter_target=effective.alliedteam_limit_count,
+                counter_scope={'help_mode': effective.alliedteam_limit_count == 13},
+            )
+            # 嵌套挂卡/寄养会固定覆盖下列字段，不把原配置及运行时计数误当执行参数。
+            nested = (
+                ('kekkaiActivation', 'kekkai_activation', 'activation_config',
+                 ('card_type', 'min_taiko_num', 'exchange_before', 'exchange_max',
+                  'card_not_found_count', 'shikigami_class')),
+                ('KekkaiUtilize', 'kekkai_utilize', 'utilize_config',
+                 ('utilize_rule', 'select_friend_list', 'shikigami_class', 'shikigami_order',
+                  'harvest_guild_max_times', 'utilize_enable', 'guild_ap_enable',
+                  'guild_assets_enable', 'box_ap_enable', 'box_exp_enable',
+                  'box_exp_waste', 'exchange_before')),
+            )
+            for task, section, config_key, overridden in nested:
+                parameters = execution_parameters(getattr(self.config, section))
+                for field in overridden:
+                    parameters[config_key].pop(field, None)
+                plans[task]['parameters'] = parameters
+            result[self._progress_key_of(account)] = plans
+        return result
 
     def _should_process_account(self, account_info):
         """判断是否应该处理该账号：完全依据持久化进度，不再比较登录时间。"""
@@ -422,6 +381,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         try:
             key = self._progress_key_of(account_info)
             done = self._progress.is_account_done(key)
+        except RequestHumanTakeover:
+            # 需要核对的进度必须停止，不能降级成未完成后重复消耗。
+            raise
         except Exception:
             logger.exception('读取账号进度失败，按未完成处理')
             return True
@@ -990,6 +952,9 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             "coin": coin,
             "price": price,
             "label": label,
+            # 在实时发现事件入库时记时；旧归档未知时间不能在清理时补造。
+            "found_at": (event.get('found_at') if isinstance(event, dict) else None)
+                        or datetime.now(BEIJING).isoformat(),
         }
         if self._progress is not None:
             self._progress.append_mshop(record)
@@ -1011,23 +976,10 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         ])
 
     def _notify_daily_completion(self):
-        """整轮真正完成：发送一条汇总 PushPlus（每个配置每轮一条，最多一次）。
+        """整轮完成先保存待发摘要，再尝试投递；网络失败由调度器闲时独立重试。
 
-        首次进入完成分支：coop_notified 为 false/不存在 → 发送 → 发送成功后才写
-        coop_notified=true 并 _save()，从而消除「push 成功后、clear 前崩溃导致重启
-        后重复推送」的窗口；已标记（如崩溃后重启接续再次进入完成分支）→ 跳过推送，
-        继续正常 next_run / clear。PushPlus 失败不写标记，仍不阻塞整轮收尾（best-effort）。
-
-        汇总含协作与神秘商店两部分，各自跟随自己的总开关：
-        total_cooperation_enable 关闭则不出协作段落，total_mysteryshop_enable
-        关闭则不出商店段落。
-
-        「无汇总可发」（协作关且商店无记录，如同心战斗轮/回礼轮）时，改为发送
-        普通完成推送 _notify_plain_completion（内容列出本轮实际启用的项目），
-        保证任意轮次完成都有且仅有一条完成通知；两种推送共用 coop_notified
-        幂等标记，防止崩溃重启后重复推送。MultiDailyAltAcc 已从 script.py 的
-        TASK_END_NOTIFY_LIST 移除，通用「任务提醒」不再参与本任务。
-        读不到开关配置（如测试环境）时保持原发送行为，避免误吞完成通知。
+        已确认通知的轮次不重复发送。远端成功、本地确认前中断仍可能重复投递，
+        但不能为重发通知重新执行游戏任务；磁盘失败则保留进度并停止收尾。
         """
         if self._progress is None:
             return
@@ -1052,27 +1004,30 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
             logger.info('寻找协作关闭且无神秘商店记录，改发普通完成通知')
             self._notify_plain_completion()
             return
+        cfg = getattr(self.daily_conf, 'multi_daily_alt_acc_config', None)
+        content = self._build_summary_content(
+            coops, show_account=bool(getattr(cfg, 'coop_notify_show_account', False)),
+            show_system=bool(getattr(cfg, 'coop_notify_show_system', True)), mshops=mshops)
+        self._queue_completion(content)
+
+    def _queue_completion(self, content, *, items=()):
+        """摘要与业务条目先独立落盘，只有成功提交后才允许原进度被正常收尾清除。"""
+        # 开关只决定通知展示，暂停后关闭项目也必须保留此前已经发现的全部成果。
+        coops = self._coops_found_this_round()
+        mshops = self._progress.load_mshops()
+        box = NotificationOutbox(self.config.config_name, self.config.generation,
+                                 base_dir=self._progress.path.parent)
         try:
-            # title 自带完整前缀「config_name｜…」，并跳过 Notifier 的全局 config_name 拼接，
-            # 保证显示为「小号1｜多账号日常完成」且不影响其他通知的「config_name 标题」格式。
-            cfg = getattr(self.daily_conf, 'multi_daily_alt_acc_config', None)
-            show_account = bool(getattr(cfg, 'coop_notify_show_account', False))
-            show_system = bool(getattr(cfg, 'coop_notify_show_system', True))
-            ok = self.config.notifier.push(
-                content=self._build_summary_content(
-                    coops, show_account=show_account, show_system=show_system,
-                    mshops=mshops),
-                title=f"{self.config.config_name}｜多账号日常完成",
-                skip_config_prefix=True,
-            )
-        except Exception as e:
-            logger.warning(f'汇总通知发送失败（不影响整轮结果）: {e}')
-            return
+            key = box.enqueue(self._progress.phase_token,
+                              {'content': content, 'title': f'{self.config.config_name}｜多账号日常完成',
+                               'skip_config_prefix': True}, coops=coops, mshops=mshops, items=items)
+            ok = box.deliver(self.config.notifier.push, record_id=key)
+        except (NotificationOutboxError, OSError) as exc:
+            raise RequestHumanTakeover(f'完成通知保存失败，已保留任务进度，请检查：{box.path}') from exc
         if ok:
             self._progress.mark_coop_notified()
         else:
-            # best-effort：失败不标记已通知、不重试、不阻塞收尾（可能漏通知，可接受）
-            logger.warning('汇总通知返回失败（不标记已通知，整轮仍视为成功）')
+            logger.warning('完成通知暂未发送，摘要已保存，稍后只补发通知')
 
     # 普通完成推送：total_* 全局开关 → 中文名；普通轮 plan 键按早晚阶段物化
     _PLAIN_PUSH_TASKS = (
@@ -1122,29 +1077,14 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
     def _notify_plain_completion(self):
         """无协作/商店汇总时的普通完成推送：列出本轮实际执行的项目。
 
-        与汇总推送共用 coop_notified 幂等标记与「{config_name}｜多账号日常完成」
-        标题；推送失败不写标记、不阻塞整轮收尾（best-effort，与汇总路径一致）。
-        项目列表读不出来时仍发推送，只是不含项目行——完成通知本身不能丢。
+        与汇总使用相同待发箱和幂等边界，内容时间变化不会产生重复的待发记录。
         """
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         lines = ["多账号日常完成", "", f"完成时间：{now_str}"]
         items = self._build_plain_items()
         if items:
             lines.append(f"本轮执行项目：{'、'.join(items)}")
-        try:
-            ok = self.config.notifier.push(
-                content="\n".join(lines),
-                title=f"{self.config.config_name}｜多账号日常完成",
-                skip_config_prefix=True,
-            )
-        except Exception as e:
-            logger.warning(f'普通完成通知发送失败（不影响整轮结果）: {e}')
-            return
-        if ok:
-            self._progress.mark_coop_notified()
-        else:
-            # best-effort：失败不标记已通知、不重试、不阻塞收尾
-            logger.warning('普通完成通知返回失败（不标记已通知，整轮仍视为成功）')
+        self._queue_completion("\n".join(lines), items=items)
 
     @classmethod
     def _build_summary_content(cls, coops, completed_at=None, show_account=False,

@@ -6,7 +6,7 @@
 from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.MultiAccountRunner import MultiAccountRunner
-from tasks.Component.MultiAccountRunner.progress import acc_key
+from tasks.Component.MultiAccountRunner.progress import STATUS_DONE, acc_key, execution_parameters
 from tasks.GameUi.game_ui import GameUi
 from tasks.MultiTasks.config import SubTaskType  # 导出使用严格的文件完成判定。
 from tasks.MultiTasks.progress import ProgressStore
@@ -27,7 +27,7 @@ class ScriptTask(GameUi):
     def _record_login_time(self, account) -> None:
         """登记账号来源，由统一配置事务同步全部任务及本机映射的原配置。"""
         source_name = (self._source_names or {}).get(
-            acc_key(account.account, account.character, account.svr), '?')
+            acc_key(account.account, account.character, account.svr, account.apple_or_android), '?')
         self.config.record_account_login(
             account, config_names=() if source_name == '?' else (source_name,))
 
@@ -50,7 +50,7 @@ class ScriptTask(GameUi):
         sub_task = self.config.multi_tasks.multi_tasks_config.sub_task
         spec = SUB_TASKS[sub_task]
         source_name = (self._source_names or {}).get(
-            acc_key(account.account, account.character, account.svr), '?')
+            acc_key(account.account, account.character, account.svr, account.apple_or_android), '?')
 
         logger.hr(f'MultiTasks {spec.task_end_name}: {account.character}/{account.svr}', 2)
         logger.info(
@@ -77,35 +77,57 @@ class ScriptTask(GameUi):
             'acc': account.account,
             'char': account.character,
             'svr': account.svr,
+            # 完整身份也供截图和账号导出使用，跨平台同名角色不能合并。
+            'sys': 'android' if account.apple_or_android else 'ios',
         }
         # 注入账号级场次进度：计数型子任务（觉醒副本）逐场落盘，任务被中断后
         # 重跑能从断点接续剩余场次；键同样按账号取，否则多账号会共用一份计数。
         # 不读进度的子任务拿到也无副作用（它们不访问这两个属性）。
         adapter._progress = self._progress
-        adapter._progress_key = acc_key(account.account, account.character, account.svr)
+        adapter._progress_key = acc_key(
+            account.account, account.character, account.svr, account.apple_or_android)
         try:
             adapter.run()
         except TaskEnd as e:
-            # 仅当 TaskEnd 表示本子任务才视为当前账号正常完成；其他 TaskEnd 上抛
+            # 结束名称和明确成功缺一不可；finish 只决定时间基准，不代表成功。
             if e.args and e.args[0] == spec.task_end_name:
+                if getattr(adapter, '_execution_results', {}).get(spec.task_end_name) is not True:
+                    logger.error('[MultiTasks] 子任务失败或缺少明确结果，保留账号等待重试')
+                    return False
                 if sub_task == SubTaskType.ACCOUNT_EXPORT:
                     # 导出必须有落盘文件，不能只因收到结束信号就跳过这个账号。
                     if (self._progress is None or not self._progress.is_task_finished(
                             adapter._progress_key, 'account_export')):
                         logger.error('[MultiTasks] 导出没有成功文件，保留账号等待重试')
                         return False
+                elif self._progress is not None:
+                    # 同一轮切换所选任务时，各任务成果独立保留，返回原任务不会重复做。
+                    self._progress.mark_task(adapter._progress_key, sub_task.value, STATUS_DONE)
                 logger.info(
                     f'[MultiTasks] 账号完成: {source_name}/{account.character}/{account.svr}'
                 )
                 return True
             raise
-        if sub_task == SubTaskType.ACCOUNT_EXPORT:
-            # 独立导出任务的普通失败返回 False；任何普通返回都不能标记导出成功。
-            logger.error('[MultiTasks] 账号导出未成功结束，保留账号等待重试')
-            return False
-        # 其他既有子任务未抛 TaskEnd 时仍沿用原来的成功加警告行为。
-        logger.warning(f'[MultiTasks] 子任务未抛出 TaskEnd({spec.task_end_name})')
-        return True
+        # 普通返回不能证明任务完成，尤其不能把缺少结果的提前退出当成成功。
+        logger.error(f'[MultiTasks] 子任务未抛出 TaskEnd({spec.task_end_name})，等待重试')
+        return False
+
+    def _account_plans(self, accounts, selected) -> dict:
+        """按实际单任务配置保存参数；调度时间、账号排序不参与进度失效。"""
+        plans = {}
+        for sub_task in SubTaskType:
+            parameters = execution_parameters(getattr(self.config, sub_task.value))
+            plan = {'enabled': sub_task == selected, 'parameters': parameters}
+            if sub_task == SubTaskType.EVO_ZONE:
+                evo = parameters['evo_zone_config']
+                plan['counter_target'] = evo['limit_count']
+                # 目标数可以改，麒麟/层数/身份与协战口径变化则不能猜测旧场次归属。
+                plan['counter_scope'] = {
+                    name: evo[name] for name in ('kirin_type', 'layer', 'user_status')}
+                plan['counter_scope']['help_mode'] = evo['limit_count'] == 13
+            plans[sub_task.value] = plan
+        return {acc_key(a.account, a.character, a.svr, a.apple_or_android): plans
+                for a in accounts}
 
     def run(self):
         cfg = self.config.multi_tasks.multi_tasks_config
@@ -125,24 +147,19 @@ class ScriptTask(GameUi):
             raise TaskEnd('MultiTasks')
 
         self._source_names = {
-            acc_key(account.account, account.character, account.svr): source_name
+            acc_key(account.account, account.character, account.svr,
+                    account.apple_or_android): source_name
             for source_name, account in items
         }
         accounts = [account for _source_name, account in items]
 
-        # 4. 建立账号级续做进度。阶段标识含子任务 + 来源方式 + 账号集合 + 自然日：
-        #    改子任务或改来源都必须重建（绝不能沿用另一组合的完成标记）；
-        #    success_interval 为 1 天，跨天必须重做；失败重调度不改标识，接续时
-        #    已完成账号直接跳过，避免重复领奖或重复消耗体力。
-        self._progress = ProgressStore('multi_tasks', self.config.config_name)
+        # 4. 自然日定义轮次，账号集合和任务参数独立核对，只重开受影响的成果。
+        self._progress = ProgressStore('multi_tasks', self.config.config_name,
+                                       generation=self.config.generation)
         self._progress.ensure_phase(
-            {
-                'sub_task': cfg.sub_task.value,
-                'account_source': cfg.account_source.value,
-                'accounts': [acc_key(a.account, a.character, a.svr) for a in accounts],
-                'day': self.start_time.strftime('%Y-%m-%d'),
-            },
+            {'day': self.start_time.strftime('%Y-%m-%d')},
             self.start_time.strftime('%Y%m%d-%H%M'),
+            account_plans=self._account_plans(accounts, cfg.sub_task),
         )
 
         # 5. 轮转执行。账号完成状态由 progress 驱动；登录时间由 _switch_and_run

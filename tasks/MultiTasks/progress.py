@@ -14,7 +14,8 @@ class ProgressStore(_BaseProgressStore):
     def is_task_finished(self, key: str, task: str) -> bool:
         """导出只认可成功记录与实际文件，failed/skipped 不能当作导出完成。"""
         if task != 'account_export':
-            return super().is_task_finished(key, task)
+            # 借跑单任务必须明确成功，failed/skipped 也保留重试。
+            return self.get_task(key, task).get('status') == STATUS_DONE
         record = self.get_task(key, task)
         path = record.get('path')
         return (record.get('status') == STATUS_DONE
@@ -22,6 +23,11 @@ class ProgressStore(_BaseProgressStore):
 
     def is_account_done(self, key: str) -> bool:
         """在 Runner 跳过整个账号前检查导出文件，其他阶段不额外检查。"""
+        plans = self._data.get('account_plans', {}).get(key)
+        if isinstance(plans, dict):
+            # 仅所选任务影响当前账号完成；之前选过的任务仍保留成果供切回时复用。
+            enabled = [task for task, plan in plans.items() if plan.get('enabled')]
+            return bool(enabled) and all(self.is_task_finished(key, task) for task in enabled)
         if not super().is_account_done(key):
             return False
         return (self._data.get('phase_flags', {}).get('sub_task') != 'account_export'

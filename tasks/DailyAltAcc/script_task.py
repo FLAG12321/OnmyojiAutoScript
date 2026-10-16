@@ -86,11 +86,13 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
     )
 
     def _mark_progress(self, task_key: str, status: str, **extra) -> bool:
-        """写子任务进度；没有注入 store 或写入异常都不影响任务流程。"""
+        """写子任务进度；身份/持久化不可确认时停止，不能继续消耗并丢失完成事实。"""
         if self._progress is None or not self._progress_key:
             return False
         try:
             return self._progress.mark_task(self._progress_key, task_key, status, **extra)
+        except RequestHumanTakeover:
+            raise  # 不能把需要核对的旧身份当成普通可忽略写入错误。
         except Exception:
             logger.exception('写子任务进度失败')
             return False
@@ -106,6 +108,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         try:
             if self._progress.mark_task_false(self._progress_key, task_key):
                 logger.warning(f'子任务 {task_key} 连续多次未完成，本阶段不再重试（skipped）')
+        except RequestHumanTakeover:
+            raise  # 保留原阶段等待核对，不把计数失败降级为继续执行。
         except Exception:
             logger.exception('写子任务 False 计数失败')
 
@@ -115,16 +119,20 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
             return False
         try:
             return self._progress.is_task_finished(self._progress_key, task_key)
+        except RequestHumanTakeover:
+            raise  # 未知进度不能被解释为尚未完成并重打。
         except Exception:
             logger.exception('读取子任务进度失败，按未完成处理')
             return False
 
     def _battle_count_now(self) -> int:
-        """读当前已落盘的同心战斗场次；无 store 或读失败一律按 0 处理。"""
+        """读当前已落盘场次；需核对的进度不得降级成从零开始。"""
         if self._progress is None or not self._progress_key:
             return 0
         try:
             return self._progress.get_battle_count(self._progress_key)
+        except RequestHumanTakeover:
+            raise
         except Exception:
             logger.exception('读取同心战斗场次失败，按 0 处理')
             return 0

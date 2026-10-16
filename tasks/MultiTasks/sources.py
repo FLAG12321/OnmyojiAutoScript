@@ -8,6 +8,7 @@ _is_usable / _dedup 两个 helper 里，三种来源共用。
 from typing import Callable
 
 from module.logger import logger
+from tasks.Component.MultiAccountRunner.progress import acc_key
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.MultiTasks.config import AccountSourceType, active_account_configs
 
@@ -49,15 +50,15 @@ def _is_usable(account) -> bool:
 
 
 def _dedup(items: list[ExecutionItem]) -> list[ExecutionItem]:
-    """按 (角色名, 账号, 服务器) 保序去重。
+    """按完整四项身份保序去重，安卓和苹果同名角色分别执行。
 
     同一物理账号可能同时登记在多个配置实例的小号表里，不去重会导致重复执行
     （重复领奖、重复消耗体力）。
     """
     result: list[ExecutionItem] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[str] = set()
     for source_name, account in items:
-        key = (account.character, account.account, str(account.svr))
+        key = acc_key(account.account, account.character, account.svr, account.apple_or_android)
         if key in seen:
             logger.info(
                 f'[MultiTasks] 跳过重复账号: config={source_name}, '

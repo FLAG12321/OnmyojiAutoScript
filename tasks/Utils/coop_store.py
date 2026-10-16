@@ -13,6 +13,9 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from filelock import FileLock
+
+from module.config.history_retention import retention_for
 from tasks.Component.MultiAccountRunner.progress import STATUS_DONE, STATUS_PENDING
 
 # 游戏侧协作刷新时刻（小时）。协作在 05:00 与 18:00 各刷新一次，
@@ -112,13 +115,9 @@ class CoopStore:
     18:00 后那次运行产出的记录会归到次日——两套粒度不同，对账方需自行决定按
     哪一套切分。
 
-    **本表刻意不清理、无上限**，这与同仓的 `MultiDailyAltAcc.progress`
-    （`COOP_ARCHIVE_LIMIT = 5`，只保留最近 5 份未发通知的协作归档）相反，
-    是经过权衡的：那边的归档只为「发了通知就别再发」，过期的没有价值；这边
-    是桌面应用做长期订单对账的依据，删旧行等于删证据。**量级可控**——每个
-    刷新窗口每账号至多 3 条（协作板三槽），一天 2 个窗口，一年约 2200 条/账号，
-    单文件几十 KB 量级；`pending()` 的全表扫描在这个规模下不是瓶颈。
-    下游按 `found_at` 自行过滤所需时间范围，不要指望本表裁剪。
+    历史裁剪使用共享北京自然日策略；调用方先保护仍在核对的记录，再显式裁剪。
+    所有修改均在 .cleanup.lock 内重读磁盘，仅合并本次 ID 的变更，旧对象不能
+    复活已被清理的历史，也不能覆盖另一进程写入的完成状态或卡槽快照。
 
     与 ProgressStore 一样只做文件读写，不依赖 device / Config，便于单元测试。
     """
@@ -141,8 +140,8 @@ class CoopStore:
             return []
         except (OSError, ValueError) as e:
             raise CoopStoreWriteError(f'协作表无法读取，拒绝覆盖原文件: {self.path}: {e}') from e
-        if not isinstance(data, list):
-            raise CoopStoreWriteError(f'协作表格式错误（顶层必须为列表），拒绝覆盖原文件: {self.path}')
+        if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+            raise CoopStoreWriteError(f'协作表格式错误（必须为记录列表），拒绝覆盖原文件: {self.path}')
         return data
 
     def _save(self, data: list) -> None:
@@ -175,6 +174,14 @@ class CoopStore:
     def record(self, account: str, character: str, svr, apple_or_android: bool,
                event: dict, found_at: datetime | None = None,
                round_id: str | None = None) -> dict:
+        """持共享清理锁写入本次发现，锁内只合并本次记录 ID。"""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(str(self.path) + '.cleanup.lock'):
+            return self._record_locked(account, character, svr, apple_or_android,
+                                       event, found_at, round_id)
+
+    def _record_locked(self, account: str, character: str, svr, apple_or_android: bool,
+                       event: dict, found_at: datetime | None, round_id: str | None) -> dict:
         """写入一条协作；同一刷新窗口内原地覆盖，跨窗口追加新行。
 
         窗口粒度是 05:00 / 18:00 两档刷新，**不是自然日**——[18:00, 次日 05:00)
@@ -229,8 +236,9 @@ class CoopStore:
             'status': STATUS_PENDING,
         }
         # 只修改候选列表，文件成功替换之前不改变已确认落盘的内存状态。
-        updated = list(self._data)
-        for index, existing in enumerate(self._data):
+        current = self._load()
+        updated = list(current)
+        for index, existing in enumerate(current):
             if existing.get('id') != record['id']:
                 continue
             # id 相同即「同一刷新窗口内的重跑」（失败重调度、手动重跑、以及跨
@@ -273,18 +281,40 @@ class CoopStore:
         :return: True 表示本次确实发生了状态迁移；id 不存在或已是 done 返回 False。
                  写盘失败抛 CoopStoreWriteError，内存和磁盘都保留原状态。
         """
-        for index, row in enumerate(self._data):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(str(self.path) + '.cleanup.lock'):
+            return self._mark_done_locked(record_id)
+
+    def _mark_done_locked(self, record_id: str) -> bool:
+        """只标记磁盘仍存在的 ID，不从旧快照补回已删除记录。"""
+        current = self._load()
+        for index, row in enumerate(current):
             if row.get('id') != record_id:
                 continue
             if row.get('status') == STATUS_DONE:
+                self._data = current
                 return False
             # 完成状态同样先写候选表，不能用未落盘的内存状态报告完成。
-            updated = list(self._data)
+            updated = list(current)
             updated[index] = dict(row, status=STATUS_DONE)
             self._save(updated)
             self._data = updated
             return True
+        self._data = current
         return False
+
+    def prune(self, *, now=None, protect=(), protected_ids=()) -> int:
+        """显式裁剪已过保留期的完整窗口；失败时原文件和已确认内存不变。"""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(str(self.path) + '.cleanup.lock'):
+            policy = retention_for(self.path.parent, now=now, protect=protect,
+                                   protected_ids=protected_ids)
+            current = self._load()
+            updated = [row for row in current if not policy.cooperation_expired(row)]
+            if len(updated) != len(current):
+                self._save(updated)
+            self._data = updated
+            return len(current) - len(updated)
 
     # ---------- 读取 ----------
 
@@ -294,8 +324,9 @@ class CoopStore:
 
     def records_for_round(self, round_id: str) -> list:
         """按本轮真实卡槽展开记录，保留推送重数、各卡目标和各自识别时间。"""
+        self._data = self._load()
         result = []
-        for row in self._data:
+        for row in self.all():
             for observation in row.get('round_observations', {}).get(round_id, []):
                 # 对外只暴露标准行，内部历史轮次快照不混入 formatter 的输入。
                 record = {key: value for key, value in row.items() if key != 'round_observations'}
@@ -310,8 +341,10 @@ class CoopStore:
         永远不过期的记录把账号范围撑大到每轮都去切号）。
         """
         now = now or datetime.now()
+        # 执行前看最新完成状态，另一写入者的 done 不能因为内存缓存而重复开打。
+        self._data = self._load()
         result = []
-        for row in self._data:
+        for row in self.all():
             if row.get('status') != STATUS_PENDING:
                 continue
             expires = _parse(row.get('expires_at'))

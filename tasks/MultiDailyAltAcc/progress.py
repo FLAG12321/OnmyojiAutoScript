@@ -8,12 +8,14 @@
 本模块只做文件读写，不依赖 device / Config，便于单元测试。
 """
 import json
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
 from filelock import FileLock
 
 from module.logger import logger
+from module.config.history_retention import retention_for
 
 from tasks.Component.MultiAccountRunner.progress import (
     # 重新导出，保持既有 import 面不变：
@@ -27,7 +29,6 @@ from tasks.Component.MultiAccountRunner.progress import (
     ProgressStore as _BaseProgressStore,
     _write_json_atomic,
     acc_key,
-    phase_flags_match,
 )
 
 __all__ = [
@@ -37,16 +38,11 @@ __all__ = [
     'STATUS_FAILED',
     'STATUS_PENDING',
     'STATUS_SKIPPED',
-    'COOP_ARCHIVE_LIMIT',
     'ProgressStore',
     'acc_key',
     'phase_flags_of',
     'phase_id_of',
 ]
-
-# 协作归档保留份数：只保留最近 N 份，避免无限积累（轻量容量策略）
-COOP_ARCHIVE_LIMIT = 5
-
 
 class ProgressStore(_BaseProgressStore):
     """MultiDailyAltAcc 的进度存储，固定文件名 multi_daily_progress_<config>.json。
@@ -56,8 +52,9 @@ class ProgressStore(_BaseProgressStore):
     天然满足「重启/十分钟接续恢复 + 下一轮不污染」。
     """
 
-    def __init__(self, config_name: str, base_dir='config/tasks_config'):
-        super().__init__('multi_daily', config_name, base_dir)
+    def __init__(self, config_name: str, base_dir='config/tasks_config', generation=None):
+        # 实例代际参与通用进度校验，避免同名重建接续旧账号事实。
+        super().__init__('multi_daily', config_name, base_dir, generation=generation)
 
     def _load(self) -> dict:
         """忽略已取消的导出阶段键，移除功能后仍能接续已完成的日常进度。"""
@@ -128,8 +125,8 @@ class ProgressStore(_BaseProgressStore):
 
         触发场景：phase_flags 已变 / 进度过期导致 ensure_phase 准备重建覆盖，而旧
         coop / mshop 尚未发送最终汇总。为避免数据永久丢失，先把它们复制到
-        ``multi_daily_coop_archive_<config>.json``（按 config 隔离，保留最近
-        COOP_ARCHIVE_LIMIT 份）。归档失败只记日志，绝不阻断主任务。
+        ``multi_daily_coop_archive_<config>.json``，按共享北京自然日规则保留。
+        归档失败必须阻止重建，不能覆盖唯一的未通知结果。
 
         两类记录写同一份归档文件的同一条目：它们属于同一轮，放一起才好回溯。
         返回值是两类合计条数（调用方只用它判断「有没有东西被归档」）。
@@ -145,46 +142,42 @@ class ProgressStore(_BaseProgressStore):
             with FileLock(str(archive_path) + '.cleanup.lock'):
                 existing = []
                 if archive_path.exists():
-                    try:
-                        with open(archive_path, 'r', encoding='utf-8') as f:
-                            existing = json.load(f)
-                        if not isinstance(existing, list):
-                            existing = []
-                    except (json.JSONDecodeError, OSError, ValueError):
-                        existing = []
-                existing.append({
+                    with open(archive_path, 'r', encoding='utf-8-sig') as f:
+                        existing = json.load(f)
+                    if not isinstance(existing, list):
+                        raise ValueError('协作归档格式无效，保留原文件与当前进度')
+                # 同代际、同轮、同内容的重建重试只保留一份。
+                identity = json.dumps([self._data.get('generation'), self._data.get('phase_token'),
+                                       self._data.get('created_at'), coops, mshops],
+                                      ensure_ascii=False, sort_keys=True)
+                archive_id = hashlib.sha256(identity.encode('utf-8')).hexdigest()
+                group = {
+                    'id': archive_id,
+                    'generation': self._data.get('generation'),
+                    'phase_token': self._data.get('phase_token'),
                     'archived_at': datetime.now().isoformat(),
                     'coops': coops,
                     'mshops': mshops,
-                })
-                existing = existing[-COOP_ARCHIVE_LIMIT:]
+                }
+                if not any(isinstance(item, dict) and item.get('id') == archive_id for item in existing):
+                    existing.append(group)
+                policy = retention_for(archive_path.parent)
+                existing = [item for item in existing if not policy.archive_expired(item)]
                 _write_json_atomic(archive_path, existing)
             logger.info(f'已归档 {len(coops)} 条未通知协作、'
                         f'{len(mshops)} 条神秘商店记录 -> {archive_path}')
             return len(coops) + len(mshops)
         except Exception as e:
-            logger.warning(f'协作归档失败（不影响主任务）: {e}')
-            return 0
+            logger.warning(f'协作归档失败，已保留原进度等待重试: {e}')
+            raise
 
-    def ensure_phase(self, phase_flags: dict, phase_id: str) -> bool:
-        """在基类判定前做「重建前归档」兜底：本轮即将被重建且还有未通知记录时归档。
-
-        保持基类 ensure_phase 的接续/重建语义完全不变：归档只是旁路留痕，绝不改变
-        现有账号进度的接续规则，也不影响新建/重建结果。这里的判定必须与基类完全
-        一致，否则会出现「归档了却仍然接续」的错位。
-        """
-        data = self._load()
-        resumable = (
-            bool(data)
-            and phase_flags_match(data.get('phase_flags'), phase_flags)
-            and not self._is_stale(data)
-        )
+    def _before_replace_phase(self, data):
+        """基类确认身份与重建条件后先保全结果，失败时不覆盖原进度。"""
         pending = any(isinstance(data.get(key), list) and data[key]
                       for key in ('coop', 'mshop'))
-        if not resumable and pending:
+        if pending and not data.get('coop_notified'):
             self._data = dict(data)
             self.archive_pending_coops()
-        return super().ensure_phase(phase_flags, phase_id)
 
 
 # 参与阶段判定的开关白名单：收 _schedule_* 会改写的键、轮转模式，以及会改变本轮执行内容的手动开关。

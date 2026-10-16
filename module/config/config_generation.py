@@ -12,7 +12,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from filelock import FileLock
 
@@ -570,7 +570,7 @@ class GenerationManager:
             self._recover_rename_journal(journal_path)
 
     def _recover_name_sidecar(self, name: str) -> None:
-        """恢复单个身份的 creating/tombstone 残留；调用方必须已持有该 name lifecycle 锁。"""
+        """恢复单个身份的事务残留或外部删除；调用方必须已持有该 name lifecycle 锁。"""
         record = self._read_sidecar(name)
         if record is None:
             return
@@ -578,6 +578,11 @@ class GenerationManager:
             self._recover_creating(name, record)
         elif record.state == "tombstone":
             self._recover_tombstone(name)
+        elif record.state == "active" and not self._config_path(name).exists():
+            # 有效身份对应的 JSON 被手工删除时，锁内收敛为删除状态，不阻断其他实例启动。
+            # 新 token 使旧会话永久失效；只记录删除，绝不从备份复活用户已删的配置。
+            self._write_sidecar(name, GenerationRecord(str(uuid.uuid4()), "tombstone", None))
+            logger.warning(f"[{name}] 配置 JSON 已被外部删除，已记录删除身份")
 
     def _recover_creating(self, name: str, record: GenerationRecord) -> None:
         config_path = self._config_path(name)
@@ -679,7 +684,7 @@ class GenerationManager:
     def survey_active_identities(self) -> dict[str, Exception]:
         """扫描全部身份，返回 {name: 内容级失败异常}；结构级损坏仍抛错。
 
-        结构级身份损坏（残留 creating、tombstone 仍有物理配置、active 缺文件、
+        结构级身份损坏（恢复后仍残留 creating、tombstone 仍有物理配置、active 缺文件、
         配置存在但 sidecar 缺失/损坏）说明生命周期不变量已被破坏，无法判断磁盘能否
         安全写入，必须 fail closed。
 
@@ -753,10 +758,16 @@ class GenerationManager:
                 self.fault_injector.hit("create.after_active_sidecar")
                 return generation
 
-    def delete_config(self, name: str) -> None:
+    def delete_config(
+        self, name: str, *, expected_generation: Optional[str] = None,
+        before_delete: Optional[Callable[[], None]] = None,
+    ) -> None:
         """tombstone 是删除提交点；随后物理删除配置。
 
         持全局身份锁，避免并发 validate 把 tombstone 已写配置未删的中间态误判为损坏。
+        可选回调在 active 身份 CAS 通过后、提交删除前清理附件；失败保留原身份供重试。
+        已删除且主文件消失的身份允许回调幂等收尾，不把旧 tombstone 当作仍占用的实例。
+        回调不得重入配置事务；调用方须先停止任务，独立进度文件不受 generation 保护。
         """
         name = self._validate_name(name)
         self._reject_reserved_identity(name)
@@ -765,6 +776,11 @@ class GenerationManager:
             with self._lifecycle_lock(name):
                 record = self._read_sidecar(name)
                 if record is None:
+                    if before_delete is not None and not self._config_path(name).exists():
+                        # 创建未提交身份便失败时，仍需锁内回收已生成的临时附件。
+                        # 主 JSON 尚在却缺 sidecar 属于损坏，不能借此分支继续清理。
+                        before_delete()
+                        return
                     raise ConfigIdentityNotFoundError(f"{name} not found")
                 if record.state == "tombstone":
                     config_path = self._config_path(name)
@@ -772,7 +788,16 @@ class GenerationManager:
                         # 完成 tombstone 提交后崩溃遗留的物理删除，保持恢复幂等。
                         config_path.unlink()
                         return
+                    if before_delete is not None:
+                        # 外部删除或上次删除已提交时，仍可清理该名称遗留的专属附件。
+                        before_delete()
+                        return
                     raise ConfigIdentityNotFoundError(f"{name} not found")
+                if expected_generation is not None and record.generation != expected_generation:
+                    # 校验与附件清理共用身份锁，旧删除请求绝不能碰同名重建后的新实例。
+                    raise ConfigIdentityConflictError(f"{name}: generation changed before delete")
+                if before_delete is not None:
+                    before_delete()
                 self._write_sidecar(name, GenerationRecord(str(uuid.uuid4()), "tombstone", None))
                 self.fault_injector.hit("delete.after_tombstone")
                 config_path = self._config_path(name)

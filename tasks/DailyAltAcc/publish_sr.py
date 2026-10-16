@@ -1,6 +1,5 @@
 # This Python file uses the following encoding: utf-8
 import json
-import re
 import time
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from filelock import FileLock
 
 from module.base.utils import point2str, save_image
 from module.logger import logger
+from tasks.Utils.role_artifacts import role_artifact_stem
 from tasks.DailyAltAcc.utils import DailyAltAccBase, guild_popup_guard
 from tasks.ReturnGift.assets import ReturnGiftAssets
 from tasks.ReturnGift.script_task import ScriptTask as ReturnGiftScriptTask
@@ -85,10 +85,8 @@ class PublishSr(DailyAltAccBase, ReturnGiftAssets):
             if self.appear_then_click(self.I_PAGE_PIECE, interval=1):
                 time.sleep(1.5)
                 image = self.screenshot()
-                # 角色名优先取多账号运行注入的统计上下文(_stat_ctx)，单实例运行时退化为配置实例名
-                char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
-                # 替换 Windows 文件名非法字符，避免保存失败
-                char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+                # 按完整角色身份区分同名账号，仍覆盖该角色最新的碎片页成果。
+                char_name = role_artifact_stem(self)
                 save_dir = Path('screenshots/SR_Screenshots')
                 save_dir.mkdir(parents=True, exist_ok=True)
                 save_path = save_dir / f'{char_name}.png'

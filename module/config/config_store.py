@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import BaseModel
 
@@ -1015,9 +1015,15 @@ class ConfigStore:
         with self.generation._validation_lock():
             self.generation.recover_lifecycle_transactions()
 
-    def delete_config(self, config_name: str) -> None:
+    def delete_config(
+        self, config_name: str, *, expected_generation: Optional[str] = None,
+        before_delete: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """可按期望身份删除，并在同一事务锁内清理该实例附件；普通删除调用保持不变。"""
         self.initialize()
-        self.generation.delete_config(config_name)
+        self.generation.delete_config(
+            config_name, expected_generation=expected_generation, before_delete=before_delete,
+        )
 
     def rename_config(self, source: str, destination: str) -> None:
         self.initialize()

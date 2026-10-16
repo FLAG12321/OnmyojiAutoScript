@@ -12,6 +12,7 @@ from module.base.timer import Timer
 from module.atom.image_grid import ImageGrid
 from module.logger import logger
 from module.exception import TaskEnd
+from module.config.runtime_registry import effective_runtime_registry
 
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
@@ -391,13 +392,10 @@ class ScriptTask(GuildPopupMixin, GameUi,ReturnGiftAssets):
             retry_count += 1
         return send_time
     def _check_daily_running_with_returngift(self) -> bool:
-        """检查是否有 total_returngift_enable=true 的Daily正在运行"""
-        progress_file = Path('./config/tasks_config/daily_progress.json')
-        if not progress_file.exists():
-            return False
-
-        with open(progress_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        """仅确认死亡才能消除等待；身份未知时保守保留仍在运行的判断。"""
+        root = self.config.store.config_root
+        progress_file = Path(root) / 'tasks_config' / 'daily_progress.json'
+        data = effective_runtime_registry(progress_file, root)
 
         for key, value in data.items():
             if value.get('status') != 'running':

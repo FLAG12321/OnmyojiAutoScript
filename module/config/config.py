@@ -7,6 +7,7 @@ import json
 import operator
 import threading
 import random
+import re
 
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -387,6 +388,11 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
                 return
             self._apply_save_result(result)
             self._pending_account_logins.clear()
+            # 当前配置成功持久化后再写来源，不同时占用两份配置的事务锁。
+            for name in self._login_writeback_names() if result.login_times else ():
+                pending = self._pending_login_writebacks.setdefault(name, {})
+                for identity, moment in result.login_times.items():
+                    pending[identity] = max(pending.get(identity, moment), moment)
             for name, updates in list(self._pending_login_writebacks.items()):
                 if not updates:
                     del self._pending_login_writebacks[name]
@@ -403,6 +409,16 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
                     logger.exception(f'[{self.config_name}] 登录时间回写失败：{name}')
                 else:
                     del self._pending_login_writebacks[name]
+
+    def _login_writeback_names(self) -> set:
+        """保留本机来源映射，并识别管家已有的临时实例命名协议。"""
+        from tasks.Utils.optional_tasks import extend
+
+        names = set(extend('multi_tasks_login_writeback_configs', [], self.config_name) or [])
+        match = re.fullmatch(r'(.+)_Butler(?:Export|Jade)?_[1-9][0-9]*', self.config_name, re.IGNORECASE)
+        if match:
+            names.add(match.group(1))
+        return {name for name in names if name and name != self.config_name}
 
     def record_account_login(self, account, login_time=None, config_names=()) -> None:
         """仅登记确认成功的登录，多个角色及来源在保存时各合并成一次事务。"""
