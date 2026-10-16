@@ -73,8 +73,6 @@ class SummonUp(DailyAltAccBase):
                     start_time = time.time()
                     continue
                 if buy_flag and self.appear(self.I_SUMMON_UP_GET_AWARD):
-                    roi=self.I_SUMMON_UP_GET_AWARD.roi_front
-                    self.I_SUMMON_UP_GET_AWARD.roi_front =[roi[0]-31,roi[1]+26,roi[2],roi[3]]
                     self.click(self.I_SUMMON_UP_GET_AWARD,interval=2)
                     time.time()-start_time
                     continue

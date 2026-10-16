@@ -95,12 +95,10 @@ class Mshop(Mall, DailyAltAccBase):
         self.ui_goto(page_mall)
         self.ui_click(MysteryShopAssets.I_ME_ENTER, MysteryShopAssets.I_MS_SHARE)
         logger.info('Mysteryshop')
-        # 进入商店后保存初始货架截图（序号1）
-        self._save_mshop_page(1)
 
-        if not self.MsFind():
+        if not self.MsFind(screenshot_index=1):
             retry_count = 0
-            # 是否发生过刷新：只有刷新过才补序号2，否则只留序号1一张
+            # 是否发生过刷新：只有刷新过才在最终识别后补序号2。
             refreshed = False
             while 1:
                 self.screenshot()
@@ -116,11 +114,8 @@ class Mshop(Mall, DailyAltAccBase):
                     self.appear_then_click(self.I_MS_REFRESH,action=self.C_MS_REFRESH_ACTION,interval=1)
                     continue
                 if self.appear(MysteryShopAssets.I_MS_SHARE,interval=2):
-                    # 刷新后货架稳定（分享按钮可见）才截图，多次刷新时序号2覆盖为最新货架
-                    if refreshed:
-                        self._save_mshop_page(2)
                     retry_count += 1
-            self.MsFind()
+            self.MsFind(screenshot_index=2 if refreshed else None)
         retry_count = 0
         while 1:
             self.screenshot()
@@ -136,6 +131,7 @@ class Mshop(Mall, DailyAltAccBase):
         """保存神秘商店货架截图到 screenshots/mshop/，文件名 商店_角色名_{index}.png。
 
         序号1 = 进入商店时的初始货架；序号2 = 刷新后的货架（多次刷新时覆盖为最新）。
+        本方法由 MsFind 在材料与价格识别完成后、商品判定和通知之前调用。
         角色名优先取多账号运行注入的统计上下文（_stat_ctx），单实例退化为配置实例名。
         """
         # 角色名优先取多账号运行注入的统计上下文，单实例运行时退化为配置实例名
@@ -223,14 +219,18 @@ class Mshop(Mall, DailyAltAccBase):
                                   coin=coin_of(price), score=score))
         return items
 
-    def MsFind(self) -> bool:
+    def MsFind(self, screenshot_index: int | None = None) -> bool:
         """扫描当前神秘商店货架，播报规则判定要买的商品。
 
+        :param screenshot_index: 需要保存的货架序号；为空时只识别，不保存截图
         :return: True 表示有要推送的商品；run_mysteryshop 据此决定是否刷新商店。
         """
         flower = self.get_config().daily_alt_acc_config.isflower
         self.screenshot()
         items = self._scan_slots(flower)
+        # 先完成整页材料与价格识别，再截图；后续判定、通知和页面动作均不得提前。
+        if screenshot_index is not None:
+            self._save_mshop_page(screenshot_index)
         logger.info(f'神秘商店（{flower}花）扫描到 {len(items)} 件商品: '
                     f'{[(i.slot, i.goods.name, i.coin.name, i.price) for i in items]}')
         found = False

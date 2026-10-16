@@ -310,7 +310,7 @@ class DailyAltAccAssets:
 	# description 
 	I_SUMMON_UP_AWARD = RuleImage(roi_front=(480,187,329,43), roi_back=(389,134,571,223), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_award.png")
 	# description 
-	I_SUMMON_UP_GET_AWARD = RuleImage(roi_front=(421,474,16,19), roi_back=(290,462,228,37), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_get_award.png")
+	I_SUMMON_UP_GET_AWARD = RuleImage(roi_front=(465,493,22,30), roi_back=(279,474,233,89), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_get_award.png")
 	# description 
 	I_SUMMON_UP_AWARD_2 = RuleImage(roi_front=(480,187,329,43), roi_back=(389,134,571,223), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/summon_up/summon_up_award_2.png")
 	# description 
@@ -329,21 +329,21 @@ class DailyAltAccAssets:
 
 	# Image Rule Assets
 	# description 
-	I_TO_TREE = RuleImage(roi_front=(22,251,103,31), roi_back=(9,2,251,637), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/to_tree.png")
+	I_TO_TREE = RuleImage(roi_front=(73,341,52,33), roi_back=(9,2,251,637), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/to_tree.png")
 	# description 
 	I_TO_PLANTING = RuleImage(roi_front=(1176,627,53,62), roi_back=(1046,567,208,148), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/to_planting.png")
 	# description 
 	I_PLANTING = RuleImage(roi_front=(548,637,35,50), roi_back=(458,587,665,123), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/planting.png")
 	# description 
-	I_DONATE_2 = RuleImage(roi_front=(563,512,95,34), roi_back=(462,482,366,108), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/donate.png")
+	I_DONATE_2 = RuleImage(roi_front=(554,513,81,34), roi_back=(462,482,366,109), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/donate.png")
 	# description 
-	I_GET_FLOWER = RuleImage(roi_front=(313,633,53,33), roi_back=(270,612,167,92), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/get_flower.png")
+	I_GET_FLOWER = RuleImage(roi_front=(312,633,53,33), roi_back=(270,613,166,92), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/get_flower.png")
 	# description 
 	I_BUY_FLOWER = RuleImage(roi_front=(341,281,116,33), roi_back=(292,118,264,479), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/buy_flower.png")
 	# description 
 	I_TO_BUY = RuleImage(roi_front=(843,470,131,45), roi_back=(342,282,652,108), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/to_buy.png")
 	# description 
-	I_FLOWER = RuleImage(roi_front=(766,446,39,47), roi_back=(209,92,766,325), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/flower.png")
+	I_FLOWER = RuleImage(roi_front=(350,217,64,64), roi_back=(209,92,766,325), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/tree/flower.png")
 	# description 
 	I_CLICK_MAX = RuleImage(roi_front=(765,447,42,39), roi_back=(386,338,503,286), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/tree/click_max.png")
 	# description 
