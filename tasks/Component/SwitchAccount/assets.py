@@ -78,7 +78,7 @@ class SwitchAccountAssets:
 
 	# Ocr Rule Assets
 	# 登录页面服务器名称 
-	O_SA_LOGIN_FORM_SVR_NAME = RuleOcr(roi=(545,510,140,40), area=(545,510,140,40), mode="SINGLE", method="Default", keyword="", name="sa_login_form_svr_name")
+	O_SA_LOGIN_FORM_SVR_NAME = RuleOcr(roi=(495,510,190,38), area=(545,510,140,40), mode="SINGLE", method="Default", keyword="", name="sa_login_form_svr_name")
 	# 选择服务器界面 底部角色所属服务器名 列表 
 	O_SA_SELECT_SVR_SVR_LIST = RuleOcr(roi=(205,540,815,25), area=(205,540,815,25), mode="FULL", method="Default", keyword="", name="sa_select_svr_svr_list")
 	# 选择服务器界面 底部角色名 列表 

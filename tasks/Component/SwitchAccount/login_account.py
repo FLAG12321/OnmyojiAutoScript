@@ -1,5 +1,6 @@
 import math
 import time
+from difflib import SequenceMatcher
 
 import cv2
 import numpy as np
@@ -13,7 +14,7 @@ from module.logger import logger
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.character_match import (
     CHARACTER_LIST_EMPTY_OCR_DELAY, CHARACTER_LIST_EMPTY_OCR_LIMIT,
-    find_character_index, is_character_name,
+    find_character_index, is_character_name, normalize_name,
 )
 from tasks.Component.SwitchAccount.dropdown_state import is_account_dropdown_opened
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
@@ -568,8 +569,8 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
 
         @param accountInfo:
         @type accountInfo:
-        @return:    True    已核验账号并命中角色或区服，后续由 LoginHandler 进入游戏
-                    False   配置无效或角色、区服均未命中
+        @return:    True    已重新登录账号，并在登录页核验目标区服，后续由 LoginHandler 进入游戏
+                    False   配置无效、角色和区服均未命中，或登录页区服校验失败
         @rtype:bool
         """
         # 直接调用登录组件也必须校验，不能只依赖任务队列过滤空白配置。
@@ -620,24 +621,32 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                             return False
                     # selectAccount 后更新图片
                     self.screenshot()
-                self.ui_click(self.I_SA_ACCOUNT_LOGIN_BTN, stop=self.I_SA_LOGIN_FORM_APPLE, interval=3)
-                # 目标账号已核验且登录提交已到平台页，不再重复打开用户中心读取邮箱。
+                # 平台选择可能被跳过，提交后也允许直接回到无遮挡的游戏登录页。
+                # 登录页标志可能透过账号窗口可见，不能只凭背景标志提前结束等待。
+                while 1:
+                    self.screenshot()
+                    if self.appear(self.I_SA_LOGIN_FORM_APPLE):
+                        break
+                    if (self.appear(self.I_CHECK_LOGIN_FORM)
+                            and not self.appear(self.I_SA_NETEASE_GAME_LOGO)
+                            and not self.appear(self.I_SA_ACCOUNT_LOGIN_BTN)
+                            and not self.appear(self.I_SA_SWITCH_ACCOUNT_BTN)):
+                        break
+                    self.appear_then_click(self.I_SA_ACCOUNT_LOGIN_BTN, interval=3)
+                # 目标账号已核验且提交后到达平台页或登录页，后续继续处理平台和选角。
                 isAccountLogon = True
                 continue
             # 在用户中心界面
             if self.appear(self.I_SA_SWITCH_ACCOUNT_BTN):
-                # 如果当前已登录用户就是account
+                # 邮箱相同也要退出重登，避免沿用上一个角色的平台和区服。
                 ocrRes = self.O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT.ocr_single(self.device.image)
                 # 沿用原有邮箱预处理和别名规则，只读取既有账号区域，不扩大范围复读。
                 if (accountInfo.account is None) or accountInfo.account == "" or accountInfo.is_account_alias(ocrRes):
-                    logger.info("current is the account we want:ocr result %s", ocrRes)
-                    isAccountLogon = True
-                    self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_USER_CENTER_CLOSE_BTN, interval=1,
-                                                  stop=self.I_SA_SWITCH_ACCOUNT_BTN)
-                    continue
-                #
+                    logger.info("当前邮箱匹配目标，仍需退出重登并重新选择平台、区服：%s", ocrRes)
+                # 无论邮箱是否匹配，都回到账号登录页重新走登录流程。
                 if self.ui_click(self.I_SA_SWITCH_ACCOUNT_BTN, self.I_SA_NETEASE_GAME_LOGO):
                     isAccountLogon = False
+                    isCharacterSelected = False
                     continue
                 continue
             # 在游戏登录界面 不在用户中心 不在切换账号界面
@@ -650,16 +659,36 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     self.click(self.C_SA_LOGIN_FORM_USER_CENTER)
                     continue
 
-                # 已登录 查找对应角色
-                if not isCharacterSelected and self.switch_character(accountInfo.character, accountInfo.svr):
-                    isCharacterSelected = True
-                    continue
+                # 重新选角后必须核对登录页区服，列表消失本身不能视为选服成功。
+                if not self.switch_character(accountInfo.character, accountInfo.svr):
+                    break
+                # get_svr_name 会重新截图，使用 SA_LOGIN_FORM_SVR_NAME 的实际识别区服。
+                ocr_svr = self.get_svr_name()
+                current_svr = ''.join(normalize_name(ocr_svr or '').split())
+                target_svr = ''.join(normalize_name(accountInfo.svr).split())
+                svr_matcher = SequenceMatcher(None, current_svr, target_svr)
+                similarity = svr_matcher.ratio()
+                # 四字及以上区服容许一个字符误差且相似度至少 75%；短区服必须完整一致。
+                errors = sum(max(i2 - i1, j2 - j1)
+                             for tag, i1, i2, j1, j2 in svr_matcher.get_opcodes() if tag != 'equal')
+                server_matches = bool(current_svr) and (
+                    current_svr == target_svr
+                    or (len(target_svr) >= 4 and errors <= 1 and similarity >= 0.75)
+                )
+                if not server_matches:
+                    logger.warning("登录前区服不一致：识别=%r，目标=%r，相似度=%.2f，结束本次登录",
+                                   ocr_svr, accountInfo.svr, similarity)
+                    # 交回账号级重试，避免重复选角清空防卡死记录后无限循环。
+                    break
+                logger.info("登录前区服校验通过：识别=%r，目标=%r，相似度=%.2f",
+                            ocr_svr, accountInfo.svr, similarity)
+                isCharacterSelected = True
                 break
             continue
 
-        # 角色或区服已在同一帧内完成二选一匹配，不再另开列表重复 OCR。
+        # 账号已重新登录，且列表收起后的登录页区服已核验，才允许进入游戏。
         if isAccountLogon and isCharacterSelected:
-            # 这里只完成账号核验和角色定位，进入庭院后才由 SwitchAccount 报登录成功。
+            # 登录前账号和区服已核验，进入庭院后再由 SwitchAccount 报登录成功。
             # self.ui_click_until_disappear(self.C_SA_LOGIN_FORM_ENTER_GAME_BTN, stop=self.I_CHECK_LOGIN_FORM)
             logger.info("character %s-%s account:%s %s ready for game login", accountInfo.character, accountInfo.svr,
                         accountInfo.account,
