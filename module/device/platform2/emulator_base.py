@@ -36,6 +36,29 @@ def get_serial_pair(serial):
     return None, None
 
 
+def verify_mumu_alias(client, primary_serial: str, alias_serial: str, timeout=2) -> bool:
+    """只在同一 ADB 服务中确认两入口属于同一次 Android 启动后接受 MuMu 别名。"""
+    from adbutils.errors import AdbError
+
+    if not primary_serial or ':' not in primary_serial or not alias_serial.startswith('emulator-'):
+        return False
+    try:
+        # device_list 只返回在线设备；显式状态可供调用方和隔离测试再次排除 offline。
+        online = {device.serial for device in client.device_list()
+                  if getattr(device, 'status', 'device') == 'device'}
+        if primary_serial not in online or alias_serial not in online:
+            return False
+        command = 'cat /proc/sys/kernel/random/boot_id'
+        primary_id = client.device(primary_serial).shell(command, timeout=timeout).strip()
+        alias_id = client.device(alias_serial).shell(command, timeout=timeout).strip()
+        # shell 的相同报错文本不是启动标识，只接受内核 boot_id 的实际 UUID 格式。
+        valid_id = re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', primary_id)
+        return bool(valid_id) and primary_id == alias_id
+    except (AdbError, OSError, RuntimeError):
+        # 注册变化、shell 超时或查询失败都不能提供实例归属证明。
+        return False
+
+
 def remove_duplicated_path(paths):
     """
     Args:
@@ -79,6 +102,11 @@ class EmulatorInstanceBase:
         """
         return EmulatorBase(self.path)
 
+    @cached_property
+    def mumu_serials(self) -> t.Tuple[str, ...]:
+        """平台未提供 MuMu 端口元数据时，只保留现有 TCP 主入口。"""
+        return (self.serial,) if ':' in self.serial else ()
+
     def __eq__(self, other):
         if isinstance(other, str) and self.type == other:
             return True
@@ -106,11 +134,11 @@ class EmulatorInstanceBase:
         Returns:
             int: Instance ID, or None if this is not a MuMu 12 instance
         """
-        # 版本号不固定（安卓 12 / 安卓 15 等），只取末尾的数字作为实例 id
-        res = re.search(r'MuMuPlayer(?:Global)?-\d+\.\d+-(\d+)', self.name)
+        # 版本号不固定（安卓 12 / 安卓 15 等），完整实例名末尾的数字才是实例 id。
+        res = re.fullmatch(r'MuMuPlayer(?:Global)?-\d+\.\d+-(\d+)', self.name)
         if res:
             return int(res.group(1))
-        res = re.search(r'YXArkNights-\d+\.\d+-(\d+)', self.name)
+        res = re.fullmatch(r'YXArkNights-\d+\.\d+-(\d+)', self.name)
         if res:
             return int(res.group(1))
 

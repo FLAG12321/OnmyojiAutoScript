@@ -11,6 +11,8 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from datetime import datetime
 from filelock import Timeout
+from pydantic import BaseModel
+from module.device.emulator_scan import EmulatorSelection, scan_emulators
 from module.config.config_generation import (
     ConfigGenerationError,
     ConfigIdentityConflictError,
@@ -49,6 +51,13 @@ from tasks.Component.config_base import TimeDelta
 script_app = APIRouter()
 
 
+class EmulatorSettingsRequest(BaseModel):
+    """确认预览后提交设备选择，同时校验预览时的配置值与身份。"""
+    emulator: EmulatorSelection
+    expected_device: dict
+    expected_generation: str
+
+
 @script_app.get('/test')
 async def script_test():
     return 'success'
@@ -83,6 +92,57 @@ async def config_copy(file: str, template: str = 'template'):
     except (ConfigGenerationError, ConfigValidationError, OSError) as e:
         # 身份损坏、源配置损坏或文件系统失败均属于服务端错误。
         raise HTTPException(status_code=500, detail=f'Config copy failed: {e}')
+
+
+@script_app.get('/emulators')
+def emulators():
+    """扫描在工作线程执行，避免官方控制台查询阻塞服务事件循环。"""
+    return scan_emulators()
+
+
+@script_app.get('/{script_name}/emulator')
+async def emulator_settings(script_name: str):
+    """读取磁盘中的设备设置，供前端逐项展示原值与选中模拟器的新值。"""
+    try:
+        loaded = mm.store.load(script_name)
+        return {'device': loaded.canonical['script']['device'], 'generation': loaded.generation}
+    except ConfigIdentityNameError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (ConfigIdentityNotFoundError, ConfigNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (Timeout, TimeoutError) as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except (ConfigGenerationError, StoreConfigJsonError, ConfigValidationError, OSError) as e:
+        raise HTTPException(status_code=500, detail=f'Config read failed: {e}')
+
+
+@script_app.put('/{script_name}/emulator')
+async def save_emulator_settings(script_name: str, payload: EmulatorSettingsRequest):
+    """只合并选中设备的五项字段，一次保存并拒绝覆盖预览之后的改动。"""
+    device = copy.deepcopy(payload.expected_device)
+    device.update(payload.emulator.model_dump())
+    try:
+        # 复用 Store 的子树事务；身份与旧值都一致才落盘，其余设备设置保持原值。
+        result = mm.store.replace_subtree(
+            script_name, ('script', 'device'), payload.expected_device,
+            device, payload.expected_generation,
+        )
+    except ConfigIdentityNameError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (ConfigIdentityNotFoundError, ConfigNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConfigValidationError as e:
+        raise HTTPException(status_code=400, detail=f'Emulator settings invalid: {e}')
+    except ConfigGenerationMismatchError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except (Timeout, TimeoutError) as e:
+        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+    except (ConfigGenerationError, StoreConfigJsonError, OSError) as e:
+        raise HTTPException(status_code=500, detail=f'Config write failed: {e}')
+
+    # 与手动修改参数相同，成功后在锁外通知实例，沿用设备设置的重启生效规则。
+    mm.notify_config_changed(script_name, result)
+    return result.success
 
 @script_app.get('/config_new_name')
 async def config_new_name():

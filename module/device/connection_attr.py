@@ -69,6 +69,8 @@ class ConnectionAttr:
         # self.serial = str(self.config.Emulator_Serial)
         self.serial = str(self.config.script.device.serial)
         self.serial_check()
+        # 保存归一化后的首选入口；同实例运行期回退只修改 serial，不改写用户配置。
+        self.preferred_serial = self.serial
         self.config.DEVICE_OVER_HTTP = self.is_over_http
 
     def serial_check(self):
@@ -146,6 +148,11 @@ class ConnectionAttr:
     @cached_property
     def is_network_device(self):
         return bool(re.match(r'\d+\.\d+\.\d+\.\d+:\d+', self.serial))
+
+    @staticmethod
+    def is_adb_tcp_serial(serial):
+        """只有 host:port 才使用 TCP connect/disconnect，模拟器别名等待 ADB 注册。"""
+        return bool(re.fullmatch(r'(?:\[[^\]]+\]|[^:/\s]+):\d+', str(serial)))
 
     @cached_property
     def is_over_http(self):

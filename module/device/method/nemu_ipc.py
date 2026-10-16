@@ -503,7 +503,9 @@ class NemuIpc():
         # Try existing settings first
         if self.config.script.device.emulatorinfo_path:
             folder = str(Path(self.config.script.device.emulatorinfo_path).parent.parent)
-            index = serial_to_id(self.serial)
+            # 明确实例名优先于 ADB 入口，别名或同实例主端口回退不能改变 IPC 实例编号。
+            instance = self.emulator_instance
+            index = instance.MuMuPlayer12_id if instance is not None else serial_to_id(self.serial)
             if index is not None:
                 max_retries = 10
                 last_error = None

@@ -9,9 +9,11 @@ from adbutils import AdbDevice, AdbClient
 from deploy.utils import DataProcessInfo
 from module.base.decorator import run_once
 from module.base.timer import Timer
-from module.device.handle import Handle
+from module.device.handle import Handle, resolve_emulator_handle
+from module.device.connection_attr import ConnectionAttr
 from module.device.platform2.platform_base import PlatformBase
 from module.device.platform2.emulator_windows import Emulator, EmulatorInstance, EmulatorManager
+from module.device.platform2.mumu_process import query_mumu_processes
 from module.logger import logger
 
 import ctypes
@@ -306,12 +308,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         return False
 
     def _is_configured_handle_alive(self) -> bool:
-        """
-        检查配置里的 Handle 是否对应一个仍存在的窗口。
-
-        多开模拟器通常共用同一个 exe 进程名，仅靠进程名会把其他实例误判为当前实例；
-        用户为每个实例配置唯一 Handle 时，优先用窗口句柄/标题判断目标实例是否存在。
-        """
+        """窗口证据也核对 MuMu 实例归属，不以任意标题或复用句柄判活。"""
         handle = getattr(self.config.script.device, 'handle', '')
         if not handle or handle == 'auto':
             return None
@@ -320,29 +317,22 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         if not handle_text:
             return None
 
-        try:
-            hwnd = int(handle_text)
-            alive = bool(ctypes.windll.user32.IsWindow(hwnd))
-            logger.info(f'Configured handle num {hwnd} alive: {alive}')
-            return alive
-        except ValueError:
-            pass
-
-        hwnd = find_hwnd_by_name(handle_text)
-        alive = hwnd is not None and bool(ctypes.windll.user32.IsWindow(hwnd))
-        logger.info(f'Configured handle title "{handle_text}" matched hwnd={hwnd}, alive: {alive}')
-        return alive
+        # 与初始化、启动窗口检查和最小化共用同一个解析器。
+        hwnd = resolve_emulator_handle(handle_text, self.emulator_instance)
+        return bool(hwnd)
 
     def _is_emulator_process_alive(self) -> bool:
-        """
-        Generic check: is the target emulator instance still running?
-        Prefer configured Handle matching, then fall back to process name matching.
-        """
+        """MuMu 使用精确实例进程判断，其余模拟器保留既有通用探测。"""
+        instance = self.emulator_instance
+        if instance is not None and instance == Emulator.MuMuPlayer12:
+            targets, error = query_mumu_processes(instance)
+            if error:
+                raise RuntimeError(f'MuMu {instance.name} process query unavailable: {error}')
+            return bool(targets)
         handle_alive = self._is_configured_handle_alive()
         if handle_alive is not None:
             return handle_alive
 
-        instance = self.emulator_instance
         if instance is None:
             return False
 
@@ -375,16 +365,36 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             return None
         exe = instance.emulator.path
         console = Emulator.single_to_console(exe)
-        cmd = f'"{console}" info -v {instance.MuMuPlayer12_id}'
+        # 参数独立传入，失败时保留官方原始输出供启动故障定位。
+        cmd = [console, 'info', '-v', str(instance.MuMuPlayer12_id)]
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=10, shell=True
+                cmd, capture_output=True, text=True, timeout=10, shell=False,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if result.returncode == 0 and result.stdout.strip():
-                return json.loads(result.stdout.strip())
-        except Exception:
-            pass
+                state = json.loads(result.stdout.strip())
+                logger.info(f'MuMu {instance.name} raw state: {state!r}')
+                return state if isinstance(state, dict) else None
+            logger.warning(f'MuMu {instance.name} state query failed: returncode={result.returncode}, '
+                           f'stdout={result.stdout!r}, stderr={result.stderr!r}')
+        except Exception as error:
+            logger.warning(f'MuMu {instance.name} state query unavailable: {error}')
         return None
+
+    def _log_startup_evidence(self):
+        """启动失败时记录当前会话的精确进程、主/备用入口和 ADB 注册状态。"""
+        instance = self.emulator_instance
+        if instance is None or instance != Emulator.MuMuPlayer12 or not getattr(instance, 'name', ''):
+            return
+        targets, error = query_mumu_processes(instance)
+        processes = [(proc.pid, proc.info.get('cmdline')) for proc in targets]
+        logger.warning(f'MuMu startup evidence: instance={instance.name}, processes={processes!r}, '
+                       f'query_error={error!r}, serials={instance.mumu_serials!r}, actual={self.serial}')
+        try:
+            logger.warning(f'MuMu startup ADB devices: {list(self.list_device())!r}')
+        except Exception as error:
+            logger.warning(f'MuMu startup ADB query unavailable: {error}')
 
     def emulator_start_watch(self):
         """
@@ -443,6 +453,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             mumu_state_stuck = False
             if timeout.reached():
                 logger.warning('Emulator start timeout')
+                self._log_startup_evidence()
                 return False
 
             # Periodically check emulator state via MuMuManager
@@ -457,6 +468,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                             logger.info(f'Emulator process not started yet (player_state={player_state}), keep waiting')
                             continue
                         logger.warning(f'Emulator process not started (player_state={player_state}), aborting watch')
+                        self._log_startup_evidence()
                         return False
                     if adb_connected and player_state != 'start_finished':
                         if not stuck_grace.started():
@@ -476,20 +488,24 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                             packages_timeout.start()
                             logger.info(f'Emulator state reached start_finished, packages_timeout started ({packages_timeout.limit}s)')
 
-            # Detect new emulator window and restore focus
+            # 仅把已绑定实例的窗口当作新窗口，不能借用当前获得焦点的其他应用。
             if current_window != 0 and new_window == 0:
-                new_window = get_focused_window()
-                if current_window != new_window and not self.config.script.device.emulator_window_minimize and not self.config.script.device.run_background_only:
+                new_window = resolve_emulator_handle(self.config.script.device.handle, self.emulator_instance)
+                if new_window and current_window != new_window and not self.config.script.device.emulator_window_minimize and not self.config.script.device.run_background_only:
                     logger.info(f'New window showing up: {new_window}, focus back')
                     set_focus_window(current_window)
-                else:
-                    new_window = 0
 
             logger.info(f'Waiting for emulator, remain[{timeout.remain():.1f}s]')
 
             # Step 1: Check ADB device status
             try:
-                devices = self.list_device().select(serial=serial)
+                all_devices = self.list_device()
+                # Connection 和启动监视使用同一个运行期入口，首选配置始终保留。
+                selector = getattr(self, '_select_mumu_serial', None)
+                if selector is not None and selector(all_devices, connect_primary=True):
+                    serial = self.serial
+                    all_devices = self.list_device()
+                devices = all_devices.select(serial=serial)
             except Exception as e:
                 logger.info(f'list_device error (transient): {e}')
                 continue
@@ -498,11 +514,12 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                 if mumu_state_stuck:
                     logger.warning('Emulator stuck and ADB device not visible, aborting watch')
                     return False
-                # Device not visible yet, try adb connect
-                try:
-                    self.adb_client.connect(serial)
-                except Exception:
-                    pass
+                # 原生别名等待注册；TCP 入口才尝试连接。
+                if ConnectionAttr.is_adb_tcp_serial(serial):
+                    try:
+                        self.adb_client.connect(serial)
+                    except Exception:
+                        pass
                 continue
 
             device: AdbDeviceWithStatus = devices.first_or_none()
@@ -510,11 +527,13 @@ class PlatformWindows(PlatformBase, EmulatorManager):
                 if mumu_state_stuck:
                     logger.warning('Emulator stuck and ADB device is offline, aborting watch')
                     return False
-                self.adb_client.disconnect(serial)
-                try:
-                    self.adb_client.connect(serial)
-                except Exception:
-                    pass
+                # 离线原生别名不能用 TCP disconnect/connect 恢复。
+                if ConnectionAttr.is_adb_tcp_serial(serial):
+                    self.adb_client.disconnect(serial)
+                    try:
+                        self.adb_client.connect(serial)
+                    except Exception:
+                        pass
                 continue
             if device.status != 'device':
                 if mumu_state_stuck:
@@ -590,9 +609,11 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             sleep_time = 3
             logger.info(f'Waiting {sleep_time} seconds before minimizing window')
             Timer(sleep_time).wait()
-            target_window_name = self.config.script.device.handle  # 在这里输入你的具体窗口名称
-            minimize_by_name(target_window_name)
-            logger.info(f'最小化窗口: {target_window_name}')
+            # 只最小化同一解析器确认的目标窗口，短标题不能影响其他实例。
+            hwnd = resolve_emulator_handle(self.config.script.device.handle, self.emulator_instance)
+            if hwnd:
+                minimize_window(hwnd)
+                logger.info(f'最小化窗口: hwnd={hwnd}, title={get_window_title(hwnd)!r}')
             # if current_window:
             #     logger.info(f'De-flash current window: {current_window}')
             #     flash_window(current_window, flash=False)
@@ -612,7 +633,10 @@ class PlatformWindows(PlatformBase, EmulatorManager):
             if self.emulator_start_watch():
                 return True
             logger.warning(f'Emulator start watch failed (attempt {trial + 1}/3)')
-            self.reset.execute()
+            # 清理无法确认成功时仍阻止下一次启动，避免同实例重复拉起。
+            if not self.reset.execute():
+                logger.error('Emulator reset failed, abort further launch attempts')
+                return False
 
         logger.error('Failed to start emulator after 3 attempts')
         return False

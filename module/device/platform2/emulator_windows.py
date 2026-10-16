@@ -68,6 +68,24 @@ class EmulatorInstance(EmulatorInstanceBase):
         """
         return Emulator(self.path)
 
+    @cached_property
+    def mumu_serials(self) -> t.Tuple[str, ...]:
+        """MuMu 主 TCP 入口及 EX 别名候选；候选是否在线由连接或扫描阶段确认。"""
+        if self.type != Emulator.MuMuPlayer12:
+            return super().mumu_serials
+        serials = ()
+        try:
+            # 显式绑定的实例名确定配置目录，不能用 serial 端口反推另一个实例。
+            for file in self.emulator.list_folder(f'../vms/{self.name}', ext='.nemu'):
+                serials = Emulator.mumu_file_to_serials(file)
+                if serials:
+                    break
+        except OSError:
+            pass  # 本机不存在配置时不能猜测 EX 端口。
+        primary = self.serial if ':' in self.serial else (serials[0] if serials else '')
+        aliases = tuple(serial for serial in serials if serial.startswith('emulator-'))
+        return (primary, *aliases) if primary else ()
+
 
 class Emulator(EmulatorBase):
     @classmethod
@@ -206,6 +224,39 @@ class Emulator(EmulatorBase):
         except FileNotFoundError:
             return ''
 
+    @staticmethod
+    def mumu_file_to_serials(file: str) -> t.Tuple[str, ...]:
+        """MuMu 专用主/备用转发解析；既有通用解析函数的返回语义保持不变。"""
+        primary = Emulator.vbox_file_to_serial(file)
+        try:
+            with open(file, 'r', encoding='utf-8', errors='ignore') as stream:
+                content = stream.read()
+        except OSError:
+            return (primary,) if primary else ()
+        aliases = []
+        main, named_records = '', False
+        for forwarding in re.finditer(r'<Forwarding\b([^>]*)>', content):
+            attributes = dict(re.findall(r'(\w+)="([^"]*)"', forwarding.group(1)))
+            name = attributes.get('name')
+            if name in {'ADB_PORT', 'ADB_PORT_EX', 'ADB_PORT_OLD'}:
+                named_records = True
+            # OLD 在多个实例重复，不能成为自动绑定入口；EX 必须是有效奇数 ADB 端口。
+            if name not in {'ADB_PORT', 'ADB_PORT_EX'} or attributes.get('guestport') != '5555':
+                continue
+            try:
+                port = int(attributes.get('hostport', ''))
+            except ValueError:
+                continue
+            if not 0 < port <= 65535:
+                continue
+            if name == 'ADB_PORT':
+                main = f'{attributes.get("hostip") or "127.0.0.1"}:{port}'
+            elif port > 1 and port % 2:
+                aliases.append(f'emulator-{port - 1}')
+        # 无专用字段的旧版记录沿用原解析；不能把 EX 或 OLD 的首条记录当作主端口。
+        primary = main if named_records else primary
+        return tuple(dict.fromkeys([primary, *aliases])) if primary else ()
+
     def iter_instances(self):
         """
         Yields:
@@ -319,7 +370,8 @@ class Emulator(EmulatorBase):
                             name=name,
                             path=self.path,
                         )
-                        if instance.MuMuPlayer12_id:
+                        # 编号 0 也是有效主实例，不能因真假判断而漏掉。
+                        if instance.MuMuPlayer12_id is not None:
                             instance.serial = f'127.0.0.1:{16384 + 32 * instance.MuMuPlayer12_id}'
                             yield instance
         elif self == Emulator.MEmuPlayer:

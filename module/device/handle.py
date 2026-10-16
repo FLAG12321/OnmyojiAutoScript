@@ -234,6 +234,86 @@ def handle_title2num(title: str) -> int:
     return FindWindow(None, title)
 
 
+class HandleAmbiguousError(RequestHumanTakeover):
+    """候选窗口不唯一，不能任选一个用于截图或控制。"""
+
+
+class HandleQueryError(RequestHumanTakeover):
+    """窗口或所属进程无法查询，不能把未知结果当作目标已退出。"""
+
+
+def resolve_emulator_handle(handle, instance=None) -> int:
+    """按配置和 MuMu 实例身份定位窗口；未找到返回 0，查询失败或歧义抛明确异常。"""
+    import pywintypes
+    from module.device.platform2.emulator_windows import Emulator
+    from module.device.platform2.mumu_process import mumu_pid_matches
+
+    text = str(handle or '').strip()
+    if not text:
+        return 0
+    bound_mumu = (instance is not None and instance == Emulator.MuMuPlayer12
+                  and bool(getattr(instance, 'name', '')))
+
+    def belongs(hwnd):
+        # 数字句柄也可能被系统复用；每次都读取当前窗口 PID 并核对实例参数。
+        if not bound_mumu:
+            return True
+        matched, reason = mumu_pid_matches(instance, GetWindowThreadProcessId(hwnd)[1])
+        if matched is None:
+            raise HandleQueryError(reason)
+        return matched
+
+    numeric = text.isdecimal()
+    if numeric:
+        hwnd = int(text)
+        if IsWindow(hwnd) and belongs(hwnd):
+            return hwnd
+        if not bound_mumu:
+            return 0
+        # 明确实例下可从陈旧数字句柄恢复；后续只接受属于该实例的新窗口。
+        logger.info(f'MuMu {instance.name}: configured hwnd={hwnd} expired or belongs to another instance')
+
+    candidates = []
+
+    def collect(hwnd, _):
+        try:
+            if not IsWindow(hwnd):
+                return True
+            title = GetWindowText(hwnd)
+            if not title:
+                return True
+            if not bound_mumu and not IsWindowVisible(hwnd):
+                return True
+            if text == 'auto' or numeric:
+                # 自动选择没有实例身份时仅接受模拟器标题；多候选由下方拒绝。
+                named = bound_mumu or any(item in title for item in Handle.emulator_list)
+            else:
+                named = title == text or (bound_mumu and text.casefold() in title.casefold())
+            if named and belongs(hwnd):
+                candidates.append((hwnd, title))
+        except (OSError, pywintypes.error) as error:
+            if IsWindow(hwnd):
+                raise HandleQueryError(f'Cannot query hwnd={hwnd}: {error}') from error
+        return True
+
+    EnumWindows(collect, None)
+    # 标题精确匹配优先；短标题仅在实例归属已经确认后用于兼容旧配置。
+    exact = [row for row in candidates if row[1] == text]
+    candidates = exact or candidates
+    if numeric or text == 'auto':
+        # 优先主窗口的可见候选；全部隐藏时保留后台启动兼容，不任选隐藏辅助窗口。
+        visible = [row for row in candidates if IsWindowVisible(row[0])]
+        candidates = visible or candidates
+    if len(candidates) > 1:
+        raise HandleAmbiguousError(f'Handle {text!r} matches multiple windows: {candidates!r}')
+    if candidates:
+        hwnd, title = candidates[0]
+        logger.info(f'Configured handle {text!r}: hwnd={hwnd}, title={title!r}, '
+                    f'instance={getattr(instance, "name", None)!r}')
+        return hwnd
+    return 0
+
+
 def handle_num2title(num: int) -> str:
     """
     通过句柄号返回窗口的标题，如果传入句柄号不合法则返回None
@@ -396,29 +476,19 @@ class Handle:
         self.root_handle_num = 0
         self.root_handle = self.config.script.device.handle
         logger.info(f'Handle is {self.root_handle}')
-        if self.root_handle == "auto":
-            logger.info('Handle is auto. oas will find window emulator')
-            window_list = Handle.all_windows()
-            self.root_handle_title = self.auto_handle_title(window_list)
-            if not self.root_handle_title:
-                logger.error('Auto handle failed, no emulator window found')
-                raise EmulatorNotRunningError
-            self.root_handle_num = handle_title2num(self.root_handle_title)
-        if isinstance(self.root_handle, str):
-            try:
-                self.root_handle_num = int(self.root_handle)
-                logger.info('Handle is a number, using it as root handle num')
-                if is_handle_valid(self.root_handle_num):
-                    logger.info(f'Handle number {self.root_handle_num} is valid')
-                    self.root_handle_title = handle_num2title(self.root_handle_num)
-            except ValueError:
-                logger.info('Handle is a string, looking up window by title')
-                if handle_title2num(self.root_handle) != 0:
-                    self.root_handle_num = handle_title2num(self.root_handle)
-                    self.root_handle_title = self.root_handle
-                else:
-                    logger.error(f'Handle title "{self.root_handle}" not found, emulator may not be running')
-                    raise EmulatorNotRunningError
+        # 明确配置的 MuMu 实例在冷启动和窗口重建后仍是唯一的绑定依据。
+        instance = getattr(self, 'emulator_instance', None)
+        device_config = self.config.script.device
+        if instance is None and getattr(device_config, 'emulatorinfo_type', '') == 'MuMuPlayer12':
+            from module.device.platform2.emulator_windows import EmulatorInstance
+            name = getattr(device_config, 'emulatorinfo_name', '')
+            path = getattr(device_config, 'emulatorinfo_path', '')
+            if name and path:
+                instance = EmulatorInstance(serial=device_config.serial, name=name, path=path)
+        self.root_handle_num = resolve_emulator_handle(self.root_handle, instance)
+        if not self.root_handle_num:
+            raise EmulatorNotRunningError(f'Configured emulator window {self.root_handle!r} not found')
+        self.root_handle_title = handle_num2title(self.root_handle_num)
         logger.info(f'The root handle title is {self.root_handle_title} and num is {self.root_handle_num}')
 
         # 获取句柄树（加重试，等待子窗口渲染就绪）

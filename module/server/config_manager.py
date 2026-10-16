@@ -484,7 +484,8 @@ class ConfigManager:
         file = self.validate_config_name(file, allow_template=False)
         template = self.validate_config_name(template, allow_template=True)
         canonical = self.store.load(template).canonical
-        self.store.create_from_template(file, copy.deepcopy(canonical))
+        raw = copy.deepcopy(canonical)
+        self.store.create_from_template(file, raw)
         logger.info(f'copy {template} to {file}')
 
     def generate_script_name(self) -> str:

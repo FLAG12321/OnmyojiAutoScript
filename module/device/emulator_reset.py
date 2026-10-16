@@ -20,6 +20,7 @@ import psutil
 
 from module.base.decorator import del_cached_property
 from module.device.platform2.emulator_windows import Emulator
+from module.device.platform2.mumu_process import mumu_process_matches, query_mumu_processes
 from module.logger import logger
 
 if TYPE_CHECKING:
@@ -84,6 +85,10 @@ class FullReset:
         logger.info('FullReset Layer 2: ADB')
         try:
             serial = self.device.serial
+            # emulator-数字是 ADB 注册别名，不向它发送 TCP disconnect。
+            if serial.startswith('emulator-') and serial[len('emulator-'):].isdigit():
+                logger.info(f'  - adb emulator alias {serial}, skip TCP disconnect')
+                return
             self.device.adb_client.disconnect(serial)
             logger.info(f'  - adb disconnected {serial}')
         except Exception as e:
@@ -99,6 +104,13 @@ class FullReset:
         if instance is None:
             return []
 
+        if instance == Emulator.MuMuPlayer12:
+            # 查询失败必须保留未知状态，不能把权限不足伪装为目标已退出。
+            targets, error = query_mumu_processes(instance)
+            if error:
+                raise RuntimeError(f'instance={instance.name} process query unavailable: {error}')
+            return targets
+
         official_pids = self._official_target_pids()
         if official_pids:
             if instance == Emulator.NoxPlayerFamily:
@@ -106,24 +118,8 @@ class FullReset:
                 return self._processes_by_pids(official_pids, allowed_names={'nox.exe', 'noxvmhandle.exe'})
             return self._processes_by_pids(official_pids)
 
-        target_name = getattr(instance, 'name', '') or ''
-        target_id = getattr(instance, 'MuMuPlayer12_id', None)
-
-        targets = []
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                name = proc.info['name'] or ''
-                cmdline = proc.info.get('cmdline') or []
-                if instance == Emulator.MuMuPlayer12:
-                    if name == 'MuMuVMMHeadless.exe' and target_name and self._cmdline_has_option(cmdline, '--comment', target_name):
-                        targets.append(proc)
-                    elif name == 'MuMuNxDevice.exe' and target_id is not None and self._cmdline_has_option(cmdline, '-v', str(target_id)):
-                        targets.append(proc)
-                    elif name in {'MuMuPlayer.exe', 'MuMuNxMain.exe'} and target_id is not None and self._cmdline_has_option(cmdline, '-v', str(target_id)):
-                        targets.append(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        return targets
+        # 其他模拟器保留原有官方 PID 查询行为，不按共用 exe 名扩大发送范围。
+        return []
 
     def _processes_by_pids(self, pids: set[int], allowed_names: set[str] | None = None) -> list[psutil.Process]:
         """按官方控制台返回的 PID 构造进程对象，可按进程名白名单降低误杀风险。"""
@@ -294,22 +290,18 @@ class FullReset:
             break
         return pids
 
-    @staticmethod
-    def _cmdline_has_option(cmdline: list[str], option: str, value: str) -> bool:
-        """检查命令行是否包含成对参数，避免正则误伤其他实例。"""
-        for index, token in enumerate(cmdline[:-1]):
-            if token == option and cmdline[index + 1] == value:
-                return True
-        return False
-
-    def _process_alive(self) -> bool:
-        """优先按目标进程匹配检测，兼容旧 health 检测作为兜底。"""
-        if self._target_processes():
-            return True
+    def _process_alive(self) -> bool | None:
+        """MuMu 精确枚举返回存活/退出/未知，其他模拟器保留 health 兜底。"""
         try:
+            if self._target_processes():
+                return True
+            if self.device.emulator_instance == Emulator.MuMuPlayer12:
+                return False
             ok, _reason = self.device.health._process_check()
         except Exception as e:
-            logger.warning(f'    进程健康检查失败，按已退出处理: {e}')
+            logger.warning(f'    进程状态无法查询: {e}')
+            if self.device.emulator_instance == Emulator.MuMuPlayer12:
+                return None
             return False
         return ok
 
@@ -317,23 +309,47 @@ class FullReset:
         """轮询等待目标进程消失，每 0.5s 查一次。"""
         deadline = time.time() + timeout
         while time.time() < deadline:
-            if not self._target_processes():
-                return True
+            try:
+                if not self._target_processes():
+                    return True
+            except Exception as e:
+                logger.warning(f'    等待退出时无法查询目标进程: {e}')
+                return False
             time.sleep(0.5)
-        return not self._target_processes()
+        try:
+            return not self._target_processes()
+        except Exception as e:
+            logger.warning(f'    等待退出时无法查询目标进程: {e}')
+            return False
+
+    def _verify_kill_target(self, proc: psutil.Process) -> bool:
+        """发送强杀前复查当前参数及 PID 存活，防止枚举后 PID 被复用。"""
+        instance = self.device.emulator_instance
+        if instance != Emulator.MuMuPlayer12:
+            return True
+        if not proc.is_running():
+            return False
+        return mumu_process_matches(instance, proc.name(), proc.cmdline())
 
     def _teardown_layer1_process_psutil_kill(self) -> bool:
         """档 1: psutil 精确强杀目标实例进程。"""
         logger.info('  Kill tier 1: psutil precise kill')
-        targets = self._target_processes()
+        try:
+            targets = self._target_processes()
+        except Exception as e:
+            logger.warning(f'    强杀前无法查询目标进程: {e}')
+            return False
         if not targets:
             logger.warning('    no matching process found')
-            return not self._process_alive()
+            return self._process_alive() is False
 
         for proc in targets:
             try:
+                if not self._verify_kill_target(proc):
+                    logger.warning(f'    skipped pid {proc.pid}: current instance identity changed')
+                    continue
                 proc.kill()
-                logger.info(f'    killed pid {proc.pid}')
+                logger.info(f'    killed pid {proc.pid}, instance={self.device.emulator_instance.name}')
             except psutil.NoSuchProcess:
                 pass
             except Exception as e:
@@ -344,18 +360,30 @@ class FullReset:
     def _teardown_layer1_process_taskkill(self) -> bool:
         """档 2: Windows taskkill /F /PID 兜底强杀。"""
         logger.info('  Kill tier 2: taskkill /F /PID')
-        targets = self._target_processes()
+        try:
+            targets = self._target_processes()
+        except Exception as e:
+            logger.warning(f'    强杀前无法查询目标进程: {e}')
+            return False
         if not targets:
             logger.warning('    no matching process found')
-            return not self._process_alive()
+            return self._process_alive() is False
 
         for proc in targets:
             try:
-                subprocess.run(
+                if not self._verify_kill_target(proc):
+                    logger.warning(f'    skipped pid {proc.pid}: current instance identity changed')
+                    continue
+                result = subprocess.run(
                     ['taskkill', '/F', '/PID', str(proc.pid)],
                     capture_output=True, timeout=5, shell=False
                 )
-                logger.info(f'    taskkill /F /PID {proc.pid} issued')
+                # 退出确认仍由精确枚举负责，命令失败则记录真实输出而非只记已发送。
+                if result.returncode:
+                    logger.warning(f'    taskkill pid={proc.pid} failed: code={result.returncode}, '
+                                   f'stdout={result.stdout!r}, stderr={result.stderr!r}')
+                else:
+                    logger.info(f'    taskkill /F /PID {proc.pid} issued')
             except Exception as e:
                 logger.warning(f'    taskkill pid {proc.pid} failed: {e}')
 
@@ -365,9 +393,14 @@ class FullReset:
         """Layer 1: 恢复路径只做强杀，不调用模拟器 stop。"""
         logger.info('FullReset Layer 1: process')
 
-        if not self._process_alive():
+        process_alive = self._process_alive()
+        if process_alive is False:
             logger.info('  - process already dead, skip')
             return True
+        if process_alive is None:
+            # 未知状态维持启动保护，日志给出查询失败而非虚假的清理成功。
+            logger.error('FullReset Layer 1: process query unavailable, abort cleanup')
+            return False
 
         tiers = [
             ('psutil_kill', self._teardown_layer1_process_psutil_kill),

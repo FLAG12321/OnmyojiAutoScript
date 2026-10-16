@@ -16,6 +16,7 @@ from adbutils.errors import AdbError
 from module.base.decorator import Config, cached_property, del_cached_property
 from module.base.utils import ensure_time
 from module.device.connection_attr import ConnectionAttr
+from module.device.platform2.emulator_base import EmulatorBase, verify_mumu_alias
 from module.device.method.utils import (
     RETRY_TRIES, remove_shell_warning, retry_sleep,
     handle_adb_error, PackageNotInstalled,
@@ -625,6 +626,9 @@ class Connection(ConnectionAttr):
         """
         # Disconnect offline device before connecting
         for device in self.list_device():
+            # 只处理本次入口的状态，其他实例离线不能触发当前实例断开。
+            if device.serial != serial:
+                continue
             if device.status == 'offline':
                 logger.warning(f'Device {serial} is offline, disconnect it before connecting')
                 self.adb_disconnect(serial)
@@ -635,12 +639,9 @@ class Connection(ConnectionAttr):
             else:
                 logger.warning(f'Device {serial} is having an unknown status: {device.status}')
 
-        # Skip for emulator-5554
-        if 'emulator-' in serial:
-            logger.info(f'"{serial}" is a `emulator-*` serial, skip adb connect')
-            return True
-        if re.match(r'^[a-zA-Z0-9]+$', serial):
-            logger.info(f'"{serial}" seems to be a Android serial, skip adb connect')
+        # 原生模拟器别名/USB 标识由 ADB 注册，只有 host:port 才发送 TCP connect。
+        if not ConnectionAttr.is_adb_tcp_serial(serial):
+            logger.info(f'"{serial}" is a native ADB serial, skip TCP connect')
             return True
 
         # Try to connect
@@ -689,15 +690,70 @@ class Connection(ConnectionAttr):
         except Exception:
             return False
 
+    def _set_runtime_serial(self, serial):
+        """统一切换同实例的实际入口，使 ADB、u2 和输入/截图缓存重新绑定。"""
+        if serial == self.serial:
+            return
+        old_serial = self.serial
+        # 停止仍引用旧 ADB 入口的截图连接，不能让消费者继续持有旧 transport。
+        if getattr(self, '_scrcpy_alive', False):
+            self._scrcpy_server_stop()
+        for prop in ('hermit_session', 'droidcast_session'):
+            session = self.__dict__.get(prop)
+            if session is not None:
+                session.close()
+        for prop in ('adb', 'u2', 'is_network_device', 'is_emulator',
+                     'hermit_session', 'droidcast_session', 'minitouch_builder',
+                     'reverse_server'):
+            del_cached_property(self, prop)
+        self.serial = serial
+        logger.info(f'MuMu runtime serial: {old_serial} -> {serial}')
+
+    def _select_mumu_serial(self, devices=None, connect_primary=False):
+        """首选 MuMu 别名仅在已绑定实例确认后使用，否则回退该实例真实主端口。"""
+        preferred = getattr(self, 'preferred_serial', self.config.script.device.serial)
+        if not re.fullmatch(r'emulator-\d+', str(preferred)):
+            return False
+        instance = getattr(self, 'emulator_instance', None)
+        if instance is None or instance != EmulatorBase.MuMuPlayer12:
+            return False
+        serials = instance.mumu_serials
+        if not serials or not ConnectionAttr.is_adb_tcp_serial(serials[0]):
+            # 无真实端口记录时不能按编号猜测，防止误连其他实例后继续操作。
+            raise RequestHumanTakeover(f'MuMu {instance.name}: primary ADB port unavailable')
+        primary = serials[0]
+        devices = self.list_device() if devices is None else devices
+        primary_device = devices.select(serial=primary, status='device').first_or_none()
+        if primary_device is None and connect_primary:
+            # 别名归属确认也需要同实例主入口；只连接这一个记录中的地址。
+            try:
+                if devices.select(serial=primary, status='offline'):
+                    self.adb_client.disconnect(primary)
+                self.adb_client.connect(primary)
+                devices = self.list_device()
+            except (OSError, AdbError) as error:
+                logger.info(f'MuMu primary port {primary} not ready: {error}')
+        alias_device = devices.select(serial=preferred, status='device').first_or_none()
+        confirmed = (preferred in serials[1:] and alias_device is not None
+                     and verify_mumu_alias(self.adb_client, primary, preferred))
+        actual = preferred if confirmed else primary
+        if actual != self.serial:
+            reason = 'same Android boot confirmed' if confirmed else 'alias unavailable or identity unconfirmed'
+            logger.info(f'MuMu {instance.name}: preferred={preferred}, actual={actual}, reason={reason}')
+        self._set_runtime_serial(actual)
+        return True
+
     @Config.when(DEVICE_OVER_HTTP=True)
     def adb_connect(self, serial):
         # No adb connect if over http
         return True
 
     def adb_disconnect(self, serial):
-        msg = self.adb_client.disconnect(serial)
-        if msg:
-            logger.info(msg)
+        # ADB 原生别名与 USB 标识不发 TCP disconnect，缓存仍按原流程清理。
+        if ConnectionAttr.is_adb_tcp_serial(serial):
+            msg = self.adb_client.disconnect(serial)
+            if msg:
+                logger.info(msg)
 
         del_cached_property(self, 'hermit_session')
         del_cached_property(self, 'droidcast_session')
@@ -729,6 +785,8 @@ class Connection(ConnectionAttr):
             self.detect_device()
         else:
             self.adb_disconnect(self.serial)
+            # 重连也按首选别名与绑定实例重新确认，回退不改变配置首选项。
+            self._select_mumu_serial(connect_primary=True)
             self.adb_connect(self.serial)
             self.detect_device()
 
@@ -901,6 +959,11 @@ class Connection(ConnectionAttr):
                 logger.critical('Multiple devices found, auto device detection cannot decide which to choose, '
                                 'please copy one of the available devices listed above to Alas.Emulator.Serial')
                 raise RequestHumanTakeover
+
+        # MuMu 的 EX 别名只使用专用实例关联，不能落入雷电的全局端口配对。
+        if (self._select_mumu_serial(devices, connect_primary=True)
+                or getattr(self.config.script.device, 'emulatorinfo_type', '') == EmulatorBase.MuMuPlayer12):
+            return
 
         # Handle LDPlayer
         # LDPlayer serial jumps between `127.0.0.1:5555+{X}` and `emulator-5554+{X}`

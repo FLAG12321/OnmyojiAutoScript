@@ -1,9 +1,8 @@
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import psutil
-
 from module.device.platform2.emulator_windows import Emulator
+from module.device.platform2.mumu_process import query_mumu_processes
 from module.logger import logger
 
 if TYPE_CHECKING:
@@ -57,37 +56,14 @@ class EmulatorHealth:
         if not target_name:
             return False, 'instance.name unavailable'
 
-        warned_unreadable = False
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if proc.info['name'] != 'MuMuVMMHeadless.exe':
-                    continue
-                cmdline_str = ''
-                cmdline_unreadable = False
-                try:
-                    cmdline_str = ' '.join(proc.info['cmdline'] or [])
-                except psutil.AccessDenied:
-                    cmdline_unreadable = True
-                if f'--comment {target_name}' in cmdline_str:
-                    return True, f'pid={proc.info["pid"]}'
-                if cmdline_unreadable:
-                    if not warned_unreadable:
-                        logger.warning(
-                            'psutil cmdline unavailable, falling back to name-only match'
-                        )
-                        warned_unreadable = True
-                    return True, f'pid={proc.info["pid"]} (name-only fallback)'
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-
-        # MuMu 新版（安卓 15 / nx_main）不再以 MuMuVMMHeadless.exe --comment 方式运行，
-        # 严格扫描未命中时回退到窗口句柄优先的通用探测，避免把已运行的模拟器误判为死亡。
-        try:
-            if self.device._is_emulator_process_alive():
-                return True, 'generic emulator process alive (fallback)'
-        except Exception as e:
-            return False, f'generic process fallback exception: {e}'
-        return False, f'no MuMuVMMHeadless.exe with --comment {target_name}'
+        # 与恢复清理共用精确身份，不能让其他实例的窗口或管理器推翻枚举结果。
+        targets, error = query_mumu_processes(instance)
+        if targets:
+            details = '; '.join(f'pid={proc.pid} cmdline={proc.info["cmdline"]!r}' for proc in targets)
+            return True, f'instance={target_name} {details}'
+        if error:
+            return False, f'instance={target_name} process query unavailable: {error}'
+        return False, f'instance={target_name} process exited (no exact match)'
 
     def _adb_check(self) -> tuple:
         """ADB device state check: serial 在 adb devices 列表且 status == 'device'。"""

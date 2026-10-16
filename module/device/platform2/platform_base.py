@@ -121,11 +121,12 @@ class PlatformBase(EmulatorManagerBase):
             path=data.path,
             name=data.name,
         )
-        # Redirect emulator-5554 to 127.0.0.1:5555
+        # 仅保留原有雷电端口配对；MuMu 别名由明确实例的 EX 元数据单独关联。
         serial = self.config_interface['serial']
-        port_serial, _ = get_serial_pair(serial)
-        if port_serial is not None:
-            serial = port_serial
+        if data.emulator != 'MuMuPlayer12':
+            port_serial, _ = get_serial_pair(serial)
+            if port_serial is not None:
+                serial = port_serial
 
         instance = self.find_emulator_instance(
             serial=serial,
@@ -168,21 +169,27 @@ class PlatformBase(EmulatorManagerBase):
         instances = SelectedGrids(self.all_emulator_instances)
         for instance in instances:
             logger.info(instance)
-        search_args = dict(serial=serial)
-
-        instance_id = serial_to_id(self.serial)
-        if instance_id is not None:
-            select = instances.select(MuMuPlayer12_id=instance_id)
-            # No logs for if select.count == 1:
-            # because this is just a trial
-            if select.count == 1:
-                instance = select[0]
+        # 显式填写的身份字段先共同过滤，不能被 serial 端口猜测或单字段匹配覆盖。
+        binding = {key: value for key, value in (('name', name), ('path', path), ('type', emulator))
+                   if value and value != 'auto'}
+        if binding:
+            instances = instances.select(**binding)
+            if instances.count == 0:
+                logger.warning(f'No emulator instances with configured binding {binding}')
+                return None
+            if instances.count == 1:
+                instance = instances[0]
                 logger.hr('Emulator instance', level=2)
-                logger.info(f'Found emulator instance: {instance}')
+                logger.info(f'Found emulator instance from configured binding: {instance}')
                 return instance
+        search_args = dict(serial=serial)
         # Search by serial
         select = instances.select(**search_args)
         if select.count == 0:
+            # 没有已保存身份时，MuMu EX 候选不能凭别名数字或另一台在线设备自动绑定。
+            if serial.startswith('emulator-') and not binding:
+                logger.warning(f'No confirmed emulator instance with {search_args}')
+                return None
             # 桥接模式下 serial 可能为局域网 IP，与实例记录的 NAT serial 不匹配
             # 回退到使用 name/path/emulator 匹配
             logger.info(f'No emulator instance with {search_args}, trying to match by name/path/emulator')
