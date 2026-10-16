@@ -21,7 +21,7 @@ from tasks.ExperienceYoukai.assets import ExperienceYoukaiAssets
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralBattle.reward_frame import weighted_choice, FORBIDDEN_KEKKAI
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
-from tasks.GameUi.page import page_main,page_team,page_exploration
+from tasks.GameUi.page import page_main,page_exploration
 from module.base.timer import Timer
 from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
@@ -41,6 +41,7 @@ class PlotlineScene(Enum):
     PLOTLINE_SCENE_PRIVILEGES = 5
     PLOTLINE_SCENE_SETTLEMENT = 6
     PLOTLINE_SCENE_OBOROGURUMA = 7
+    PLOTLINE_SCENE_GUIDE = 8  # 引导仍由主线点击器推进，不能转交普通探索。
     PLOTLINE_SCENE_UNKNOWN = 99
 
 class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
@@ -116,6 +117,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.custom_next_run(task='Plotline', custom_time=(datetime.now() + timedelta(minutes=1)), time_delta=0)
                 self.config.task_call('Restart')
                 raise e
+            except RequestHumanTakeover:
+                # 控制通道故障交给外层停止账号并通知，保留任务时间，恢复连接后仍可继续。
+                raise
             except Exception as e:
                 self.set_next_run(task='Plotline',success=False)
                 raise e
@@ -129,21 +133,31 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         
         while 1:
             self.screenshot()
+            # 先处理胧车返回和阶段按钮，避免庭院背景标记抢走当前操作。
             if self.appear_rgb(self.I_BACK_MAIN):
-                self.click(self.I_BACK_MAIN)
-                return True
+                if self.click(self.I_BACK_MAIN, interval=1):
+                    continue
+            if self.appear_then_click(self.I_PAGE_OBOROGURUMA_4,action=self.I_BACK_YOLLOW,interval=1):
+                continue
             if self.appear_then_click(self.I_PAGE_OBOROGURUMA_2,interval=1):
                 continue
             if self.appear_then_click(self.I_PAGE_OBOROGURUMA_3,interval=1):
-                continue
-            if self.appear_then_click(self.I_PAGE_OBOROGURUMA_4,action=self.I_BACK_YOLLOW,interval=1):
                 continue
             if self.appear(self.I_OBOROGURUMA_LONG_PRESS):
                 x, y = self.I_OBOROGURUMA_LONG_PRESS.coord()
                 logger.info("识别到「长按启动胧车」，长按 5 秒")
                 self.device.long_click(x, y, duration=5, control_name=self.I_OBOROGURUMA_LONG_PRESS.name)
                 continue
-            
+            # 胧车按钮优先于庭院背景；长按或返回后用新截图确认已回庭院。
+            if self.appear(self.I_PAGE_MAIN):
+                return True
+            # 已离开胧车并进入普通探索时交还场景循环，由探索处理接续执行。
+            if (self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK)
+                    or self.appear(self.I_CHECK_EXPLORATION)
+                    or self.appear(ExplorationAssets.I_E_MAIN_FLAG)):
+                self.exploration_flag = True
+                return True
+
 
     def get_current_scene(self) -> PlotlineScene:
         """ 获取当前场景，轮询最多10秒后如果仍未识别到有效场景则返回UNKNOWN """
@@ -159,6 +173,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             if self.click_dialogue_high():
                 start_time=time.time()
                 continue
+            # 引导点击正在节流时仍归主线，不能按背景探索标记启动普通探索。
+            elif self._is_plotline_guide():
+                return PlotlineScene.PLOTLINE_SCENE_GUIDE
             elif self.appear(self.I_OBOROGURUMA_LONG_PRESS, interval=1) or\
                  self.appear(self.I_PAGE_OBOROGURUMA_2, interval=1) or\
                  self.appear(self.I_PAGE_OBOROGURUMA_3, interval=1) or\
@@ -200,11 +217,16 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             PlotlineScene.PLOTLINE_SCENE_SETTLEMENT: self.handle_settlement_scene,
             PlotlineScene.PLOTLINE_SCENE_PRIVILEGES: self.handle_privileges_scene,
             PlotlineScene.PLOTLINE_SCENE_OBOROGURUMA: self.handle_oboroguruma_long_press,
+            PlotlineScene.PLOTLINE_SCENE_GUIDE: self.handle_guide_scene,
             PlotlineScene.PLOTLINE_SCENE_UNKNOWN: self.handle_unknown_scene
         }
 
         handler = scene_handlers.get(scene, self.handle_unknown_scene)
         handler()
+
+    def handle_guide_scene(self) -> None:
+        """保留引导现场，等点击节流结束后由下一轮主线点击器继续推进。"""
+        sleep(0.5)
 
     def is_in_settlement(self) -> bool:
         """ 结算页判定：胜利画面（三模板）或奖励页（I_REWARD 系模板）任一命中。
@@ -337,6 +359,26 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
 
             
     
+    def _wait_experience_youkai_guide(self) -> bool:
+        """导航到 page_team 副本列表页后等待十五秒，选副本和建房前检查引导。"""
+        self.screenshot()
+        # 引导可能遮住组队标记，优先保留引导现场交回主线处理。
+        if self.appear(self.I_PAGE_CLICK_ANY2) or self.appear(self.I_CLICK_CURSOR):
+            return True
+        if not self.appear(GameUiAssets.I_CHECK_TEAM):
+            logger.warning('尚未确认组队页面，交回主线，暂不启动普通经验妖怪')
+            return True
+        # 导航耗时不计入引导窗口，确认当前截图为组队后才开始等待。
+        logger.info('已确认组队副本列表页，选择副本前等待新手引导（15秒）')
+        wait_timer = Timer(15).start()
+        while not wait_timer.reached():
+            self.screenshot()
+            if self.appear(self.I_PAGE_CLICK_ANY2) or self.appear(self.I_CLICK_CURSOR):
+                logger.info('经验妖怪新手引导已出现，交回主线处理')
+                return True
+        # 等待中页面若已切换，也不能按旧的组队状态继续普通建房。
+        return not self.appear(GameUiAssets.I_CHECK_TEAM)
+
     def _run_experience_youkai_if_ready(self) -> bool:
         """ 等级>=15 且开启经验妖怪时：回主界面收邮件后借跑 ExperienceYoukai。
         原 check_experience_youkai_battle 闭包拆出；返回 True 表示本轮已由经验妖怪流程处理。 """
@@ -352,21 +394,11 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 self.mail_flag = False
             sleep(1)
         # 收邮件后落点不确定：harvest_mail 的超时支点完返回就交还，画面常停在
-        # page_theme 这类过渡页。先确保回到主界面，再无条件走「探索 → 队伍」——
+        # page_theme 这类过渡页。先确保回到主界面，再进入探索触发组队引导——
         # 原来这支挂在 else 上，落点非主界面时会被整支跳过，等于从未生效。
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
         self.ui_goto(page_exploration)
-        self.screenshot()
-        self.ui_get_current_page()
-        self.ui_goto(page_team)
-        self.screenshot()
-        # 3 秒窗等待进入经验妖怪的准备页（出现即可继续）
-        wait_timer = Timer(3).start()
-        while not wait_timer.reached():
-            self.screenshot()
-            if self.appear(self.I_PAGE_CLICK_ANY2, interval=0.7) or self.appear(self.I_CLICK_CURSOR, interval=0.7):
-                return True
         # 调用经验妖怪任务
         from tasks.ExperienceYoukai.script_task import ScriptTask as ExperienceYoukaiScriptTask
         # 屏蔽 ExperienceYoukai 的调度副作用：其 experience_exit() 会写死
@@ -376,13 +408,19 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             ExperienceYoukaiScriptTask, ('ExperienceYoukai',), 'Plotline'
         )(self.config, self.device)
         try:
-            self.screenshot()
-            if self.ui_get_current_page() != page_main:
-                self.ui_goto(page_main)
-            experience_youkai_task.run()
+            # 在子任务实际到组队且准备建房的这一次检查，避免预检后返回庭院造成空档。
+            if experience_youkai_task.run(on_team_ready=self._wait_experience_youkai_guide):
+                return True
         except TaskEnd as e:
-            self.experience_youkai_battle = False
-            logger.info("任务结束")
+            # 副本未找到也会抛 TaskEnd；正常完成或次数耗尽的明确成功才清除待执行标记。
+            if getattr(experience_youkai_task, '_execution_results', {}).get('ExperienceYoukai') is True:
+                self.experience_youkai_battle = False
+                logger.info("经验妖怪任务完成")
+            else:
+                logger.warning('经验妖怪本次未完成，保留待执行状态')
+        except (RequestHumanTakeover, GameStuckError):
+            # 引导检查中的设备故障仍交给主线外层处理，不能当成普通经验异常忽略。
+            raise
         except Exception as e:
             logger.error(f"经验妖怪任务执行异常: {e}")
             # 继续执行剧情任务
@@ -490,6 +528,40 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         logger.warning(f"三次识别结果{levels}均不合法，沿用上次等级 {self._level_cache}")
         return 0
 
+    def _is_plotline_guide(self) -> bool:
+        """页面归属不受点击间隔影响；妖气探索及新手引导均交由主线处理。"""
+        return any(self.appear(rule) for rule in (
+            self.I_CHECK_YOUKI, self.I_CLICK_CURSOR, self.I_PAGE_CLICK_ANY2,
+            self.I_PAGE_CLICK_ANY3,
+        ))
+
+    def _should_resume_plotline(self) -> bool:
+        """庭院、胧车和引导属于主线接管页，不能留在普通探索中等待。"""
+        return self._is_plotline_guide() or any(self.appear(rule) for rule in (
+            self.I_PAGE_MAIN, self.I_OBOROGURUMA_LONG_PRESS,
+            self.I_PAGE_OBOROGURUMA_2, self.I_PAGE_OBOROGURUMA_3,
+            self.I_PAGE_OBOROGURUMA_4,
+        ))
+
+    def _return_from_exploration(self) -> None:
+        """仅在探索内部执行退出，离开探索 main 后立即交回主流程。"""
+        return_timer = Timer(15).start()
+        while not return_timer.reached():
+            self.screenshot()
+            # 确认框可能遮住探索标记；即使点击仍被节流，也须等确认消失再交还主线。
+            if self.appear(ExplorationAssets.I_E_EXIT_CONFIRM):
+                self.appear_then_click(ExplorationAssets.I_E_EXIT_CONFIRM, interval=0.8)
+                continue
+            # 与探索 Scene.MAIN 使用相同标记；加载、章节入口和活动页都由主流程继续识别。
+            if not any(self.appear(rule) for rule in (
+                ExplorationAssets.I_E_SETTINGS_BUTTON, ExplorationAssets.I_E_AUTO_ROTATE_ON,
+                ExplorationAssets.I_E_AUTO_ROTATE_OFF, ExplorationAssets.I_E_MAIN_FLAG,
+            )):
+                return
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=2):
+                continue
+        raise GameStuckError('退出探索副本超时')
+
     def handle_exploration_scene(self) -> None:
         """ 处理探索场景 """
         logger.info("当前在探索场景，启动Exploration的run_solo方法")
@@ -521,52 +593,42 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         solo_exploration.battle_before = self.battle_before
         
         try:
-            # 运行探索
-            solo_exploration.run_solo()
+            # 庭院或胧车出现后交还主线，避免探索在未知页面持续空等。
+            solo_exploration.run_solo(stop_condition=self._should_resume_plotline)
             self.plotline_conf.plotline_config.exploration_battle_lock=self.privileges_flag
+        except RequestHumanTakeover:
+            # 控制通道恢复失败时只还原本地状态，不再操作设备或转换成正常结束。
+            raise
         except Exception as e:
             self.config.notifier.push(content=f'探索任务异常{e}', title='Plotline')
-            start_time = time.time()
-            while time.time()-start_time < 5:
-                self.screenshot()
-                if self.appear_then_click(self.I_CLICK_BACK_RED,interval=2):
-                    start_time = time.time()
-                    continue
-                if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=2):
-                    start_time = time.time()
-                    continue
+            self._return_from_exploration()
             logger.info(f'探索任务异常{e.args[0]}')
             if e.args[0] == 'Insufficient AP' and self.mail_flag:
+                # 首次缺体力只补给一次；退出可能停在章节页，不能靠庭院单帧判断消耗机会。
+                self.mail_flag = False
                 self.screenshot()
-                if self.appear(self.I_PAGE_MAIN) :
-                    if self._get_level_cached() >= 15:
-                        self.screenshot()
-                        self.ui_goto(page_main)
-                        self.screenshot()
-                    from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
-                    daily_alt_acc_task=DailyAltAccScriptTask(self.config, self.device)
-                    daily_alt_acc_task.harvest_mail()
-                    self.mail_flag=False
-                    sleep(1)
-                    self.screenshot()
+                # 借跑探索后重新识别当前页，避免沿用旧庭院缓存而跳过实际返回导航。
+                if not self.ui_goto_page(page_main):
+                    raise GameStuckError('体力不足后返回庭院失败')
+                from tasks.DailyAltAcc.script_task import ScriptTask as DailyAltAccScriptTask
+                daily_alt_acc_task = DailyAltAccScriptTask(self.config, self.device)
+                daily_alt_acc_task.harvest_mail()
+                sleep(1)
+                self.screenshot()
+                # 补给后直接交还主线，finally 仍还原探索状态，不重复执行返回清理。
+                return
             else:
                 raise TaskEnd
         finally:
-            # 恢复原始的battle_wait和battle_before方法
+            # 无论成功或失败都只还原本地状态，设备清理不放在 finally 中重复执行。
             solo_exploration.battle_wait = original_battle_wait
             solo_exploration.battle_before = original_battle_before
             self.exploration_flag = False
             self.exploration_shikigami_switch = False
             self._solo_exploration = None
-            start_time = time.time()
-            while time.time()-start_time < 5:
-                self.screenshot()
-                if self.appear_then_click(self.I_CLICK_BACK_RED,interval=2):
-                    start_time = time.time()
-                    continue
-                if self.appear_then_click(self.I_UI_BACK_YELLOW,interval=2):
-                    start_time = time.time()
-                    continue
+        # 正常退出后只检查是否仍在探索内部；离开后保留当前页面交回主流程。
+        if not self._should_resume_plotline():
+            self._return_from_exploration()
         
 
 
@@ -676,6 +738,9 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
         """ 处理未知场景 """
         logger.info("当前场景未知，尝试返回主界面")
         self.screenshot()
+        # 新截图若已出现引导，交回主线点击器，不能用返回按钮退出正常教学。
+        if self._is_plotline_guide():
+            return
         # 尝试返回主界面
         if not self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK) and self.appear_then_click(self.I_CLICK_BACK_RED, interval=3):
                 logger.info("点击红色返回按钮")
@@ -714,7 +779,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             pass    
         elif self.appear_then_click(self.I_CLICK_LV,interval=1):    
             self.exploration_flag =True   
-        elif not self.appear(GameUiAssets.I_CHECK_TEAM) \
+        elif not self._is_plotline_guide() \
+                and not self.appear(GameUiAssets.I_CHECK_TEAM) \
                 and not self.appear(self.I_CHECK_EXPLORATION) \
                 and self.appear_then_click(self.I_UI_BACK_YELLOW, interval=3):
             pass
@@ -769,7 +835,8 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
             self._wait_exploration_entrance_after_click()
         elif self.appear_then_click(self.I_CLICK_CV, interval=1):
             pass
-        elif not self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK) and self.appear_then_click(self.I_CLICK_BACK_RED, interval=3):
+        # 引导按钮被节流时保留现场，不按底层页面的红色返回按钮。
+        elif not self._is_plotline_guide() and not self.appear(ExplorationAssets.I_E_EXPLORATION_CLICK) and self.appear_then_click(self.I_CLICK_BACK_RED, interval=3):
             pass
         elif self.appear(self.I_PAGE_SKIP, interval=1):
             start_time=time.time()
@@ -781,6 +848,12 @@ class ScriptTask(GameUi, PlotlineAssets,GeneralBattle):
                 if self.appear_then_click(self.I_CHECK_UNTICK, interval=1):
                     start_time=time.time()
                     continue
+        # 「剧情音频」扩展包下载弹窗：模态卷轴盖住剧情按钮，不处理则本次识别里所有
+        # 剧情目标都不匹配、而左上角常驻的「加成」仍命中，场景被判成主界面空转到结束。
+        # 先按弹窗标题模板确认身份再点「取消」：取消是通用按钮，单认按钮会误点其它界面。
+        elif (self.appear(self.I_DLC_AUDIO_TITLE, interval=1) and
+              self.appear_then_click(GameUiAssets.I_DLC_EXIT, interval=1)):
+            logger.info("关闭剧情音频扩展包下载提示")
         # 独立处理个性化推荐，优先于绑定手机检测并复用 GameUi 的关闭按钮。
         elif self.appear_then_click(GameUiAssets.I_CLICK_REFUSE, interval=5):
             pass
@@ -1125,4 +1198,3 @@ if __name__ == '__main__':
     self.run()
     #t.swipe(t.S_SWIPE_SHIKIGAMI,2)
     
-     

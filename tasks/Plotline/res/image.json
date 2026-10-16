@@ -502,5 +502,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "dlc_audio_title",
+    "imageName": "dlc_audio_title.png",
+    "roiFront": "480,204,337,37",
+    "roiBack": "440,184,420,80",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "「剧情音频」扩展包下载弹窗的标题，用于识别该弹窗"
   }
 ]

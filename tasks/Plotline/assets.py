@@ -142,6 +142,8 @@ class PlotlineAssets:
 	I_PAGE_OBOROGURUMA_3 = RuleImage(roi_front=(37,608,57,55), roi_back=(4,582,126,127), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_oboroguruma_3.png")
 	#  
 	I_PAGE_OBOROGURUMA_4 = RuleImage(roi_front=(80,14,143,51), roi_back=(4,0,255,92), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/res_page_oboroguruma_4.png")
+	# 「剧情音频」扩展包下载弹窗的标题，用于识别该弹窗
+	I_DLC_AUDIO_TITLE = RuleImage(roi_front=(480,204,337,37), roi_back=(440,184,420,80), threshold=0.8, method="Template matching", file="./tasks/Plotline/res/dlc_audio_title.png")
 
 
 	# Ocr Rule Assets
