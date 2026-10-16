@@ -375,6 +375,9 @@ class Script:
 
             time.sleep(5)
 
+            # 等待下一任务时只补发已持久化通知，不唤起模拟器或重跑已完成任务。
+            self._retry_task_notifications()
+
             # 先排空配置事件；无事件仍以 mtime_ns 兜底检测（规格 §4.4）
             self._drain_config_events()
             if self.config.should_reload() or self.config.has_pending_changes():
@@ -392,6 +395,7 @@ class Script:
         :return:
         """
         while 1:
+            self._retry_task_notifications()
             task = self.config.get_next()
             self.config.task = task
             if self.state_queue:
@@ -405,20 +409,8 @@ class Script:
                 # 只有已经创建过设备，才执行空闲关闭/回庭院与资源释放。
                 device = self.__dict__.get('device')
                 if device is not None:
-                    method = self.config.script.optimization.when_task_queue_empty
-                    close_game_limit_time = self.config.script.optimization.close_game_wait_duration
-                    close_emulator_limit_time = self.config.script.optimization.close_emulator_wait_duration
-
-                    if method == 'goto_main':
-                        self._handle_goto_main()
-                    elif method == 'close_game':
-                        self._handle_close_game(task, close_game_limit_time)
-                    elif method in ['close_emulator_or_goto_main', 'close_emulator_or_close_game']:
-                        self._handle_close_emulator_or(task, close_game_limit_time, close_emulator_limit_time, method)
-                    elif method != 'stay_there':
-                        logger.warning(f'Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there')
-
-                    device.release_during_wait()
+                    # 空闲回庭院/关模拟器也会操作设备，须先登记 busy 再执行。
+                    self._prepare_wait_device(task, device)
 
                 if not self.wait_until(task.next_run):
                     result = self.config.refresh_from_disk("wait_return")
@@ -441,6 +433,23 @@ class Script:
             break
 
         return task.command
+
+    def _prepare_wait_device(self, task, device):
+        """空闲设备收尾受同一门禁保护；真正等待下一任务时恢复 idle。"""
+        from module.config.runtime_registry import task_execution_guard
+        with task_execution_guard(self.config, 'SchedulerIdleCleanup'):
+            method = self.config.script.optimization.when_task_queue_empty
+            close_game_limit_time = self.config.script.optimization.close_game_wait_duration
+            close_emulator_limit_time = self.config.script.optimization.close_emulator_wait_duration
+            if method == 'goto_main':
+                self._handle_goto_main()
+            elif method == 'close_game':
+                self._handle_close_game(task, close_game_limit_time)
+            elif method in ['close_emulator_or_goto_main', 'close_emulator_or_close_game']:
+                self._handle_close_emulator_or(task, close_game_limit_time, close_emulator_limit_time, method)
+            elif method != 'stay_there':
+                logger.warning(f'Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there')
+            device.release_during_wait()
 
     def _handle_goto_main(self):
         logger.info('Goto main page during wait')
@@ -524,6 +533,13 @@ class Script:
 
     def run(self, command: str) -> bool:
         """在任务执行期间向 OCR RPC 保持实例活跃状态。"""
+        from module.config.runtime_registry import task_execution_guard
+        # 先登记 busy 再做任何设备动作；关机提交后已启动 worker 也不能开始新任务。
+        with task_execution_guard(self.config, command):
+            return self._run_with_runtime_guard(command)
+
+    def _run_with_runtime_guard(self, command: str) -> bool:
+        """保留原 OCR 与配置收尾边界，整个周期由运行门禁登记保护。"""
         self._ocr_task_start()
         try:
             return self._run_task(command)
@@ -649,6 +665,26 @@ class Script:
         self._request_server_restart_from_instance()
         os._exit(1)
 
+    def _retry_task_notifications(self):
+        """启动和闲时最多每三分钟重试一条；关机已提交时保留记录等待下次开机。"""
+        now = time.monotonic()
+        if now < getattr(self, '_notification_retry_at', 0):
+            return
+        self._notification_retry_at = now + 180
+        store = getattr(self.config, 'store', None)
+        if store is None:
+            return
+        from module.config.runtime_registry import runtime_start_gate, RuntimeShutdownPending
+        from tasks.Utils.notification_outbox import retry_notifications
+        try:
+            with runtime_start_gate(store.config_root):
+                pass  # 网络请求在门禁外进行，不能让通知超时阻塞系统关机。
+            retry_notifications(self.config)
+        except RuntimeShutdownPending:
+            return
+        except Exception:
+            logger.exception('补发完成通知失败，保留待发记录等待下次重试')
+
     def loop(self):
         """
         Main loop of scheduler.
@@ -692,23 +728,8 @@ class Script:
                 self.config.task_delay(task='Restart', success=True, server=True)
                 self._config_checkpoint("skip_first_restart")
                 continue
-            _ = self.device  # trigger cached_property if first access
-            if self._needs_recovery:
-                logger.warning('Emulator recovery requested, running full_recovery before task')
-                if not self.device.full_recovery():
-                    # full_recovery 失败后不再兜底，由当前实例主动请求 server 级 stop/start 并退出。
-                    logger.critical('full_recovery failed, request server-side restart from instance')
-                    self._exit_for_server_restart()
-                self._needs_recovery = False
-
-            # Run
-            logger.info(f'Scheduler: Start task `{task}`')
-            self.device.stuck_record_clear()
-            self.device.click_record_clear()
-            logger.hr(task, level=0)
-            success = self.run(inflection.camelize(task))
-            logger.info(f'Scheduler: End task `{task}`')
-            self.is_first_task = False
+            # 设备初始化与故障恢复也必须包含在 busy 边界内。
+            success = self._run_scheduled_task(task)
 
             if success:
                 # 任务结束边界：WARM/COLD 刷新并上报 config_state
@@ -724,6 +745,27 @@ class Script:
                 continue
             else:
                 break
+
+    def _run_scheduled_task(self, task):
+        """先经过门禁，再初始化/恢复设备并运行任务，杜绝检查后唤起模拟器。"""
+        from module.config.runtime_registry import task_execution_guard
+        with task_execution_guard(self.config, inflection.camelize(task)):
+            _ = self.device
+            if self._needs_recovery:
+                logger.warning('Emulator recovery requested, running full_recovery before task')
+                if not self.device.full_recovery():
+                    # 恢复失败保持原有 server 重启语义，门禁上下文不会提前标记 idle。
+                    logger.critical('full_recovery failed, request server-side restart from instance')
+                    self._exit_for_server_restart()
+                self._needs_recovery = False
+            logger.info(f'Scheduler: Start task `{task}`')
+            self.device.stuck_record_clear()
+            self.device.click_record_clear()
+            logger.hr(task, level=0)
+            success = self.run(inflection.camelize(task))
+            logger.info(f'Scheduler: End task `{task}`')
+            self.is_first_task = False
+            return success
 
     def start_loop(self) -> None:
         """

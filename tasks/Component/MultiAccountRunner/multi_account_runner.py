@@ -25,11 +25,10 @@
 """
 from collections import defaultdict
 from datetime import datetime
-import json
-import threading
 from pathlib import Path
 from typing import Callable, List, Optional
 
+from module.config.runtime_registry import start_runtime_slot, update_runtime_slot
 from module.exception import (
     EmulatorNotRunningError,
     GameBugError,
@@ -39,6 +38,7 @@ from module.exception import (
     GameTooManyClickError,
     RequestHumanTakeover,
     ScriptError,
+    TaskEnd,
 )
 from module.logger import logger
 from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
@@ -100,7 +100,6 @@ class MultiAccountRunner:
         self.max_retries = max_retries
         self.on_account_error = on_account_error
         self.progress = progress
-        self._lock = threading.Lock()
 
     # 设备级异常：必须穿透到 script.py 的 Restart / 人工接管恢复逻辑，
     # 任何一层被宽泛 except Exception 吞掉，游戏都会一直卡着、后续账号连环失败。
@@ -230,8 +229,13 @@ class MultiAccountRunner:
             return False
         if self.progress is not None:
             try:
-                key = acc_key(account_info.account, account_info.character, account_info.svr)
+                # 平台参与账号身份，防止 Android/iOS 同名角色串用完成记录。
+                key = acc_key(account_info.account, account_info.character, account_info.svr,
+                              account_info.apple_or_android)
                 done = self.progress.is_account_done(key)
+            except RequestHumanTakeover:
+                # 无法确认旧进度兼容时必须停下核对，不能降级为未完成后重复执行。
+                raise
             except Exception:
                 logger.exception('读取账号进度失败，按未完成处理')
                 return True
@@ -285,7 +289,8 @@ class MultiAccountRunner:
                     # 账号成功处理：即时落盘，中断后接续时整个跳过
                     if self.progress is not None:
                         self.progress.mark_account_done(acc_key(
-                            account_info.account, account_info.character, account_info.svr))
+                            account_info.account, account_info.character, account_info.svr,
+                            account_info.apple_or_android))
                     return True
                 else:
                     retry_count += 1
@@ -295,6 +300,9 @@ class MultiAccountRunner:
                         logger.error(f"[{self.task_name}] Failed to process account {account_info.character} after {self.max_retries} attempts")
             except GameNotRunningError:
                 raise GameNotRunningError("Game Not Running")
+            except TaskEnd:
+                # 不同名结束事件由调度器处理，不能被账号重试层吞为普通失败。
+                raise
             except self._DEVICE_LEVEL_ERRORS_IN_LOOP:
                 # 设备级异常（卡死/弹错/模拟器退出等）必须继续穿透到 script.py 的
                 # Restart / 人工接管逻辑，不能在这里被宽泛 except Exception 吞成 return False
@@ -308,51 +316,18 @@ class MultiAccountRunner:
         return False
 
     def _mark_task_start(self, config_name: str, pid: int):
-        """标记进程开始执行任务"""
-        progress_file = self._get_progress_file()
-        progress_file.parent.mkdir(parents=True, exist_ok=True)
-
-        with self._lock:
-            progress_data = self._read_progress(progress_file)
-            progress_data[f'config_{config_name}'] = {
-                'status': 'running',
-                'start_time': datetime.now().isoformat(),
-                'completed': False,
-                'pid': pid
-            }
-            self._write_progress(progress_file, progress_data)
+        """本对象保存完整运行 token，后续通知不能越过本轮身份。"""
+        self._runtime_token = start_runtime_slot(
+            self._get_progress_file(), self.config, self.task_name, pid,
+        )
 
     def _mark_task_completed(self, config_name: str):
-        """标记进程任务已完成"""
-        progress_file = self._get_progress_file()
-
-        with self._lock:
-            progress_data = self._read_progress(progress_file)
-            if f'config_{config_name}' in progress_data:
-                progress_data[f'config_{config_name}'].update({
-                    'status': 'completed',
-                    'completed': True,
-                    'completed_time': datetime.now().isoformat()
-                })
-            self._write_progress(progress_file, progress_data)
+        """迟到的旧完成事件和删槽后的完成事件均不改变新登记。"""
+        update_runtime_slot(
+            self._get_progress_file(), config_name, getattr(self, '_runtime_token', None),
+            status='completed', completed=True, completed_time=datetime.now().isoformat(),
+        )
 
     def _get_progress_file(self) -> Path:
         """获取进度文件路径"""
         return Path(f'./config/tasks_config/{self.task_name.lower()}_progress.json')
-
-    @staticmethod
-    def _read_progress(progress_file: Path) -> dict:
-        """读取进度文件"""
-        if progress_file.exists():
-            try:
-                with open(progress_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                return {}
-        return {}
-
-    @staticmethod
-    def _write_progress(progress_file: Path, data: dict):
-        """写入进度文件"""
-        with open(progress_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)

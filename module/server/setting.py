@@ -64,7 +64,18 @@ class State:
 
     @classmethod
     def init(cls):
-        cls.manager = multiprocessing.Manager()
+        from pathlib import Path
+        from module.config.runtime_registry import register_runtime_helper, runtime_start_gate
+        # Manager 与脚本 worker 都使用 spawn；登记精确辅助身份避免关机误判。
+        root = Path.cwd() / 'config'
+        with runtime_start_gate(root):
+            cls.manager = multiprocessing.Manager()
+            try:
+                register_runtime_helper(root, cls.manager._process.pid, 'state_manager')
+            except BaseException:
+                # 登记失败即回收本次辅助进程，不留下无法辨认的活跃 spawn。
+                cls.manager.shutdown()
+                raise
         cls._init = True
 
     @classmethod

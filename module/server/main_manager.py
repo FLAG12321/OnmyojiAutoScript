@@ -4,7 +4,9 @@
 # github https://github.com/runhey
 import asyncio
 import concurrent.futures
+import os
 import time
+from contextlib import AsyncExitStack, asynccontextmanager
 from threading import Event, RLock, Thread
 
 from module.logger import logger
@@ -13,8 +15,10 @@ from module.config.config_generation import (
     ConfigGenerationError,
     ConfigIdentityConflictError,
 )
+from module.config.config_store import ConfigGenerationMismatchError
 from module.server.script_process import ScriptProcess, ScriptState
 from module.server.config_manager import ConfigManager
+from module.server.async_work import run_blocking
 from module.server.setting import State
 
 
@@ -34,9 +38,9 @@ class MainManager(ConfigManager):
         super().__init__(store=store)
         self.script_process: dict[str: ScriptProcess] = {}  # 脚本进程
         self.push_data_thread: Thread = None
-        # manager 级身份锁同时保护 wrapper 替换、启动和 rename/delete 全事务，
-        # 禁止 start 插入“进程已停止、Store 身份尚未提交”的广播窗口。
-        self._ensure_script_lock = asyncio.Lock()
+        # 同实例的 wrapper/启停/身份事务共用一把锁，其他实例无需等待启动握手。
+        # rename 同时持有源、目标锁，禁止 start 插入 stop 与 Store 提交之间。
+        self._script_identity_locks: dict[str, asyncio.Lock] = {}
         self._registry_lock = RLock()
         self._push_shutdown_event = Event()
         self._push_interval = 3.0
@@ -55,10 +59,25 @@ class MainManager(ConfigManager):
     def config_cache(self, name: str) -> Config:
         return Config(name, store=self.store)
 
+    @asynccontextmanager
+    async def _script_identity_guard(self, *names: str):
+        """按固定顺序取得实例身份锁，避免交叉 rename 死锁与 Windows 名称别名绕锁。"""
+        keys = sorted({os.path.normcase(name) for name in names})
+        with self._registry_lock:
+            locks = [
+                self._script_identity_locks.setdefault(key, asyncio.Lock())
+                for key in keys
+            ]
+        async with AsyncExitStack() as stack:
+            for lock in locks:
+                await stack.enter_async_context(lock)
+            yield
+
     async def _ensure_script_process_locked(self, name: str) -> ScriptProcess:
-        """调用方持有 manager 身份锁时获取 active generation 对应的 wrapper。"""
+        """调用方持有该实例身份锁时获取 active generation 对应的 wrapper。"""
         while True:
-            loaded = self.store.load(name)
+            # Store 验证及文件锁等待放到后台，不能让一个实例阻塞整个事件循环。
+            loaded = await run_blocking(self.store.load, name)
             with self._registry_lock:
                 process = self.script_process.get(name)
             if process is not None and process.generation == loaded.generation:
@@ -78,7 +97,10 @@ class MainManager(ConfigManager):
                         # registry 已换对象时重新 load/generation 核验，禁止直接采用未知 wrapper。
                         continue
 
-            candidate = ScriptProcess(name, store=self.store, generation=loaded.generation)
+            # wrapper 构造会再次读取 Store；取消时等待后台完成再释放实例身份锁。
+            candidate = await run_blocking(
+                ScriptProcess, name, store=self.store, generation=loaded.generation
+            )
             with self._registry_lock:
                 current = self.script_process.get(name)
                 if current is None:
@@ -90,22 +112,36 @@ class MainManager(ConfigManager):
 
     async def ensure_script_process(self, name: str) -> ScriptProcess:
         """按 active identity 获取/创建 ScriptProcess，不隐式启动。"""
-        async with self._ensure_script_lock:
+        async with self._script_identity_guard(name):
             return await self._ensure_script_process_locked(name)
 
     async def _start_process_locked(self, process: ScriptProcess) -> bool:
-        """调用方持有 manager 身份锁时启动已核验 wrapper，内部恢复禁止重入锁。"""
+        """调用方持有该实例身份锁时启动已核验 wrapper，内部恢复禁止重入锁。"""
         return await process.start()
 
-    async def start_script_process(self, name: str) -> bool:
-        """在 manager 身份锁内完成 load/ensure/start，串行化身份提交与启动。"""
-        async with self._ensure_script_lock:
+    async def start_script_process(self, name: str, expected_generation: str | None = None) -> bool:
+        """在实例身份锁内完成身份核对与启动，旧调用可不指定预期代际。"""
+        async with self._script_identity_guard(name):
             process = await self._ensure_script_process_locked(name)
+            # 外部启动方案绑定读取时的身份，同名重建后不能启动替换后的实例。
+            if expected_generation is not None and process.generation != expected_generation:
+                raise ConfigGenerationMismatchError(
+                    f'{name} generation changed before start: expected '
+                    f'{expected_generation}, disk {process.generation}'
+                )
             return await self._start_process_locked(process)
+
+    async def stop_script_process(self, name: str) -> None:
+        """停止只锁定指定实例，并与它的 start/restart/rename/delete 全程互斥。"""
+        async with self._script_identity_guard(name):
+            with self._registry_lock:
+                process = self.script_process.get(name)
+            if process is not None:
+                await process.stop()
 
     async def restart_script_process(self, name: str) -> bool:
         """在同一身份锁内完成 stop/start，避免 restart 绕过 rename/delete 协议。"""
-        async with self._ensure_script_lock:
+        async with self._script_identity_guard(name):
             process = await self._ensure_script_process_locked(name)
             await process.stop()
             # stop 广播后再次核验 active identity，拒绝并发外部 ABA。
@@ -745,7 +781,10 @@ class MainManager(ConfigManager):
         """预检 rename 目标槽位：tombstone/缺失目标只允许安全退役的陈旧 wrapper 复用。"""
         # validate_rename_names 已按 Store 冲突拒绝 active/creating 目标；这里再读一次
         # 磁盘身份，防止预检后由并发请求把目标改为 active/creating 时误退役正常目标。
-        destination_record = self.store.generation.read_active_generation(destination)
+        # 目标身份读取也可能等待文件系统，仍只占用本次 rename 涉及的两把实例锁。
+        destination_record = await run_blocking(
+            self.store.generation.read_active_generation, destination
+        )
         if destination_record is not None and destination_record.state != "tombstone":
             raise ConfigIdentityConflictError(f"{destination} already exists")
         with self._registry_lock:
@@ -769,9 +808,9 @@ class MainManager(ConfigManager):
         )
 
     async def _rename_config_locked(self, source: str, destination: str) -> None:
-        """调用方持有 manager 身份锁时执行完整 rename 与失败恢复。"""
+        """调用方持有源、目标身份锁时执行完整 rename 与失败恢复。"""
         # 纯名称、源身份与确定的目标冲突必须早于 stop，避免无效请求中断运行实例。
-        self.store.validate_rename_names(source, destination)
+        await run_blocking(self.store.validate_rename_names, source, destination)
         # 目标磁盘 tombstone/不存在时 Store 允许复用名称，但 registry 可能仍持有删除时
         # 未确认退出的旧 wrapper；预检目标槽位，占用无法退役时必须在 stop source 与
         # Store 提交前拒绝，避免提交后才发现旧句柄与新 generation 交错。
@@ -782,7 +821,8 @@ class MainManager(ConfigManager):
         try:
             if process is not None:
                 await process.stop()
-            self.store.rename_config(source, destination)
+            # 取消后先等磁盘事务完成，再进入既有对账恢复，禁止提前释放身份锁。
+            await run_blocking(self.store.rename_config, source, destination)
         except BaseException as lifecycle_error:
             # stop 后事务未提交时恢复 source；若恢复本身失败，记录次生错误但保留原异常类型。
             try:
@@ -806,19 +846,20 @@ class MainManager(ConfigManager):
         )
 
     async def rename_config(self, source: str, destination: str) -> None:
-        """以 manager 身份锁覆盖 wrapper 选择、stop、Store 提交和 registry 对账。"""
-        async with self._ensure_script_lock:
+        """以源、目标身份锁覆盖 wrapper 选择、stop、Store 提交和 registry 对账。"""
+        async with self._script_identity_guard(source, destination):
             await self._rename_config_locked(source, destination)
 
     async def _delete_config_locked(self, name: str) -> None:
-        """调用方持有 manager 身份锁时执行完整 delete 与失败恢复。"""
+        """调用方持有该实例身份锁时执行完整 delete 与失败恢复。"""
         with self._registry_lock:
             process = self.script_process.get(name)
         was_running = process is not None and process.state != ScriptState.INACTIVE
         try:
             if process is not None:
                 await process.stop()
-            self.store.delete_config(name)
+            # 后台文件事务完成前保留实例锁，避免取消请求留下尚未提交的身份窗口。
+            await run_blocking(self.store.delete_config, name)
         except BaseException as lifecycle_error:
             # tombstone 尚未提交时恢复 source；恢复失败只记录，必须继续抛原生命周期异常。
             try:
@@ -840,8 +881,8 @@ class MainManager(ConfigManager):
         await self._reconcile_lifecycle_registry(name, process=process)
 
     async def delete_config(self, name: str) -> None:
-        """以 manager 身份锁覆盖 wrapper 选择、stop、Store 提交和 registry 对账。"""
-        async with self._ensure_script_lock:
+        """以实例身份锁覆盖 wrapper 选择、stop、Store 提交和 registry 对账。"""
+        async with self._script_identity_guard(name):
             await self._delete_config_locked(name)
 
 

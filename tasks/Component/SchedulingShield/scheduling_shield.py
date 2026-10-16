@@ -16,7 +16,8 @@ from module.logger import logger
 def shield_scheduling(base_cls: type, blocked: tuple[str, ...], owner: str) -> type:
     """返回 base_cls 的子类，按任务名屏蔽调度副作用，其余任务原样转发。
 
-    只有 task 参与过滤判断，其他参数不做解释，因此收 **kwargs 转发：
+    按 task 屏蔽调度，同时保留本对象最新一次明确的 success 供父任务判定结果。
+    finish 只影响调度时间基准，不参与成功判断；其他参数继续用 **kwargs 转发：
     基类 set_next_run 新增参数（如 persist）时无需同步修改这里，
     避免调用方传新参数时抛 TypeError。
 
@@ -27,6 +28,11 @@ def shield_scheduling(base_cls: type, blocked: tuple[str, ...], owner: str) -> t
 
     def set_next_run(self, task: str, **kwargs) -> None:
         if task in blocked:
+            # 延迟创建实例字典，既兼容旁系注入，也避免连续账号共享类级可变状态。
+            results = self.__dict__.setdefault('_execution_results', {})
+            success = kwargs.get('success')
+            if isinstance(success, bool):
+                results[task] = success
             logger.info(f'[{owner}] 屏蔽子任务调度: {task}')
             return
         # 直接走 base_cls 的原实现（通常来自 BaseTask），不用 super()：

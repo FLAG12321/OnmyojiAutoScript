@@ -39,6 +39,8 @@ from module.server.config_manager import (
 
 from module.logger import logger
 from module.server.main_manager import mm
+# 同步文件锁与磁盘操作移交后台，等待期间仍可处理其他实例请求。
+from module.server.async_work import run_blocking
 from module.server.script_process import (
     ScriptProcess,
     ScriptStartupTimeoutError,
@@ -69,14 +71,16 @@ async def script_menu():
 # ----------------------------------   配置文件管理   ----------------------------------
 @script_app.get('/config_list')
 async def config_list():
-    return mm.all_script_files()
+    # 枚举也会核对磁盘身份，避免持锁实例拖住整个服务。
+    return await run_blocking(mm.all_script_files)
 
 @script_app.post('/config_copy')
 async def config_copy(file: str, template: str = 'template'):
     """复制配置并把生命周期失败映射为稳定 HTTP 状态，禁止失败返回 200。"""
     try:
-        mm.copy(file, template)
-        return mm.all_script_files()
+        # 完成复制后再列举；取消时等待实际写入结束，防止重试与旧操作重叠。
+        await run_blocking(mm.copy, file, template)
+        return await run_blocking(mm.all_script_files)
     except (ConfigNameError, ConfigIdentityNameError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (
@@ -104,8 +108,11 @@ def emulators():
 async def emulator_settings(script_name: str):
     """读取磁盘中的设备设置，供前端逐项展示原值与选中模拟器的新值。"""
     try:
-        loaded = mm.store.load(script_name)
-        return {'device': loaded.canonical['script']['device'], 'generation': loaded.generation}
+        # 冷读配置及其文件锁不能阻塞其他卡片的启动/停止。
+        loaded = await run_blocking(mm.store.load, script_name)
+        # 管家据此区分支持原子启动身份核对的新服务，旧设备设置页忽略新增字段。
+        return {'device': loaded.canonical['script']['device'], 'generation': loaded.generation,
+                'start_generation_check': True}
     except ConfigIdentityNameError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (ConfigIdentityNotFoundError, ConfigNotFoundError) as e:
@@ -123,7 +130,7 @@ async def save_emulator_settings(script_name: str, payload: EmulatorSettingsRequ
     device.update(payload.emulator.model_dump())
     try:
         # 复用 Store 的子树事务；身份与旧值都一致才落盘，其余设备设置保持原值。
-        result = mm.store.replace_subtree(
+        result = await run_blocking(mm.store.replace_subtree,
             script_name, ('script', 'device'), payload.expected_device,
             device, payload.expected_generation,
         )
@@ -146,11 +153,13 @@ async def save_emulator_settings(script_name: str, payload: EmulatorSettingsRequ
 
 @script_app.get('/config_new_name')
 async def config_new_name():
-    return mm.generate_script_name()
+    # 名称生成包含磁盘枚举，沿用后台执行规则。
+    return await run_blocking(mm.generate_script_name)
 
 @script_app.get('/config_all')
 async def config_all():
-    return mm.all_json_file()
+    # 配置列表读取也需要等待身份文件锁。
+    return await run_blocking(mm.all_json_file)
 
 
 @script_app.post('/config/import')
@@ -159,7 +168,8 @@ async def config_import(name: str = Form(...), file: UploadFile = File(...)):
     try:
         raw = await file.read()
         data = json.loads(raw.decode('utf-8'))
-        config_name = mm.import_config(name, data)
+        # 配置校验与原子落盘在后台完成，保留后续注册顺序。
+        config_name = await run_blocking(mm.import_config, name, data)
         await mm.add_script_file(config_name)
         return {'name': config_name, 'file': f'{config_name}.json'}
     except ConfigAlreadyExistsError as e:
@@ -181,7 +191,8 @@ async def config_import(name: str = Form(...), file: UploadFile = File(...)):
 async def config_export(name: str):
     """导出脱敏后的脚本配置文件。"""
     try:
-        config_name, data = mm.load_config_for_export(name)
+        # 导出读盘不占用事件循环，错误仍由原有 HTTP 映射处理。
+        config_name, data = await run_blocking(mm.load_config_for_export, name)
         redacted = mm.redact_config(data)
         content = json.dumps(redacted, indent=2, ensure_ascii=False, sort_keys=False, default=str)
         filename = f'{config_name}.json'
@@ -212,7 +223,8 @@ async def config_task_import(
     try:
         file_content = await file.read() if file is not None else None
         data = mm.parse_task_json_source(json_text=json_text, file_content=file_content)
-        normalized_config_name, task_key = mm.import_task_config(config_name, task_name, data)
+        # 单任务导入同样可能校验完整配置并等待原子写盘。
+        normalized_config_name, task_key = await run_blocking(mm.import_task_config, config_name, task_name, data)
         return {
             'config_name': normalized_config_name,
             'task_name': task_key,
@@ -241,7 +253,8 @@ async def config_task_import(
 async def config_task_export(config_name: str, task_name: str):
     """导出脱敏后的单个任务配置 JSON 文件。"""
     try:
-        normalized_name, task_key, data = mm.load_task_for_export(config_name, task_name)
+        # 单任务导出的身份读取也移到后台线程。
+        normalized_name, task_key, data = await run_blocking(mm.load_task_for_export, config_name, task_name)
         content = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=False, default=str)
         filename = f'{normalized_name}-{task_key}.json'
         return Response(
@@ -328,8 +341,9 @@ async def task_copy(task_name: str, dest_config_name: str, source_config_name: s
         return False
     task_key = convert_to_underscore(task_name)
     try:
-        source_canonical = mm.store.load_canonical_snapshot(source_config_name)
-        dest_loaded = mm.store.load(dest_config_name)
+        # 复制源/目标均需读盘，保留读取顺序与后续代际校验。
+        source_canonical = await run_blocking(mm.store.load_canonical_snapshot, source_config_name)
+        dest_loaded = await run_blocking(mm.store.load, dest_config_name)
     except ConfigIdentityNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ConfigNotFoundError as e:
@@ -338,7 +352,8 @@ async def task_copy(task_name: str, dest_config_name: str, source_config_name: s
         return False
     expected = dest_loaded.canonical.get(task_key, MISSING)
     try:
-        result = mm.store.replace_subtree(
+        # 后台执行原子事务，仍按读取到的旧值拒绝覆盖并发修改。
+        result = await run_blocking(mm.store.replace_subtree,
             dest_config_name,
             (task_key,),
             expected,
@@ -368,8 +383,9 @@ async def task_group_copy(task_name: str, group_name: str, dest_config_name: str
     task_key = convert_to_underscore(task_name)
     group_key = convert_to_underscore(group_name)
     try:
-        source_canonical = mm.store.load_canonical_snapshot(source_config_name)
-        dest_loaded = mm.store.load(dest_config_name)
+        # 分组复制沿用任务复制的后台读盘与代际校验。
+        source_canonical = await run_blocking(mm.store.load_canonical_snapshot, source_config_name)
+        dest_loaded = await run_blocking(mm.store.load, dest_config_name)
     except ConfigIdentityNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ConfigNotFoundError as e:
@@ -382,7 +398,8 @@ async def task_group_copy(task_name: str, group_name: str, dest_config_name: str
     expected = dest_canonical.get(task_key, {}).get(group_key, MISSING) if isinstance(
         dest_canonical.get(task_key), dict) else MISSING
     try:
-        result = mm.store.replace_subtree(
+        # 分组写入在后台等待文件锁，不影响其他实例。
+        result = await run_blocking(mm.store.replace_subtree,
             dest_config_name,
             (task_key, group_key),
             expected,
@@ -407,9 +424,11 @@ async def task_group_copy(task_name: str, group_name: str, dest_config_name: str
 
 # ---------------------------------   脚本实例管理   ----------------------------------
 @script_app.get('/{script_name}/start')
-async def script_start(script_name: str):
+async def script_start(script_name: str, expected_generation: str | None = None):
     try:
-        started = await mm.start_script_process(script_name)
+        # 无参数仍使用旧签名；批量启动将方案代际交给 manager 在身份锁内核对。
+        started = (await mm.start_script_process(script_name) if expected_generation is None
+                   else await mm.start_script_process(script_name, expected_generation=expected_generation))
     except (ConfigNotFoundError, ConfigIdentityNotFoundError) as e:
         raise HTTPException(status_code=404, detail=f'Config not found: {script_name}') from e
     except Timeout as e:
@@ -429,10 +448,8 @@ async def script_start(script_name: str):
 
 @script_app.get('/{script_name}/stop')
 async def script_stop(script_name: str):
-    if script_name not in mm.script_process:
-        logger.warning(f'[{script_name}] script process does not exist')
-        return
-    await mm.script_process[script_name].stop()
+    # 启动读盘期间 registry 可能尚未注册，仍须排队取得同实例身份锁再判断是否停止。
+    await mm.stop_script_process(script_name)
     return
 
 async def _restart_from_instance(script_name: str):
@@ -450,7 +467,8 @@ async def script_restart_from_instance(script_name: str):
 @script_app.get('/{script_name}/{task}/args')
 async def script_task(script_name: str, task: str):
     # Config 会话持有注入 Store，可在模型纯 Schema 结果上补充运行时 active 身份。
-    return mm.config_cache(script_name).script_task(task)
+    # 构造会话会读取配置与身份文件，后台执行以免撞上启停期间的文件锁。
+    return await run_blocking(lambda: mm.config_cache(script_name).script_task(task))
 
 @script_app.put('/{script_name}/{task}/{group}/{argument}/value')
 async def script_task(script_name: str, task: str, group: str, argument: str, types: str, value):
@@ -497,9 +515,10 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
         )
         # 全局重置是一个用户动作，必须在单个 Store 事务内更新标志与全部 next_run。
         if is_global_reset:
-            result = mm.store.reset_enabled_next_runs(script_name)
+            result = await run_blocking(mm.store.reset_enabled_next_runs, script_name)
         else:
-            result = mm.store.patch_user_argument(
+            # 普通参数写盘与重置都交给线程，通知仍在成功提交之后发送。
+            result = await run_blocking(mm.store.patch_user_argument,
                 script_name,
                 task,
                 group,
@@ -533,24 +552,27 @@ async def script_delete_row(script_name: str, task: str, group: str):
     detail 用机器可读的固定串（如 instance_running），由前端翻成用户语言；
     其余情况沿用本文件既有的英文 detail。
     """
-    if mm.is_script_running(script_name):
-        raise HTTPException(status_code=409, detail='instance_running')
+    # 守卫与后台删除共用启动的实例身份锁，防止检查后被同实例 start 插入。
+    async with mm._script_identity_guard(script_name):
+        if mm.is_script_running(script_name):
+            raise HTTPException(status_code=409, detail='instance_running')
 
-    try:
-        result = mm.store.delete_user_row(script_name, task, group)
-    except ConfigValidationError as e:
-        raise HTTPException(status_code=400, detail=f'Row not deletable: {e}')
-    except ConfigIdentityNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ConfigNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ConfigGenerationMismatchError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except Timeout as e:
-        raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
-    except OSError as e:
-        # 原子写盘失败必须明确报服务端错误，不能报告成「已删除」。
-        raise HTTPException(status_code=500, detail=f'Config write failed: {e}')
+        try:
+            # 删除列表行也包含原子写盘，不能拖住其他卡片的操作。
+            result = await run_blocking(mm.store.delete_user_row, script_name, task, group)
+        except ConfigValidationError as e:
+            raise HTTPException(status_code=400, detail=f'Row not deletable: {e}')
+        except ConfigIdentityNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ConfigNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ConfigGenerationMismatchError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except Timeout as e:
+            raise HTTPException(status_code=503, detail=f'Config lock timeout: {e}')
+        except OSError as e:
+            # 原子写盘失败必须明确报服务端错误，不能报告成「已删除」。
+            raise HTTPException(status_code=500, detail=f'Config write failed: {e}')
 
     # 与 PUT value 同一模式：锁外投递 config_changed 事件给运行实例。
     mm.notify_config_changed(script_name, result)
@@ -561,12 +583,20 @@ async def script_delete_row(script_name: str, task: str, group: str):
 async def sync_next_run(script_name: str, task: str, target_dt: str):
     if script_name not in mm.script_process:
         return False
-    config = mm.config_cache(script_name)
-    target = datetime.strptime(target_dt, '%Y-%m-%d %H:%M:%S') if target_dt else None
-    config.task_delay(task=task, success=True, target=target)
+    # await 前保留本次目标对象，实例并发删除后不再索引已移除的槽位。
     script_process = mm.script_process[script_name]
-    config.get_next()
-    await script_process.broadcast_state({"schedule": config.get_schedule_data()})
+    target = datetime.strptime(target_dt, '%Y-%m-%d %H:%M:%S') if target_dt else None
+
+    def update_schedule():
+        """独立配置会话在线程内完成写盘和日程计算，避免分段 await 暴露中间状态。"""
+        config = mm.config_cache(script_name)
+        config.task_delay(task=task, success=True, target=target)
+        config.get_next()
+        return config, config.get_schedule_data()
+
+    config, schedule = await run_blocking(update_schedule)
+    # 日程广播保留在事件循环中，始终发生在实际写盘完成之后。
+    await script_process.broadcast_state({"schedule": schedule})
     # task_delay 已写盘，投递 config_changed 事件提示子进程在下一边界刷新；
     # INACTIVE 实例不投递，避免 restart 后新进程消费陈旧事件（与 notify_config_changed 一致）。
     # 事件仅作低延迟提示：极端竞态下 generation/mtime 即使略陈旧，子进程仍会以
@@ -612,6 +642,13 @@ async def script_task_log(script_name: str):
 
 # -------------------------------------- websocket --------------------------------------
 
+def _schedule_snapshot(script_name: str):
+    """在工作线程中创建独立配置会话并读取日程，避免 WebSocket 冷读阻塞其他请求。"""
+    config = mm.config_cache(script_name)
+    config.get_next()
+    return config.get_schedule_data()
+
+
 @script_app.websocket("/ws/{script_name}")
 async def websocket_endpoint(websocket: WebSocket, script_name: str):
     try:
@@ -622,9 +659,9 @@ async def websocket_endpoint(websocket: WebSocket, script_name: str):
     await script_process.connect(websocket)
     # 新连接定向首帧：顺序发送 state、schedule、缓存 config_state（不广播模拟首帧）
     await script_process.send_state(websocket, {"state": script_process.state})
-    config = mm.config_cache(script_name)
-    config.get_next()
-    await script_process.send_state(websocket, {"schedule": config.get_schedule_data()})
+    # 初帧读盘等待文件锁时，其他实例的 WebSocket 与启停请求仍可响应。
+    schedule = await run_blocking(_schedule_snapshot, script_name)
+    await script_process.send_state(websocket, {"schedule": schedule})
     await script_process.send_state(websocket, {"config_state": script_process.cached_config_state()})
 
     try:
@@ -633,9 +670,9 @@ async def websocket_endpoint(websocket: WebSocket, script_name: str):
             if data == 'get_state':
                 await script_process.send_state(websocket, {"state": script_process.state})
             elif data == 'get_schedule':
-                config = mm.config_cache(script_name)
-                config.get_next()
-                await script_process.send_state(websocket, {"schedule": config.get_schedule_data()})
+                # 主动刷新日程同样不能在事件循环中同步读盘。
+                schedule = await run_blocking(_schedule_snapshot, script_name)
+                await script_process.send_state(websocket, {"schedule": schedule})
             elif data == 'get_config_state':
                 await script_process.send_state(websocket, {"config_state": script_process.cached_config_state()})
             elif data == 'start':
@@ -653,7 +690,8 @@ async def websocket_endpoint(websocket: WebSocket, script_name: str):
             elif data == 'stop':
                 # 停止同样不得让异常打死连接，理由同上
                 try:
-                    await script_process.stop()
+                    # WebSocket 停止同样走 manager 的实例身份锁。
+                    await mm.stop_script_process(script_name)
                 except Exception as e:
                     logger.error(f'[{script_name}] websocket stop failed: {e}')
                 await script_process.send_state(websocket, {"state": script_process.state})

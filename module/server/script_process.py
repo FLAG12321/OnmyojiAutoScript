@@ -14,8 +14,13 @@ from asyncio import QueueEmpty, CancelledError, sleep
 from enum import Enum
 
 from module.logger import logger
+from module.config.config_activity import config_activity_lock
+from module.config.runtime_registry import (
+    register_runtime_worker, release_runtime_worker, runtime_start_gate,
+)
 from module.config.config_store import ConfigGenerationMismatchError
 from module.server.script_websocket import ScriptWSManager
+from module.server.async_work import run_blocking
 from module.exception import RequestHumanTakeover
 
 
@@ -324,7 +329,8 @@ class ScriptProcess(ScriptWSManager):
     async def _start_locked(self) -> bool:
         # start 前先快速复核缓存 generation；磁盘身份变化则拒绝启动。
         try:
-            loaded = self.store.load(self.config_name)
+            # 读盘和文件锁等待交给线程，单个实例冷启动不阻塞其他请求。
+            loaded = await run_blocking(self.store.load, self.config_name)
         except Exception as start_error:
             logger.error(f'[{self.config_name}] refuse to start, config load failed: {start_error}')
             try:
@@ -355,46 +361,20 @@ class ScriptProcess(ScriptWSManager):
             self._drain_ready_queue()
             self._spawn_attempt_nonce = spawn_attempt_nonce
 
-        new_process = None
         try:
-            # lifecycle 锁覆盖最终 load、Process 构造与 spawn，阻止 delete/create 插入 TOCTOU 窗口。
-            with self.store.generation.identity_lifecycle_lock(self.config_name):
-                final_loaded = self.store._load_unlocked(self.config_name)
-                if final_loaded.generation != self.generation:
-                    raise ConfigGenerationMismatchError(
-                        f'{self.config_name} generation changed before spawn'
-                    )
-                new_process = multiprocessing.Process(
-                    target=func,
-                    args=(
-                        self.config_name,
-                        self.generation,
-                        self.state_queue,
-                        self.log_pipe_in,
-                        self.config_event_queue,
-                        self.ready_queue,
-                        spawn_attempt_nonce,
-                    ),
-                    name=self.config_name,
-                    daemon=True,
-                )
-                new_process.start()
+            # spawn 与句柄提交在同一线程完成，取消后仍能找到并回收已创建的子进程。
+            new_process = await run_blocking(self._spawn_process, spawn_attempt_nonce)
         except ConfigGenerationMismatchError:
             await self._stop_locked(broadcast=False)
             return False
-        except BaseException:
-            # 先同步建立可达句柄并清理，再重抛原始 spawn/取消异常。
-            self._cleanup_spawn_failure(new_process)
+        except asyncio.CancelledError:
+            # 后台 spawn 已收尾再进入清理，不能提前释放锁遗留未受管理的进程。
+            try:
+                await self._stop_locked(broadcast=False)
+            except BaseException as cleanup_error:
+                # 句柄已由 stop 保留供重试，清理错误不能覆盖原始取消。
+                logger.error(f'[{self.config_name}] cancelled spawn cleanup failed: {cleanup_error}')
             raise
-
-        if not self._commit_process_if_current(
-            None, new_process, ScriptState.RUNNING
-        ):
-            # lifecycle 锁外仍可能有独立线程提交句柄；拒绝覆盖并回收本次局部进程。
-            self._cleanup_spawn_failure(new_process)
-            raise RuntimeError(
-                f'[{self.config_name}] process handle changed before spawn commit'
-            )
         try:
             # 父端只有收到 child generation ready 后才向 API 报告启动成功。
             await self._wait_for_spawn_handshake(new_process, spawn_attempt_nonce)
@@ -418,6 +398,49 @@ class ScriptProcess(ScriptWSManager):
             raise
         return True
 
+    def _spawn_process(self, spawn_attempt_nonce):
+        """在线程中完成同步启动事务，失败时清理局部句柄并保留原异常。"""
+        new_process = None
+        try:
+            # 全局门禁先于 Store 锁，覆盖 spawn 与 worker 登记；child 握手在锁外等待。
+            with runtime_start_gate(self.store.config_root), self.store.generation.identity_lifecycle_lock(self.config_name):
+                final_loaded = self.store._load_unlocked(self.config_name)
+                if final_loaded.generation != self.generation:
+                    raise ConfigGenerationMismatchError(
+                        f'{self.config_name} generation changed before spawn'
+                    )
+                new_process = multiprocessing.Process(
+                    target=func,
+                    args=(
+                        self.config_name,
+                        self.generation,
+                        self.state_queue,
+                        self.log_pipe_in,
+                        self.config_event_queue,
+                        self.ready_queue,
+                        spawn_attempt_nonce,
+                    ),
+                    name=self.config_name,
+                    daemon=True,
+                )
+                new_process.start()
+                # 测试替身没有真实 PID；仅真实 Process 才登记运行身份。
+                if isinstance(new_process, BaseProcess):
+                    register_runtime_worker(
+                        self.store.config_root, self.config_name, self.generation,
+                        new_process.pid, spawn_attempt_nonce, state='starting',
+                    )
+            if not self._commit_process_if_current(None, new_process, ScriptState.RUNNING):
+                # 独立线程可能替换句柄，CAS 失败时只回收本次局部进程。
+                raise RuntimeError(
+                    f'[{self.config_name}] process handle changed before spawn commit'
+                )
+            return new_process
+        except BaseException:
+            # 同步收尾与句柄提交不可被外部取消打断，失败进程始终可达。
+            self._cleanup_spawn_failure(new_process)
+            raise
+
     async def stop(self):
         """提交停止状态后在锁外广播，广播卡死也不阻塞后续 stop/retry。"""
         async with self._lifecycle_lock:
@@ -430,12 +453,24 @@ class ScriptProcess(ScriptWSManager):
         """实例被强制停止前注销 OCR 活跃状态，避免等待超时回收模型。"""
         try:
             from module.ocr.rpc import notify_ocr_instance_state
-            notify_ocr_instance_state(self.config_name, False)
+            # 每次停止使用线程内连接，避免并行回收实例共享 zerorpc/gevent 状态。
+            notify_ocr_instance_state(self.config_name, False, reuse_client=False)
         except Exception as error:
             logger.debug(f'[{self.config_name}] OCR stop notification failed: {error}')
 
     async def _stop_locked(self, broadcast: bool = False):
-        """先回收进程并收敛真实状态，再广播；查询异常仍继续 terminate/kill。"""
+        """在线程中回收并提交真实状态，实例锁保留到回收结束再广播。"""
+        committed, process_error = await run_blocking(self._stop_process)
+        cancel_error = None
+        if broadcast and committed:
+            cancel_error = await self._broadcast_lifecycle_state()
+        if process_error is not None:
+            raise process_error
+        if cancel_error is not None:
+            raise cancel_error
+
+    def _stop_process(self):
+        """同步执行 OCR 注销及进程退出等待；只有确认退出才能清空句柄。"""
         process = self._process_snapshot()
         if process is not None:
             self._notify_ocr_instance_stopped()
@@ -486,13 +521,7 @@ class ScriptProcess(ScriptWSManager):
                 process, process, ScriptState.RUNNING
             )
 
-        cancel_error = None
-        if broadcast and committed:
-            cancel_error = await self._broadcast_lifecycle_state()
-        if process_error is not None:
-            raise process_error
-        if cancel_error is not None:
-            raise cancel_error
+        return committed, process_error
 
     async def coroutine_broadcast_state(self):
         try:
@@ -618,7 +647,6 @@ def func(
             logger.exception(f'Start log error')
             logger.error(f'Error: {e}')
             raise
-    start_log()
     import time
 
     def report_handshake(status: str, generation=None, reason: str = "") -> None:
@@ -635,7 +663,13 @@ def func(
         except Exception as error:
             logger.error(f'[{config}] child handshake report failed: {error}')
 
+    # 整个子进程业务周期持锁，管家只有在任务完全停止后才能回收同名进度和备份。
+    activity = None
+    worker_token = None
+    config_root = os.path.join(os.getcwd(), 'config')
     try:
+        activity = config_activity_lock(config_root, config)
+        activity.acquire()
         from script import Script
         script = Script(config_name=config)
         actual_generation = script.config.generation
@@ -648,8 +682,15 @@ def func(
                 reason="generation_mismatch",
             )
             return
+        # 迟到的旧进程不能在清理之后重新生成该名称的日志。
+        start_log()
         script.state_queue = state_queue
         script.config_event_queue = config_event_queue
+        # 只有身份校验通过的 child 才能从 starting 切到 idle；此处不持 Store 锁。
+        with runtime_start_gate(config_root):
+            worker_token = register_runtime_worker(
+                config_root, config, actual_generation, os.getpid(), attempt_nonce,
+            )
         report_handshake("ready", generation=actual_generation)
         script.loop()
     except RequestHumanTakeover as e:
@@ -670,6 +711,16 @@ def func(
         logger.exception(f'Run script {config} error')
         logger.error(f'Error: {e}')
         raise
+    finally:
+        # 强杀残留由 PID+启动时间核验回收；正常退出只删除自己这一代 worker。
+        if worker_token is not None:
+            try:
+                release_runtime_worker(config_root, config, worker_token)
+            except Exception as error:
+                logger.warning(f'[{config}] worker 注销失败，保留供后续核验: {error}')
+        # 正常退出、身份不匹配与异常路径都释放；强制终止由系统回收文件锁。
+        if activity is not None:
+            activity.release()
 
 
 if __name__ == '__main__':
@@ -678,4 +729,3 @@ if __name__ == '__main__':
     from time import sleep
     sleep(10)
     logger.info(p._process.exitcode)
-
