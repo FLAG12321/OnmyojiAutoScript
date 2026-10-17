@@ -140,7 +140,7 @@ class DailyAltAccBase(GuildPopupMixin, GameUi, DailyAltAccAssets):
         # 弹窗可见时即使点击被节流，也要返回 True，避免调用者操作遮罩下的按钮。
         for rule in (self.I_T_SIGN_FLAG, self.I_T_SIGN_FLAG2):
             if self.appear(rule):
-                self.appear_then_click(rule, action=self.C_MS_REFRESH_ACTION, interval=1)
+                self.appear_then_click(rule, action=self.C_T_EXIT_SIGN, interval=1)
                 return True
         if self.appear_then_click(self.I_M_AWARD, action=self.C_MS_REFRESH_ACTION, interval=1):
             return True
