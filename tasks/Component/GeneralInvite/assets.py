@@ -20,9 +20,9 @@ class GeneralInviteAssets:
 	# description 
 	I_FIRE = RuleImage(roi_front=(1179,602,81,74), roi_back=(1179,602,81,74), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_fire.png")
 	# 锁定阵容的图片 
-	I_LOCK = RuleImage(roi_front=(49,645,29,32), roi_back=(29,633,287,61), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_lock.png")
+	I_LOCK = RuleImage(roi_front=(26,644,30,32), roi_back=(16,633,300,63), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_lock.png")
 	# 还没有锁定阵容 
-	I_UNLOCK = RuleImage(roi_front=(31,647,23,27), roi_back=(26,633,285,57), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_unlock.png")
+	I_UNLOCK = RuleImage(roi_front=(27,647,30,27), roi_back=(26,633,284,57), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_unlock.png")
 	# 如果是到时间会退出房间，这个右边显示一个匹配的图片 
 	I_MATCHING = RuleImage(roi_front=(51,574,52,114), roi_back=(51,574,52,114), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_matching.png")
 	# 永生之海挑战（还未有队友的图片） 
@@ -80,9 +80,9 @@ class GeneralInviteAssets:
 	# 队员默认接受邀请 
 	I_I_ACCEPT_DEFAULT = RuleImage(roi_front=(205,223,61,68), roi_back=(205,223,61,297), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_accept_default.png")
 	# 不勾选 默认邀请 
-	I_I_NO_DEFAULT = RuleImage(roi_front=(542,343,36,35), roi_back=(542,343,36,35), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_no_default.png")
+	I_I_NO_DEFAULT = RuleImage(roi_front=(543,343,37,35), roi_back=(482,323,145,81), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_no_default.png")
 	# 勾选 默认邀请 
-	I_I_DEFAULT = RuleImage(roi_front=(541,342,41,39), roi_back=(541,342,41,39), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_default.png")
+	I_I_DEFAULT = RuleImage(roi_front=(545,346,32,32), roi_back=(505,327,124,64), threshold=0.7, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_default.png")
 	# description 
 	I_GI_CANCEL = RuleImage(roi_front=(438,407,171,55), roi_back=(438,407,171,55), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_gi_cancel.png")
 	# 队长邀请 确定 

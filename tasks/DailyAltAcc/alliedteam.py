@@ -8,7 +8,7 @@ from time import sleep
 from module.base.timer import Timer
 from module.base.utils import save_image
 from module.logger import logger
-from module.exception import GamePageUnknownError
+from module.exception import GamePageUnknownError, RequestHumanTakeover
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.page import page_main, page_team
 from tasks.DailyAltAcc.utils import DailyAltAccBase
@@ -74,6 +74,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             return 0
         try:
             done = progress.get_battle_count(key)
+        except RequestHumanTakeover:
+            raise  # 身份或计数不可信时必须核对，不能从零重复消耗。
         except Exception:
             logger.exception('读取同心战斗场次失败，从 0 开始')
             return 0
@@ -90,6 +92,8 @@ class Alliedteam(GeneralBattle, GeneralRoom, DailyAltAccBase):
             return
         try:
             progress.add_battle_count(key, 1)
+        except RequestHumanTakeover:
+            raise  # 已打场次无法可靠保存时停止，保留当前进度供处理。
         except Exception:
             logger.exception('回写同心战斗场次失败')
 

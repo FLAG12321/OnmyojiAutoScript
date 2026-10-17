@@ -332,10 +332,14 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         filtered = list(filter(lambda x: (x[5] == '秘闻' or x[5] == '式神') and x[2] >= 3, info_wq_list))
         if not filtered and len(filtered) != 0:
             info_wq_list = filtered
-        best_type, destination, once_number, goto_button, func, _ = info_wq_list[0]
+        best_type, destination, once_number, goto_button, func, type_name = info_wq_list[0]
         do_number = 1 if once_number >= num_want else num_want // once_number + (1 if num_want % once_number > 0 else 0)
         try:
-            func(goto_button, do_number)
+            result = func(goto_button, do_number)
+            if type_name == '秘闻' and result is False:
+                # 等级不足只排除本次候选，保留同类型其他副本供下一轮选择。
+                self.want_strategy_excluding.append(info_wq_list[0])
+                logger.warning(f'秘闻 {destination} 未能进入战斗，重新选择其他副本')
         except ExploreWantedBoss:
             logger.warning('The extreme case. The quest only needs to challenge one final boss, so skip it')
             self.want_strategy_excluding.append(info_wq_list[0])
@@ -393,11 +397,25 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             # self.ui_click_until_disappear(self.I_WQSE_FIRE)
             # 又臭又长的对话针的是服了这个网易
             click_count = 0
+            # 每场只统计实际挑战点击；第五次后留出一次节流间隔等待画面切换。
+            challenge_count = 0
+            challenge_timer = Timer(1)
             while 1:
                 self.screenshot()
+                # 第五次正常进入准备或战斗时照常执行，不能把成功跳转判成等级不足。
+                if self.is_in_prepare(False) or self.is_in_real_battle(False):
+                    break
                 if not self.appear(self.I_UI_BACK_RED, threshold=0.7):
                     break
-                if self.appear_then_click(self.I_WQSE_FIRE, interval=1):
+                if challenge_count >= 5:
+                    # 对话期间继续翻页；仍停在挑战入口才按等级不足退出当前副本。
+                    if self.appear(self.I_WQSE_FIRE) and challenge_timer.reached():
+                        logger.warning('秘闻连续点击挑战 5 次仍未进入战斗，按等级不足处理，改选其他副本')
+                        self._exit_to_exploration(self.I_CHECK_SECRET_ZONES, back_red=True)
+                        return False
+                elif self.appear_then_click(self.I_WQSE_FIRE, interval=1):
+                    challenge_count += 1
+                    challenge_timer.reset()
                     continue
                 if self.appear(self.I_UI_BACK_RED, threshold=0.7) and not self.appear(self.I_WQSE_FIRE):
                     self.click(self.C_SECRET_CHAT, interval=0.8)

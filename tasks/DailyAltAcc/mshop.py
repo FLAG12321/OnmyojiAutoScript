@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
-import re
 import time
 from pathlib import Path
+from tasks.Utils.role_artifacts import role_artifact_stem
 
 from module.base.timer import Timer
 from module.base.utils import save_image
@@ -128,16 +128,14 @@ class Mshop(Mall, DailyAltAccBase):
                 break
 
     def _save_mshop_page(self, index: int):
-        """保存神秘商店货架截图到 screenshots/mshop/，文件名 商店_角色名_{index}.png。
+        """保存神秘商店货架截图到 screenshots/mshop/，文件名包含完整身份摘要。
 
         序号1 = 进入商店时的初始货架；序号2 = 刷新后的货架（多次刷新时覆盖为最新）。
         本方法由 MsFind 在材料与价格识别完成后、商品判定和通知之前调用。
-        角色名优先取多账号运行注入的统计上下文（_stat_ctx），单实例退化为配置实例名。
+        同一角色保留最新货架，跨账号、区服或平台的同名角色互不覆盖。
         """
-        # 角色名优先取多账号运行注入的统计上下文，单实例运行时退化为配置实例名
-        char_name = (getattr(self, '_stat_ctx', None) or {}).get('char') or self.config.config_name
-        # 替换 Windows 文件名非法字符，避免保存失败
-        char_name = re.sub(r'[\\/:*?"<>|]', '_', str(char_name))
+        # 摘要包含未经文件名替换的完整身份，避免非法字符替换后发生碰撞。
+        char_name = role_artifact_stem(self)
         image = self.screenshot()
         save_dir = Path('screenshots/mshop')
         save_dir.mkdir(parents=True, exist_ok=True)

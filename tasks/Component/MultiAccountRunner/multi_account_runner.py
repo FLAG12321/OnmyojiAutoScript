@@ -263,12 +263,10 @@ class MultiAccountRunner:
         """
         self.device.stuck_record_clear()
         success = SwitchAccount(self.config, self.device, account_info).switchAccount()
+        # 单次切号只记录结果，账号重试耗尽后再统一推送失败通知。
+        self._account_switch_failed = not success
         if not success:
             logger.warning(f"[{self.task_name}] Switch to {account_info.character}-{account_info.svr} Failed")
-            self.config.notifier.push(
-                content=f"Switch to {account_info.character}-{account_info.svr} Failed, account info: {account_info.account}",
-                title="未找到账号"
-            )
         return success
 
     # ======================== 内部方法 ========================
@@ -284,6 +282,8 @@ class MultiAccountRunner:
         retry_count = 0
 
         while retry_count < self.max_retries:
+            # 每次尝试重新记录切号结果，不能把后续任务失败误报为账号未找到。
+            self._account_switch_failed = False
             try:
                 if process_func(account_info):
                     # 账号成功处理：即时落盘，中断后接续时整个跳过
@@ -298,6 +298,13 @@ class MultiAccountRunner:
                         logger.info(f"[{self.task_name}] Account {account_info.character} failed, retrying ({retry_count}/{self.max_retries})...")
                     else:
                         logger.error(f"[{self.task_name}] Failed to process account {account_info.character} after {self.max_retries} attempts")
+                        # 已耗尽完整账号流程的重试预算，即将跳过该账号时只告警一次。
+                        if self._account_switch_failed:
+                            self.config.notifier.push(
+                                content=f"{account_info.character}-{account_info.svr} 账号流程尝试 {self.max_retries} 次后仍登录失败，"
+                                        f"已跳过该账号。账号：{account_info.account}",
+                                title="未找到账号"
+                            )
             except GameNotRunningError:
                 raise GameNotRunningError("Game Not Running")
             except TaskEnd:

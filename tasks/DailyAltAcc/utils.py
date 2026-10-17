@@ -136,6 +136,12 @@ class DailyAltAccBase(GuildPopupMixin, GameUi, DailyAltAccAssets):
         处理日常弹窗奖励（悬赏、协战、签到等）
         """
         self.screenshot()
+        # 签到动画和签文都会保留“解签”标记，点击右侧空白即可继续或关闭。
+        # 弹窗可见时即使点击被节流，也要返回 True，避免调用者操作遮罩下的按钮。
+        for rule in (self.I_T_SIGN_FLAG, self.I_T_SIGN_FLAG2):
+            if self.appear(rule):
+                self.appear_then_click(rule, action=self.C_MS_REFRESH_ACTION, interval=1)
+                return True
         if self.appear_then_click(self.I_M_AWARD, action=self.C_MS_REFRESH_ACTION, interval=1):
             return True
         elif self.appear(self.I_M_PICTURE_REFUSE):
@@ -162,9 +168,6 @@ class DailyAltAccBase(GuildPopupMixin, GameUi, DailyAltAccAssets):
             return True
         elif self.appear_rgb(self.I_T_BACK_RED_SIGN):
             self.appear_then_click(self.I_T_BACK_RED_SIGN, interval=1)
-            return True
-        elif self.appear_then_click(self.I_T_SIGN_FLAG, action=self.C_T_EXIT_SIGN, interval=1) or \
-                self.appear_then_click(self.I_T_SIGN_FLAG2, action=self.C_T_EXIT_SIGN, interval=1):
             return True
         elif self.appear_then_click(PlotlineAssets.I_CLICK_CURSOR, action=self.C_MS_REFRESH_ACTION, interval=1):
             return True

@@ -1,8 +1,14 @@
 [
   {
     "itemName": "favorability_up",
-    "roiFront": "1147,83,31,29",
-    "roiBack": "1146,82,34,31",
+    "roiFront": "1147,83,31,30",
+    "roiBack": "1146,81,34,31",
     "description": "description"
+  },
+  {
+    "itemName": "gameplayclick",
+    "roiFront": "134,267,55,192",
+    "roiBack": "134,267,55,192",
+    "description": "点击空白处关闭玩法介绍"
   }
 ]

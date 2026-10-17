@@ -129,6 +129,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
 
                 while retry_count < max_retries:
                     try:
+                        # 每次尝试单独记录切号结果，避免日常任务失败沿用之前的登录失败。
+                        self._account_switch_failed = False
                         if self._process_single_account(accountInfo):
                             # 成功处理账号，跳出重试循环
                             break
@@ -139,6 +141,14 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
                             else:
                                 logger.error(f"Failed to process account {accountInfo.character} after {max_retries} attempts")
                                 phase_failed = True
+                                # 仅在账号重试耗尽且最后一次切号仍失败时提醒，随后继续后续账号。
+                                if self._account_switch_failed:
+                                    self.config.notifier.push(
+                                        content=(f"{accountInfo.character}-{accountInfo.svr} "
+                                                 f"账号流程尝试 {max_retries} 次后仍登录失败，已跳过该账号。"
+                                                 f"账号：{accountInfo.account}"),
+                                        title="未找到账号"
+                                    )
                     except self._DEVICE_LEVEL_ERRORS:
                         # 切号闪退与其他设备异常统一交给 Restart / 人工接管：
                         # 先安排三分钟退避、保留进度，再原样上抛，禁止处理下个账号。
@@ -706,10 +716,8 @@ class ScriptTask(StatLogMixin, GameUi, MultiDailyAltAccAssets):
         )
         if not success:
             logger.warning("Switch to %s-%s Failed", account_info.character, account_info.svr)
-            self.config.notifier.push(
-                content=f"Switch to {account_info.character}-{account_info.svr} Failed, account info: {account_info.account}",  
-                title="未找到账号"
-            )
+            # 单次切号失败交回外层重试，通知统一等账号尝试耗尽后发送。
+            self._account_switch_failed = True
         return success
 
     def _execute_daily_tasks(self, config, account_info):

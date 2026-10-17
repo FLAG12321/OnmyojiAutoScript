@@ -52,7 +52,7 @@ from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.RichMan.assets import RichManAssets
 from tasks.Utils.optional_ability import run_optional_ability
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
-from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key
+from tasks.Component.MultiAccountRunner.progress import ProgressStore, acc_key, execution_parameters
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBuff.config_buff import BuffClass
 from tasks.Component.config_base import Time
@@ -249,17 +249,22 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, SwitchSoul, GameUi, 
                 self._execute_disciple_tasks()
                 return True
 
-            # 轮询所有徒弟账号：建账号级续做进度，阶段标识 = 徒弟账号集合 + 自然日
+            # 自然日区分轮次；徒弟身份含平台，执行配置变化只影响相应账号。
             logger.info(f"Cycle all disciples enabled, total {len(account_list)} account(s) to process")
-            self._progress = ProgressStore('master_disciple', self.config.config_name)
+            self._progress = ProgressStore('master_disciple', self.config.config_name,
+                                           generation=self.config.generation)
+            parameters = execution_parameters(self.config.master_disciple.master_disciple_config)
             self._progress.ensure_phase(
-                {'disciples': [acc_key(a.account, a.character, a.svr) for a in account_list],
-                 'day': self.start_time.strftime('%Y-%m-%d')},
+                {'day': self.start_time.strftime('%Y-%m-%d')},
                 self.start_time.strftime('%Y%m%d-%H%M'),
+                account_plans={acc_key(a.account, a.character, a.svr, a.apple_or_android):
+                               {'disciple': {'enabled': True, 'parameters': parameters}}
+                               for a in account_list},
             )
             all_success = True
             for index, account_info in enumerate(account_list):
-                key = acc_key(account_info.account, account_info.character, account_info.svr)
+                key = acc_key(account_info.account, account_info.character, account_info.svr,
+                              account_info.apple_or_android)
                 if self._progress.is_account_done(key):
                     logger.info(f"Disciple {account_info.character}-{account_info.svr} already done, skipping")
                     continue

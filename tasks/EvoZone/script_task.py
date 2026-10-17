@@ -19,7 +19,7 @@ from tasks.Utils.optional_ability import run_optional_ability
 from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.EvoZone.config import EvoZone, UserStatus, KirinType
 from module.logger import logger
-from module.exception import TaskEnd, GamePageUnknownError
+from module.exception import TaskEnd, GamePageUnknownError, RequestHumanTakeover
 
 # 需要「准备界面切换援助式神」的次数标记：该值来自游戏侧的好友协战计数玩法
 # （每天固定 13 场），不是可调阈值，所以按字面量比较而非抽成配置项。
@@ -79,6 +79,8 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
         self._help_target_complete = None
         self._help_battle_count_restored = False
         self._help_battle_blocked = False
+        # 所有身份共用逐场计数，队长/成员也必须从可信历史场次接续。
+        self._restore_battle_count()
         if con.switch_soul_config.enable:
             self.ui_get_current_page()
             self.ui_goto(page_shikigami_records)
@@ -104,12 +106,16 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
                 success = self.run_member()
             case UserStatus.ALONE:
                 alone_success = self.run_alone()
-                if self._help_target_enabled:
-                    success = alone_success is not False
+                success = alone_success is not False
             case UserStatus.WILD:
                 self.run_wild()
+                success = False  # 未实现的模式不能宣称完成。
             case _:
                 logger.error('Unknown user status')
+                success = False
+
+        # 到时限、体力耗尽或房间中断都不等于达到目标，必须保留待重试进度。
+        success = success and self.current_count >= self.limit_count
 
         # 记得关掉
         if config.evo_zone_config.soul_buff_enable:
@@ -360,6 +366,9 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             return 0
         try:
             done = progress.get_battle_count(key, BATTLE_TASK_KEY)
+        except RequestHumanTakeover:
+            # 无法确认旧进度时必须停止，不能静默从零重复消耗。
+            raise
         except Exception:
             logger.exception('读取觉醒副本场次失败，从 0 开始')
             return 0
@@ -376,8 +385,17 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
             return
         try:
             progress.add_battle_count(key, 1, BATTLE_TASK_KEY)
+        except RequestHumanTakeover:
+            # 场次未可靠落盘时停止下一场，避免之后按旧计数重复执行。
+            raise
         except Exception:
             logger.exception('回写觉醒副本场次失败')
+
+    def run_general_battle(self, config=None, buff=None, remaining_count=None) -> bool:
+        """队长、成员与单人战斗统一在正常返回后记录实际结束的场次。"""
+        result = super().run_general_battle(config, buff, remaining_count)
+        self._persist_battle_count()
+        return result
 
     def _refill_help_battles(self, remaining: int) -> bool:
         """从庭院补足好友页确认的缺额，不重跑任务收尾或重新恢复历史场次。"""
@@ -468,8 +486,6 @@ class ScriptTask(SwitchHelpShikigami, GeneralBattle, GeneralInvite, GeneralBuff,
                 if not self.appear(self.I_EVOZONE_FIRE):
                     try:
                         self.run_general_battle(config=self.config.evo_zone.general_battle_config)
-                        # 本场结束立刻落盘，中断后可从这里接续。
-                        self._persist_battle_count()
                     except HelpTargetReached:
                         # 通用战斗在准备前已加一；已达 13 次时撤销预增并退出，不能记作打过。
                         self.current_count -= 1

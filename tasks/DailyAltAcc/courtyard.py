@@ -31,22 +31,29 @@ class Courtyard(DailyAltAccBase):
             return False
         click_count = 0
         success_count = 0
+        # 普通获得奖励或签到弹窗也代表领取已推进，不只依赖“领取成功”页。
+        award_handled = False
         complete_page_frames = 0
         while 1:
             self.screenshot()
+            # 先处理模态奖励：遮罩下仍能匹配邮件图标、返回和一键完成，不能先操作背景。
+            if self.get_award_daliy():
+                click_count = 0
+                award_handled = True
+                complete_page_frames = 0
+                continue
+            if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
+                click_count = 0
+                success_count += 1
+                award_handled = True
+                complete_page_frames = 0
+                continue
             if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(self.I_M_MAIN_TO_MAIL):
                 break
             if click_count >= 3 or success_count >= 5:
                 if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):
                     time.sleep(1)
                     continue
-            if self.get_award_daliy():
-                click_count = 0
-                continue
-            if self.appear_then_click(self.I_SUCCESS,action=self.C_T_EXIT_SUCCESS, interval=1):
-                click_count = 0
-                success_count += 1
-                continue
             if self.appear_rgb(self.I_FINISH):
                 complete_page_frames = 0
                 if self.appear_then_click(self.I_FINISH, interval=1):
@@ -57,7 +64,7 @@ class Courtyard(DailyAltAccBase):
             # 原逻辑只在 click_count >= 3 或 success_count >= 5 时返回：首次一键完成
             # 没计入 click_count，而实机通常只有 1~2 个成功弹窗，因此两个阈值都到不了。
             # 改为识别真实终态：处理过奖励，稳定停在任务页，且一键完成按钮已经消失。
-            if success_count > 0 and self.appear(self.I_PAGE_TASK):
+            if award_handled and self.appear(self.I_PAGE_TASK):
                 complete_page_frames += 1
                 if complete_page_frames >= self.COMPLETE_PAGE_CONFIRM_FRAMES:
                     if self.appear_then_click(self.I_TASK_TO_MAIN, interval=1):

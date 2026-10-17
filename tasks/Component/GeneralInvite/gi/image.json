@@ -38,19 +38,19 @@
   {
     "itemName": "lock",
     "imageName": "gi_lock.png",
-    "roiFront": "49,645,29,32",
-    "roiBack": "29,633,287,61",
+    "roiFront": "26,644,30,32",
+    "roiBack": "16,633,300,63",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "锁定阵容的图片"
   },
   {
     "itemName": "unlock",
     "imageName": "gi_unlock.png",
-    "roiFront": "31,647,23,27",
-    "roiBack": "26,633,285,57",
+    "roiFront": "27,647,30,27",
+    "roiBack": "26,633,284,57",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "还没有锁定阵容"
   },
   {
@@ -308,19 +308,19 @@
   {
     "itemName": "i_no_default",
     "imageName": "gi_i_no_default.png",
-    "roiFront": "542,343,36,35",
-    "roiBack": "542,343,36,35",
+    "roiFront": "543,343,37,35",
+    "roiBack": "482,323,145,81",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "不勾选 默认邀请"
   },
   {
     "itemName": "i_default",
     "imageName": "gi_i_default.png",
-    "roiFront": "541,342,41,39",
-    "roiBack": "541,342,41,39",
+    "roiFront": "545,346,32,32",
+    "roiBack": "505,327,124,64",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.7,
     "description": "勾选 默认邀请"
   },
   {

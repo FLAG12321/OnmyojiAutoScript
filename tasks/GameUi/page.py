@@ -128,6 +128,7 @@ page_main.link(button=G.I_MAIN_GOTO_TOWN, destination=page_town)
 # ************************************* 探索部分 *****************************************#
 # 觉醒 awake zones
 page_awake_zones = Page(G.I_CHECK_AWAKE)
+page_awake_zones.additional = [[G.I_GAMEPLAY,G.C_GAMEPLAYCLICK]]
 page_awake_zones.link(button=G.I_BACK_YOLLOW, destination=page_exploration)
 page_exploration.link(button=G.I_EXPLORATION_GOTO_AWAKE_ZONE, destination=page_awake_zones)
 # 御魂 soul zones

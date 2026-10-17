@@ -15,11 +15,15 @@ class GameUiAssets:
 	I_PAPER_DOLL_CLOSE = RuleImage(roi_front=(1253,102,25,62), roi_back=(1238,58,40,153), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/additional_paper_doll_close.png")
 	# description 
 	I_ACT_LIST_EXPAND = RuleImage(roi_front=(1191,508,30,25), roi_back=(1160,456,92,103), threshold=0.8, method="Template matching", file="./tasks/GameUi/additional/additional_act_list_expand.png")
+	# 玩法介绍弹窗
+	I_GAMEPLAY = RuleImage(roi_front=(675,120,190,30), roi_back=(355,54,609,129), threshold=0.7, method="Template matching", file="./tasks/GameUi/additional/additional_gameplay.png")
 
 
 	# Click Rule Assets
 	# description 
-	C_FAVORABILITY_UP = RuleClick(roi_front=(1147,83,31,29), roi_back=(1146,82,34,31), name="favorability_up")
+	C_FAVORABILITY_UP = RuleClick(roi_front=(1147,83,31,30), roi_back=(1146,81,34,31), name="favorability_up")
+	# 点击空白处关闭玩法介绍
+	C_GAMEPLAYCLICK = RuleClick(roi_front=(134,267,55,192), roi_back=(134,267,55,192), name="gameplayclick")
 
 
 	# Image Rule Assets

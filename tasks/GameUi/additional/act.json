@@ -16,5 +16,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
+  },
+  {
+    "itemName": "gameplay",
+    "imageName": "additional_gameplay.png",
+    "roiFront": "675,120,190,30",
+    "roiBack": "355,54,609,129",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "玩法介绍弹窗"
   }
 ]
