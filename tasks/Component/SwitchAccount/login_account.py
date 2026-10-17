@@ -70,8 +70,9 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
 
     def get_svr_name(self):
         self.screenshot()
-        ocrRes = self.O_SA_LOGIN_FORM_SVR_NAME.ocr(self.device.image)
-        return ocrRes
+        # 与标注器使用相同的检测式 OCR，避免单行识别漏掉服务器名首字。
+        ocr_results = self.O_SA_LOGIN_FORM_SVR_NAME.detect_and_ocr(self.device.image)
+        return "".join(result.ocr_text for result in ocr_results if result.ocr_text)
 
     def switch_svr(self, svrName: str):
         """
