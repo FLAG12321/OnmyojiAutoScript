@@ -669,11 +669,11 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 target_svr = ''.join(normalize_name(accountInfo.svr).split())
                 svr_matcher = SequenceMatcher(None, current_svr, target_svr)
                 similarity = svr_matcher.ratio()
-                # 四字及以上区服容许一个字符误差且相似度至少 75%；短区服必须完整一致。
+                # 配置区服是识别结果的子串即可通过；否则四字及以上仍容许一字误差且相似度至少 75%。
                 errors = sum(max(i2 - i1, j2 - j1)
                              for tag, i1, i2, j1, j2 in svr_matcher.get_opcodes() if tag != 'equal')
                 server_matches = bool(current_svr) and (
-                    current_svr == target_svr
+                    target_svr in current_svr
                     or (len(target_svr) >= 4 and errors <= 1 and similarity >= 0.75)
                 )
                 if not server_matches:
