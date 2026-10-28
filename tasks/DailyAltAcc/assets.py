@@ -110,14 +110,28 @@ class DailyAltAccAssets:
 	# Image Rule Assets
 	# description 
 	I_PAGE_ACCOUNT = RuleImage(roi_front=(222,489,54,54), roi_back=(169,394,156,190), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_page_account.png")
-	# 现世协作的「享」标记；整块协作板批量搜索，槽位由 get_cooperation_info 按 x 归位 
-	I_REAL_FLAG = RuleImage(roi_front=(159,293,29,31), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_real_flag_1.png")
+	# 新版现世协作白字「享」；按 2026-10-28 实图裁取，整板批量搜索并按 x 归槽
+	I_REAL_FLAG = RuleImage(roi_front=(311,123,30,25), roi_back=(54,98,1150,565), threshold=0.75, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_real_flag_1.png")
 	# 普通协作的「协」标记；与「享」同槽位互斥，同样整板批量搜索 
-	I_NORMAL_FLAG = RuleImage(roi_front=(154,288,34,33), roi_back=(130,110,1022,508), threshold=0.75, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_normal_flag.png")
+	I_NORMAL_FLAG = RuleImage(roi_front=(309,123,30,25), roi_back=(54,98,1150,565), threshold=0.75, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_normal_flag.png")
 	# description 
 	I_NET_CHECK = RuleImage(roi_front=(121,130,334,487), roi_back=(119,129,336,489), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/net_check.png")
 	# description 
 	I_NET_NORMAL_FLAG = RuleImage(roi_front=(1020,328,27,31), roi_back=(129,110,1022,507), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/cooperation/net_normal_flag.png")
+	# 左上「精灵」提示牌；出现时等待消失后再识别协作
+	I_COOPERATION_PROMPT_SPIRIT = RuleImage(roi_front=(114,140,42,42), roi_back=(95,110,250,90), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_prompt_spirit.png")
+	# 左上「友」提示牌；保留识别，不阻塞协作流程
+	I_COOPERATION_PROMPT_FRIEND = RuleImage(roi_front=(201,142,34,31), roi_back=(95,110,250,90), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_prompt_friend.png")
+	# 左上「拓」提示牌；出现时等待消失后再识别协作
+	I_COOPERATION_PROMPT_EXPLORE = RuleImage(roi_front=(278,143,29,29), roi_back=(95,110,250,90), threshold=0.8, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_prompt_explore.png")
+	# 碎片标志
+	I_NET_NORMAL_FLAG_1 = RuleImage(roi_front=(138,532,77,77), roi_back=(54,98,1150,565), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_net_normal_flag_1.png")
+	# 金币标志
+	I_NET_NORMAL_FLAG_2 = RuleImage(roi_front=(794,541,71,46), roi_back=(54,98,1150,565), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_net_normal_flag_2.png")
+	# 悬赏页面
+	I_PAGE_COOPERATION = RuleImage(roi_front=(571,30,139,47), roi_back=(484,12,319,138), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_page_cooperation.png")
+	# 悬赏协作邀请，独立命名以保留同心组队的 I_INVITE。
+	I_COOPERATION_INVITE = RuleImage(roi_front=(105,402,33,31), roi_back=(54,98,1150,565), threshold=0.7, method="Template matching", file="./tasks/DailyAltAcc/cooperation/cooperation_invite.png")
 
 
 	# Ocr Rule Assets

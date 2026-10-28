@@ -20,7 +20,6 @@ from module.exception import (
 from tasks.GameUi.page import page_main
 from tasks.GameUi.assets import GameUiAssets
 from tasks.DailyAltAcc.config import MSGType
-from tasks.WantedQuests.assets import WantedQuestsAssets
 from tasks.RichMan.guild import Guild
 from tasks.RichMan.config import GuildStore
 from tasks.WeeklyTrifles.script_task import ScriptTask as WeeklyTrifles
@@ -310,31 +309,8 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
         self._subtask_error_occurred = False
         con = self.get_config()
         self.msg = []
-        net_normal_flag = False
-        retry_count = 0
-        while 1:    
-            self.screenshot()
-            if  retry_count >=5:
-                self.msg.append([MSGType.neterror, "网络错误"])
-                raise TaskEnd(self.msg)
-            if self.appear(self.I_NET_NORMAL_FLAG,interval=1):
-                net_normal_flag = True
-                continue
-
-            if self.appear_then_click(self.I_NET_CHECK,action=self.C_NET_CLICK,interval=1):
-                time.sleep(7)
-                retry_count += 1
-                self.screenshot()
-
-            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL,interval=1) or self.appear_then_click(WantedQuestsAssets.I_WQ_DONE,interval=1):
-                continue
-
-            if self.appear(self.I_UI_BACK_RED):
-                self.device.click_record_clear()
-                self.ui_click_until_disappear(self.I_UI_BACK_RED,interval=4)
-                if net_normal_flag:
-                    break
-                continue
+        # 协作板预检统一由 Cooperation 提供，保证单、多账号路径采用同一判定与超时。
+        self.wait_cooperation_board_ready()
         # 子任务段起点：回礼需要距本账号任务开始至少间隔 RETURNGIFT_MIN_INTERVAL
         # （原 delay_time 静态估算语义），改用真实计时——前置任务实际跑多久就
         # 吃掉多久等待，轮到回礼时只补足差额
@@ -363,6 +339,7 @@ class ScriptTask(StatLogMixin, Courtyard, Mail, Donatejade, Cooperation,
                 
         if con.daily_alt_acc_config.mail_enable and not self._should_skip("mail"):
             self._run_with_stat("mail", self.run_mail)
+        # 协作 UI 调用点：MultiDailyAltAcc 运行本任务时也会经过这里。
         if con.daily_alt_acc_config.cooperation_enable and not self._should_skip("cooperation"):
             self._run_with_stat("cooperation", self.run_cooperation)
         if con.daily_alt_acc_config.donatejade_enable and not self._should_skip("donatejade"):

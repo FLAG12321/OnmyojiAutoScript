@@ -1,11 +1,13 @@
 # This Python file uses the following encoding: utf-8
 import re
 import time
+from copy import deepcopy
 from datetime import datetime
 from typing import List
 
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
+from module.exception import TaskEnd
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
 from tasks.DailyAltAcc.assets import DailyAltAccAssets
@@ -17,9 +19,30 @@ from tasks.DailyAltAcc.stat_log import StatEvent
 from tasks.Utils.coop_records import record_cooperation
 
 
-# 协作时间戳格式。刻意与另一处协作记录的时间字段逐字一致，让两类来源里的时间长得
-# 一样、下游按同一套规则读；真正不能复制的刷新窗口规则（05:00 / 18:00）没有被复制。
+# 协作事件使用统一时间格式，便于日志、统计和持久记录对照。
 COOP_TS_FORMAT = '%Y-%m-%d %H:%M:%S'
+# 页面确认后，协作组件连续未命中的网络恢复时限（秒）。
+NET_RETRY_TIMEOUT = 30
+# 网络异常期间重新检查组件的间隔（秒）。
+NET_RECHECK_INTERVAL = 7
+
+
+def wait_cooperation_prompt_clear(task) -> None:
+    """精灵或拓出现就逐帧等待，两者消失后识别协/享；单独友牌不等待。"""
+    prompts = tuple(deepcopy(rule) for rule in (
+        DailyAltAccAssets.I_COOPERATION_PROMPT_SPIRIT,
+        DailyAltAccAssets.I_COOPERATION_PROMPT_EXPLORE,
+    ))
+    waiting = False
+    while any(task.appear(prompt) for prompt in prompts):
+        if not waiting:
+            logger.info('悬赏页出现精灵或拓提示，等待两者消失')
+            waiting = True
+        time.sleep(0.5)
+        # 每次等待后重新截图，不能沿用发现提示时的旧图继续判断协作类型。
+        task.screenshot()
+    if waiting:
+        logger.info('精灵和拓提示已消失，重新采样悬赏协作')
 
 
 def _parse_cooperation_monster(raw_text: str, prefix: str) -> str:
@@ -40,41 +63,30 @@ def _parse_real_cooperation_monster(raw_text: str) -> str:
 
 
 # ---- 协作板单区域批量识别常量 ----
-# 三张卡片所在的整块区域，与 I_NET_NORMAL_FLAG 的 roi_back 一致。8 个模板共用这
-# 一个搜索区域：实测该区域、更小的卡片区、乃至全屏，三者结果逐条完全一致。
-COOP_CARD_BAND = (130, 110, 1022, 508)
-# 锚点（协/享/邀请）的槽位基准 x。协/享 是同一槽位的互斥标记，实测标称左上角为
-# 槽1=154 / 槽2=453 / 槽3=752，槽间距精确 299（协字 bbox 158→457→752 验证）。
-# 邀请按钮的标称 x 是 137/462/754，与标记不同位，偏差由归位容差吸收。
-COOP_ANCHOR_SLOT_X = (154, 453, 752)
-# 锚点标称 y：协 288 / 享 293，同一条水平带
-COOP_ANCHOR_SLOT_Y = 288
-# 类型图标的槽位基准 x = 奖励区中心（奖励格起点 195/490/790 + 约 90）。
-# 必须与锚点基准分开：类型图标与锚点标记的物理位置相差 130~140px，共用一套基准
-# 会把 gold@290 / sushi@590 这类命中挤出容差，导致整个槽位识别不出类型。
-COOP_TYPE_SLOT_X = (285, 580, 880)
-# 槽位归位容差：命中点与基准的 x 距离超过该值即判为不属于任何槽位
-COOP_SLOT_TOLERANCE = 120
+# 新版悬赏板的四张竖卡共用搜索区域，包含右上协作标记、左侧邀请和底部奖励。
+COOP_CARD_BAND = (88, 110, 1104, 528)
+# 标记在卡片右上、邀请在左侧，统一按卡片中心归槽，避免两种锚点串到相邻卡。
+COOP_ANCHOR_SLOT_X = (218, 498, 780, 1062)
+# 每张卡片宽约 260；间隔部分不归入任何槽位。
+COOP_SLOT_TOLERANCE = 130
 # 锚点优先级：协/享 不随邀请消失，比邀请按钮可靠，故优先于邀请按钮
 COOP_ANCHOR_PRIORITY = {'协': 0, '享': 1, '邀请': 2}
 # 类型优先级：食物协作里也有金币奖励，故金币排在最后（沿用改造前的判定顺序）
 COOP_TYPE_PRIORITY = {'jade': 0, 'dog_food': 1, 'cat_food': 2, 'sushi': 3, 'gold': 4}
-# 协作目标文本的标称 ROI（槽1 位置）。槽间横向间距 300（180→480→780），实际位置
-# 由「槽位偏移 + 标记抖动」算出，不按槽位写死。
-COOP_DISCOVERER_BASE = (180, 403, 200, 30)
-COOP_FRIEND_BASE = (180, 448, 200, 30)
-# 现世体协只有一行目标文本，位置落在普通协作两行之间
-COOP_REAL_MONSTER_BASE = (180, 425, 200, 32)
-# 目标文本 ROI 的槽间横向间距（奖励格起点 195/490/790 → 180/480/780）
-COOP_TARGET_SLOT_PITCH = 300
-# 作位置基准的锚点模板在槽1 的标称左上角（实测）。只有 协/享 入表：它们固定在
-# 卡片同一横向位置，槽间距精确 299；邀请按钮的横向位置随卡片文案长短浮动
-# （137/462/754，间距 325/292），拿它当基准会引入最多 26px 的固定偏移。
-COOP_ANCHOR_ORIGIN = {'协': (154, 288), '享': (159, 293)}
-# 协/享 标记的槽间横向间距（协字 bbox 158→457→752 精确等差）
-COOP_ANCHOR_PITCH = 299
+# 协作双目标位于插画下方两行，ROI 取第一列，再按列间距平移。
+COOP_DISCOVERER_BASE = (100, 437, 230, 30)
+COOP_FRIEND_BASE = (100, 482, 230, 30)
+# 现世体协只有一行目标，读取两条普通目标之间的文字带。
+COOP_REAL_MONSTER_BASE = (100, 457, 230, 40)
+# 奖励类型图标按卡片锚点位置限定搜索区域，避免整板相似奖励串到其他卡片。
+COOP_TYPE_BASE = (195, 505, 180, 90)
+COOP_TARGET_SLOT_PITCH = 282
+# 协/享共用资产标注的右上角坐标；没有协/享标记时用 I_COOPERATION_INVITE 的资产坐标。
+COOP_ANCHOR_ORIGIN = {'协': (309, 123), '享': (309, 123), '邀请': (105, 402)}
+COOP_ANCHOR_PITCH = 282
 
 
+# 协作 UI 入口：此类打开悬赏板、识别协作卡片与奖励，并产生日常协作事件。
 class Cooperation(DailyAltAccBase):
     # 多账号任务注入同一持久表、账号身份和轮次；单任务无上下文时只产出日志/消息。
     _coop_store = None
@@ -87,13 +99,11 @@ class Cooperation(DailyAltAccBase):
     # None 表示没有取帧来源（单测、手工构造），_coop_emit 退化为当下时刻。
     _coop_scan_at: datetime = None
 
-    # 单区域批量识别使用的 8 个模板。这 8 个条目只被本文件引用，所以
-    # match_all_any 用 roi 参数改写 roi_back 时不会波及别的任务——WantedQuests
-    # 读的是带 _1/_2/_3 后缀、roi_back 为固定区域的另一组条目，两者是不同的对象。
+    # 每种模板在四张卡片上统一批量搜索，随后按卡片中心归槽。
     COOP_ANCHOR_RULES = {
         '协': DailyAltAccAssets.I_NORMAL_FLAG,
         '享': DailyAltAccAssets.I_REAL_FLAG,
-        '邀请': WantedQuestsAssets.I_WQ_INVITE,
+        '邀请': DailyAltAccAssets.I_COOPERATION_INVITE,
     }
     COOP_TYPE_RULES = {
         'jade': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_JADE,
@@ -102,6 +112,56 @@ class Cooperation(DailyAltAccBase):
         'sushi': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_SUSHI,
         'gold': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_GOLD,
     }
+
+    def wait_for_cooperation_network_normal(self) -> bool | None:
+        """页面未确认时返回 None；协作页内轮询组件，30 秒未恢复则通知父任务重登。"""
+        while True:
+            network_failed_at = getattr(self, '_cooperation_network_failed_at', None)
+            if (network_failed_at is not None
+                    and time.monotonic() - network_failed_at >= NET_RETRY_TIMEOUT):
+                logger.warning(f'悬赏协作页超过 {NET_RETRY_TIMEOUT} 秒未恢复，判为账号级网络故障')
+                self.msg.append([MSGType.neterror, '网络错误'])
+                raise TaskEnd(self.msg)
+
+            if not self.appear(deepcopy(DailyAltAccAssets.I_PAGE_COOPERATION)):
+                return None
+
+            components = (
+                DailyAltAccAssets.I_NET_NORMAL_FLAG_1,
+                DailyAltAccAssets.I_NET_NORMAL_FLAG_2,
+                *self.COOP_ANCHOR_RULES.values(),
+                *self.COOP_TYPE_RULES.values(),
+            )
+            if any(self.appear(deepcopy(component)) for component in components):
+                self._cooperation_network_failed_at = None
+                return True
+
+            if network_failed_at is None:
+                network_failed_at = time.monotonic()
+                self._cooperation_network_failed_at = network_failed_at
+            remaining = NET_RETRY_TIMEOUT - (time.monotonic() - network_failed_at)
+            time.sleep(min(NET_RECHECK_INTERVAL, max(0, remaining)))
+            self.screenshot()
+
+    def wait_cooperation_board_ready(self) -> None:
+        """统一清理残留页面并检测协作板；协作页内的网络检测统一等待最多 30 秒。"""
+        while True:
+            self.screenshot()
+            # 使用悬赏标题确认已经进入任务板。
+            if self.appear(deepcopy(DailyAltAccAssets.I_PAGE_COOPERATION)):
+                if self.wait_for_cooperation_network_normal() is None:
+                    continue
+                self.device.click_record_clear()
+                self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=4)
+                return
+
+            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL, interval=1) or \
+                    self.appear_then_click(WantedQuestsAssets.I_WQ_DONE, interval=1):
+                continue
+
+            if self.appear(self.I_UI_BACK_RED):
+                self.device.click_record_clear()
+                self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=4)
 
     # 类型信号的输出规格。日志文案与标签沿用改造前的逐字表述（含 "find  jade
     # cooperation " 里的双空格），前端展示与推送依赖这些字符串，不得改动。
@@ -154,14 +214,13 @@ class Cooperation(DailyAltAccBase):
 
     @staticmethod
     def _coop_target_shift(anchor, slot: int) -> tuple[int, int]:
-        """从锚点实测位置反推该槽协作目标文本 ROI 的平移量。
+        """从协/享或邀请锚点的实测位置反推该槽资源 ROI 的平移量。
 
         @param anchor: 该槽胜出的锚点 (信号名, 得分, x, y)
-        @return: (dx, dy)，用于 _shift_roi 平移 COOP_*_BASE
+        @return: (dx, dy)，用于平移目标文本与奖励图标的基准区域
 
-        拆成「槽位偏移 + 标记抖动」两段：槽位偏移是标称几何（每槽 300），抖动是
-        实测位置相对标称的偏差（实测样本上恒为 0，保留作为版面轻微偏移的兜底）。
-        位置基准只用 协/享 —— 走到邀请说明两个标记都没匹配上，此时退回标称位置。
+        以锚点在第一张卡上的标称位置为基准，槽间距按 282 计算，剩余差值来自
+        本帧命中的实际偏移。现世「享」与普通「协」共用同一标称位置。
         """
         anchor_name, _score, anchor_x, anchor_y = anchor
         dx, dy = COOP_TARGET_SLOT_PITCH * slot, 0
@@ -170,6 +229,25 @@ class Cooperation(DailyAltAccBase):
             dx += anchor_x - origin[0] - COOP_ANCHOR_PITCH * slot
             dy = anchor_y - origin[1]
         return int(dx), int(dy)
+
+    @classmethod
+    def _coop_collect_types(cls, image, rules: dict, anchor_slots: dict) -> dict:
+        """按每张卡的锚点偏移搜索奖励图标，并返回各槽优先级最高的类型。"""
+        winners = {}
+        for slot, anchor in anchor_slots.items():
+            roi = cls._shift_roi(COOP_TYPE_BASE, cls._coop_target_shift(anchor, slot))
+            for name, rule in rules.items():
+                # 每次使用独立模板和卡片局部区域，避免改写共享资源的搜索范围。
+                search_rule = RuleImage(
+                    roi_front=rule.roi_front, roi_back=roi,
+                    method=rule.method, threshold=rule.threshold, file=rule.file,
+                )
+                matches = search_rule.match_all_any(image, nms_threshold=0.3)
+                for score, x, y, _width, _height in matches:
+                    current = winners.get(slot)
+                    if current is None or COOP_TYPE_PRIORITY[name] < COOP_TYPE_PRIORITY[current[0]]:
+                        winners[slot] = (name, score, x, y)
+        return winners
 
     @staticmethod
     def _coop_slot_of(x: int, basis: tuple) -> int | None:
@@ -185,22 +263,24 @@ class Cooperation(DailyAltAccBase):
     def _coop_collect(cls, image, rules: dict, basis: tuple, priority: dict) -> tuple[dict, dict]:
         """在同一区域内批量匹配一组模板，并把命中按 x 归位到卡片槽位。
 
-        改造前每个模板要 match 三次（每槽一次），这里每个模板只匹配一次、在整块
-        区域里一次找出全部命中再做归位，匹配次数从 9+15 降到 8，且完全没有循环。
+        每个模板在整块区域里一次找出全部命中，再归位到四张卡片。
 
         @param rules: {信号名: RuleImage}
-        @param basis: 槽位基准 x 三元组
+        @param basis: 四张卡片的中心 x
         @param priority: 同槽位多命中时的优先级，数值小者胜出
         @return: ({槽位: (信号名, 得分, x, y)}, {信号名: [(得分, x, y, 槽位), ...]})
                  槽位为 None 表示该命中离所有基准都超过容差、已丢弃。
         """
         winners, hits = {}, {}
         for name, rule in rules.items():
-            # roi 参数会改写 rule.roi_back（module/atom/image.py），这 8 个条目专供
-            # 本处批量识别、不被别的任务引用，故该副作用无害。
+            # 只在本次调用传入整板区域，不让共享模板保留本任务的搜索范围。
             # 必须用 match_all_any：match_all 返回所有 ≥阈值的像素点，一个图标就是
             # 几百个候选框；match_all_any 内部走 cv2.dnn.NMSBoxes 去重。
-            matches = rule.match_all_any(image, roi=COOP_CARD_BAND, nms_threshold=0.3)
+            search_rule = RuleImage(
+                roi_front=rule.roi_front, roi_back=COOP_CARD_BAND,
+                method=rule.method, threshold=rule.threshold, file=rule.file,
+            )
+            matches = search_rule.match_all_any(image, nms_threshold=0.3)
             hits[name] = [
                 (score, x, y, cls._coop_slot_of(x, basis))
                 for score, x, y, _width, _height in matches
@@ -225,14 +305,17 @@ class Cooperation(DailyAltAccBase):
     def _coop_invite_button(self, slot: int, invite_hits: list):
         """按该槽实测到的邀请按钮位置构造返回用的 RuleImage。
 
-        改造前直接返回 I_WQ_INVITE_{n} 实例（appear() 已把实测位置写回 roi_front）；
+        改造前直接返回固定槽位邀请实例（appear() 已把实测位置写回 roi_front）；
         改成单实例批量识别后不再有「每槽一个固定条目」，故按命中位置就地构造。
         本任务不消费该字段，仅为保持 @return 契约。卡片已邀请时按钮不存在，
         退回该槽的锚点位置。
         """
-        source = self.COOP_ANCHOR_RULES['邀请']
+        source = DailyAltAccAssets.I_COOPERATION_INVITE
         hit = next((item for item in invite_hits if item[3] == slot), None)
-        x, y = (hit[1], hit[2]) if hit else (COOP_ANCHOR_SLOT_X[slot], COOP_ANCHOR_SLOT_Y)
+        # 已邀请时保留该列邀请区域，不能把右上角的协作标记当作邀请点击位置。
+        origin_x, origin_y = COOP_ANCHOR_ORIGIN['邀请']
+        x, y = (hit[1], hit[2]) if hit else (
+            origin_x + COOP_TARGET_SLOT_PITCH * slot, origin_y)
         return RuleImage(
             roi_front=(x, y, source.roi_front[2], source.roi_front[3]),
             roi_back=COOP_CARD_BAND,
@@ -299,9 +382,7 @@ class Cooperation(DailyAltAccBase):
     def _read_real_sushi_target(self, slot: int, anchor) -> dict:
         """读取现世体协的单目标（击败N个X）。
 
-        改造前只读槽1/槽2 —— O_WQ_REAL_COOPERATION_MONSTER_3 这个资产根本不存在，
-        调用处因此带着 index < 2 的绕行判断。改按锚点位置整体平移后，区域是算出来
-        的，槽3 同样能读，那个绕行判断随之取消。
+        四列都按协/享或邀请锚点位置平移同一文字区域，不依赖逐列 OCR 资产。
         """
         image = getattr(getattr(self, "device", None), "image", None)
         if image is None:
@@ -344,7 +425,8 @@ class Cooperation(DailyAltAccBase):
             time.sleep(1)
         while 1:
             self.screenshot()
-            if self.appear(WantedQuestsAssets.I_TRACE_ENABLE) or self.appear(WantedQuestsAssets.I_TRACE_DISABLE) or self.appear(self.I_UI_BACK_RED):
+            # 确认处于协作页面且至少一个协作组件命中后，才开始批量读取卡片。
+            if self.wait_for_cooperation_network_normal() is True:
                 break
             if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL, interval=1):
                 continue
@@ -451,19 +533,20 @@ class Cooperation(DailyAltAccBase):
         @return: 协作任务类型与邀请按钮
         """
         self.screenshot()
-        # 取帧即记时刻：下面是纯图像处理（模板匹配 + OCR），不再截图，所以这一屏
-        # 识别出的协作都属于这一帧。落到 _coop_scan_at 供 _coop_emit 与 STAT 共用，
-        # 而不是各自取 datetime.now()——那会让「落盘的时间」和「日志里的时间」差出
-        # 几毫秒，恰好跨过 05:00 / 18:00 时同一张协作会被算进两个窗口。
-        self._coop_scan_at = datetime.now()
         image = getattr(getattr(self, "device", None), "image", None)
+        if image is not None:
+            wait_cooperation_prompt_clear(self)
+            image = self.device.image
+        # 提示消失后取帧即记时刻：下面只做模板匹配与 OCR，不再截图，所有协作
+        # 共用最终识别帧的时间，避免等待跨过 05:00 / 18:00 时归入旧刷新窗口。
+        self._coop_scan_at = datetime.now()
         retList = []
         if image is None:
             logger.warning("协作识别取帧失败，本屏按没有协作任务处理")
             logger.info(f"get cooperation size {len(retList)}")
             return retList
 
-        # ① 8 个模板各在整块协作板区域内匹配一次，一次性拿到全部命中（坐标为绝对值）
+        # ① 先在整块协作板中匹配三种锚点，命中坐标均为屏幕绝对值。
         anchor_slots, anchor_hits = self._coop_collect(
             image, self.COOP_ANCHOR_RULES, COOP_ANCHOR_SLOT_X, COOP_ANCHOR_PRIORITY)
         logger.info(f"[协作锚点] 协={len(anchor_hits['协'])} 享={len(anchor_hits['享'])}"
@@ -474,8 +557,7 @@ class Cooperation(DailyAltAccBase):
             logger.info("本屏无协/享/邀请标记，判定为没有协作任务")
             logger.info(f"get cooperation size {len(retList)}")
             return retList
-        type_slots, _ = self._coop_collect(
-            image, self.COOP_TYPE_RULES, COOP_TYPE_SLOT_X, COOP_TYPE_PRIORITY)
+        type_slots = self._coop_collect_types(image, self.COOP_TYPE_RULES, anchor_slots)
         # 有锚点且有类型的槽位才会产出事件；每条 STAT 沿用本屏总数口径。
         total = len(anchor_slots.keys() & type_slots.keys())
 

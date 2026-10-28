@@ -11,17 +11,17 @@
   {
     "itemName": "real_flag",
     "imageName": "cooperation_real_flag_1.png",
-    "roiFront": "159,293,29,31",
-    "roiBack": "130,110,1022,508",
+    "roiFront": "311,123,30,25",
+    "roiBack": "54,98,1150,565",
     "method": "Template matching",
     "threshold": 0.75,
-    "description": "现世协作的「享」标记；整块协作板批量搜索，槽位由 get_cooperation_info 按 x 归位"
+    "description": "新版现世协作白字「享」；按 2026-10-28 实图裁取，整板批量搜索并按 x 归槽"
   },
   {
     "itemName": "normal_flag",
     "imageName": "cooperation_normal_flag.png",
-    "roiFront": "154,288,34,33",
-    "roiBack": "130,110,1022,508",
+    "roiFront": "309,123,30,25",
+    "roiBack": "54,98,1150,565",
     "method": "Template matching",
     "threshold": 0.75,
     "description": "普通协作的「协」标记；与「享」同槽位互斥，同样整板批量搜索"
@@ -43,5 +43,68 @@
     "imageName": "net_normal_flag.png",
     "method": "Template matching",
     "threshold": "0.7"
+  },
+  {
+    "itemName": "cooperation_prompt_spirit",
+    "imageName": "cooperation_prompt_spirit.png",
+    "roiFront": "114,140,42,42",
+    "roiBack": "95,110,250,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "左上「精灵」提示牌；出现时等待消失后再识别协作"
+  },
+  {
+    "itemName": "cooperation_prompt_friend",
+    "imageName": "cooperation_prompt_friend.png",
+    "roiFront": "201,142,34,31",
+    "roiBack": "95,110,250,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "左上「友」提示牌；保留识别，不阻塞协作流程"
+  },
+  {
+    "itemName": "cooperation_prompt_explore",
+    "imageName": "cooperation_prompt_explore.png",
+    "roiFront": "278,143,29,29",
+    "roiBack": "95,110,250,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "左上「拓」提示牌；出现时等待消失后再识别协作"
+  },
+  {
+    "itemName": "net_normal_flag_1",
+    "imageName": "cooperation_net_normal_flag_1.png",
+    "roiFront": "138,532,77,77",
+    "roiBack": "54,98,1150,565",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "碎片标志"
+  },
+  {
+    "itemName": "net_normal_flag_2",
+    "imageName": "cooperation_net_normal_flag_2.png",
+    "roiFront": "794,541,71,46",
+    "roiBack": "54,98,1150,565",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "金币标志"
+  },
+  {
+    "itemName": "page_cooperation",
+    "imageName": "cooperation_page_cooperation.png",
+    "roiFront": "571,30,139,47",
+    "roiBack": "484,12,319,138",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "悬赏页面"
+  },
+  {
+    "itemName": "cooperation_invite",
+    "imageName": "cooperation_invite.png",
+    "roiFront": "105,402,33,31",
+    "roiBack": "54,98,1150,565",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "悬赏协作邀请，独立命名以保留同心组队的 I_INVITE。"
   }
 ]
