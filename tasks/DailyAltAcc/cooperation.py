@@ -21,9 +21,9 @@ from tasks.Utils.coop_records import record_cooperation
 
 # 协作事件使用统一时间格式，便于日志、统计和持久记录对照。
 COOP_TS_FORMAT = '%Y-%m-%d %H:%M:%S'
-# 页面确认后，协作组件连续未命中的网络恢复时限（秒）。
+# 首次确认空板后的累计网络恢复时限（秒），关闭与重开不会重置计时。
 NET_RETRY_TIMEOUT = 30
-# 网络异常期间重新检查组件的间隔（秒）。
+# 网络异常时先关闭悬赏页，再等待后重新打开检查（秒）。
 NET_RECHECK_INTERVAL = 7
 
 
@@ -113,8 +113,24 @@ class Cooperation(DailyAltAccBase):
         'gold': WantedQuestsAssets.I_WQ_COOPERATION_TYPE_GOLD,
     }
 
-    def wait_for_cooperation_network_normal(self) -> bool | None:
-        """页面未确认时返回 None；协作页内轮询组件，30 秒未恢复则通知父任务重登。"""
+    def _open_cooperation_board(self) -> None:
+        """清理残留页面并打开悬赏页，返回时已取得确认页面标题的新截图。"""
+        while True:
+            self.screenshot()
+            if self.appear(deepcopy(DailyAltAccAssets.I_PAGE_COOPERATION)):
+                return
+
+            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL, interval=1) or \
+                    self.appear_then_click(WantedQuestsAssets.I_WQ_DONE, interval=1):
+                continue
+
+            if self.appear(self.I_UI_BACK_RED):
+                # 残留页面也可能因网络慢需要多次关闭，每次点击至少间隔 2 秒。
+                self.device.click_record_clear()
+                self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=2)
+
+    def wait_for_cooperation_network_normal(self) -> bool:
+        """每轮打开、截图检查、关闭悬赏页；累计 30 秒未恢复则通知父任务重登。"""
         while True:
             network_failed_at = getattr(self, '_cooperation_network_failed_at', None)
             if (network_failed_at is not None
@@ -123,45 +139,33 @@ class Cooperation(DailyAltAccBase):
                 self.msg.append([MSGType.neterror, '网络错误'])
                 raise TaskEnd(self.msg)
 
-            if not self.appear(deepcopy(DailyAltAccAssets.I_PAGE_COOPERATION)):
-                return None
-
+            # 每次检查都重新打开悬赏页，使用打开后确认标题的当前帧识别组件。
+            self._open_cooperation_board()
             components = (
                 DailyAltAccAssets.I_NET_NORMAL_FLAG_1,
                 DailyAltAccAssets.I_NET_NORMAL_FLAG_2,
                 *self.COOP_ANCHOR_RULES.values(),
                 *self.COOP_TYPE_RULES.values(),
             )
-            if any(self.appear(deepcopy(component)) for component in components):
+            network_normal = any(self.appear(deepcopy(component)) for component in components)
+            if not network_normal and network_failed_at is None:
+                network_failed_at = time.monotonic()
+                self._cooperation_network_failed_at = network_failed_at
+
+            # 检查成功或失败都先关闭；网络慢时每隔 2 秒重试，直到返回按钮消失。
+            self.device.click_record_clear()
+            self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=2)
+            if network_normal:
                 self._cooperation_network_failed_at = None
                 return True
 
-            if network_failed_at is None:
-                network_failed_at = time.monotonic()
-                self._cooperation_network_failed_at = network_failed_at
             remaining = NET_RETRY_TIMEOUT - (time.monotonic() - network_failed_at)
-            time.sleep(min(NET_RECHECK_INTERVAL, max(0, remaining)))
-            self.screenshot()
+            if remaining > 0:
+                time.sleep(min(NET_RECHECK_INTERVAL, remaining))
 
     def wait_cooperation_board_ready(self) -> None:
-        """统一清理残留页面并检测协作板；协作页内的网络检测统一等待最多 30 秒。"""
-        while True:
-            self.screenshot()
-            # 使用悬赏标题确认已经进入任务板。
-            if self.appear(deepcopy(DailyAltAccAssets.I_PAGE_COOPERATION)):
-                if self.wait_for_cooperation_network_normal() is None:
-                    continue
-                self.device.click_record_clear()
-                self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=4)
-                return
-
-            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL, interval=1) or \
-                    self.appear_then_click(WantedQuestsAssets.I_WQ_DONE, interval=1):
-                continue
-
-            if self.appear(self.I_UI_BACK_RED):
-                self.device.click_record_clear()
-                self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=4)
+        """共用打开、检查、关闭的网络预检，成功后保持悬赏页关闭。"""
+        self.wait_for_cooperation_network_normal()
 
     # 类型信号的输出规格。日志文案与标签沿用改造前的逐字表述（含 "find  jade
     # cooperation " 里的双空格），前端展示与推送依赖这些字符串，不得改动。
@@ -423,20 +427,15 @@ class Cooperation(DailyAltAccBase):
                 break
             retry_count += 1
             time.sleep(1)
-        while 1:
-            self.screenshot()
-            # 确认处于协作页面且至少一个协作组件命中后，才开始批量读取卡片。
-            if self.wait_for_cooperation_network_normal() is True:
-                break
-            if self.appear_then_click(WantedQuestsAssets.I_WQ_SEAL, interval=1):
-                continue
-            if self.appear_then_click(WantedQuestsAssets.I_WQ_DONE, interval=1):
-                continue
+        # 网络检查每轮都会关闭悬赏页，通过后重新打开，才能读取真实协作卡片。
+        self.wait_for_cooperation_network_normal()
+        self._open_cooperation_board()
         self.get_cooperation_info()
         self.screenshot()
         if self.appear(self.I_UI_BACK_RED):
-            self.click(self.I_UI_BACK_RED)
-            time.sleep(1)
+            # 读取结束后也循环关闭，不能因第一次点击未生效就直接开始庭院导航。
+            self.device.click_record_clear()
+            self.ui_click_until_disappear(self.I_UI_BACK_RED, interval=2)
         self.screenshot()
         if self.ui_get_current_page() != page_main:
             self.ui_goto(page_main)
